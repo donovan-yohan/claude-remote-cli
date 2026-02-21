@@ -1,2 +1,90 @@
 <!DOCTYPE html>
-<html><head><title>Claude Mobile</title></head><body><p>placeholder</p></body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Claude Code Mobile</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <!-- PIN Gate -->
+  <div id="pin-gate">
+    <div class="pin-container">
+      <h1>Claude Code Mobile</h1>
+      <p>Enter PIN to continue</p>
+      <input
+        type="password"
+        id="pin-input"
+        inputmode="numeric"
+        maxlength="20"
+        placeholder="PIN"
+        autofocus
+      />
+      <button id="pin-submit">Unlock</button>
+      <p id="pin-error" class="error" hidden></p>
+    </div>
+  </div>
+
+  <!-- Main App (hidden until PIN unlocked) -->
+  <div id="main-app" hidden>
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-label">Sessions</span>
+        <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle sidebar">&#9776;</button>
+      </div>
+      <ul id="session-list"></ul>
+      <button id="new-session-btn">+ New Session</button>
+    </div>
+
+    <!-- Terminal Area -->
+    <div id="terminal-area">
+      <div id="terminal-container"></div>
+      <div id="no-session-msg">No active session. Create or select a session to begin.</div>
+
+      <!-- Touch Toolbar -->
+      <div id="toolbar">
+        <div class="toolbar-row">
+          <button class="tb-btn" data-key="&#x1b;[D" aria-label="Left arrow">&#8592;</button>
+          <button class="tb-btn" data-key="&#x1b;[A" aria-label="Up arrow">&#8593;</button>
+          <button class="tb-btn" data-key="&#x1b;[B" aria-label="Down arrow">&#8595;</button>
+          <button class="tb-btn" data-key="&#x1b;[C" aria-label="Right arrow">&#8594;</button>
+          <button class="tb-btn" data-key="&#x0d;" aria-label="Enter">&#9166;</button>
+          <button class="tb-btn" data-key="&#x1b;" aria-label="Escape">Esc</button>
+          <button class="tb-btn" data-key="&#x03;" aria-label="Ctrl+C">^C</button>
+        </div>
+        <div class="toolbar-row">
+          <button class="tb-btn" data-key="y" aria-label="y">y</button>
+          <button class="tb-btn" data-key="n" aria-label="n">n</button>
+          <button class="tb-btn" data-text="/resume&#x0d;" aria-label="/resume">/resume</button>
+          <button class="tb-btn" data-text="/clear&#x0d;" aria-label="/clear">/clear</button>
+          <button class="tb-btn" data-key="&#x1b;[Z" aria-label="Shift+Tab">&#8679;Tab</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- New Session Dialog -->
+  <dialog id="new-session-dialog">
+    <h2>New Session</h2>
+    <div id="repo-list"></div>
+    <hr class="dialog-separator" />
+    <div class="dialog-custom-path">
+      <label for="custom-path-input">Custom path:</label>
+      <input type="text" id="custom-path-input" placeholder="/path/to/repo" />
+    </div>
+    <div class="dialog-actions">
+      <button id="dialog-cancel">Cancel</button>
+      <button id="dialog-start" class="btn-accent">Start Session</button>
+    </div>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.8.0/lib/addon-fit.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
