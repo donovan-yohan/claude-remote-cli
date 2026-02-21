@@ -1,2 +1,5 @@
 node_modules/
 config.json
+.claude/
+docs/plans/
+bun.lockb

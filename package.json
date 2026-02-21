@@ -1,7 +1,7 @@
 {
-  "name": "claude-mobile",
+  "name": "claude-remote-cli",
   "version": "0.1.0",
-  "description": "Mobile web interface for Claude Code CLI sessions",
+  "description": "Remote web interface for Claude Code CLI sessions",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
@@ -17,5 +17,9 @@
     "express": "^4.21.0",
     "node-pty": "^1.0.0",
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "playwright": "^1.58.2"
   }
 }

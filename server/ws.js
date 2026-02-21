@@ -52,6 +52,13 @@ function setupWebSocket(server, authenticatedTokens) {
   wss.on('connection', (ws, request, session) => {
     const ptyProcess = session.pty;
 
+    // Replay scrollback buffer so client sees all prior output
+    if (session.scrollback && session.scrollback.length > 0) {
+      for (const chunk of session.scrollback) {
+        ws.send(chunk);
+      }
+    }
+
     // PTY output -> WebSocket
     const dataHandler = ptyProcess.onData((data) => {
       if (ws.readyState === ws.OPEN) {

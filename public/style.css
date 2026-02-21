@@ -1,16 +1,20 @@
 /* ===== CSS Variables ===== */
 :root {
-  --bg: #1a1a2e;
-  --surface: #16213e;
-  --accent: #e94560;
-  --text: #eee;
-  --text-muted: #aaa;
-  --border: #2a2a4a;
-  --sidebar-width: 180px;
+  --bg: #1a1a1a;
+  --surface: #2b2b2b;
+  --accent: #d97757;
+  --text: #ececec;
+  --text-muted: #9b9b9b;
+  --border: #3d3d3d;
+  --sidebar-width: 240px;
   --toolbar-height: auto;
 }
 
 /* ===== Reset & Base ===== */
+[hidden] {
+  display: none !important;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -99,8 +103,13 @@ html, body {
 #main-app {
   display: flex;
   flex-direction: row;
+  width: 100%;
   height: 100vh;
   overflow: hidden;
+}
+
+#sidebar-overlay {
+  display: none;
 }
 
 /* ===== Sidebar ===== */
@@ -149,6 +158,49 @@ html, body {
   background: var(--border);
 }
 
+.sidebar-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+
+.sidebar-filters select {
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.75rem;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23aaa' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  cursor: pointer;
+}
+
+.sidebar-filters select:focus {
+  border-color: var(--accent);
+}
+
+.sidebar-filters input {
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.75rem;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.sidebar-filters input:focus {
+  border-color: var(--accent);
+}
+
 #session-list {
   list-style: none;
   flex: 1;
@@ -158,29 +210,137 @@ html, body {
 
 #session-list li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 10px 12px;
+  gap: 4px;
+  padding: 8px 10px;
   cursor: pointer;
   border-radius: 6px;
   margin: 2px 6px;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   touch-action: manipulation;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-#session-list li:hover,
-#session-list li:active {
+/* Active session (filled) */
+#session-list li.active-session {
+  background: var(--bg);
+}
+
+#session-list li.active-session:hover {
   background: var(--border);
+}
+
+#session-list li.active-session.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+#session-list li.active-session.active .session-sub {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Inactive worktree (outline) */
+#session-list li.inactive-worktree {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+#session-list li.inactive-worktree:hover {
+  opacity: 1;
+  border-color: var(--accent);
+}
+
+.session-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.session-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
   color: var(--text);
 }
 
-#session-list li.active {
-  background: var(--accent);
-  color: #fff;
+.session-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* Divider between active and inactive */
+.session-divider {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 8px 12px 4px;
+  opacity: 0.6;
+}
+
+.session-kill {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+
+.session-kill:hover,
+.session-kill:active {
+  color: var(--accent);
+  background: rgba(217, 119, 87, 0.15);
+}
+
+.session-rename-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+
+.session-rename-btn:hover {
+  color: var(--accent);
+}
+
+.session-rename-input {
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  outline: none;
+  width: 100%;
+  font-weight: 500;
 }
 
 #new-session-btn {
@@ -201,6 +361,24 @@ html, body {
   background: var(--border);
 }
 
+#settings-btn {
+  margin: 0 8px 8px;
+  padding: 10px 12px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  touch-action: manipulation;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+#settings-btn:active {
+  background: var(--border);
+}
+
 /* ===== Terminal Area ===== */
 #terminal-area {
   flex: 1;
@@ -209,6 +387,10 @@ html, body {
   min-width: 0;
   overflow: hidden;
   position: relative;
+}
+
+#mobile-header {
+  display: none; /* shown on mobile */
 }
 
 #terminal-container {
@@ -285,6 +467,7 @@ dialog#new-session-dialog {
   max-width: 400px;
   max-height: 80vh;
   overflow-y: auto;
+  margin: auto;
 }
 
 dialog#new-session-dialog::backdrop {
@@ -296,11 +479,54 @@ dialog#new-session-dialog h2 {
   margin-bottom: 1rem;
 }
 
-#repo-list {
+.dialog-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 0.5rem;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.dialog-field label,
+.dialog-field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dialog-field select {
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.875rem;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23aaa' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  cursor: pointer;
+}
+
+.dialog-field select:focus {
+  border-color: var(--accent);
+}
+
+.dialog-field select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.repo-group-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 4px 2px;
 }
 
 .repo-item {
@@ -308,9 +534,12 @@ dialog#new-session-dialog h2 {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
+  color: var(--text);
   cursor: pointer;
   font-size: 0.875rem;
   touch-action: manipulation;
+  text-align: left;
+  width: 100%;
 }
 
 .repo-item:active,
@@ -373,6 +602,122 @@ dialog#new-session-dialog h2 {
   background: var(--border);
 }
 
+/* ===== Settings Dialog ===== */
+dialog#settings-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+  margin: auto;
+}
+
+dialog#settings-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+dialog#settings-dialog h2 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.settings-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.settings-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+#settings-roots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.settings-repo-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.settings-repo-item .repo-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.settings-repo-item .remove-repo {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.settings-repo-item .remove-repo:hover,
+.settings-repo-item .remove-repo:active {
+  color: var(--accent);
+}
+
+.settings-add-repo {
+  display: flex;
+  gap: 6px;
+}
+
+.settings-add-repo input {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: monospace;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.settings-add-repo input:focus {
+  border-color: var(--accent);
+}
+
+.settings-add-repo button {
+  padding: 8px 14px;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.settings-section {
+  margin-bottom: 1rem;
+}
+
 .btn-accent {
   background: var(--accent) !important;
   border-color: var(--accent) !important;
@@ -385,8 +730,26 @@ dialog#new-session-dialog h2 {
 
 /* ===== Mobile Responsive ===== */
 @media (max-width: 600px) {
-  .icon-btn {
+  #mobile-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  #mobile-header .icon-btn {
     display: block;
+    font-size: 1.4rem;
+    padding: 4px 8px;
+  }
+
+  .mobile-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
   }
 
   #sidebar {

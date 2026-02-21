@@ -6,7 +6,6 @@
   var ws = null;
   var term = null;
   var fitAddon = null;
-  var selectedRepo = null;
 
   var wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
@@ -24,10 +23,22 @@
   var noSessionMsg = document.getElementById('no-session-msg');
   var toolbar = document.getElementById('toolbar');
   var dialog = document.getElementById('new-session-dialog');
-  var repoListEl = document.getElementById('repo-list');
   var customPath = document.getElementById('custom-path-input');
   var dialogCancel = document.getElementById('dialog-cancel');
   var dialogStart = document.getElementById('dialog-start');
+  var menuBtn = document.getElementById('menu-btn');
+  var sidebarOverlay = document.getElementById('sidebar-overlay');
+  var sessionTitle = document.getElementById('session-title');
+  var sessionFilter = document.getElementById('session-filter');
+  var sidebarRootFilter = document.getElementById('sidebar-root-filter');
+  var sidebarRepoFilter = document.getElementById('sidebar-repo-filter');
+  var dialogRootSelect = document.getElementById('dialog-root-select');
+  var dialogRepoSelect = document.getElementById('dialog-repo-select');
+
+  // Session / worktree / repo state
+  var cachedSessions = [];
+  var cachedWorktrees = [];
+  var allRepos = [];
 
   // ── PIN Auth ────────────────────────────────────────────────────────────────
 
@@ -72,8 +83,8 @@
 
   function initApp() {
     initTerminal();
-    refreshSessions();
     loadRepos();
+    refreshAll();
   }
 
   // ── Terminal ────────────────────────────────────────────────────────────────
@@ -126,6 +137,8 @@
     noSessionMsg.hidden = true;
     term.clear();
     term.focus();
+    closeSidebar();
+    updateSessionTitle();
 
     var url = wsProtocol + '//' + location.host + '/ws/' + sessionId;
     ws = new WebSocket(url);
@@ -149,49 +162,273 @@
     highlightActiveSession();
   }
 
-  // ── Sessions ────────────────────────────────────────────────────────────────
+  // ── Sessions & Worktrees ────────────────────────────────────────────────────
 
-  function refreshSessions() {
-    fetch('/sessions')
-      .then(function (res) { return res.json(); })
-      .then(function (data) {
-        renderSessionList(data.sessions || data || []);
+  function refreshAll() {
+    Promise.all([
+      fetch('/sessions').then(function (res) { return res.json(); }),
+      fetch('/worktrees').then(function (res) { return res.json(); }),
+    ])
+      .then(function (results) {
+        cachedSessions = results[0].sessions || results[0] || [];
+        cachedWorktrees = results[1] || [];
+        populateSidebarFilters();
+        renderUnifiedList();
       })
-      .catch(function () {
-        // silently fail; user can retry by opening the sidebar
-      });
+      .catch(function () {});
   }
 
-  function renderSessionList(sessions) {
+  function populateSidebarFilters() {
+    var currentRoot = sidebarRootFilter.value;
+    var roots = {};
+    cachedSessions.forEach(function (s) {
+      if (s.root) roots[s.root] = true;
+    });
+    cachedWorktrees.forEach(function (wt) {
+      if (wt.root) roots[wt.root] = true;
+    });
+
+    sidebarRootFilter.innerHTML = '<option value="">All roots</option>';
+    Object.keys(roots).sort().forEach(function (root) {
+      var opt = document.createElement('option');
+      opt.value = root;
+      opt.textContent = rootShortName(root);
+      sidebarRootFilter.appendChild(opt);
+    });
+    if (currentRoot && roots[currentRoot]) {
+      sidebarRootFilter.value = currentRoot;
+    }
+
+    updateRepoFilter();
+  }
+
+  function updateRepoFilter() {
+    var selectedRoot = sidebarRootFilter.value;
+    var currentRepo = sidebarRepoFilter.value;
+    var repos = {};
+
+    cachedSessions.forEach(function (s) {
+      if (!selectedRoot || s.root === selectedRoot) {
+        if (s.repoName) repos[s.repoName] = true;
+      }
+    });
+    cachedWorktrees.forEach(function (wt) {
+      if (!selectedRoot || wt.root === selectedRoot) {
+        if (wt.repoName) repos[wt.repoName] = true;
+      }
+    });
+
+    sidebarRepoFilter.innerHTML = '<option value="">All repos</option>';
+    Object.keys(repos).sort().forEach(function (repoName) {
+      var opt = document.createElement('option');
+      opt.value = repoName;
+      opt.textContent = repoName;
+      sidebarRepoFilter.appendChild(opt);
+    });
+    if (currentRepo && repos[currentRepo]) {
+      sidebarRepoFilter.value = currentRepo;
+    }
+  }
+
+  sidebarRootFilter.addEventListener('change', function () {
+    updateRepoFilter();
+    renderUnifiedList();
+  });
+
+  sidebarRepoFilter.addEventListener('change', function () {
+    renderUnifiedList();
+  });
+
+  sessionFilter.addEventListener('input', function () {
+    renderUnifiedList();
+  });
+
+  function rootShortName(path) {
+    return path.split('/').filter(Boolean).pop() || path;
+  }
+
+  function renderUnifiedList() {
+    var rootFilter = sidebarRootFilter.value;
+    var repoFilter = sidebarRepoFilter.value;
+    var textFilter = sessionFilter.value.toLowerCase();
+
+    var filteredSessions = cachedSessions.filter(function (s) {
+      if (rootFilter && s.root !== rootFilter) return false;
+      if (repoFilter && s.repoName !== repoFilter) return false;
+      if (textFilter) {
+        var name = (s.displayName || s.repoName || s.worktreeName || s.id).toLowerCase();
+        if (name.indexOf(textFilter) === -1) return false;
+      }
+      return true;
+    });
+
+    var activeWorktreePaths = new Set();
+    cachedSessions.forEach(function (s) {
+      if (s.repoPath) activeWorktreePaths.add(s.repoPath);
+    });
+
+    var filteredWorktrees = cachedWorktrees.filter(function (wt) {
+      if (activeWorktreePaths.has(wt.path)) return false;
+      if (rootFilter && wt.root !== rootFilter) return false;
+      if (repoFilter && wt.repoName !== repoFilter) return false;
+      if (textFilter) {
+        var name = (wt.name || '').toLowerCase();
+        if (name.indexOf(textFilter) === -1) return false;
+      }
+      return true;
+    });
+
+    filteredWorktrees.sort(function (a, b) {
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
     sessionList.innerHTML = '';
-    sessions.forEach(function (session) {
-      var li = document.createElement('li');
-      li.dataset.sessionId = session.id;
 
-      var nameSpan = document.createElement('span');
-      nameSpan.className = 'session-name';
-      nameSpan.textContent = session.repoName || session.name || session.id;
+    filteredSessions.forEach(function (session) {
+      sessionList.appendChild(createActiveSessionLi(session));
+    });
 
-      var killBtn = document.createElement('button');
-      killBtn.className = 'session-kill icon-btn';
-      killBtn.setAttribute('aria-label', 'Kill session');
-      killBtn.textContent = '×';
-      killBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        killSession(session.id);
-      });
+    if (filteredSessions.length > 0 && filteredWorktrees.length > 0) {
+      var divider = document.createElement('li');
+      divider.className = 'session-divider';
+      divider.textContent = 'Available';
+      sessionList.appendChild(divider);
+    }
 
-      li.appendChild(nameSpan);
-      li.appendChild(killBtn);
-
-      li.addEventListener('click', function () {
-        connectToSession(session.id);
-      });
-
-      sessionList.appendChild(li);
+    filteredWorktrees.forEach(function (wt) {
+      sessionList.appendChild(createInactiveWorktreeLi(wt));
     });
 
     highlightActiveSession();
+  }
+
+  function createActiveSessionLi(session) {
+    var li = document.createElement('li');
+    li.className = 'active-session';
+    li.dataset.sessionId = session.id;
+
+    var infoDiv = document.createElement('div');
+    infoDiv.className = 'session-info';
+
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'session-name';
+    var displayName = session.displayName || session.repoName || session.id;
+    nameSpan.textContent = displayName;
+    nameSpan.title = displayName;
+
+    var subSpan = document.createElement('span');
+    subSpan.className = 'session-sub';
+    subSpan.textContent = (session.root ? rootShortName(session.root) : '') + ' · ' + (session.repoName || '');
+
+    infoDiv.appendChild(nameSpan);
+    infoDiv.appendChild(subSpan);
+
+    var actionsDiv = document.createElement('div');
+    actionsDiv.className = 'session-actions';
+
+    var renameBtn = document.createElement('button');
+    renameBtn.className = 'session-rename-btn';
+    renameBtn.setAttribute('aria-label', 'Rename session');
+    renameBtn.textContent = '✎';
+    renameBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      startRename(li, session);
+    });
+
+    var killBtn = document.createElement('button');
+    killBtn.className = 'session-kill';
+    killBtn.setAttribute('aria-label', 'Kill session');
+    killBtn.textContent = '×';
+    killBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      killSession(session.id);
+    });
+
+    actionsDiv.appendChild(renameBtn);
+    actionsDiv.appendChild(killBtn);
+
+    li.appendChild(infoDiv);
+    li.appendChild(actionsDiv);
+
+    li.addEventListener('click', function () {
+      connectToSession(session.id);
+    });
+
+    return li;
+  }
+
+  function createInactiveWorktreeLi(wt) {
+    var li = document.createElement('li');
+    li.className = 'inactive-worktree';
+
+    var infoDiv = document.createElement('div');
+    infoDiv.className = 'session-info';
+
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'session-name';
+    nameSpan.textContent = wt.name;
+    nameSpan.title = wt.name;
+
+    var subSpan = document.createElement('span');
+    subSpan.className = 'session-sub';
+    subSpan.textContent = (wt.root ? rootShortName(wt.root) : '') + ' · ' + (wt.repoName || '');
+
+    infoDiv.appendChild(nameSpan);
+    infoDiv.appendChild(subSpan);
+
+    li.appendChild(infoDiv);
+
+    li.addEventListener('click', function () {
+      startSession(wt.repoPath, wt.path);
+    });
+
+    return li;
+  }
+
+  function startRename(li, session) {
+    var nameSpan = li.querySelector('.session-name');
+    if (!nameSpan) return;
+
+    var currentName = nameSpan.textContent;
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'session-rename-input';
+    input.value = currentName;
+
+    nameSpan.replaceWith(input);
+    input.focus();
+    input.select();
+
+    var committed = false;
+
+    function commit() {
+      if (committed) return;
+      committed = true;
+      var newName = input.value.trim();
+      if (!newName || newName === currentName) {
+        cancel();
+        return;
+      }
+      fetch('/sessions/' + session.id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: newName }),
+      })
+        .then(function () { refreshAll(); })
+        .catch(function () { cancel(); });
+    }
+
+    function cancel() {
+      committed = true;
+      input.replaceWith(nameSpan);
+    }
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+
+    input.addEventListener('blur', commit);
   }
 
   function killSession(sessionId) {
@@ -205,8 +442,9 @@
           activeSessionId = null;
           term.clear();
           noSessionMsg.hidden = false;
+          updateSessionTitle();
         }
-        refreshSessions();
+        refreshAll();
       })
       .catch(function () {});
   }
@@ -222,62 +460,113 @@
     });
   }
 
-  // ── New Session Dialog ──────────────────────────────────────────────────────
+  function updateSessionTitle() {
+    if (!activeSessionId) {
+      sessionTitle.textContent = 'No session';
+      return;
+    }
+    var activeLi = sessionList.querySelector('li.active .session-name');
+    sessionTitle.textContent = activeLi ? activeLi.textContent : activeSessionId.slice(0, 8);
+  }
+
+  // ── Repos & New Session Dialog ──────────────────────────────────────────────
 
   function loadRepos() {
     fetch('/repos')
       .then(function (res) { return res.json(); })
       .then(function (data) {
-        var repos = data.repos || data || [];
-        repoListEl.innerHTML = '';
-        repos.forEach(function (repo) {
-          var btn = document.createElement('button');
-          btn.className = 'repo-item';
-          btn.textContent = repo.name || repo;
-          btn.dataset.path = repo.path || repo;
-          btn.addEventListener('click', function () {
-            // Deselect all, select this one
-            repoListEl.querySelectorAll('.repo-item').forEach(function (b) {
-              b.classList.remove('selected');
-            });
-            btn.classList.add('selected');
-            selectedRepo = btn.dataset.path;
-            customPath.value = '';
-          });
-          repoListEl.appendChild(btn);
-        });
+        allRepos = data.repos || data || [];
       })
       .catch(function () {});
   }
 
-  newSessionBtn.addEventListener('click', function () {
-    // Reset dialog state
-    selectedRepo = null;
-    customPath.value = '';
-    repoListEl.querySelectorAll('.repo-item').forEach(function (b) {
-      b.classList.remove('selected');
+  function populateDialogRootSelect() {
+    var roots = {};
+    allRepos.forEach(function (repo) {
+      var root = repo.root || 'Other';
+      roots[root] = true;
     });
-    dialog.showModal();
+    dialogRootSelect.innerHTML = '<option value="">Select a root...</option>';
+    Object.keys(roots).forEach(function (root) {
+      var opt = document.createElement('option');
+      opt.value = root;
+      opt.textContent = rootShortName(root);
+      dialogRootSelect.appendChild(opt);
+    });
+  }
+
+  dialogRootSelect.addEventListener('change', function () {
+    var root = dialogRootSelect.value;
+    dialogRepoSelect.innerHTML = '<option value="">Select a repo...</option>';
+
+    if (!root) {
+      dialogRepoSelect.disabled = true;
+      return;
+    }
+
+    var filtered = allRepos.filter(function (r) { return r.root === root; });
+    filtered.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    filtered.forEach(function (repo) {
+      var opt = document.createElement('option');
+      opt.value = repo.path;
+      opt.textContent = repo.name;
+      dialogRepoSelect.appendChild(opt);
+    });
+    dialogRepoSelect.disabled = false;
   });
 
-  dialogStart.addEventListener('click', function () {
-    var path = customPath.value.trim() || selectedRepo;
-    if (!path) return;
+  function startSession(repoPath, worktreePath) {
+    var body = {
+      repoPath: repoPath,
+      repoName: repoPath.split('/').filter(Boolean).pop(),
+    };
+    if (worktreePath) body.worktreePath = worktreePath;
 
     fetch('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ repoPath: path, repoName: path.split('/').pop() }),
+      body: JSON.stringify(body),
     })
       .then(function (res) { return res.json(); })
       .then(function (data) {
-        dialog.close();
-        refreshSessions();
+        if (dialog.open) dialog.close();
+        refreshAll();
         if (data.id || data.sessionId) {
           connectToSession(data.id || data.sessionId);
         }
       })
       .catch(function () {});
+  }
+
+  newSessionBtn.addEventListener('click', function () {
+    customPath.value = '';
+    populateDialogRootSelect();
+
+    var sidebarRoot = sidebarRootFilter.value;
+    if (sidebarRoot) {
+      dialogRootSelect.value = sidebarRoot;
+      dialogRootSelect.dispatchEvent(new Event('change'));
+      var sidebarRepo = sidebarRepoFilter.value;
+      if (sidebarRepo) {
+        var matchingRepo = allRepos.find(function (r) {
+          return r.root === sidebarRoot && r.name === sidebarRepo;
+        });
+        if (matchingRepo) {
+          dialogRepoSelect.value = matchingRepo.path;
+        }
+      }
+    } else {
+      dialogRepoSelect.innerHTML = '<option value="">Select a repo...</option>';
+      dialogRepoSelect.disabled = true;
+    }
+
+    dialog.showModal();
+  });
+
+  dialogStart.addEventListener('click', function () {
+    var path = customPath.value.trim() || dialogRepoSelect.value;
+    if (!path) return;
+    startSession(path, null);
   });
 
   dialogCancel.addEventListener('click', function () {
@@ -286,8 +575,99 @@
 
   // ── Sidebar Toggle ──────────────────────────────────────────────────────────
 
-  sidebarToggle.addEventListener('click', function () {
-    sidebar.classList.toggle('open');
+  function openSidebar() {
+    sidebar.classList.add('open');
+    sidebarOverlay.classList.add('visible');
+  }
+
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    sidebarOverlay.classList.remove('visible');
+  }
+
+  menuBtn.addEventListener('click', openSidebar);
+  sidebarToggle.addEventListener('click', closeSidebar);
+  sidebarOverlay.addEventListener('click', closeSidebar);
+
+  // ── Settings Dialog ────────────────────────────────────────────────────────
+
+  var settingsBtn = document.getElementById('settings-btn');
+  var settingsDialog = document.getElementById('settings-dialog');
+  var settingsRootsList = document.getElementById('settings-roots-list');
+  var addRootPath = document.getElementById('add-root-path');
+  var addRootBtn = document.getElementById('add-root-btn');
+  var settingsClose = document.getElementById('settings-close');
+
+  function renderRoots(roots) {
+    settingsRootsList.innerHTML = '';
+    roots.forEach(function (rootPath) {
+      var div = document.createElement('div');
+      div.className = 'settings-repo-item';
+
+      var pathSpan = document.createElement('span');
+      pathSpan.className = 'repo-path';
+      pathSpan.textContent = rootPath;
+
+      var removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-repo';
+      removeBtn.textContent = '×';
+      removeBtn.addEventListener('click', function () {
+        fetch('/roots', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: rootPath }),
+        })
+          .then(function (res) { return res.json(); })
+          .then(function (updated) {
+            renderRoots(updated);
+            loadRepos();
+          })
+          .catch(function () {});
+      });
+
+      div.appendChild(pathSpan);
+      div.appendChild(removeBtn);
+      settingsRootsList.appendChild(div);
+    });
+  }
+
+  function openSettings() {
+    fetch('/roots')
+      .then(function (res) { return res.json(); })
+      .then(function (roots) {
+        renderRoots(roots);
+        settingsDialog.showModal();
+      })
+      .catch(function () {});
+  }
+
+  settingsBtn.addEventListener('click', openSettings);
+
+  addRootBtn.addEventListener('click', function () {
+    var rootPath = addRootPath.value.trim();
+    if (!rootPath) return;
+
+    fetch('/roots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: rootPath }),
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (updated) {
+        renderRoots(updated);
+        addRootPath.value = '';
+        loadRepos();
+      })
+      .catch(function () {});
+  });
+
+  addRootPath.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') addRootBtn.click();
+  });
+
+  settingsClose.addEventListener('click', function () {
+    settingsDialog.close();
+    loadRepos();
   });
 
   // ── Touch Toolbar ───────────────────────────────────────────────────────────

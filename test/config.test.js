@@ -9,7 +9,7 @@ const { DEFAULTS, loadConfig, saveConfig } = require('../server/config.js');
 let tmpDir;
 
 before(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-mobile-config-test-'));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-remote-cli-config-test-'));
 });
 
 afterEach(() => {

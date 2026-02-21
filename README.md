@@ -1,0 +1,88 @@
+# claude-remote-cli
+
+Remote web interface for interacting with Claude Code CLI sessions from any device.
+
+## Quick Start
+
+```bash
+git clone https://github.com/donovan-yohan/claude-remote-cli.git
+cd claude-remote-cli
+npm install
+node server/index.js
+```
+
+On first launch you'll be prompted to set a PIN. Then open `http://localhost:3456` in your browser.
+
+## Prerequisites
+
+- **Node.js 20+**
+- **Claude Code CLI** installed and available in your PATH (or configure `claudeCommand` in `config.json`)
+
+## Configuration
+
+A `config.json` file is created on first run. You can also copy the example:
+
+```bash
+cp config.example.json config.json
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `host` | `0.0.0.0` | Bind address |
+| `port` | `3456` | Server port |
+| `cookieTTL` | `24h` | Auth cookie lifetime (e.g. `30m`, `12h`, `7d`) |
+| `rootDirs` | `[]` | Directories containing your git repos (scanned one level deep) |
+| `claudeCommand` | `claude` | Path to the Claude Code CLI binary |
+| `claudeArgs` | `[]` | Extra arguments passed to every Claude session |
+
+Root directories can also be managed from the **Settings** button in the app.
+
+### PIN Management
+
+The PIN hash is stored in `config.json` under `pinHash`. To reset:
+
+1. Delete the `pinHash` field from `config.json`
+2. Restart the server
+3. You'll be prompted to set a new PIN
+
+## Features
+
+- **PIN-protected access** with rate limiting
+- **Worktree isolation** — each session runs in its own Claude Code `--worktree`
+- **Resume sessions** — click inactive worktrees to reconnect
+- **Sidebar filters** — filter by root directory, repo, or text search
+- **Inline rename** — rename sessions with the pencil icon (syncs with Claude Code's `/rename`)
+- **Scrollback buffer** — reconnect to a session and see prior output
+- **Touch toolbar** — mobile-friendly buttons for special keys (arrows, Enter, Escape, Ctrl+C, Tab, y/n)
+- **Responsive layout** — works on desktop and mobile with slide-out sidebar
+
+## Architecture
+
+```
+claude-remote-cli/
+├── server/
+│   ├── index.js       # Express server, REST API routes
+│   ├── sessions.js    # PTY session manager (node-pty)
+│   ├── ws.js          # WebSocket relay (PTY ↔ browser)
+│   ├── auth.js        # PIN hashing, verification, rate limiting
+│   └── config.js      # Config loading/saving
+├── public/
+│   ├── index.html     # Single-page app
+│   ├── app.js         # Frontend logic
+│   ├── style.css      # Styles (dark theme)
+│   └── vendor/        # Self-hosted xterm.js + addon-fit
+├── config.example.json
+└── package.json
+```
+
+## Remote Access
+
+To access from your phone or another device, expose the server via a tunnel or VPN:
+
+- **Tailscale** (recommended): Install on both devices, access via Tailscale IP
+- **Cloudflare Tunnel**: `cloudflared tunnel --url http://localhost:3456`
+- **ngrok**: `ngrok http 3456`
+
+## License
+
+MIT

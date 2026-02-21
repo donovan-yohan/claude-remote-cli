@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Claude Code Mobile</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css" />
+  <title>Claude Remote CLI</title>
+  <link rel="stylesheet" href="/vendor/xterm.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -12,7 +12,7 @@
   <!-- PIN Gate -->
   <div id="pin-gate">
     <div class="pin-container">
-      <h1>Claude Code Mobile</h1>
+      <h1>Claude Remote CLI</h1>
       <p>Enter PIN to continue</p>
       <input
         type="password"
@@ -36,12 +36,29 @@
         <span class="sidebar-label">Sessions</span>
         <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle sidebar">&#9776;</button>
       </div>
+      <div class="sidebar-filters">
+        <select id="sidebar-root-filter">
+          <option value="">All roots</option>
+        </select>
+        <select id="sidebar-repo-filter">
+          <option value="">All repos</option>
+        </select>
+        <input type="text" id="session-filter" placeholder="Filter..." />
+      </div>
       <ul id="session-list"></ul>
       <button id="new-session-btn">+ New Session</button>
+      <button id="settings-btn">Settings</button>
     </div>
+
+    <!-- Sidebar Overlay (mobile) -->
+    <div id="sidebar-overlay"></div>
 
     <!-- Terminal Area -->
     <div id="terminal-area">
+      <div id="mobile-header">
+        <button id="menu-btn" class="icon-btn" aria-label="Open sessions menu">&#9776;</button>
+        <span id="session-title" class="mobile-title">No session</span>
+      </div>
       <div id="terminal-container"></div>
       <div id="no-session-msg">No active session. Create or select a session to begin.</div>
 
@@ -71,20 +88,47 @@
   <!-- New Session Dialog -->
   <dialog id="new-session-dialog">
     <h2>New Session</h2>
-    <div id="repo-list"></div>
+
+    <div class="dialog-field">
+      <label for="dialog-root-select">Root</label>
+      <select id="dialog-root-select"><option value="">Select a root...</option></select>
+    </div>
+
+    <div class="dialog-field">
+      <label for="dialog-repo-select">Repo</label>
+      <select id="dialog-repo-select" disabled><option value="">Select a repo...</option></select>
+    </div>
+
     <hr class="dialog-separator" />
     <div class="dialog-custom-path">
-      <label for="custom-path-input">Custom path:</label>
-      <input type="text" id="custom-path-input" placeholder="/path/to/repo" />
+      <label for="custom-path-input">Or enter a local path:</label>
+      <input type="text" id="custom-path-input" placeholder="/Users/you/code/my-repo" />
     </div>
     <div class="dialog-actions">
       <button id="dialog-cancel">Cancel</button>
-      <button id="dialog-start" class="btn-accent">Start Session</button>
+      <button id="dialog-start" class="btn-accent">New Worktree</button>
     </div>
   </dialog>
 
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.8.0/lib/addon-fit.js"></script>
+  <!-- Settings Dialog -->
+  <dialog id="settings-dialog">
+    <h2>Settings</h2>
+    <div class="settings-section">
+      <label class="settings-label">Root Directories</label>
+      <p class="settings-hint">Add folders that contain your repos. The app scans one level deep for git repos.</p>
+      <div id="settings-roots-list"></div>
+      <div class="settings-add-repo">
+        <input type="text" id="add-root-path" placeholder="/Users/you/code" />
+        <button id="add-root-btn" class="btn-accent">Add</button>
+      </div>
+    </div>
+    <div class="dialog-actions">
+      <button id="settings-close">Done</button>
+    </div>
+  </dialog>
+
+  <script src="/vendor/xterm.js"></script>
+  <script src="/vendor/addon-fit.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
