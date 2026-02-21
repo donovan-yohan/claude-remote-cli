@@ -12,7 +12,9 @@ const auth = require('./auth');
 const sessions = require('./sessions');
 const { setupWebSocket } = require('./ws');
 
-const CONFIG_PATH = path.join(__dirname, '..', 'config.json');
+// When run via CLI bin, config lives in ~/.config/claude-remote-cli/
+// When run directly (development), fall back to local config.json
+const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', 'config.json');
 
 function parseTTL(ttl) {
   if (typeof ttl !== 'string') return 24 * 60 * 60 * 1000;
@@ -46,6 +48,10 @@ async function main() {
     config = { ...DEFAULTS };
     saveConfig(CONFIG_PATH, config);
   }
+
+  // CLI flag overrides
+  if (process.env.CLAUDE_REMOTE_PORT) config.port = parseInt(process.env.CLAUDE_REMOTE_PORT, 10);
+  if (process.env.CLAUDE_REMOTE_HOST) config.host = process.env.CLAUDE_REMOTE_HOST;
 
   if (!config.pinHash) {
     const pin = await promptPin('Set up a PIN for claude-remote-cli:');

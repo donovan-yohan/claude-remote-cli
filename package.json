@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "Remote web interface for Claude Code CLI sessions",
   "main": "server/index.js",
+  "bin": {
+    "claude-remote-cli": "bin/claude-remote-cli.js"
+  },
+  "files": [
+    "bin/",
+    "server/",
+    "public/",
+    "config.example.json"
+  ],
   "scripts": {
     "start": "node server/index.js",
     "test": "node --test test/*.test.js",
@@ -11,6 +20,22 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "remote",
+    "cli",
+    "terminal",
+    "mobile",
+    "web",
+    "pty"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/donovan-yohan/claude-remote-cli.git"
+  },
+  "license": "MIT",
+  "author": "Donovan Yohan",
   "dependencies": {
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",

@@ -4,6 +4,15 @@ Remote web interface for interacting with Claude Code CLI sessions from any devi
 
 ## Quick Start
 
+### Install from npm
+
+```bash
+npm install -g claude-remote-cli
+claude-remote-cli
+```
+
+### Or run from source
+
 ```bash
 git clone https://github.com/donovan-yohan/claude-remote-cli.git
 cd claude-remote-cli
@@ -16,15 +25,26 @@ On first launch you'll be prompted to set a PIN. Then open `http://localhost:345
 ## Prerequisites
 
 - **Node.js 20+**
-- **Claude Code CLI** installed and available in your PATH (or configure `claudeCommand` in `config.json`)
+- **Claude Code CLI** installed and available in your PATH (or configure `claudeCommand` in config)
+
+## CLI Usage
+
+```
+claude-remote-cli [options]
+
+Options:
+  --port <port>      Override server port (default: 3456)
+  --host <host>      Override bind address (default: 0.0.0.0)
+  --config <path>    Path to config.json
+  --version, -v      Show version
+  --help, -h         Show this help
+```
 
 ## Configuration
 
-A `config.json` file is created on first run. You can also copy the example:
+Config is stored at `~/.config/claude-remote-cli/config.json` (created on first run).
 
-```bash
-cp config.example.json config.json
-```
+When running from source, it uses `./config.json` in the project root instead.
 
 | Field | Default | Description |
 |-------|---------|-------------|
@@ -39,9 +59,9 @@ Root directories can also be managed from the **Settings** button in the app.
 
 ### PIN Management
 
-The PIN hash is stored in `config.json` under `pinHash`. To reset:
+The PIN hash is stored in config under `pinHash`. To reset:
 
-1. Delete the `pinHash` field from `config.json`
+1. Delete the `pinHash` field from your config file
 2. Restart the server
 3. You'll be prompted to set a new PIN
 
@@ -60,6 +80,8 @@ The PIN hash is stored in `config.json` under `pinHash`. To reset:
 
 ```
 claude-remote-cli/
+├── bin/
+│   └── claude-remote-cli.js  # CLI entry point
 ├── server/
 │   ├── index.js       # Express server, REST API routes
 │   ├── sessions.js    # PTY session manager (node-pty)
