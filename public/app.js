@@ -170,7 +170,7 @@
 
       var nameSpan = document.createElement('span');
       nameSpan.className = 'session-name';
-      nameSpan.textContent = session.name || session.id;
+      nameSpan.textContent = session.repoName || session.name || session.id;
 
       var killBtn = document.createElement('button');
       killBtn.className = 'session-kill icon-btn';
@@ -232,12 +232,12 @@
         repoListEl.innerHTML = '';
         repos.forEach(function (repo) {
           var btn = document.createElement('button');
-          btn.className = 'repo-option';
+          btn.className = 'repo-item';
           btn.textContent = repo.name || repo;
           btn.dataset.path = repo.path || repo;
           btn.addEventListener('click', function () {
             // Deselect all, select this one
-            repoListEl.querySelectorAll('.repo-option').forEach(function (b) {
+            repoListEl.querySelectorAll('.repo-item').forEach(function (b) {
               b.classList.remove('selected');
             });
             btn.classList.add('selected');
@@ -254,7 +254,7 @@
     // Reset dialog state
     selectedRepo = null;
     customPath.value = '';
-    repoListEl.querySelectorAll('.repo-option').forEach(function (b) {
+    repoListEl.querySelectorAll('.repo-item').forEach(function (b) {
       b.classList.remove('selected');
     });
     dialog.showModal();
@@ -267,7 +267,7 @@
     fetch('/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: path }),
+      body: JSON.stringify({ repoPath: path, repoName: path.split('/').pop() }),
     })
       .then(function (res) { return res.json(); })
       .then(function (data) {
