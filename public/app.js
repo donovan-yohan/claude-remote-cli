@@ -46,6 +46,10 @@
   var updateToastText = document.getElementById('update-toast-text');
   var updateToastBtn = document.getElementById('update-toast-btn');
   var updateToastDismiss = document.getElementById('update-toast-dismiss');
+  var imageToast = document.getElementById('image-toast');
+  var imageToastText = document.getElementById('image-toast-text');
+  var imageToastInsert = document.getElementById('image-toast-insert');
+  var imageToastDismiss = document.getElementById('image-toast-dismiss');
 
   // Context menu state
   var contextMenuTarget = null; // stores { worktreePath, repoPath, name }
@@ -849,6 +853,130 @@
     } else if (key !== undefined) {
       ws.send(key);
     }
+  });
+
+  // ── Image Paste Handling ─────────────────────────────────────────────────────
+
+  var imageUploadInProgress = false;
+  var pendingImagePath = null;
+
+  function showImageToast(text, showInsert) {
+    imageToastText.textContent = text;
+    imageToastInsert.hidden = !showInsert;
+    imageToast.hidden = false;
+  }
+
+  function hideImageToast() {
+    imageToast.hidden = true;
+    pendingImagePath = null;
+  }
+
+  function autoDismissImageToast(ms) {
+    setTimeout(function () {
+      if (!pendingImagePath) {
+        hideImageToast();
+      }
+    }, ms);
+  }
+
+  function uploadImage(blob, mimeType) {
+    if (imageUploadInProgress) return;
+    if (!activeSessionId) return;
+
+    imageUploadInProgress = true;
+    showImageToast('Pasting image\u2026', false);
+
+    var reader = new FileReader();
+    reader.onload = function () {
+      var base64 = reader.result.split(',')[1];
+
+      fetch('/sessions/' + activeSessionId + '/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: base64, mimeType: mimeType }),
+      })
+        .then(function (res) {
+          if (res.status === 413) {
+            showImageToast('Image too large (max 10MB)', false);
+            autoDismissImageToast(4000);
+            return;
+          }
+          if (!res.ok) {
+            return res.json().then(function (data) {
+              showImageToast(data.error || 'Image upload failed', false);
+              autoDismissImageToast(4000);
+            });
+          }
+          return res.json().then(function (data) {
+            if (data.clipboardSet) {
+              showImageToast('Image pasted', false);
+              autoDismissImageToast(2000);
+            } else {
+              pendingImagePath = data.path;
+              showImageToast(data.path, true);
+            }
+          });
+        })
+        .catch(function () {
+          showImageToast('Image upload failed', false);
+          autoDismissImageToast(4000);
+        })
+        .then(function () {
+          imageUploadInProgress = false;
+        });
+    };
+
+    reader.readAsDataURL(blob);
+  }
+
+  terminalContainer.addEventListener('paste', function (e) {
+    if (!e.clipboardData || !e.clipboardData.items) return;
+
+    var items = e.clipboardData.items;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image/') === 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        var blob = items[i].getAsFile();
+        if (blob) {
+          uploadImage(blob, items[i].type);
+        }
+        return;
+      }
+    }
+  });
+
+  terminalContainer.addEventListener('dragover', function (e) {
+    if (e.dataTransfer && e.dataTransfer.types.indexOf('Files') !== -1) {
+      e.preventDefault();
+      terminalContainer.classList.add('drag-over');
+    }
+  });
+
+  terminalContainer.addEventListener('dragleave', function () {
+    terminalContainer.classList.remove('drag-over');
+  });
+
+  terminalContainer.addEventListener('drop', function (e) {
+    e.preventDefault();
+    terminalContainer.classList.remove('drag-over');
+    if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+
+    var file = e.dataTransfer.files[0];
+    if (file.type.indexOf('image/') === 0) {
+      uploadImage(file, file.type);
+    }
+  });
+
+  imageToastInsert.addEventListener('click', function () {
+    if (pendingImagePath && ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(pendingImagePath);
+    }
+    hideImageToast();
+  });
+
+  imageToastDismiss.addEventListener('click', function () {
+    hideImageToast();
   });
 
   // ── Keyboard-Aware Viewport ─────────────────────────────────────────────────

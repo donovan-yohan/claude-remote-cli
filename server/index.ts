@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
@@ -15,6 +16,7 @@ import * as sessions from './sessions.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
+import { extensionForMime, setClipboardImage } from './clipboard.js';
 import type { Config } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -135,7 +137,7 @@ async function main(): Promise<void> {
   const authenticatedTokens = new Set<string>();
 
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '15mb' }));
   app.use(cookieParser());
   app.use(express.static(path.join(__dirname, '..', '..', 'public')));
 
@@ -413,6 +415,53 @@ async function main(): Promise<void> {
       res.json(updated);
     } catch (_) {
       res.status(404).json({ error: 'Session not found' });
+    }
+  });
+
+  // POST /sessions/:id/image — upload clipboard image, proxy to system clipboard
+  const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+  app.post('/sessions/:id/image', requireAuth, async (req, res) => {
+    const { data, mimeType } = req.body as { data?: string; mimeType?: string };
+    if (!data || !mimeType) {
+      res.status(400).json({ error: 'data and mimeType are required' });
+      return;
+    }
+    if (!ALLOWED_IMAGE_TYPES.includes(mimeType)) {
+      res.status(400).json({ error: 'Unsupported image type: ' + mimeType });
+      return;
+    }
+    // base64 is ~33% larger than binary; 10MB binary ≈ 13.3MB base64
+    if (data.length > 14 * 1024 * 1024) {
+      res.status(413).json({ error: 'Image too large (max 10MB)' });
+      return;
+    }
+    const sessionId = req.params['id'] as string;
+    if (!sessions.get(sessionId)) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    try {
+      const ext = extensionForMime(mimeType);
+      const dir = path.join(os.tmpdir(), 'claude-remote-cli', sessionId);
+      fs.mkdirSync(dir, { recursive: true });
+      const filePath = path.join(dir, 'paste-' + Date.now() + ext);
+      fs.writeFileSync(filePath, Buffer.from(data, 'base64'));
+
+      let clipboardSet = false;
+      try {
+        clipboardSet = await setClipboardImage(filePath, mimeType);
+      } catch {
+        // Clipboard tools failed — fall back to path
+      }
+
+      if (clipboardSet) {
+        sessions.write(sessionId, '\x16');
+      }
+
+      res.json({ path: filePath, clipboardSet });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Image upload failed';
+      res.status(500).json({ error: message });
     }
   });
 

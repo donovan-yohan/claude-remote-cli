@@ -1,5 +1,8 @@
 import pty from 'node-pty';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { Session } from './types.js';
 
 type SessionSummary = Omit<Session, 'pty' | 'scrollback'>;
@@ -68,6 +71,8 @@ function create({ repoName, repoPath, root, worktreeName, displayName, command, 
 
   ptyProcess.onExit(() => {
     sessions.delete(id);
+    const tmpDir = path.join(os.tmpdir(), 'claude-remote-cli', id);
+    fs.rm(tmpDir, { recursive: true, force: true }, () => {});
   });
 
   return { id, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt };
@@ -116,4 +121,12 @@ function resize(id: string, cols: number, rows: number): void {
   session.pty.resize(cols, rows);
 }
 
-export { create, get, list, kill, resize, updateDisplayName };
+function write(id: string, data: string): void {
+  const session = sessions.get(id);
+  if (!session) {
+    throw new Error(`Session not found: ${id}`);
+  }
+  session.pty.write(data);
+}
+
+export { create, get, list, kill, resize, updateDisplayName, write };

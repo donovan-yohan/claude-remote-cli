@@ -107,4 +107,37 @@ describe('sessions', () => {
       /Session not found/,
     );
   });
+
+  it('write sends data to PTY stdin', (_, done) => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+      cols: 80,
+      rows: 24,
+    });
+
+    createdIds.push(result.id);
+
+    const session = sessions.get(result.id);
+    assert.ok(session);
+
+    let output = '';
+    session.pty.onData((data) => {
+      output += data;
+      if (output.includes('hello')) {
+        done();
+      }
+    });
+
+    sessions.write(result.id, 'hello');
+  });
+
+  it('write throws for nonexistent session', () => {
+    assert.throws(
+      () => sessions.write('nonexistent-id', 'data'),
+      /Session not found/,
+    );
+  });
 });

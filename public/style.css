@@ -1013,3 +1013,46 @@ dialog#delete-worktree-dialog h2 {
   background: var(--border);
   border-radius: 4px;
 }
+
+/* ===== Image Paste Toast ===== */
+#image-toast {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: #2d2d2d;
+  border: 1px solid #555;
+  border-radius: 8px;
+  padding: 8px 14px;
+  color: #d4d4d4;
+  font-size: 13px;
+  max-width: 90vw;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+#image-toast-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#image-toast-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+#image-toast-dismiss {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 6px;
+}
+
+#terminal-container.drag-over {
+  outline: 2px dashed #007acc;
+  outline-offset: -2px;
+}
