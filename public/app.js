@@ -1372,7 +1372,9 @@
       lastInputValue = '';
     });
 
-    // Flush any pending composed text to the terminal
+    // Flush any pending composed text to the terminal.
+    // Safe to call even if compositionend already ran: sendInputDiff
+    // is a no-op when lastInputValue === mobileInput.value.
     function flushComposedText() {
       isComposing = false;
       if (ws && ws.readyState === WebSocket.OPEN) {
