@@ -71,12 +71,21 @@ Add an `idle` boolean to session state:
 - Broadcast `session-idle-changed` events over the `/ws/events` channel when state transitions
 - Include `idle` in `GET /sessions` response
 
-### Client Changes
+### Client Changes — Unified Status Dot
+
+Instead of a single notification dot, use a unified status dot system for all sessions:
+
+| State | Color | Description |
+|-------|-------|-------------|
+| Running | Green (#4ade80) | PTY actively producing output |
+| Idle | Blue (#60a5fa) | Active session, no output for 5s |
+| Needs attention | Yellow-orange glow (#f59e0b) | Idle + user hasn't viewed session since it went idle |
+| Inactive | Gray (#6b7280) | Worktree with no running session |
 
 - Listen for `session-idle-changed` events on the event WebSocket
-- When a session becomes idle and it's NOT the currently-viewed session, show a notification dot on its sidebar entry
-- Clear the dot when the user clicks into that session
-- CSS: small colored dot on the session name in the sidebar
+- Track "attention" state: a session becomes attention-worthy when it goes idle and the user is viewing a different session
+- Clear the attention state when the user opens that session
+- Render status dots in the sidebar for both active sessions and inactive worktrees
 
 ### API
 
