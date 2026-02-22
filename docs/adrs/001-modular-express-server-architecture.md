@@ -13,17 +13,18 @@ Donovan Yohan
 claude-remote-cli is a remote web interface for Claude Code CLI sessions. The server must handle several distinct concerns: HTTP routing, PTY process lifecycle, WebSocket relay, file system watching, authentication, and configuration I/O. A single monolithic file would become difficult to navigate and modify as features are added. However, the project is small enough that introducing a formal layered architecture (hexagonal, clean architecture, etc.) would add unnecessary abstraction without proportional benefit.
 
 ## Decision
-The server MUST be organized into eight TypeScript modules under `server/`, each responsible for a single concern:
+The server MUST be organized into nine TypeScript modules under `server/`, each responsible for a single concern:
 
 | Module | Responsibility |
 |--------|---------------|
 | `index.ts` | Express app setup, HTTP route handlers, server startup |
-| `sessions.ts` | PTY process spawning, in-memory session registry, session lifecycle (create/list/get/kill/resize) |
+| `sessions.ts` | PTY process spawning, in-memory session registry, session lifecycle (create/list/get/kill/resize/write) |
 | `ws.ts` | WebSocket upgrade handling, PTY-to-browser data relay, event channel broadcast |
 | `watcher.ts` | File system watching for `.claude/worktrees/` directories, debounced event emission |
 | `auth.ts` | PIN hashing (bcrypt), PIN verification, rate limiting, cookie token generation |
 | `config.ts` | Config file I/O (load/save JSON), default values |
 | `service.ts` | Background service install/uninstall/status management (launchd on macOS, systemd on Linux) |
+| `clipboard.ts` | System clipboard detection and image-set operations (osascript on macOS, xclip on Linux) |
 | `types.ts` | Shared TypeScript interfaces (Session, Config, ServicePaths, Platform, InstallOpts) |
 
 Modules are TypeScript source files compiled to `dist/server/` via `tsc`. Modules MUST communicate through ESM `import` statements. There is no dependency injection container, no service layer, and no abstract interfaces. `index.ts` serves as the composition root, wiring modules together at startup.

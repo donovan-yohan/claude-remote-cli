@@ -22,13 +22,14 @@ All unit tests MUST use the `node:test` module and `node:assert` for assertions.
 - Individual compiled test files MUST be runnable via `node --test dist/test/<file>.test.js`
 
 ### Current Test Coverage
-Four test files MUST exist:
+Five test files MUST exist:
 
 | File | Coverage |
 |------|----------|
 | `test/auth.test.ts` | PIN hashing, PIN verification, rate limiting (threshold and lockout), token generation |
+| `test/clipboard.test.ts` | Clipboard tool detection, unsupported MIME type rejection |
 | `test/config.test.ts` | Config loading, default merging, missing file error, save format, default values |
-| `test/sessions.test.ts` | Session create/list/get/kill/resize lifecycle, PTY spawning with real processes |
+| `test/sessions.test.ts` | Session create/list/get/kill/resize/write lifecycle, PTY spawning with real processes |
 | `test/service.test.ts` | Platform detection, service path resolution, service file generation (plist/systemd) |
 
 ### Test Isolation
