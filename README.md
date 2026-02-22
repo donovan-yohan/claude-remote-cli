@@ -34,15 +34,48 @@ Tested on **macOS** and **Linux**. Windows is not currently tested — file watc
 ## CLI Usage
 
 ```
-claude-remote-cli [options]
+Usage: claude-remote-cli [options]
+       claude-remote-cli <command>
+
+Commands:
+  install            Install as a background service (survives reboot)
+  uninstall          Stop and remove the background service
+  status             Show whether the service is running
 
 Options:
+  --bg               Shortcut: install and start as background service
   --port <port>      Override server port (default: 3456)
   --host <host>      Override bind address (default: 0.0.0.0)
-  --config <path>    Path to config.json
+  --config <path>    Path to config.json (default: ~/.config/claude-remote-cli/config.json)
   --version, -v      Show version
   --help, -h         Show this help
 ```
+
+## Background Service
+
+Run as a persistent service that starts on login and restarts on crash:
+
+```bash
+claude-remote-cli --bg
+```
+
+Or with custom options:
+
+```bash
+claude-remote-cli install --port 4000
+```
+
+Manage the service:
+
+```bash
+claude-remote-cli status      # Check if running
+claude-remote-cli uninstall   # Stop and remove
+```
+
+- **macOS**: Uses launchd (`~/Library/LaunchAgents/`)
+- **Linux**: Uses systemd user units (`~/.config/systemd/user/`)
+- **Logs (macOS)**: `~/.config/claude-remote-cli/logs/`
+- **Logs (Linux)**: `journalctl --user -u claude-remote-cli -f`
 
 ## Configuration
 

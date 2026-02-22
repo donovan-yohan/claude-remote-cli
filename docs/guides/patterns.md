@@ -46,3 +46,11 @@ Scans configured `rootDirs` one level deep for git repos. Hidden directories (st
 - All frontend state lives in `public/app.js` module-level variables
 - Vendor libraries (xterm.js) bundled in `public/vendor/`
 - Mobile-first responsive design with touch toolbar
+
+## Background Service
+
+- `--bg` is a shortcut for `install` (installs + starts)
+- Service files are generated with current CLI flags baked in
+- macOS: launchd plist with `RunAtLoad` + `KeepAlive`
+- Linux: systemd user unit with `Restart=on-failure`
+- To change port/host: `uninstall` then re-install with new flags
