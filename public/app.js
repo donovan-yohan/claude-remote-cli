@@ -40,6 +40,10 @@
   var deleteWtName = document.getElementById('delete-wt-name');
   var deleteWtCancel = document.getElementById('delete-wt-cancel');
   var deleteWtConfirm = document.getElementById('delete-wt-confirm');
+  var updateToast = document.getElementById('update-toast');
+  var updateToastText = document.getElementById('update-toast-text');
+  var updateToastBtn = document.getElementById('update-toast-btn');
+  var updateToastDismiss = document.getElementById('update-toast-dismiss');
 
   // Context menu state
   var contextMenuTarget = null; // stores { worktreePath, repoPath, name }
@@ -117,6 +121,7 @@
     loadRepos();
     refreshAll();
     connectEventSocket();
+    checkForUpdates();
   }
 
   // ── Terminal ────────────────────────────────────────────────────────────────
@@ -850,6 +855,73 @@
     vv.addEventListener('resize', onViewportResize);
     vv.addEventListener('scroll', onViewportResize);
   })();
+
+  // ── Update Toast ─────────────────────────────────────────────────────────────
+
+  function checkForUpdates() {
+    fetch('/version')
+      .then(function (res) {
+        if (!res.ok) return;
+        return res.json();
+      })
+      .then(function (data) {
+        if (data && data.updateAvailable) {
+          showUpdateToast(data.current, data.latest);
+        }
+      })
+      .catch(function () {
+        // Silently ignore version check errors
+      });
+  }
+
+  function showUpdateToast(current, latest) {
+    updateToastText.textContent = 'Update available: v' + current + ' \u2192 v' + latest;
+    updateToast.hidden = false;
+    updateToastBtn.disabled = false;
+    updateToastBtn.textContent = 'Update Now';
+
+    updateToastBtn.onclick = function () {
+      triggerUpdate(latest);
+    };
+  }
+
+  function triggerUpdate(latest) {
+    updateToastBtn.disabled = true;
+    updateToastBtn.textContent = 'Updating\u2026';
+
+    fetch('/update', { method: 'POST' })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          return { ok: res.ok, data: data };
+        });
+      })
+      .then(function (result) {
+        if (result.ok && result.data.restarting) {
+          updateToastText.textContent = 'Updated! Restarting server\u2026';
+          updateToastBtn.hidden = true;
+          updateToastDismiss.hidden = true;
+          setTimeout(function () {
+            location.reload();
+          }, 5000);
+        } else if (result.ok) {
+          updateToastText.textContent = 'Updated! Please restart the server manually.';
+          updateToastBtn.hidden = true;
+        } else {
+          updateToastText.textContent = 'Update failed: ' + (result.data.error || 'Unknown error');
+          updateToastBtn.disabled = false;
+          updateToastBtn.textContent = 'Retry';
+        }
+      })
+      .catch(function () {
+        updateToastText.textContent = 'Update failed. Please try again.';
+        updateToastBtn.disabled = false;
+        updateToastBtn.textContent = 'Retry';
+      });
+  }
+
+  updateToastDismiss.addEventListener('click', function () {
+    updateToast.hidden = true;
+  });
 
   // ── Auto-auth Check ─────────────────────────────────────────────────────────
 

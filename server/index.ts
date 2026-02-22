@@ -14,6 +14,7 @@ import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher } from './watcher.js';
+import { isInstalled as serviceIsInstalled } from './service.js';
 import type { Config } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -23,6 +24,41 @@ const execFileAsync = promisify(execFile);
 // When run via CLI bin, config lives in ~/.config/claude-remote-cli/
 // When run directly (development), fall back to local config.json
 const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', '..', 'config.json');
+
+const VERSION_CACHE_TTL = 5 * 60 * 1000;
+let versionCache: { latest: string; fetchedAt: number } | null = null;
+
+function getCurrentVersion(): string {
+  const pkgPath = path.join(__dirname, '..', '..', 'package.json');
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8')) as { version: string };
+  return pkg.version;
+}
+
+function semverLessThan(a: string, b: string): boolean {
+  const parse = (v: string) => v.split('.').map(Number);
+  const [aMaj = 0, aMin = 0, aPat = 0] = parse(a);
+  const [bMaj = 0, bMin = 0, bPat = 0] = parse(b);
+  if (aMaj !== bMaj) return aMaj < bMaj;
+  if (aMin !== bMin) return aMin < bMin;
+  return aPat < bPat;
+}
+
+async function getLatestVersion(): Promise<string | null> {
+  const now = Date.now();
+  if (versionCache && now - versionCache.fetchedAt < VERSION_CACHE_TTL) {
+    return versionCache.latest;
+  }
+  try {
+    const res = await fetch('https://registry.npmjs.org/claude-remote-cli/latest');
+    if (!res.ok) return null;
+    const data = await res.json() as { version?: string };
+    if (!data.version) return null;
+    versionCache = { latest: data.version, fetchedAt: now };
+    return data.version;
+  } catch (_) {
+    return null;
+  }
+}
 
 type RepoEntry = { name: string; path: string; root: string };
 
@@ -377,6 +413,29 @@ async function main(): Promise<void> {
       res.json(updated);
     } catch (_) {
       res.status(404).json({ error: 'Session not found' });
+    }
+  });
+
+  // GET /version — check current vs latest
+  app.get('/version', requireAuth, async (_req, res) => {
+    const current = getCurrentVersion();
+    const latest = await getLatestVersion();
+    const updateAvailable = latest !== null && semverLessThan(current, latest);
+    res.json({ current, latest, updateAvailable });
+  });
+
+  // POST /update — install latest version from npm
+  app.post('/update', requireAuth, async (_req, res) => {
+    try {
+      await execFileAsync('npm', ['install', '-g', 'claude-remote-cli@latest']);
+      const restarting = serviceIsInstalled();
+      res.json({ ok: true, restarting });
+      if (restarting) {
+        setTimeout(() => process.exit(0), 1000);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Update failed';
+      res.status(500).json({ ok: false, error: message });
     }
   });
 
