@@ -122,6 +122,22 @@
     </div>
   </dialog>
 
+  <!-- Context Menu -->
+  <div id="context-menu" class="context-menu" hidden>
+    <button id="ctx-delete-worktree" class="context-menu-item">Delete worktree</button>
+  </div>
+
+  <!-- Delete Worktree Confirmation Dialog -->
+  <dialog id="delete-worktree-dialog">
+    <h2>Delete worktree?</h2>
+    <p class="delete-wt-warning">This will remove the worktree directory and delete its branch. This cannot be undone.</p>
+    <p class="delete-wt-name" id="delete-wt-name"></p>
+    <div class="dialog-actions">
+      <button id="delete-wt-cancel">Cancel</button>
+      <button id="delete-wt-confirm" class="btn-danger">Delete</button>
+    </div>
+  </dialog>
+
   <script src="/vendor/xterm.js"></script>
   <script src="/vendor/addon-fit.js"></script>
   <script src="/app.js"></script>

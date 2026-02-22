@@ -3,6 +3,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import express from 'express';
 import cookieParser from 'cookie-parser';
@@ -16,6 +18,7 @@ import type { Config } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const execFileAsync = promisify(execFile);
 
 // When run via CLI bin, config lives in ~/.config/claude-remote-cli/
 // When run directly (development), fall back to local config.json
@@ -244,6 +247,59 @@ async function main(): Promise<void> {
     watcher.rebuild(config.rootDirs);
     broadcastEvent('worktrees-changed');
     res.json(config.rootDirs);
+  });
+
+  // DELETE /worktrees — remove a worktree, prune, and delete its branch
+  app.delete('/worktrees', requireAuth, async (req, res) => {
+    const { worktreePath, repoPath } = req.body as { worktreePath?: string; repoPath?: string };
+    if (!worktreePath || !repoPath) {
+      res.status(400).json({ error: 'worktreePath and repoPath are required' });
+      return;
+    }
+
+    // Validate the path is inside a .claude/worktrees/ directory
+    if (!worktreePath.includes(path.sep + '.claude' + path.sep + 'worktrees' + path.sep)) {
+      res.status(400).json({ error: 'Path is not inside a .claude/worktrees/ directory' });
+      return;
+    }
+
+    // Check no active session is using this worktree
+    const activeSessions = sessions.list();
+    const conflict = activeSessions.find(function (s) { return s.repoPath === worktreePath; });
+    if (conflict) {
+      res.status(409).json({ error: 'Close the active session first' });
+      return;
+    }
+
+    // Derive branch name from worktree directory name
+    const branchName = worktreePath.split('/').pop() || '';
+
+    try {
+      // Remove the worktree (will fail if uncommitted changes — no --force)
+      await execFileAsync('git', ['worktree', 'remove', worktreePath], { cwd: repoPath });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to remove worktree';
+      res.status(500).json({ error: message });
+      return;
+    }
+
+    try {
+      // Prune stale worktree refs
+      await execFileAsync('git', ['worktree', 'prune'], { cwd: repoPath });
+    } catch (_) {
+      // Non-fatal: prune failure doesn't block success
+    }
+
+    if (branchName) {
+      try {
+        // Delete the branch
+        await execFileAsync('git', ['branch', '-D', branchName], { cwd: repoPath });
+      } catch (_) {
+        // Non-fatal: branch may not exist or may be checked out elsewhere
+      }
+    }
+
+    res.json({ ok: true });
   });
 
   // POST /sessions

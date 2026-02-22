@@ -737,6 +737,87 @@ dialog#settings-dialog h2 {
   opacity: 0.85;
 }
 
+/* ===== Context Menu ===== */
+.context-menu {
+  position: fixed;
+  z-index: 200;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  min-width: 160px;
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.context-menu-item:hover,
+.context-menu-item:active {
+  background: var(--bg);
+  color: var(--accent);
+}
+
+/* ===== Delete Worktree Dialog ===== */
+dialog#delete-worktree-dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 400px;
+  margin: auto;
+}
+
+dialog#delete-worktree-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+dialog#delete-worktree-dialog h2 {
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+}
+
+.delete-wt-warning {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+  line-height: 1.4;
+}
+
+.delete-wt-name {
+  font-size: 0.85rem;
+  font-family: monospace;
+  color: var(--accent);
+  padding: 8px 10px;
+  background: var(--bg);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  word-break: break-all;
+}
+
+.btn-danger {
+  background: #c0392b !important;
+  border-color: #c0392b !important;
+  color: #fff !important;
+}
+
+.btn-danger:active {
+  opacity: 0.85;
+}
+
 /* ===== Mobile Responsive ===== */
 @media (max-width: 600px) {
   #mobile-header {

@@ -34,6 +34,37 @@
   var sidebarRepoFilter = document.getElementById('sidebar-repo-filter');
   var dialogRootSelect = document.getElementById('dialog-root-select');
   var dialogRepoSelect = document.getElementById('dialog-repo-select');
+  var contextMenu = document.getElementById('context-menu');
+  var ctxDeleteWorktree = document.getElementById('ctx-delete-worktree');
+  var deleteWtDialog = document.getElementById('delete-worktree-dialog');
+  var deleteWtName = document.getElementById('delete-wt-name');
+  var deleteWtCancel = document.getElementById('delete-wt-cancel');
+  var deleteWtConfirm = document.getElementById('delete-wt-confirm');
+
+  // Context menu state
+  var contextMenuTarget = null; // stores { worktreePath, repoPath, name }
+  var longPressTimer = null;
+  var longPressFired = false;
+
+  function showContextMenu(x, y, wt) {
+    contextMenuTarget = { worktreePath: wt.path, repoPath: wt.repoPath, name: wt.name };
+    contextMenu.style.left = Math.min(x, window.innerWidth - 180) + 'px';
+    contextMenu.style.top = Math.min(y, window.innerHeight - 60) + 'px';
+    contextMenu.hidden = false;
+  }
+
+  function hideContextMenu() {
+    contextMenu.hidden = true;
+    contextMenuTarget = null;
+  }
+
+  document.addEventListener('click', function () {
+    hideContextMenu();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') hideContextMenu();
+  });
 
   // Session / worktree / repo state
   var cachedSessions = [];
@@ -409,8 +440,42 @@
 
     li.appendChild(infoDiv);
 
+    // Click to resume (but not if context menu just opened or long-press fired)
     li.addEventListener('click', function () {
+      if (longPressFired || !contextMenu.hidden) return;
       startSession(wt.repoPath, wt.path);
+    });
+
+    // Right-click context menu (desktop)
+    li.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      showContextMenu(e.clientX, e.clientY, wt);
+    });
+
+    // Long-press context menu (mobile)
+    li.addEventListener('touchstart', function (e) {
+      longPressFired = false;
+      longPressTimer = setTimeout(function () {
+        longPressTimer = null;
+        longPressFired = true;
+        var touch = e.touches[0];
+        showContextMenu(touch.clientX, touch.clientY, wt);
+      }, 500);
+    }, { passive: true });
+
+    li.addEventListener('touchend', function () {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    });
+
+    li.addEventListener('touchmove', function () {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
     });
 
     return li;
@@ -479,6 +544,48 @@
       })
       .catch(function () {});
   }
+
+  // ── Delete Worktree ────────────────────────────────────────────────────────
+
+  ctxDeleteWorktree.addEventListener('click', function (e) {
+    e.stopPropagation();
+    hideContextMenu();
+    if (!contextMenuTarget) return;
+    deleteWtName.textContent = contextMenuTarget.name;
+    deleteWtDialog.showModal();
+  });
+
+  deleteWtCancel.addEventListener('click', function () {
+    deleteWtDialog.close();
+    contextMenuTarget = null;
+  });
+
+  deleteWtConfirm.addEventListener('click', function () {
+    if (!contextMenuTarget) return;
+    var target = contextMenuTarget;
+    deleteWtDialog.close();
+    contextMenuTarget = null;
+
+    fetch('/worktrees', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        worktreePath: target.worktreePath,
+        repoPath: target.repoPath,
+      }),
+    })
+      .then(function (res) {
+        if (!res.ok) {
+          return res.json().then(function (data) {
+            alert(data.error || 'Failed to delete worktree');
+          });
+        }
+        // UI will auto-update via worktrees-changed WebSocket event
+      })
+      .catch(function () {
+        alert('Failed to delete worktree');
+      });
+  });
 
   function highlightActiveSession() {
     var items = sessionList.querySelectorAll('li');
