@@ -1,9 +1,8 @@
 {
   "name": "Claude Remote CLI",
-  "short_name": "ClaudeRemote",
+  "short_name": "Claude CLI",
   "display": "standalone",
   "start_url": "/",
   "background_color": "#1a1a1a",
-  "theme_color": "#1a1a1a",
-  "icons": []
+  "theme_color": "#1a1a1a"
 }
