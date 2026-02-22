@@ -281,26 +281,28 @@
     scrollbarDragStartTop = parseInt(terminalScrollbarThumb.style.top, 10) || 0;
   });
 
-  document.addEventListener('touchmove', function (e) {
-    if (!scrollbarDragging) return;
-    e.preventDefault();
-    var deltaY = e.touches[0].clientY - scrollbarDragStartY;
-    var buf = term.buffer.active;
-    var totalLines = buf.baseY + term.rows;
-    if (totalLines <= term.rows) return;
+  if (isMobileDevice) {
+    document.addEventListener('touchmove', function (e) {
+      if (!scrollbarDragging) return;
+      e.preventDefault();
+      var deltaY = e.touches[0].clientY - scrollbarDragStartY;
+      var buf = term.buffer.active;
+      var totalLines = buf.baseY + term.rows;
+      if (totalLines <= term.rows) return;
 
-    var thumbHeight = Math.max(20, (term.rows / totalLines) * terminalScrollbar.clientHeight);
-    var trackUsable = terminalScrollbar.clientHeight - thumbHeight;
-    var newTop = Math.max(0, Math.min(trackUsable, scrollbarDragStartTop + deltaY));
-    var ratio = newTop / trackUsable;
-    var targetLine = Math.round(ratio * (totalLines - term.rows));
+      var thumbHeight = Math.max(20, (term.rows / totalLines) * terminalScrollbar.clientHeight);
+      var trackUsable = terminalScrollbar.clientHeight - thumbHeight;
+      var newTop = Math.max(0, Math.min(trackUsable, scrollbarDragStartTop + deltaY));
+      var ratio = newTop / trackUsable;
+      var targetLine = Math.round(ratio * (totalLines - term.rows));
 
-    term.scrollToLine(targetLine);
-  }, { passive: false });
+      term.scrollToLine(targetLine);
+    }, { passive: false });
 
-  document.addEventListener('touchend', function () {
-    scrollbarDragging = false;
-  });
+    document.addEventListener('touchend', function () {
+      scrollbarDragging = false;
+    });
+  }
 
   terminalScrollbar.addEventListener('click', function (e) {
     if (e.target === terminalScrollbarThumb) return;
@@ -1027,14 +1029,12 @@
     }
 
     // Re-focus the mobile input to keep keyboard open
-    if (isMobileDevice && mobileInput) {
+    if (isMobileDevice) {
       mobileInput.focus();
     }
   }
 
-  toolbar.addEventListener('touchstart', function (e) {
-    handleToolbarButton(e);
-  }, { passive: false });
+  toolbar.addEventListener('touchstart', handleToolbarButton, { passive: false });
 
   toolbar.addEventListener('click', function (e) {
     // On non-touch devices, handle normally
@@ -1172,7 +1172,7 @@
     e.preventDefault();
     if (!activeSessionId) return;
     imageFileInput.click();
-    if (isMobileDevice && mobileInput) {
+    if (isMobileDevice) {
       mobileInput.focus();
     }
   });
@@ -1193,7 +1193,7 @@
     var lastInputValue = '';
 
     function focusMobileInput() {
-      if (mobileInput && document.activeElement !== mobileInput) {
+      if (document.activeElement !== mobileInput) {
         mobileInput.focus();
       }
     }
@@ -1211,64 +1211,59 @@
       focusMobileInput();
     }, true);
 
+    // Compute the common prefix length between two strings
+    function commonPrefixLength(a, b) {
+      var len = 0;
+      while (len < a.length && len < b.length && a[len] === b[len]) {
+        len++;
+      }
+      return len;
+    }
+
+    // Count Unicode code points in a string (handles surrogate pairs)
+    function codepointCount(str) {
+      var count = 0;
+      for (var i = 0; i < str.length; i++) {
+        count++;
+        if (str.charCodeAt(i) >= 0xD800 && str.charCodeAt(i) <= 0xDBFF) {
+          i++; // skip low surrogate
+        }
+      }
+      return count;
+    }
+
+    // Send the diff between lastInputValue and currentValue to the terminal.
+    // Handles autocorrect expansions, deletions, and same-length replacements.
+    function sendInputDiff(currentValue) {
+      if (currentValue === lastInputValue) return;
+
+      var commonLen = commonPrefixLength(lastInputValue, currentValue);
+      var deletedSlice = lastInputValue.slice(commonLen);
+      var charsToDelete = codepointCount(deletedSlice);
+      var newChars = currentValue.slice(commonLen);
+
+      for (var i = 0; i < charsToDelete; i++) {
+        ws.send('\x7f'); // backspace
+      }
+      if (newChars) {
+        ws.send(newChars);
+      }
+    }
+
     // Handle text input with autocorrect
+    var clearTimer = null;
     mobileInput.addEventListener('input', function () {
+      // Reset the auto-clear timer to prevent unbounded growth
+      if (clearTimer) clearTimeout(clearTimer);
+      clearTimer = setTimeout(function () {
+        mobileInput.value = '';
+        lastInputValue = '';
+      }, 5000);
+
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
       var currentValue = mobileInput.value;
-
-      // Autocorrect may replace the entire value — figure out what changed
-      if (currentValue.length > lastInputValue.length) {
-        // Characters were added (normal typing or autocorrect expansion)
-        // Find the common prefix length
-        var commonLen = 0;
-        while (commonLen < lastInputValue.length && commonLen < currentValue.length &&
-               lastInputValue[commonLen] === currentValue[commonLen]) {
-          commonLen++;
-        }
-
-        // If autocorrect changed earlier text, we need to backspace and retype
-        var charsToDelete = lastInputValue.length - commonLen;
-        var newChars = currentValue.slice(commonLen);
-
-        for (var i = 0; i < charsToDelete; i++) {
-          ws.send('\x7f'); // backspace
-        }
-        ws.send(newChars);
-      } else if (currentValue.length < lastInputValue.length) {
-        // Characters were deleted (autocorrect correction)
-        var commonLen2 = 0;
-        while (commonLen2 < currentValue.length && commonLen2 < lastInputValue.length &&
-               lastInputValue[commonLen2] === currentValue[commonLen2]) {
-          commonLen2++;
-        }
-
-        var charsToDelete2 = lastInputValue.length - commonLen2;
-        var newChars2 = currentValue.slice(commonLen2);
-
-        for (var j = 0; j < charsToDelete2; j++) {
-          ws.send('\x7f');
-        }
-        if (newChars2) {
-          ws.send(newChars2);
-        }
-      } else if (currentValue !== lastInputValue) {
-        // Same length but different content (replacement)
-        var commonLen3 = 0;
-        while (commonLen3 < currentValue.length &&
-               lastInputValue[commonLen3] === currentValue[commonLen3]) {
-          commonLen3++;
-        }
-
-        var charsToDelete3 = lastInputValue.length - commonLen3;
-        var newChars3 = currentValue.slice(commonLen3);
-
-        for (var k = 0; k < charsToDelete3; k++) {
-          ws.send('\x7f');
-        }
-        ws.send(newChars3);
-      }
-
+      sendInputDiff(currentValue);
       lastInputValue = currentValue;
     });
 
@@ -1294,6 +1289,8 @@
           break;
         case 'Escape':
           ws.send('\x1b');
+          mobileInput.value = '';
+          lastInputValue = '';
           break;
         case 'Tab':
           e.preventDefault();
@@ -1323,16 +1320,6 @@
       }
     });
 
-    // Periodically clear the hidden input to prevent it from growing unbounded
-    // but only when the user hasn't typed recently
-    var clearTimer = null;
-    mobileInput.addEventListener('input', function () {
-      if (clearTimer) clearTimeout(clearTimer);
-      clearTimer = setTimeout(function () {
-        mobileInput.value = '';
-        lastInputValue = '';
-      }, 5000);
-    });
   })();
 
   // ── Keyboard-Aware Viewport ─────────────────────────────────────────────────
@@ -1346,10 +1333,10 @@
       var keyboardHeight = window.innerHeight - vv.height;
       if (keyboardHeight > 50) {
         mainApp.style.height = vv.height + 'px';
-        if (mobileHeader) { mobileHeader.style.display = 'none'; }
+        mobileHeader.style.display = 'none';
       } else {
         mainApp.style.height = '';
-        if (mobileHeader) { mobileHeader.style.display = ''; }
+        mobileHeader.style.display = '';
       }
       if (fitAddon) {
         fitAddon.fit();
