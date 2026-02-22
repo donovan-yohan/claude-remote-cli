@@ -140,4 +140,30 @@ describe('sessions', () => {
       /Session not found/,
     );
   });
+
+  it('session starts as not idle', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+    });
+    createdIds.push(result.id);
+    const session = sessions.get(result.id);
+    assert.ok(session);
+    assert.strictEqual(session.idle, false);
+  });
+
+  it('list includes idle field', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+    });
+    createdIds.push(result.id);
+    const list = sessions.list();
+    assert.strictEqual(list.length, 1);
+    assert.strictEqual(list[0]?.idle, false);
+  });
 });

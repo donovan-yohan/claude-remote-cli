@@ -261,10 +261,12 @@ html, body {
 
 .session-info {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  flex-wrap: wrap;
   gap: 2px;
   min-width: 0;
   flex: 1;
+  align-items: center;
 }
 
 .session-name {
@@ -274,6 +276,39 @@ html, body {
   white-space: nowrap;
   font-weight: 500;
   color: var(--text);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 8px;
+  margin-top: 2px;
+}
+
+.status-dot--running {
+  background: #4ade80;
+}
+
+.status-dot--idle {
+  background: #60a5fa;
+}
+
+.status-dot--attention {
+  background: #f59e0b;
+  box-shadow: 0 0 6px 2px rgba(245, 158, 11, 0.5);
+  animation: attention-glow 2s ease-in-out infinite;
+}
+
+@keyframes attention-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(245, 158, 11, 0.3); }
+  50% { box-shadow: 0 0 8px 3px rgba(245, 158, 11, 0.6); }
+}
+
+.status-dot--inactive {
+  background: #6b7280;
 }
 
 .session-sub {
@@ -291,6 +326,11 @@ html, body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-sub, .session-time {
+  width: 100%;
+  padding-left: 16px;
 }
 
 .session-actions {

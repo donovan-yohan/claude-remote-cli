@@ -27,6 +27,14 @@ type CreateResult = SessionSummary & { pid: number | undefined };
 // In-memory registry: id -> Session
 const sessions = new Map<string, Session>();
 
+const IDLE_TIMEOUT_MS = 5000;
+type IdleChangeCallback = (sessionId: string, idle: boolean) => void;
+let idleChangeCallback: IdleChangeCallback | null = null;
+
+function onIdleChange(cb: IdleChangeCallback): void {
+  idleChangeCallback = cb;
+}
+
 function create({ repoName, repoPath, cwd, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
   const id = crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
@@ -59,6 +67,7 @@ function create({ repoName, repoPath, cwd, root, worktreeName, displayName, comm
     createdAt,
     lastActivity: createdAt,
     scrollback,
+    idle: false,
   };
   sessions.set(id, session);
 
@@ -72,9 +81,25 @@ function create({ repoName, repoPath, cwd, root, worktreeName, displayName, comm
   }
 
   let metaFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function resetIdleTimer(): void {
+    if (session.idle) {
+      session.idle = false;
+      if (idleChangeCallback) idleChangeCallback(session.id, false);
+    }
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (!session.idle) {
+        session.idle = true;
+        if (idleChangeCallback) idleChangeCallback(session.id, true);
+      }
+    }, IDLE_TIMEOUT_MS);
+  }
 
   ptyProcess.onData((data) => {
     session.lastActivity = new Date().toISOString();
+    resetIdleTimer();
     scrollback.push(data);
     scrollbackBytes += data.length;
     // Trim oldest entries if over limit
@@ -90,6 +115,7 @@ function create({ repoName, repoPath, cwd, root, worktreeName, displayName, comm
   });
 
   ptyProcess.onExit(() => {
+    if (idleTimer) clearTimeout(idleTimer);
     if (metaFlushTimer) clearTimeout(metaFlushTimer);
     if (configPath && worktreeName) {
       writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
@@ -99,7 +125,7 @@ function create({ repoName, repoPath, cwd, root, worktreeName, displayName, comm
     fs.rm(tmpDir, { recursive: true, force: true }, () => {});
   });
 
-  return { id, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt };
+  return { id, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
 }
 
 function get(id: string): Session | undefined {
@@ -108,7 +134,7 @@ function get(id: string): Session | undefined {
 
 function list(): SessionSummary[] {
   return Array.from(sessions.values())
-    .map(({ id, root, repoName, repoPath, worktreeName, displayName, createdAt, lastActivity }) => ({
+    .map(({ id, root, repoName, repoPath, worktreeName, displayName, createdAt, lastActivity, idle }) => ({
       id,
       root,
       repoName,
@@ -117,6 +143,7 @@ function list(): SessionSummary[] {
       displayName,
       createdAt,
       lastActivity,
+      idle,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
@@ -153,4 +180,4 @@ function write(id: string, data: string): void {
   session.pty.write(data);
 }
 
-export { create, get, list, kill, resize, updateDisplayName, write };
+export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange };

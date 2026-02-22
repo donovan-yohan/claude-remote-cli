@@ -17,12 +17,12 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   return cookies;
 }
 
-function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, watcher: WorktreeWatcher | null): { wss: WebSocketServer; broadcastEvent: (type: string) => void } {
+function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, watcher: WorktreeWatcher | null): { wss: WebSocketServer; broadcastEvent: (type: string, data?: Record<string, unknown>) => void } {
   const wss = new WebSocketServer({ noServer: true });
   const eventClients = new Set<WebSocket>();
 
-  function broadcastEvent(type: string): void {
-    const msg = JSON.stringify({ type });
+  function broadcastEvent(type: string, data?: Record<string, unknown>): void {
+    const msg = JSON.stringify({ type, ...data });
     for (const client of eventClients) {
       if (client.readyState === client.OPEN) {
         client.send(msg);
@@ -113,6 +113,10 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
         ws.close(1000);
       }
     });
+  });
+
+  sessions.onIdleChange((sessionId, idle) => {
+    broadcastEvent('session-idle-changed', { sessionId, idle });
   });
 
   return { wss, broadcastEvent };

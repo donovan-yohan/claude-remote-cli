@@ -6,6 +6,8 @@
   var ws = null;
   var term = null;
   var fitAddon = null;
+  var reconnectTimer = null;
+  var reconnectAttempt = 0;
 
   var wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
@@ -87,6 +89,7 @@
   var cachedSessions = [];
   var cachedWorktrees = [];
   var allRepos = [];
+  var attentionSessions = {};
 
   // ── PIN Auth ────────────────────────────────────────────────────────────────
 
@@ -312,38 +315,83 @@
   // ── WebSocket / Session Connection ──────────────────────────────────────────
 
   function connectToSession(sessionId) {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectAttempt = 0;
+
     if (ws) {
+      ws.onclose = null;
       ws.close();
       ws = null;
     }
 
     activeSessionId = sessionId;
+    delete attentionSessions[sessionId];
     noSessionMsg.hidden = true;
     term.clear();
     term.focus();
     closeSidebar();
     updateSessionTitle();
 
-    var url = wsProtocol + '//' + location.host + '/ws/' + sessionId;
-    ws = new WebSocket(url);
+    openPtyWebSocket(sessionId);
+  }
 
-    ws.onopen = function () {
+  function openPtyWebSocket(sessionId) {
+    var url = wsProtocol + '//' + location.host + '/ws/' + sessionId;
+    var socket = new WebSocket(url);
+
+    socket.onopen = function () {
+      ws = socket;
+      reconnectAttempt = 0;
       sendResize();
     };
 
-    ws.onmessage = function (event) {
+    socket.onmessage = function (event) {
       term.write(event.data);
     };
 
-    ws.onclose = function () {
-      term.write('\r\n[Connection closed]\r\n');
+    socket.onclose = function (event) {
+      if (event.code === 1000) {
+        term.write('\r\n[Session ended]\r\n');
+        ws = null;
+        return;
+      }
+
+      if (activeSessionId !== sessionId) return;
+
+      ws = null;
+      term.write('\r\n[Reconnecting...]\r\n');
+      scheduleReconnect(sessionId);
     };
 
-    ws.onerror = function () {
-      term.write('\r\n[WebSocket error]\r\n');
-    };
+    socket.onerror = function () {};
+  }
 
-    highlightActiveSession();
+  function scheduleReconnect(sessionId) {
+    var delay = Math.min(1000 * Math.pow(2, reconnectAttempt), 10000);
+    reconnectAttempt++;
+
+    reconnectTimer = setTimeout(function () {
+      reconnectTimer = null;
+      if (activeSessionId !== sessionId) return;
+      fetch('/sessions').then(function (res) {
+        return res.json();
+      }).then(function (sessions) {
+        var exists = sessions.some(function (s) { return s.id === sessionId; });
+        if (!exists || activeSessionId !== sessionId) {
+          term.write('\r\n[Session ended]\r\n');
+          return;
+        }
+        term.clear();
+        openPtyWebSocket(sessionId);
+      }).catch(function () {
+        if (activeSessionId === sessionId) {
+          scheduleReconnect(sessionId);
+        }
+      });
+    }, delay);
   }
 
   // ── Sessions & Worktrees ────────────────────────────────────────────────────
@@ -365,6 +413,14 @@
         if (msg.type === 'worktrees-changed') {
           loadRepos();
           refreshAll();
+        } else if (msg.type === 'session-idle-changed') {
+          if (msg.idle && msg.sessionId !== activeSessionId) {
+            attentionSessions[msg.sessionId] = true;
+          }
+          if (!msg.idle) {
+            delete attentionSessions[msg.sessionId];
+          }
+          renderUnifiedList();
         }
       } catch (_) {}
     };
@@ -534,6 +590,12 @@
     highlightActiveSession();
   }
 
+  function getSessionStatus(session) {
+    if (attentionSessions[session.id]) return 'attention';
+    if (session.idle) return 'idle';
+    return 'running';
+  }
+
   function createActiveSessionLi(session) {
     var li = document.createElement('li');
     li.className = 'active-session';
@@ -552,6 +614,10 @@
     subSpan.className = 'session-sub';
     subSpan.textContent = (session.root ? rootShortName(session.root) : '') + ' · ' + (session.repoName || '');
 
+    var status = getSessionStatus(session);
+    var dot = document.createElement('span');
+    dot.className = 'status-dot status-dot--' + status;
+    infoDiv.appendChild(dot);
     infoDiv.appendChild(nameSpan);
     infoDiv.appendChild(subSpan);
 
@@ -611,6 +677,9 @@
     subSpan.className = 'session-sub';
     subSpan.textContent = (wt.root ? rootShortName(wt.root) : '') + ' · ' + (wt.repoName || '');
 
+    var dot = document.createElement('span');
+    dot.className = 'status-dot status-dot--inactive';
+    infoDiv.appendChild(dot);
     infoDiv.appendChild(nameSpan);
     infoDiv.appendChild(subSpan);
 

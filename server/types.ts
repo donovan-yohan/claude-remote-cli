@@ -11,6 +11,7 @@ export interface Session {
   createdAt: string;
   lastActivity: string;
   scrollback: string[];
+  idle: boolean;
 }
 
 export interface WorktreeMetadata {
