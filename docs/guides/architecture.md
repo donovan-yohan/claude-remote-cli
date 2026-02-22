@@ -104,3 +104,90 @@ interface WorktreeMetadata {
 ## CLI Entry Point
 
 `bin/claude-remote-cli.ts` (compiled to `dist/bin/claude-remote-cli.js`) — Parses flags (`--port`, `--host`, `--config`, `--version`, `--help`, `--bg`, `install`, `uninstall`, `status`, `update`), manages config directory at `~/.config/claude-remote-cli/`, prompts for PIN on first run.
+
+---
+
+## Architecture Rules (derived from ADRs)
+
+> Regenerate with `/adr:update`. These rules are the normative constraints from accepted ADRs.
+
+### Server module structure
+
+- [ADR-001] The server MUST be organized into nine TypeScript modules under `server/`: `index.ts`, `sessions.ts`, `ws.ts`, `watcher.ts`, `auth.ts`, `config.ts`, `service.ts`, `clipboard.ts`, and `types.ts`.
+- [ADR-001] Modules MUST communicate through ESM `import` statements; no dependency injection container or abstract interfaces.
+- [ADR-001] `index.ts` MUST serve as the composition root and SHOULD NOT be imported by other modules.
+- [ADR-001] Cross-module dependencies MUST flow downward: `index.ts` imports all others; `ws.ts` MAY import `sessions`; all other modules SHOULD be self-contained.
+- [ADR-001] Each module MUST own a single concern; npm-level dependencies MUST be confined to the module responsible for that concern (e.g., only `auth.ts` depends on bcrypt, only `sessions.ts` depends on node-pty).
+
+### TypeScript and ESM
+
+- [ADR-008] The project MUST use ESM (`"type": "module"` in `package.json`); all `require()` / `module.exports` MUST be replaced with `import` / `export`.
+- [ADR-008] All relative imports MUST use `.js` extensions (NodeNext module resolution convention).
+- [ADR-008] Node.js built-in modules MUST use the `node:` prefix (e.g., `import fs from 'node:fs'`).
+- [ADR-008] `__dirname` / `__filename` MUST be replaced with `fileURLToPath(import.meta.url)` + `path.dirname()`.
+- [ADR-008] TypeScript MUST compile via `tsc` to `dist/`; target `ES2024`, module `NodeNext`, strict mode enabled.
+- [ADR-008] Full strict mode MUST be enabled: `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`.
+- [ADR-008] Shared interfaces MUST live in `server/types.ts`; module-local types SHOULD stay in their own file.
+- [ADR-008] Minimum Node.js version MUST be `>=24.0.0`.
+
+### Frontend
+
+- [ADR-002] The frontend MUST be a single-page application using plain HTML, CSS, and JavaScript in `public/`; there MUST NOT be a build step, transpiler, or bundler.
+- [ADR-002] All application logic MUST reside in `public/app.js` as a single IIFE; styles MUST be in `public/style.css`; the HTML entry point MUST be `public/index.html`.
+- [ADR-002] Vendor dependencies (xterm.js, xterm-addon-fit) MUST be self-hosted as pre-built files in `public/vendor/` and loaded via `<script>` tags.
+- [ADR-002] Frontend code MUST use ES5-compatible syntax (var declarations, function expressions, `.then()` chains); no arrow functions, destructuring, or template literals in `app.js`.
+- [ADR-002] DOM manipulation MUST use `document.getElementById`, `document.createElement`, and event listeners directly; no virtual DOM or template engine.
+- [ADR-008] The `public/` frontend MUST remain unchanged as ES5 vanilla JavaScript; no TypeScript or build step for frontend code.
+
+### PTY session management
+
+- [ADR-003] Sessions MUST be managed using `node-pty` to spawn pseudo-terminal processes; each session represents one CLI process running in a PTY.
+- [ADR-003] Active sessions MUST be stored in an in-memory `Map` keyed by session ID; there MUST NOT be a database or persistent storage for session state.
+- [ADR-003] Session IDs MUST be generated with `crypto.randomBytes(8).toString('hex')` (16-character hex strings).
+- [ADR-003] When a PTY process exits, its session MUST be automatically removed from the registry.
+- [ADR-003] Each session MUST maintain a scrollback buffer capped at 256KB; oldest chunks MUST be trimmed first (FIFO eviction) when the cap is exceeded.
+- [ADR-003] On WebSocket connection, the full scrollback buffer MUST be replayed to the client before attaching the live data handler.
+- [ADR-003] The `CLAUDECODE` environment variable MUST be stripped from the PTY environment; the PTY MUST be configured with `xterm-256color` as the terminal name.
+- [ADR-003] The sessions module MUST export: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`.
+
+### Authentication
+
+- [ADR-004] On first run, the server MUST prompt the user to set a PIN via readline; the PIN MUST be hashed with bcrypt (10 salt rounds) and stored under `pinHash` in the config file.
+- [ADR-004] PIN verification MUST use `bcrypt.compare` against the stored hash; no plaintext PIN MUST ever be stored or logged.
+- [ADR-004] On successful PIN verification, the server MUST generate a session token using `crypto.randomBytes(32).toString('hex')` and set it as an `httpOnly`, `sameSite: strict` cookie.
+- [ADR-004] Authenticated tokens MUST be stored in an in-memory `Set`; token expiry MUST be enforced via `setTimeout` based on the configured `cookieTTL` (default 24 hours).
+- [ADR-004] Failed PIN attempts MUST be tracked per IP; after 5 failures, the IP MUST be locked out for 15 minutes; a successful auth MUST clear the counter for that IP.
+- [ADR-004] WebSocket upgrade requests MUST be authenticated by checking the `token` cookie; unauthenticated connections MUST be rejected with a 401 before the upgrade completes.
+
+### Testing
+
+- [ADR-005] All unit tests MUST use `node:test` and `node:assert`; no external test framework (Jest, Vitest, Mocha) SHOULD be installed for unit testing.
+- [ADR-005] Test files MUST be TypeScript source files in `test/` with the naming convention `*.test.ts`.
+- [ADR-005] Tests MUST be compiled via `tsc -p tsconfig.test.json` and runnable via `npm test` (`tsc -p tsconfig.test.json && node --test dist/test/*.test.js`).
+- [ADR-005] Eight test files MUST exist: `auth.test.ts`, `clipboard.test.ts`, `config.test.ts`, `sessions.test.ts`, `service.test.ts`, `paths.test.ts`, `version.test.ts`, and `worktrees.test.ts`.
+- [ADR-008] `auth.test.ts` MUST use the `_resetForTesting()` export from `auth.ts` before each test to get fresh rate-limit state.
+- [ADR-005] `sessions.test.ts` MUST clean up spawned PTY processes in `afterEach` hooks to prevent resource leaks.
+- [ADR-005] `config.test.ts` MUST use temporary directories and clean up files between tests.
+- [ADR-005] E2E tests (Playwright) SHOULD be kept separate from unit tests and MUST NOT be run as part of `npm test`.
+
+### Distribution and CLI
+
+- [ADR-006] The package MUST declare a `bin` entry pointing to `dist/bin/claude-remote-cli.js` (compiled from `bin/claude-remote-cli.ts`), which MUST parse CLI flags before delegating to the server.
+- [ADR-006] CLI flags MUST be passed to the server via environment variables (`CLAUDE_REMOTE_CONFIG`, `CLAUDE_REMOTE_PORT`, `CLAUDE_REMOTE_HOST`).
+- [ADR-006] Configuration MUST be resolved in this precedence order: CLI flags > environment variables > config file > built-in defaults.
+- [ADR-006] Config file location MUST be `~/.config/claude-remote-cli/config.json` for global installs and `./config.json` for local dev; the config directory MUST be created automatically if absent.
+- [ADR-006] The `CLAUDE_REMOTE_CONFIG` environment variable MAY override the default config file path.
+- [ADR-006] The `files` field in `package.json` MUST limit the published package to `dist/bin/`, `dist/server/`, `public/`, and `config.example.json`; TypeScript source, test files, and documentation MUST NOT be published.
+- [ADR-008] The project MUST be compiled via `tsc` before running or publishing; `npm start` MUST compile before starting.
+
+### WebSocket channels
+
+- [ADR-007] The server MUST expose two separate WebSocket channels handled by a single `WebSocketServer` in `noServer` mode with manual upgrade routing.
+- [ADR-007] The PTY channel URL pattern MUST match `/ws/[a-f0-9]+`; raw PTY output MUST be sent as text frames with no JSON wrapping; client text frames MUST be forwarded to PTY stdin, except `{"type":"resize"}` messages which MUST trigger a PTY resize.
+- [ADR-007] When the PTY process exits, the server MUST close the WebSocket with code 1000.
+- [ADR-007] The event channel MUST be accessible at `/ws/events` and MUST be server-to-client only; event messages MUST be JSON objects with a `type` field.
+- [ADR-007] Connected event channel clients MUST be tracked in an in-memory `Set` and removed on close.
+- [ADR-007] File system changes in `.claude/worktrees/` directories MUST be debounced 500ms before emitting a `worktrees-changed` broadcast to all event channel clients.
+- [ADR-007] REST endpoints that modify roots (POST/DELETE `/roots`) MUST also trigger `worktrees-changed` broadcasts and rebuild the watcher.
+- [ADR-007] The frontend MUST auto-reconnect the event socket with a 3-second delay on close; the PTY channel MUST NOT auto-reconnect.
+- [ADR-007] Both WebSocket channels MUST require authentication via the `token` cookie verified during HTTP upgrade; unauthenticated upgrade requests MUST be rejected with 401 and the socket MUST be destroyed.
