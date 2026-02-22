@@ -567,9 +567,11 @@
 
   ctxDeleteWorktree.addEventListener('click', function (e) {
     e.stopPropagation();
+    var target = contextMenuTarget;
     hideContextMenu();
-    if (!contextMenuTarget) return;
-    deleteWtName.textContent = contextMenuTarget.name;
+    if (!target) return;
+    contextMenuTarget = target;
+    deleteWtName.textContent = target.name;
     deleteWtDialog.showModal();
   });
 
