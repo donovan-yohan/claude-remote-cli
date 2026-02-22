@@ -23,6 +23,35 @@
 - Worktree naming convention: `mobile-<name>-<timestamp>`
 - Scrollback buffer: max 256KB per session, auto-trims oldest entries
 - Session auto-deleted when PTY exits; WebSocket closed on exit
+- `claudeArgs` from POST body are merged with `config.claudeArgs` (config args first, request args appended)
+
+## Yolo Mode
+
+Passes `--dangerously-skip-permissions` to the Claude CLI, skipping all permission prompts. Available in two places:
+
+- **New session dialog:** "Yolo mode" checkbox sends `claudeArgs: ['--dangerously-skip-permissions']` in the POST body
+- **Context menu:** "Resume in yolo mode" on inactive worktrees resumes with the flag
+
+The flag is per-session and not persisted — resuming a worktree normally will use standard permission mode regardless of how it was originally created.
+
+## Worktree Cleanup
+
+`DELETE /worktrees` removes a worktree from disk:
+
+1. Validates path is inside `.claude/worktrees/`
+2. Checks no active session is using the worktree (409 if conflict)
+3. `git worktree remove <path>` (fails if uncommitted changes — no `--force`)
+4. `git worktree prune` (non-fatal on failure)
+5. `git branch -D <branchName>` (non-fatal on failure)
+
+Accessible via right-click/long-press context menu on inactive worktrees in the sidebar.
+
+## Update Notifications
+
+- `GET /version` compares installed version against npm registry latest using `semverLessThan`
+- If an update is available, the frontend shows a toast with a one-click "Update now" button
+- `POST /update` runs `npm install -g claude-remote-cli@latest` via `child_process.execFile`
+- Toast appears once per page load (checked on app init)
 
 ## Cookie TTL Parsing
 
@@ -43,8 +72,10 @@ Scans configured `rootDirs` one level deep for git repos. Hidden directories (st
 ## Frontend Conventions
 
 - Vanilla JS, no build step, no framework
-- All frontend state lives in `public/app.js` module-level variables
-- Vendor libraries (xterm.js) bundled in `public/vendor/`
+- ES5-compatible syntax: `var`, function expressions, `.then()` chains (no arrow functions, destructuring, or template literals)
+- All frontend state lives in `public/app.js` module-level variables inside a single IIFE
+- Vendor libraries (xterm.js, addon-fit.js) bundled in `public/vendor/`, loaded via `<script>` tags
+- DOM manipulation via `document.getElementById`, `document.createElement`, and event listeners
 - Mobile-first responsive design with touch toolbar
 
 ## Background Service

@@ -13,7 +13,7 @@ Donovan Yohan
 claude-remote-cli is a remote web interface for Claude Code CLI sessions. The server must handle several distinct concerns: HTTP routing, PTY process lifecycle, WebSocket relay, file system watching, authentication, and configuration I/O. A single monolithic file would become difficult to navigate and modify as features are added. However, the project is small enough that introducing a formal layered architecture (hexagonal, clean architecture, etc.) would add unnecessary abstraction without proportional benefit.
 
 ## Decision
-The server MUST be organized into seven modules under `server/`, each responsible for a single concern:
+The server MUST be organized into eight TypeScript modules under `server/`, each responsible for a single concern:
 
 | Module | Responsibility |
 |--------|---------------|
@@ -34,12 +34,12 @@ Modules SHOULD NOT import `index.ts`. Cross-module dependencies flow downward: `
 
 ### Positive
 - Each file stays under 120 lines, making it easy to read and modify in isolation
-- New contributors can understand the full server by reading six small files
+- New contributors can understand the full server by reading eight small files
 - No framework boilerplate or abstraction layers to learn
-- Module boundaries map directly to the npm dependency graph (e.g., only `auth.js` depends on bcrypt, only `sessions.js` depends on node-pty)
+- Module boundaries map directly to the npm dependency graph (e.g., only `auth.ts` depends on bcrypt, only `sessions.ts` depends on node-pty)
 
 ### Negative
-- `index.js` accumulates route handlers and grows as new REST endpoints are added; it currently handles routes for sessions, repos, worktrees, roots, and auth
+- `index.ts` accumulates route handlers and grows as new REST endpoints are added; it currently handles routes for sessions, repos, worktrees, roots, auth, version, and update
 - No formal interface contracts between modules means refactoring a module's API requires updating all callers manually
 
 ### Risks
