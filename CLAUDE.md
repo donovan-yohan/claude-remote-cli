@@ -39,6 +39,10 @@ TypeScript + ESM backend (Express + node-pty + WebSocket) compiled to `dist/`. V
 | Deployment & Publishing | [docs/guides/deployment.md](docs/guides/deployment.md) |
 | Completed Plans | [docs/exec-plans/completed/](docs/exec-plans/completed/) |
 
+## Deployment
+
+This is an npm package. Deploy via `npm publish`. See [deployment guide](docs/guides/deployment.md).
+
 ## Gotchas
 
 - `node-pty` requires native compilation; `postinstall` script fixes prebuilt binaries on macOS
