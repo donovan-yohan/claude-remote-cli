@@ -31,8 +31,7 @@ function getServicePaths() {
 }
 
 function generateServiceFile(platform, opts) {
-  const { nodePath, scriptPath, configPath, port, host } = opts;
-  const { logDir } = getServicePaths();
+  const { nodePath, scriptPath, configPath, port, host, logDir } = opts;
 
   if (platform === 'macos') {
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -103,7 +102,7 @@ function install(opts) {
   const port = opts.port || '3456';
   const host = opts.host || '0.0.0.0';
 
-  const content = generateServiceFile(platform, { nodePath, scriptPath, configPath, port, host });
+  const content = generateServiceFile(platform, { nodePath, scriptPath, configPath, port, host, logDir });
 
   fs.mkdirSync(path.dirname(servicePath), { recursive: true });
   if (logDir) fs.mkdirSync(logDir, { recursive: true });

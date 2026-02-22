@@ -39,9 +39,9 @@ function getArg(flag) {
 }
 
 function resolveConfigPath() {
-  var explicit = getArg('--config');
+  const explicit = getArg('--config');
   if (explicit) return explicit;
-  var dir = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.config', 'claude-remote-cli');
+  const dir = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.config', 'claude-remote-cli');
   return path.join(dir, 'config.json');
 }
 
@@ -55,18 +55,15 @@ function runServiceCommand(fn) {
   process.exit(0);
 }
 
-// Subcommands
-var command = args[0];
+const command = args[0];
 if (command === 'install' || command === 'uninstall' || command === 'status' || args.includes('--bg')) {
-  var service = require('../server/service');
+  const service = require('../server/service');
 
   if (command === 'uninstall') {
     runServiceCommand(function () { service.uninstall(); });
-  }
-
-  if (command === 'status') {
+  } else if (command === 'status') {
     runServiceCommand(function () {
-      var st = service.status();
+      const st = service.status();
       if (!st.installed) {
         console.log('Service is not installed.');
       } else if (st.running) {
@@ -75,20 +72,19 @@ if (command === 'install' || command === 'uninstall' || command === 'status' || 
         console.log('Service is installed but not running.');
       }
     });
-  }
-
-  // install or --bg
-  runServiceCommand(function () {
-    service.install({
-      configPath: resolveConfigPath(),
-      port: getArg('--port') || '3456',
-      host: getArg('--host') || '0.0.0.0',
+  } else {
+    runServiceCommand(function () {
+      service.install({
+        configPath: resolveConfigPath(),
+        port: getArg('--port') || '3456',
+        host: getArg('--host') || '0.0.0.0',
+      });
     });
-  });
+  }
 }
 
-var configPath = resolveConfigPath();
-var configDir = path.dirname(configPath);
+const configPath = resolveConfigPath();
+const configDir = path.dirname(configPath);
 
 // Ensure config directory exists
 if (!fs.existsSync(configDir)) {
