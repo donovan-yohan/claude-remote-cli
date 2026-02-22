@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `npm test` | Run all tests (`node --test test/*.test.js`) |
 | `node --test test/auth.test.js` | Run a single test file |
 | `claude-remote-cli` | Run as global CLI (after `npm install -g`) |
+| `npm version patch\|minor\|major` | Bump version, commit, and tag (see [deployment guide](docs/guides/deployment.md)) |
 
 ## Architecture
 
@@ -34,6 +35,7 @@ Node.js backend (Express + node-pty + WebSocket) manages Claude Code CLI session
 | Review Agent Setup | [docs/guides/review-agent-setup.md](docs/guides/review-agent-setup.md) |
 | ADRs | [docs/adrs/](docs/adrs/) |
 | Active Plans | [docs/exec-plans/active/](docs/exec-plans/active/) |
+| Deployment & Publishing | [docs/guides/deployment.md](docs/guides/deployment.md) |
 | Completed Plans | [docs/exec-plans/completed/](docs/exec-plans/completed/) |
 
 ## Gotchas
@@ -44,3 +46,4 @@ Node.js backend (Express + node-pty + WebSocket) manages Claude Code CLI session
 - Config lives at `~/.config/claude-remote-cli/config.json` when installed globally, `./config.json` for local dev
 - PIN reset: delete `pinHash` from config file and restart server
 - Requires Node.js >= 20.0.0
+- ADRs in `docs/adrs/` enforce structural constraints (e.g., server module list); update ADRs when adding new modules
