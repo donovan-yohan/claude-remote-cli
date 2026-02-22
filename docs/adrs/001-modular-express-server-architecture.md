@@ -13,7 +13,7 @@ Donovan Yohan
 claude-remote-cli is a remote web interface for Claude Code CLI sessions. The server must handle several distinct concerns: HTTP routing, PTY process lifecycle, WebSocket relay, file system watching, authentication, and configuration I/O. A single monolithic file would become difficult to navigate and modify as features are added. However, the project is small enough that introducing a formal layered architecture (hexagonal, clean architecture, etc.) would add unnecessary abstraction without proportional benefit.
 
 ## Decision
-The server MUST be organized into six modules under `server/`, each responsible for a single concern:
+The server MUST be organized into seven modules under `server/`, each responsible for a single concern:
 
 | Module | Responsibility |
 |--------|---------------|
@@ -23,6 +23,7 @@ The server MUST be organized into six modules under `server/`, each responsible 
 | `watcher.js` | File system watching for `.claude/worktrees/` directories, debounced event emission |
 | `auth.js` | PIN hashing (bcrypt), PIN verification, rate limiting, cookie token generation |
 | `config.js` | Config file I/O (load/save JSON), default values |
+| `service.js` | Background service install/uninstall/status management (launchd on macOS, systemd on Linux) |
 
 Modules MUST communicate through direct `require()` imports. There is no dependency injection container, no service layer, and no abstract interfaces. `index.js` serves as the composition root, wiring modules together at startup.
 

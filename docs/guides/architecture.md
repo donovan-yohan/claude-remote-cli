@@ -16,6 +16,7 @@ Remote web interface for Claude Code CLI sessions. Node.js backend manages PTY p
 | `server/watcher.js` | File system watching for `.claude/worktrees/` directories, debounced event emission |
 | `server/auth.js` | PIN hashing (bcrypt), rate limiting (5 fails = 15-min lockout), cookie token generation |
 | `server/config.js` | Config loading/saving with defaults |
+| `server/service.js` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
 
 ## Frontend
 
@@ -91,7 +92,7 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.js <-- watcher.js (fs.wat
 
 ### Server module structure
 
-- [ADR-001] The server MUST be organized into six modules under `server/`: `index.js`, `sessions.js`, `ws.js`, `watcher.js`, `auth.js`, `config.js`.
+- [ADR-001] The server MUST be organized into seven modules under `server/`: `index.js`, `sessions.js`, `ws.js`, `watcher.js`, `auth.js`, `config.js`, `service.js`.
 - [ADR-001] Modules MUST communicate through direct `require()` imports with no DI container, service layer, or abstract interfaces.
 - [ADR-001] `index.js` MUST serve as the composition root, wiring all other modules at startup.
 - [ADR-001] Modules SHOULD NOT import `index.js`; cross-module dependencies flow downward only.
