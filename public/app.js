@@ -50,6 +50,12 @@
   var imageToastText = document.getElementById('image-toast-text');
   var imageToastInsert = document.getElementById('image-toast-insert');
   var imageToastDismiss = document.getElementById('image-toast-dismiss');
+  var imageFileInput = document.getElementById('image-file-input');
+  var uploadImageBtn = document.getElementById('upload-image-btn');
+  var terminalScrollbar = document.getElementById('terminal-scrollbar');
+  var terminalScrollbarThumb = document.getElementById('terminal-scrollbar-thumb');
+  var mobileInput = document.getElementById('mobile-input');
+  var isMobileDevice = 'ontouchstart' in window;
 
   // Context menu state
   var contextMenuTarget = null; // stores { worktreePath, repoPath, name }
@@ -149,6 +155,9 @@
     term.open(terminalContainer);
     fitAddon.fit();
 
+    term.onScroll(updateScrollbar);
+    term.onWriteParsed(updateScrollbar);
+
     term.onData(function (data) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(data);
@@ -212,6 +221,7 @@
     var resizeObserver = new ResizeObserver(function () {
       fitAddon.fit();
       sendResize();
+      updateScrollbar();
     });
     resizeObserver.observe(terminalContainer);
   }
@@ -221,6 +231,80 @@
       ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
     }
   }
+
+  // ── Terminal Scrollbar ──────────────────────────────────────────────────────
+
+  var scrollbarDragging = false;
+  var scrollbarDragStartY = 0;
+  var scrollbarDragStartTop = 0;
+
+  function updateScrollbar() {
+    if (!term || !terminalScrollbar || terminalScrollbar.style.display === 'none') return;
+    var buf = term.buffer.active;
+    var totalLines = buf.baseY + term.rows;
+    var viewportTop = buf.viewportY;
+    var trackHeight = terminalScrollbar.clientHeight;
+
+    if (totalLines <= term.rows) {
+      terminalScrollbarThumb.style.display = 'none';
+      return;
+    }
+
+    terminalScrollbarThumb.style.display = 'block';
+    var thumbHeight = Math.max(20, (term.rows / totalLines) * trackHeight);
+    var thumbTop = (viewportTop / (totalLines - term.rows)) * (trackHeight - thumbHeight);
+
+    terminalScrollbarThumb.style.height = thumbHeight + 'px';
+    terminalScrollbarThumb.style.top = thumbTop + 'px';
+  }
+
+  function scrollbarScrollToY(clientY) {
+    var rect = terminalScrollbar.getBoundingClientRect();
+    var buf = term.buffer.active;
+    var totalLines = buf.baseY + term.rows;
+    if (totalLines <= term.rows) return;
+
+    var thumbHeight = Math.max(20, (term.rows / totalLines) * terminalScrollbar.clientHeight);
+    var trackUsable = terminalScrollbar.clientHeight - thumbHeight;
+    var relativeY = clientY - rect.top - thumbHeight / 2;
+    var ratio = Math.max(0, Math.min(1, relativeY / trackUsable));
+    var targetLine = Math.round(ratio * (totalLines - term.rows));
+
+    term.scrollToLine(targetLine);
+  }
+
+  terminalScrollbarThumb.addEventListener('touchstart', function (e) {
+    e.preventDefault();
+    scrollbarDragging = true;
+    scrollbarDragStartY = e.touches[0].clientY;
+    scrollbarDragStartTop = parseInt(terminalScrollbarThumb.style.top, 10) || 0;
+  });
+
+  document.addEventListener('touchmove', function (e) {
+    if (!scrollbarDragging) return;
+    e.preventDefault();
+    var deltaY = e.touches[0].clientY - scrollbarDragStartY;
+    var buf = term.buffer.active;
+    var totalLines = buf.baseY + term.rows;
+    if (totalLines <= term.rows) return;
+
+    var thumbHeight = Math.max(20, (term.rows / totalLines) * terminalScrollbar.clientHeight);
+    var trackUsable = terminalScrollbar.clientHeight - thumbHeight;
+    var newTop = Math.max(0, Math.min(trackUsable, scrollbarDragStartTop + deltaY));
+    var ratio = newTop / trackUsable;
+    var targetLine = Math.round(ratio * (totalLines - term.rows));
+
+    term.scrollToLine(targetLine);
+  }, { passive: false });
+
+  document.addEventListener('touchend', function () {
+    scrollbarDragging = false;
+  });
+
+  terminalScrollbar.addEventListener('click', function (e) {
+    if (e.target === terminalScrollbarThumb) return;
+    scrollbarScrollToY(e.clientY);
+  });
 
   // ── WebSocket / Session Connection ──────────────────────────────────────────
 
@@ -922,9 +1006,13 @@
 
   // ── Touch Toolbar ───────────────────────────────────────────────────────────
 
-  toolbar.addEventListener('click', function (e) {
+  function handleToolbarButton(e) {
     var btn = e.target.closest('button');
     if (!btn) return;
+    // Skip the upload button (handled separately)
+    if (btn.id === 'upload-image-btn') return;
+
+    e.preventDefault();
 
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
@@ -936,6 +1024,21 @@
     } else if (key !== undefined) {
       ws.send(key);
     }
+
+    // Re-focus the mobile input to keep keyboard open
+    if (isMobileDevice && mobileInput) {
+      mobileInput.focus();
+    }
+  }
+
+  toolbar.addEventListener('touchstart', function (e) {
+    handleToolbarButton(e);
+  }, { passive: false });
+
+  toolbar.addEventListener('click', function (e) {
+    // On non-touch devices, handle normally
+    if (isMobileDevice) return; // already handled by touchstart
+    handleToolbarButton(e);
   });
 
   // ── Image Paste Handling ─────────────────────────────────────────────────────
@@ -1061,6 +1164,175 @@
   imageToastDismiss.addEventListener('click', function () {
     hideImageToast();
   });
+
+  // ── Image Upload Button (mobile) ──────────────────────────────────────────
+
+  uploadImageBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    if (!activeSessionId) return;
+    imageFileInput.click();
+    if (isMobileDevice && mobileInput) {
+      mobileInput.focus();
+    }
+  });
+
+  imageFileInput.addEventListener('change', function () {
+    var file = imageFileInput.files[0];
+    if (file && file.type.indexOf('image/') === 0) {
+      uploadImage(file, file.type);
+    }
+    imageFileInput.value = '';
+  });
+
+  // ── Mobile Input Proxy ──────────────────────────────────────────────────────
+
+  (function () {
+    if (!isMobileDevice) return;
+
+    var lastInputValue = '';
+
+    function focusMobileInput() {
+      if (mobileInput && document.activeElement !== mobileInput) {
+        mobileInput.focus();
+      }
+    }
+
+    // Tap on terminal area focuses the hidden input (opens keyboard)
+    terminalContainer.addEventListener('touchend', function (e) {
+      // Don't interfere with scrollbar drag or selection
+      if (scrollbarDragging) return;
+      if (e.target === terminalScrollbarThumb || e.target === terminalScrollbar) return;
+      focusMobileInput();
+    });
+
+    // When xterm would receive focus, redirect to hidden input
+    terminalContainer.addEventListener('focus', function () {
+      focusMobileInput();
+    }, true);
+
+    // Handle text input with autocorrect
+    mobileInput.addEventListener('input', function () {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      var currentValue = mobileInput.value;
+
+      // Autocorrect may replace the entire value — figure out what changed
+      if (currentValue.length > lastInputValue.length) {
+        // Characters were added (normal typing or autocorrect expansion)
+        // Find the common prefix length
+        var commonLen = 0;
+        while (commonLen < lastInputValue.length && commonLen < currentValue.length &&
+               lastInputValue[commonLen] === currentValue[commonLen]) {
+          commonLen++;
+        }
+
+        // If autocorrect changed earlier text, we need to backspace and retype
+        var charsToDelete = lastInputValue.length - commonLen;
+        var newChars = currentValue.slice(commonLen);
+
+        for (var i = 0; i < charsToDelete; i++) {
+          ws.send('\x7f'); // backspace
+        }
+        ws.send(newChars);
+      } else if (currentValue.length < lastInputValue.length) {
+        // Characters were deleted (autocorrect correction)
+        var commonLen2 = 0;
+        while (commonLen2 < currentValue.length && commonLen2 < lastInputValue.length &&
+               lastInputValue[commonLen2] === currentValue[commonLen2]) {
+          commonLen2++;
+        }
+
+        var charsToDelete2 = lastInputValue.length - commonLen2;
+        var newChars2 = currentValue.slice(commonLen2);
+
+        for (var j = 0; j < charsToDelete2; j++) {
+          ws.send('\x7f');
+        }
+        if (newChars2) {
+          ws.send(newChars2);
+        }
+      } else if (currentValue !== lastInputValue) {
+        // Same length but different content (replacement)
+        var commonLen3 = 0;
+        while (commonLen3 < currentValue.length &&
+               lastInputValue[commonLen3] === currentValue[commonLen3]) {
+          commonLen3++;
+        }
+
+        var charsToDelete3 = lastInputValue.length - commonLen3;
+        var newChars3 = currentValue.slice(commonLen3);
+
+        for (var k = 0; k < charsToDelete3; k++) {
+          ws.send('\x7f');
+        }
+        ws.send(newChars3);
+      }
+
+      lastInputValue = currentValue;
+    });
+
+    // Handle special keys (Enter, Backspace, Escape, arrows, Tab)
+    mobileInput.addEventListener('keydown', function (e) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      var handled = true;
+
+      switch (e.key) {
+        case 'Enter':
+          ws.send('\r');
+          mobileInput.value = '';
+          lastInputValue = '';
+          break;
+        case 'Backspace':
+          if (mobileInput.value.length === 0) {
+            // Input is empty, send backspace directly
+            ws.send('\x7f');
+          }
+          // Otherwise, let the input event handle it via diff
+          handled = false;
+          break;
+        case 'Escape':
+          ws.send('\x1b');
+          break;
+        case 'Tab':
+          e.preventDefault();
+          ws.send('\t');
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          ws.send('\x1b[A');
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          ws.send('\x1b[B');
+          break;
+        case 'ArrowLeft':
+          // Let input handle cursor movement for autocorrect
+          handled = false;
+          break;
+        case 'ArrowRight':
+          handled = false;
+          break;
+        default:
+          handled = false;
+      }
+
+      if (handled) {
+        e.preventDefault();
+      }
+    });
+
+    // Periodically clear the hidden input to prevent it from growing unbounded
+    // but only when the user hasn't typed recently
+    var clearTimer = null;
+    mobileInput.addEventListener('input', function () {
+      if (clearTimer) clearTimeout(clearTimer);
+      clearTimer = setTimeout(function () {
+        mobileInput.value = '';
+        lastInputValue = '';
+      }, 5000);
+    });
+  })();
 
   // ── Keyboard-Aware Viewport ─────────────────────────────────────────────────
 
