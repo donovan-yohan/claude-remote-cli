@@ -2,30 +2,66 @@
 
 Remote web interface for interacting with Claude Code CLI sessions from any device.
 
-## Quick Start
+## Getting Started
 
-### Install from npm
+### 1. Install
 
 ```bash
 npm install -g claude-remote-cli
+```
+
+Requires **Node.js 24+** and **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)** installed and available in your PATH.
+
+### 2. Start the server
+
+```bash
 claude-remote-cli
 ```
 
-### Or run from source
+On first launch you'll be prompted to set a PIN. This PIN protects access to your Claude sessions.
 
-```bash
-git clone https://github.com/donovan-yohan/claude-remote-cli.git
-cd claude-remote-cli
-npm install
-npm start
+Open `http://localhost:3456` in your browser and enter your PIN.
+
+### 3. Add your project directories
+
+Click **Settings** in the app to add root directories — these are parent folders that contain your git repos (scanned one level deep).
+
+You can also edit `~/.config/claude-remote-cli/config.json` directly:
+
+```json
+{
+  "rootDirs": ["/home/you/projects", "/home/you/work"]
+}
 ```
 
-On first launch you'll be prompted to set a PIN. Then open `http://localhost:3456` in your browser.
+### 4. Run as a background service (recommended)
 
-## Prerequisites
+To keep the server running after you close your terminal and auto-start on login:
 
-- **Node.js 24+**
-- **Claude Code CLI** installed and available in your PATH (or configure `claudeCommand` in config)
+```bash
+claude-remote-cli --bg
+```
+
+This installs a persistent service (launchd on macOS, systemd on Linux) that restarts on crash. See [Background Service](#background-service) for more options.
+
+### 5. Access from your phone with Tailscale
+
+claude-remote-cli binds to `0.0.0.0` by default, but you should **not** expose it to the public internet. Use [Tailscale](https://tailscale.com/) to create a private encrypted network between your devices.
+
+1. **Install Tailscale** on your computer (the one running claude-remote-cli) and on your phone/tablet
+   - macOS: `brew install tailscale` or download from [tailscale.com/download](https://tailscale.com/download)
+   - Linux: follow the [install guide](https://tailscale.com/download/linux)
+   - iOS/Android: install the Tailscale app from your app store
+
+2. **Sign in** to the same Tailscale account on both devices
+
+3. **Find your computer's Tailscale IP** — run `tailscale ip` on your computer, or check the Tailscale admin console. It will look like `100.x.y.z`.
+
+4. **Open the app** on your phone at `http://100.x.y.z:3456`
+
+That's it. Your traffic is encrypted end-to-end via WireGuard, no ports are exposed to the internet, and only devices on your Tailscale network can reach the server.
+
+> **Alternatives:** You can also use [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared tunnel --url http://localhost:3456`) or [ngrok](https://ngrok.com/) (`ngrok http 3456`), but these expose your server to the public internet and rely on the PIN as your only layer of defense. Tailscale keeps everything private.
 
 ## Platform Support
 
@@ -149,14 +185,6 @@ claude-remote-cli/
 ├── config.example.json
 └── package.json
 ```
-
-## Remote Access
-
-To access from your phone or another device, expose the server via a tunnel or VPN:
-
-- **Tailscale** (recommended): Install on both devices, access via Tailscale IP
-- **Cloudflare Tunnel**: `cloudflared tunnel --url http://localhost:3456`
-- **ngrok**: `ngrok http 3456`
 
 ## License
 
