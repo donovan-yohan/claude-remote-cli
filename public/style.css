@@ -428,6 +428,40 @@ html, body {
   pointer-events: none;
 }
 
+#mobile-input {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  font-size: 16px; /* prevents iOS zoom on focus */
+  z-index: -1;
+}
+
+/* ===== Terminal Scrollbar ===== */
+#terminal-scrollbar {
+  display: none;
+  position: absolute;
+  top: 0;
+  right: 2px;
+  bottom: 0;
+  width: 6px;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+#terminal-scrollbar-thumb {
+  position: absolute;
+  right: 0;
+  width: 6px;
+  min-height: 20px;
+  background: var(--border);
+  border-radius: 3px;
+  opacity: 0.7;
+  touch-action: none;
+}
+
 /* ===== Touch Toolbar ===== */
 #toolbar {
   display: none;
@@ -440,10 +474,10 @@ html, body {
 
 .toolbar-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
-  grid-template-rows: auto auto auto;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: auto auto;
   gap: 4px;
-  max-width: 400px;
+  max-width: 500px;
   margin: 0 auto;
 }
 
@@ -471,12 +505,6 @@ html, body {
 
 .tb-btn.tb-arrow {
   font-size: 1.1rem;
-}
-
-/* Enter button: bottom-right cell only */
-.tb-btn.tb-enter {
-  grid-column: 4;
-  grid-row: 3;
 }
 
 /* ===== Dialog ===== */
@@ -999,16 +1027,20 @@ dialog#delete-worktree-dialog h2 {
   }
 
   .tb-btn {
-    padding: 16px 2px;
-    font-size: 0.8rem;
-    min-height: 48px;
+    padding: 14px 2px;
+    font-size: min(0.8rem, 3.5vw);
+    min-height: 44px;
   }
 
   .tb-btn.tb-arrow {
-    font-size: 1.2rem;
+    font-size: min(1.1rem, 4.5vw);
   }
 
   #toolbar {
+    display: block;
+  }
+
+  #terminal-scrollbar {
     display: block;
   }
 }
