@@ -162,65 +162,59 @@
     term.onScroll(updateScrollbar);
     term.onWriteParsed(updateScrollbar);
 
+    var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
+    term.attachCustomKeyEventHandler(function (e) {
+      if (isMobileDevice) {
+        return false;
+      }
+
+      if (!isMac && e.type === 'keydown' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey &&
+          (e.key === 'v' || e.key === 'V')) {
+        if (navigator.clipboard && navigator.clipboard.read) {
+          navigator.clipboard.read().then(function (clipboardItems) {
+            var imageBlob = null;
+            var imageType = null;
+
+            for (var i = 0; i < clipboardItems.length; i++) {
+              var types = clipboardItems[i].types;
+              for (var j = 0; j < types.length; j++) {
+                if (types[j].indexOf('image/') === 0) {
+                  imageType = types[j];
+                  imageBlob = clipboardItems[i];
+                  break;
+                }
+              }
+              if (imageBlob) break;
+            }
+
+            if (imageBlob) {
+              imageBlob.getType(imageType).then(function (blob) {
+                uploadImage(blob, imageType);
+              });
+            } else {
+              navigator.clipboard.readText().then(function (text) {
+                if (text) term.paste(text);
+              });
+            }
+          }).catch(function () {
+            if (navigator.clipboard.readText) {
+              navigator.clipboard.readText().then(function (text) {
+                if (text) term.paste(text);
+              }).catch(function () {});
+            }
+          });
+          return false;
+        }
+      }
+
+      return true;
+    });
+
     term.onData(function (data) {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(data);
       }
     });
-
-    // On Windows/Linux, Ctrl+V is the paste shortcut but xterm.js intercepts it
-    // internally without firing a native paste event, so our image paste handler
-    // on terminalContainer never runs. Intercept Ctrl+V here to check for images.
-    // On macOS, Ctrl+V sends a raw \x16 to the terminal (used by vim etc.), so
-    // we only intercept on non-Mac platforms.
-    var isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
-    if (!isMac) {
-      term.attachCustomKeyEventHandler(function (e) {
-        if (e.type === 'keydown' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey &&
-            (e.key === 'v' || e.key === 'V')) {
-          if (navigator.clipboard && navigator.clipboard.read) {
-            navigator.clipboard.read().then(function (clipboardItems) {
-              var imageBlob = null;
-              var imageType = null;
-
-              for (var i = 0; i < clipboardItems.length; i++) {
-                var types = clipboardItems[i].types;
-                for (var j = 0; j < types.length; j++) {
-                  if (types[j].indexOf('image/') === 0) {
-                    imageType = types[j];
-                    imageBlob = clipboardItems[i];
-                    break;
-                  }
-                }
-                if (imageBlob) break;
-              }
-
-              if (imageBlob) {
-                imageBlob.getType(imageType).then(function (blob) {
-                  uploadImage(blob, imageType);
-                });
-              } else {
-                navigator.clipboard.readText().then(function (text) {
-                  if (text) term.paste(text);
-                });
-              }
-            }).catch(function () {
-              // Clipboard read failed (permission denied, etc.) — fall back to text.
-              // If readText also fails, paste is lost for this keypress; this only
-              // happens when clipboard permission is fully denied, which is rare
-              // for user-gesture-triggered reads on HTTPS origins.
-              if (navigator.clipboard.readText) {
-                navigator.clipboard.readText().then(function (text) {
-                  if (text) term.paste(text);
-                }).catch(function () {});
-              }
-            });
-            return false; // Prevent xterm from handling Ctrl+V
-          }
-        }
-        return true; // Let xterm handle all other keys
-      });
-    }
 
     var resizeObserver = new ResizeObserver(function () {
       fitAddon.fit();
@@ -331,7 +325,13 @@
     delete attentionSessions[sessionId];
     noSessionMsg.hidden = true;
     term.clear();
-    term.focus();
+    if (isMobileDevice) {
+      mobileInput.value = '';
+      mobileInput.dispatchEvent(new Event('sessionchange'));
+      mobileInput.focus();
+    } else {
+      term.focus();
+    }
     closeSidebar();
     updateSessionTitle();
     highlightActiveSession();
@@ -1277,6 +1277,7 @@
     if (!isMobileDevice) return;
 
     var lastInputValue = '';
+    var isComposing = false;
 
     function focusMobileInput() {
       if (document.activeElement !== mobileInput) {
@@ -1336,6 +1337,31 @@
       }
     }
 
+    mobileInput.addEventListener('compositionstart', function () {
+      isComposing = true;
+    });
+
+    mobileInput.addEventListener('compositionend', function () {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        var currentValue = mobileInput.value;
+        sendInputDiff(currentValue);
+        lastInputValue = currentValue;
+      }
+      setTimeout(function () { isComposing = false; }, 0);
+    });
+
+    mobileInput.addEventListener('blur', function () {
+      if (isComposing) {
+        isComposing = false;
+        lastInputValue = mobileInput.value;
+      }
+    });
+
+    mobileInput.addEventListener('sessionchange', function () {
+      isComposing = false;
+      lastInputValue = '';
+    });
+
     // Handle text input with autocorrect
     var clearTimer = null;
     mobileInput.addEventListener('input', function () {
@@ -1347,6 +1373,8 @@
       }, 5000);
 
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      if (isComposing) return;
 
       var currentValue = mobileInput.value;
       sendInputDiff(currentValue);
@@ -1379,23 +1407,13 @@
           lastInputValue = '';
           break;
         case 'Tab':
-          e.preventDefault();
           ws.send('\t');
           break;
         case 'ArrowUp':
-          e.preventDefault();
           ws.send('\x1b[A');
           break;
         case 'ArrowDown':
-          e.preventDefault();
           ws.send('\x1b[B');
-          break;
-        case 'ArrowLeft':
-          // Let input handle cursor movement for autocorrect
-          handled = false;
-          break;
-        case 'ArrowRight':
-          handled = false;
           break;
         default:
           handled = false;

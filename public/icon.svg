@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="64" fill="#1a1a1a"/>
+  <text x="256" y="200" text-anchor="middle" font-family="monospace" font-size="72" font-weight="bold" fill="#d97757">&gt;_</text>
+  <text x="256" y="320" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="56" font-weight="600" fill="#ececec">Claude</text>
+  <text x="256" y="390" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="40" fill="#9b9b9b">Remote CLI</text>
+</svg>
