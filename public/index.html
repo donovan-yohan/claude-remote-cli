@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Claude Remote CLI</title>
   <link rel="stylesheet" href="/vendor/xterm.css" />
   <link rel="stylesheet" href="/style.css" />
@@ -64,21 +64,16 @@
 
       <!-- Touch Toolbar -->
       <div id="toolbar">
-        <div class="toolbar-row">
-          <button class="tb-btn" data-key="&#x1b;[D" aria-label="Left arrow">&#8592;</button>
-          <button class="tb-btn" data-key="&#x1b;[A" aria-label="Up arrow">&#8593;</button>
-          <button class="tb-btn" data-key="&#x1b;[B" aria-label="Down arrow">&#8595;</button>
-          <button class="tb-btn" data-key="&#x1b;[C" aria-label="Right arrow">&#8594;</button>
-          <button class="tb-btn" data-key="&#x0d;" aria-label="Enter">&#9166;</button>
-          <button class="tb-btn" data-key="&#x1b;" aria-label="Escape">Esc</button>
-          <button class="tb-btn" data-key="&#x03;" aria-label="Ctrl+C">^C</button>
-        </div>
-        <div class="toolbar-row">
-          <button class="tb-btn" data-key="y" aria-label="y">y</button>
-          <button class="tb-btn" data-key="n" aria-label="n">n</button>
-          <button class="tb-btn" data-text="/resume&#x0d;" aria-label="/resume">/resume</button>
-          <button class="tb-btn" data-text="/clear&#x0d;" aria-label="/clear">/clear</button>
+        <div class="toolbar-grid">
+          <button class="tb-btn" data-key="&#x09;" aria-label="Tab">Tab</button>
+          <button class="tb-btn tb-arrow" data-key="&#x1b;[A" aria-label="Up arrow">&#8593;</button>
           <button class="tb-btn" data-key="&#x1b;[Z" aria-label="Shift+Tab">&#8679;Tab</button>
+          <button class="tb-btn" data-key="&#x1b;" aria-label="Escape">Esc</button>
+          <button class="tb-btn tb-arrow" data-key="&#x1b;[D" aria-label="Left arrow">&#8592;</button>
+          <button class="tb-btn tb-arrow" data-key="&#x1b;[B" aria-label="Down arrow">&#8595;</button>
+          <button class="tb-btn tb-arrow" data-key="&#x1b;[C" aria-label="Right arrow">&#8594;</button>
+          <button class="tb-btn" data-key="&#x03;" aria-label="Ctrl+C">^C</button>
+          <button class="tb-btn tb-enter" data-key="&#x0d;" aria-label="Enter">&#9166;</button>
         </div>
       </div>
     </div>

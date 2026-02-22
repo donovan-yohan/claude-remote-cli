@@ -720,6 +720,30 @@
     }
   });
 
+  // ── Keyboard-Aware Viewport ─────────────────────────────────────────────────
+
+  (function () {
+    if (!window.visualViewport) return;
+
+    var vv = window.visualViewport;
+
+    function onViewportResize() {
+      var keyboardHeight = window.innerHeight - vv.height;
+      if (keyboardHeight > 50) {
+        mainApp.style.height = vv.height + 'px';
+      } else {
+        mainApp.style.height = '';
+      }
+      if (fitAddon) {
+        fitAddon.fit();
+        sendResize();
+      }
+    }
+
+    vv.addEventListener('resize', onViewportResize);
+    vv.addEventListener('scroll', onViewportResize);
+  })();
+
   // ── Auto-auth Check ─────────────────────────────────────────────────────────
 
   fetch('/sessions')

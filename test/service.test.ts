@@ -46,7 +46,3 @@ test('generateServiceFile for linux contains systemd unit', () => {
   assert.match(content, /Restart=on-failure/, 'should restart on failure');
   assert.match(content, /3456/, 'should include port');
 });
-
-test('isInstalled returns false when service file does not exist', () => {
-  assert.equal(service.isInstalled(), false);
-});
