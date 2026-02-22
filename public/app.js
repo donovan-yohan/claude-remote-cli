@@ -85,6 +85,7 @@
     initTerminal();
     loadRepos();
     refreshAll();
+    connectEventSocket();
   }
 
   // ── Terminal ────────────────────────────────────────────────────────────────
@@ -164,13 +165,43 @@
 
   // ── Sessions & Worktrees ────────────────────────────────────────────────────
 
+  var eventWs = null;
+
+  function connectEventSocket() {
+    if (eventWs) {
+      eventWs.close();
+      eventWs = null;
+    }
+
+    var url = wsProtocol + '//' + location.host + '/ws/events';
+    eventWs = new WebSocket(url);
+
+    eventWs.onmessage = function (event) {
+      try {
+        var msg = JSON.parse(event.data);
+        if (msg.type === 'worktrees-changed') {
+          loadRepos();
+          refreshAll();
+        }
+      } catch (_) {}
+    };
+
+    eventWs.onclose = function () {
+      setTimeout(function () {
+        connectEventSocket();
+      }, 3000);
+    };
+
+    eventWs.onerror = function () {};
+  }
+
   function refreshAll() {
     Promise.all([
       fetch('/sessions').then(function (res) { return res.json(); }),
       fetch('/worktrees').then(function (res) { return res.json(); }),
     ])
       .then(function (results) {
-        cachedSessions = results[0].sessions || results[0] || [];
+        cachedSessions = results[0] || [];
         cachedWorktrees = results[1] || [];
         populateSidebarFilters();
         renderUnifiedList();
@@ -531,8 +562,8 @@
       .then(function (data) {
         if (dialog.open) dialog.close();
         refreshAll();
-        if (data.id || data.sessionId) {
-          connectToSession(data.id || data.sessionId);
+        if (data.id) {
+          connectToSession(data.id);
         }
       })
       .catch(function () {});
@@ -566,7 +597,7 @@
   dialogStart.addEventListener('click', function () {
     var path = customPath.value.trim() || dialogRepoSelect.value;
     if (!path) return;
-    startSession(path, null);
+    startSession(path);
   });
 
   dialogCancel.addEventListener('click', function () {
@@ -668,6 +699,7 @@
   settingsClose.addEventListener('click', function () {
     settingsDialog.close();
     loadRepos();
+    refreshAll();
   });
 
   // ── Touch Toolbar ───────────────────────────────────────────────────────────

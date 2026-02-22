@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const readline = require('readline');
@@ -11,6 +12,7 @@ const { loadConfig, saveConfig, DEFAULTS } = require('./config');
 const auth = require('./auth');
 const sessions = require('./sessions');
 const { setupWebSocket } = require('./ws');
+const { WorktreeWatcher } = require('./watcher');
 
 // When run via CLI bin, config lives in ~/.config/claude-remote-cli/
 // When run directly (development), fall back to local config.json
@@ -38,6 +40,32 @@ function promptPin(question) {
       resolve(answer.trim());
     });
   });
+}
+
+function scanReposInRoot(rootDir) {
+  const repos = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(rootDir, { withFileTypes: true });
+  } catch (_) {
+    return repos;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    const fullPath = path.join(rootDir, entry.name);
+    if (fs.existsSync(path.join(fullPath, '.git'))) {
+      repos.push({ name: entry.name, path: fullPath, root: rootDir });
+    }
+  }
+  return repos;
+}
+
+function scanAllRepos(rootDirs) {
+  const repos = [];
+  for (const rootDir of rootDirs) {
+    repos.push(...scanReposInRoot(rootDir));
+  }
+  return repos;
 }
 
 async function main() {
@@ -74,6 +102,12 @@ async function main() {
     }
     next();
   }
+
+  const watcher = new WorktreeWatcher();
+  watcher.rebuild(config.rootDirs || []);
+
+  const server = http.createServer(app);
+  const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher);
 
   // POST /auth
   app.post('/auth', async (req, res) => {
@@ -116,24 +150,7 @@ async function main() {
 
   // GET /repos — scan root dirs for repos
   app.get('/repos', requireAuth, (req, res) => {
-    const fs = require('fs');
-    const roots = config.rootDirs || [];
-    const repos = [];
-    for (const rootDir of roots) {
-      try {
-        const entries = fs.readdirSync(rootDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-          const fullPath = path.join(rootDir, entry.name);
-          const hasGit = fs.existsSync(path.join(fullPath, '.git'));
-          if (hasGit) {
-            repos.push({ name: entry.name, path: fullPath, root: rootDir });
-          }
-        }
-      } catch (_) {
-        // skip unreadable dirs
-      }
-    }
+    const repos = scanAllRepos(config.rootDirs || []);
     // Also include legacy manually-added repos
     if (config.repos) {
       for (const repo of config.repos) {
@@ -147,51 +164,35 @@ async function main() {
 
   // GET /worktrees?repo=<path> — list worktrees; omit repo to scan all repos in all rootDirs
   app.get('/worktrees', requireAuth, (req, res) => {
-    const fs = require('fs');
     const repoParam = req.query.repo;
     const roots = config.rootDirs || [];
     const worktrees = [];
 
-    // Build list of repos to scan
-    const reposToScan = [];
+    let reposToScan;
     if (repoParam) {
-      // Single repo mode (used by new session dialog)
       const root = roots.find(function (r) { return repoParam.startsWith(r); }) || '';
-      reposToScan.push({ path: repoParam, name: repoParam.split('/').filter(Boolean).pop(), root });
+      reposToScan = [{ path: repoParam, name: repoParam.split('/').filter(Boolean).pop(), root }];
     } else {
-      // Scan all repos in all roots
-      for (const rootDir of roots) {
-        try {
-          const entries = fs.readdirSync(rootDir, { withFileTypes: true });
-          for (const entry of entries) {
-            if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-            const fullPath = path.join(rootDir, entry.name);
-            if (fs.existsSync(path.join(fullPath, '.git'))) {
-              reposToScan.push({ path: fullPath, name: entry.name, root: rootDir });
-            }
-          }
-        } catch (_) {
-          // skip unreadable dirs
-        }
-      }
+      reposToScan = scanAllRepos(roots);
     }
 
     for (const repo of reposToScan) {
       const worktreeDir = path.join(repo.path, '.claude', 'worktrees');
+      let entries;
       try {
-        const entries = fs.readdirSync(worktreeDir, { withFileTypes: true });
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue;
-          worktrees.push({
-            name: entry.name,
-            path: path.join(worktreeDir, entry.name),
-            repoName: repo.name,
-            repoPath: repo.path,
-            root: repo.root,
-          });
-        }
+        entries = fs.readdirSync(worktreeDir, { withFileTypes: true });
       } catch (_) {
-        // no worktrees dir — that's fine
+        continue;
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        worktrees.push({
+          name: entry.name,
+          path: path.join(worktreeDir, entry.name),
+          repoName: repo.name,
+          repoPath: repo.path,
+          root: repo.root,
+        });
       }
     }
 
@@ -215,6 +216,8 @@ async function main() {
     }
     config.rootDirs.push(rootPath);
     saveConfig(CONFIG_PATH, config);
+    watcher.rebuild(config.rootDirs);
+    broadcastEvent('worktrees-changed');
     res.status(201).json(config.rootDirs);
   });
 
@@ -226,6 +229,8 @@ async function main() {
     }
     config.rootDirs = config.rootDirs.filter((r) => r !== rootPath);
     saveConfig(CONFIG_PATH, config);
+    watcher.rebuild(config.rootDirs);
+    broadcastEvent('worktrees-changed');
     res.json(config.rootDirs);
   });
 
@@ -294,9 +299,6 @@ async function main() {
       res.status(404).json({ error: 'Session not found' });
     }
   });
-
-  const server = http.createServer(app);
-  setupWebSocket(server, authenticatedTokens);
 
   server.listen(config.port, config.host, () => {
     console.log(`claude-remote-cli listening on ${config.host}:${config.port}`);

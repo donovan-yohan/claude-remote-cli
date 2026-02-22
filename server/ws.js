@@ -16,11 +16,26 @@ function parseCookies(cookieHeader) {
   return cookies;
 }
 
-function setupWebSocket(server, authenticatedTokens) {
+function setupWebSocket(server, authenticatedTokens, watcher) {
   const wss = new WebSocketServer({ noServer: true });
+  const eventClients = new Set();
+
+  function broadcastEvent(type) {
+    const msg = JSON.stringify({ type });
+    for (const client of eventClients) {
+      if (client.readyState === client.OPEN) {
+        client.send(msg);
+      }
+    }
+  }
+
+  if (watcher) {
+    watcher.on('worktrees-changed', function () {
+      broadcastEvent('worktrees-changed');
+    });
+  }
 
   server.on('upgrade', (request, socket, head) => {
-    // Authenticate via cookie
     const cookies = parseCookies(request.headers.cookie);
     if (!authenticatedTokens.has(cookies.token)) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
@@ -28,7 +43,16 @@ function setupWebSocket(server, authenticatedTokens) {
       return;
     }
 
-    // Extract sessionId from URL /ws/:sessionId
+    // Event channel: /ws/events
+    if (request.url === '/ws/events') {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        eventClients.add(ws);
+        ws.on('close', () => { eventClients.delete(ws); });
+      });
+      return;
+    }
+
+    // PTY channel: /ws/:sessionId
     const match = request.url && request.url.match(/^\/ws\/([a-f0-9]+)$/);
     if (!match) {
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
@@ -52,21 +76,16 @@ function setupWebSocket(server, authenticatedTokens) {
   wss.on('connection', (ws, request, session) => {
     const ptyProcess = session.pty;
 
-    // Replay scrollback buffer so client sees all prior output
-    if (session.scrollback && session.scrollback.length > 0) {
-      for (const chunk of session.scrollback) {
-        ws.send(chunk);
-      }
+    for (const chunk of session.scrollback) {
+      ws.send(chunk);
     }
 
-    // PTY output -> WebSocket
     const dataHandler = ptyProcess.onData((data) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(data);
       }
     });
 
-    // WebSocket input -> PTY
     ws.on('message', (msg) => {
       const str = msg.toString();
       try {
@@ -75,18 +94,14 @@ function setupWebSocket(server, authenticatedTokens) {
           sessions.resize(session.id, parsed.cols, parsed.rows);
           return;
         }
-      } catch (_) {
-        // Not JSON — fall through to write
-      }
+      } catch (_) {}
       ptyProcess.write(str);
     });
 
-    // Cleanup on WebSocket close
     ws.on('close', () => {
       dataHandler.dispose();
     });
 
-    // Close WebSocket when PTY exits
     ptyProcess.onExit(() => {
       if (ws.readyState === ws.OPEN) {
         ws.close(1000);
@@ -94,7 +109,7 @@ function setupWebSocket(server, authenticatedTokens) {
     });
   });
 
-  return wss;
+  return { wss, broadcastEvent };
 }
 
 module.exports = { setupWebSocket };

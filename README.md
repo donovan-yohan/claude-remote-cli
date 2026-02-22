@@ -27,6 +27,10 @@ On first launch you'll be prompted to set a PIN. Then open `http://localhost:345
 - **Node.js 20+**
 - **Claude Code CLI** installed and available in your PATH (or configure `claudeCommand` in config)
 
+## Platform Support
+
+Tested on **macOS** and **Linux**. Windows is not currently tested — file watching and PTY spawning may behave differently.
+
 ## CLI Usage
 
 ```
@@ -75,6 +79,7 @@ The PIN hash is stored in config under `pinHash`. To reset:
 - **Scrollback buffer** — reconnect to a session and see prior output
 - **Touch toolbar** — mobile-friendly buttons for special keys (arrows, Enter, Escape, Ctrl+C, Tab, y/n)
 - **Responsive layout** — works on desktop and mobile with slide-out sidebar
+- **Real-time updates** — worktree changes on disk are pushed to the browser instantly via WebSocket
 
 ## Architecture
 
@@ -86,6 +91,7 @@ claude-remote-cli/
 │   ├── index.js       # Express server, REST API routes
 │   ├── sessions.js    # PTY session manager (node-pty)
 │   ├── ws.js          # WebSocket relay (PTY ↔ browser)
+│   ├── watcher.js     # File watcher for .claude/worktrees/ changes
 │   ├── auth.js        # PIN hashing, verification, rate limiting
 │   └── config.js      # Config loading/saving
 ├── public/
