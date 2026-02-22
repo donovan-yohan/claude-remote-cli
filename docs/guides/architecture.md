@@ -75,7 +75,7 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.wat
 ## WebSocket Channels
 
 - `/ws/:sessionId` - PTY relay (bidirectional: terminal I/O + resize)
-- `/ws/events` - Server-to-client broadcast (JSON `{type: "worktrees-changed"}`)
+- `/ws/events` - Server-to-client broadcast (JSON `{type: "worktrees-changed"}` or `{type: "session-idle-changed", sessionId, idle}`)
 
 ## Session Object Structure
 
@@ -91,6 +91,7 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.wat
   createdAt: string;     // ISO timestamp
   lastActivity: string;  // ISO timestamp
   scrollback: string[];  // data chunks, max 256KB total
+  idle: boolean;         // true when no PTY output for 5+ seconds
 }
 
 // Persisted to ~/.config/claude-remote-cli/worktree-meta/<name>.json
@@ -148,7 +149,7 @@ interface WorktreeMetadata {
 - [ADR-003] Each session MUST maintain a scrollback buffer capped at 256KB; oldest chunks MUST be trimmed first (FIFO eviction) when the cap is exceeded.
 - [ADR-003] On WebSocket connection, the full scrollback buffer MUST be replayed to the client before attaching the live data handler.
 - [ADR-003] The `CLAUDECODE` environment variable MUST be stripped from the PTY environment; the PTY MUST be configured with `xterm-256color` as the terminal name.
-- [ADR-003] The sessions module MUST export: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`.
+- [ADR-003] The sessions module MUST export: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`, `onIdleChange`.
 
 ### Authentication
 
@@ -189,5 +190,6 @@ interface WorktreeMetadata {
 - [ADR-007] Connected event channel clients MUST be tracked in an in-memory `Set` and removed on close.
 - [ADR-007] File system changes in `.claude/worktrees/` directories MUST be debounced 500ms before emitting a `worktrees-changed` broadcast to all event channel clients.
 - [ADR-007] REST endpoints that modify roots (POST/DELETE `/roots`) MUST also trigger `worktrees-changed` broadcasts and rebuild the watcher.
-- [ADR-007] The frontend MUST auto-reconnect the event socket with a 3-second delay on close; the PTY channel MUST NOT auto-reconnect.
+- [ADR-007] The frontend MUST auto-reconnect the event socket with a 3-second delay on close.
+- [ADR-007] The PTY channel MUST auto-reconnect with exponential backoff (1s–10s, max 30 attempts) on unexpected close; code 1000 (PTY exit) MUST NOT trigger reconnect.
 - [ADR-007] Both WebSocket channels MUST require authentication via the `token` cookie verified during HTTP upgrade; unauthenticated upgrade requests MUST be rejected with 401 and the socket MUST be destroyed.

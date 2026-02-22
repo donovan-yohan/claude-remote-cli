@@ -47,8 +47,10 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
     // Event channel: /ws/events
     if (request.url === '/ws/events') {
       wss.handleUpgrade(request, socket, head, (ws) => {
+        const cleanup = () => { eventClients.delete(ws); };
         eventClients.add(ws);
-        ws.on('close', () => { eventClients.delete(ws); });
+        ws.on('close', cleanup);
+        ws.on('error', cleanup);
       });
       return;
     }

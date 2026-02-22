@@ -26,7 +26,8 @@ The server MUST expose two separate WebSocket channels, both handled by a single
 ### Event Channel (`/ws/events`)
 - The event channel MUST be accessible at the fixed path `/ws/events`
 - This channel is server-to-client only; client messages are ignored
-- Event messages MUST be JSON objects with a `type` field (e.g., `{"type": "worktrees-changed"}`)
+- Event messages MUST be JSON objects with a `type` field
+- Supported event types: `worktrees-changed` (no additional fields), `session-idle-changed` (includes `sessionId: string` and `idle: boolean`)
 - All connected event channel clients MUST receive every broadcast event
 - Connected clients are tracked in an in-memory `Set` and removed on close
 
@@ -38,7 +39,9 @@ The server MUST expose two separate WebSocket channels, both handled by a single
 
 ### Frontend Reconnection
 - The frontend MUST auto-reconnect the event socket with a 3-second delay when the connection closes
-- The PTY channel does NOT auto-reconnect; the user explicitly reconnects by clicking a session in the sidebar
+- The PTY channel MUST auto-reconnect with exponential backoff (1s, 2s, 4s, 8s, capped at 10s, max 30 attempts) when the connection drops unexpectedly
+- A WebSocket close with code 1000 (PTY exited normally) MUST NOT trigger auto-reconnect; the frontend MUST display `[Session ended]`
+- Before each reconnect attempt, the frontend MUST verify the session still exists via `GET /sessions`; if gone, display `[Session ended]` and stop retrying
 
 ### Authentication
 - Both WebSocket channels MUST require authentication via the `token` cookie, verified during the HTTP upgrade before the WebSocket handshake completes

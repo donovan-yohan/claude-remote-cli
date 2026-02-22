@@ -32,7 +32,7 @@ Sessions MUST be managed using `node-pty` to spawn pseudo-terminal processes. Ea
 - The PTY MUST be configured with `xterm-256color` as the terminal name
 
 ### Session Lifecycle API
-The sessions module MUST export: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`.
+The sessions module MUST export: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`, `onIdleChange`.
 
 ## Consequences
 

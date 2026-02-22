@@ -363,7 +363,9 @@
       if (activeSessionId !== sessionId) return;
 
       ws = null;
-      term.write('\r\n[Reconnecting...]\r\n');
+      if (reconnectAttempt === 0) {
+        term.write('\r\n[Reconnecting...]\r\n');
+      }
       scheduleReconnect(sessionId);
     };
 
