@@ -55,6 +55,7 @@
   var terminalScrollbar = document.getElementById('terminal-scrollbar');
   var terminalScrollbarThumb = document.getElementById('terminal-scrollbar-thumb');
   var mobileInput = document.getElementById('mobile-input');
+  var mobileHeader = document.getElementById('mobile-header');
   var isMobileDevice = 'ontouchstart' in window;
 
   // Context menu state
@@ -1345,8 +1346,10 @@
       var keyboardHeight = window.innerHeight - vv.height;
       if (keyboardHeight > 50) {
         mainApp.style.height = vv.height + 'px';
+        if (mobileHeader) { mobileHeader.style.display = 'none'; }
       } else {
         mainApp.style.height = '';
+        if (mobileHeader) { mobileHeader.style.display = ''; }
       }
       if (fitAddon) {
         fitAddon.fit();
