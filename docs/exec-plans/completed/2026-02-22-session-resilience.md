@@ -1,5 +1,7 @@
 # Session Resilience Implementation Plan
 
+**Status:** Completed | **Completed**: 2026-02-22
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add PTY WebSocket auto-reconnect so mobile/tab-suspend doesn't lose the session view, and add idle detection with notification dots so users know which sessions need input.
@@ -581,3 +583,11 @@ Expected: All tests pass
 ```bash
 npm version patch
 ```
+
+---
+
+## Decision Log
+
+| Date | Decision | Details |
+|------|----------|---------|
+| 2026-02-22 | Plan completed | All 6 tasks implemented: PTY auto-reconnect with exponential backoff (1s-10s, max 30 attempts), idle tracking (5s silence timer), event broadcast, unified status dots (green/blue/amber-glow/gray). Two post-review fixes applied: reconnect spam guard and event WebSocket error handler. ADR-003, ADR-007, and architecture.md updated. 46/46 tests pass. |

@@ -22,10 +22,18 @@
 - `CLAUDECODE` env var is stripped from PTY env to allow nesting
 - Worktree naming convention: `mobile-<name>-<timestamp>`
 - Scrollback buffer: max 256KB per session, auto-trims oldest entries
-- Session auto-deleted when PTY exits; WebSocket closed on exit
+- PTY sessions survive browser disconnects — the server keeps them alive in memory; only PTY process exit removes a session
+- Session auto-deleted when PTY exits; WebSocket closed with code 1000 on exit
 - `claudeArgs` from POST body are merged with `config.claudeArgs` (config args first, request args appended)
 - Resuming a worktree passes `--continue` to the Claude CLI (not `--resume`)
 - Sessions module exports: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`, `onIdleChange`
+
+## Idle Detection
+
+- Each session tracks idle state: `idle: true` when no PTY output for 5 seconds
+- `onIdleChange(callback)` is a single-subscriber callback pattern (not EventEmitter) — only one listener at a time
+- `ws.ts` subscribes to idle changes and broadcasts `session-idle-changed` events over the event WebSocket
+- Idle timer is cleared when PTY exits to prevent stale callbacks
 
 ## Worktree Metadata Persistence
 
@@ -75,6 +83,15 @@ Scans configured `rootDirs` one level deep for git repos. Hidden directories (st
 - Frontend auto-reconnects the event socket with 3-second retry on close
 - Settings dialog close triggers `refreshAll()` for immediate sidebar update
 
+## WebSocket Reconnection
+
+- **Event socket** (`/ws/events`): auto-reconnects with fixed 3-second delay on close
+- **PTY socket** (`/ws/:sessionId`): auto-reconnects with exponential backoff (1s, 2s, 4s, 8s, capped at 10s, max 30 attempts)
+- Close code 1000 = PTY exited normally — no reconnect, shows `[Session ended]`
+- Before each reconnect attempt, the client verifies the session still exists via `GET /sessions`
+- `[Reconnecting...]` is only shown once (on first attempt) to avoid terminal spam
+- All event WebSocket connections must have both `close` and `error` handlers to prevent unhandled exceptions
+
 ## Frontend Conventions
 
 - Vanilla JS, no build step, no framework
@@ -83,6 +100,8 @@ Scans configured `rootDirs` one level deep for git repos. Hidden directories (st
 - Vendor libraries (xterm.js, addon-fit.js) bundled in `public/vendor/`, loaded via `<script>` tags
 - DOM manipulation via `document.getElementById`, `document.createElement`, and event listeners
 - Mobile-first responsive design with touch toolbar (hidden on desktop to maximize terminal space)
+- Sidebar status dots: green (running), blue (idle), amber glow (needs attention), gray (inactive worktree)
+- Attention state: tracked client-side in `attentionSessions` object; set when a session becomes idle while not actively viewed; cleared when user opens the session
 
 ## Clipboard Image Passthrough
 
