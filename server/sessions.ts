@@ -11,6 +11,7 @@ type SessionSummary = Omit<Session, 'pty' | 'scrollback'>;
 type CreateParams = {
   repoName?: string;
   repoPath: string;
+  cwd?: string;
   root?: string;
   worktreeName?: string;
   displayName?: string;
@@ -26,7 +27,7 @@ type CreateResult = SessionSummary & { pid: number | undefined };
 // In-memory registry: id -> Session
 const sessions = new Map<string, Session>();
 
-function create({ repoName, repoPath, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
+function create({ repoName, repoPath, cwd, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
   const id = crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
 
@@ -38,7 +39,7 @@ function create({ repoName, repoPath, root, worktreeName, displayName, command, 
     name: 'xterm-256color',
     cols,
     rows,
-    cwd: repoPath,
+    cwd: cwd || repoPath,
     env,
   });
 

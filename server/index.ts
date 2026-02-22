@@ -370,22 +370,27 @@ async function main(): Promise<void> {
     let args: string[];
     let cwd: string;
     let worktreeName: string;
+    let sessionRepoPath: string;
 
     if (worktreePath) {
       // Resume existing worktree — run claude --continue inside the worktree directory
       args = ['--continue', ...baseArgs];
       cwd = worktreePath;
+      sessionRepoPath = worktreePath;
       worktreeName = worktreePath.split('/').pop() || '';
     } else {
-      // New worktree
+      // New worktree — PTY spawns in the repo root (so `claude --worktree X` works),
+      // but repoPath points to the expected worktree dir for identity/metadata matching
       worktreeName = 'mobile-' + name + '-' + Date.now().toString(36);
       args = ['--worktree', worktreeName, ...baseArgs];
       cwd = repoPath;
+      sessionRepoPath = path.join(repoPath, '.claude', 'worktrees', worktreeName);
     }
 
     const session = sessions.create({
       repoName: name,
-      repoPath: cwd,
+      repoPath: sessionRepoPath,
+      cwd,
       root,
       worktreeName,
       displayName: worktreeName,
