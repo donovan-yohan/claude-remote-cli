@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Claude Remote CLI</title>
   <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="/icon.svg" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -64,7 +66,7 @@
         <button id="menu-btn" class="icon-btn" aria-label="Open sessions menu">&#9776;</button>
         <span id="session-title" class="mobile-title">No session</span>
       </div>
-      <input type="text" id="mobile-input" autocomplete="on" autocorrect="on" autocapitalize="sentences" spellcheck="true" aria-label="Terminal input" />
+      <input type="text" id="mobile-input" dir="ltr" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Terminal input" />
       <div id="terminal-container"></div>
       <div id="terminal-scrollbar"><div id="terminal-scrollbar-thumb"></div></div>
       <div id="no-session-msg">No active session. Create or select a session to begin.</div>
