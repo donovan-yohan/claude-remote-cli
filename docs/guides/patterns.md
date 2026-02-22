@@ -25,7 +25,7 @@
 - Session auto-deleted when PTY exits; WebSocket closed on exit
 - `claudeArgs` from POST body are merged with `config.claudeArgs` (config args first, request args appended)
 - Resuming a worktree passes `--continue` to the Claude CLI (not `--resume`)
-- Sessions module exports: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`
+- Sessions module exports: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`, `onIdleChange`
 
 ## Worktree Metadata Persistence
 

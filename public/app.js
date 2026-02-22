@@ -334,6 +334,7 @@
     term.focus();
     closeSidebar();
     updateSessionTitle();
+    highlightActiveSession();
 
     openPtyWebSocket(sessionId);
   }
@@ -369,7 +370,13 @@
     socket.onerror = function () {};
   }
 
+  var MAX_RECONNECT_ATTEMPTS = 30;
+
   function scheduleReconnect(sessionId) {
+    if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      term.write('\r\n[Gave up reconnecting after ' + MAX_RECONNECT_ATTEMPTS + ' attempts]\r\n');
+      return;
+    }
     var delay = Math.min(1000 * Math.pow(2, reconnectAttempt), 10000);
     reconnectAttempt++;
 
@@ -442,6 +449,14 @@
       .then(function (results) {
         cachedSessions = results[0] || [];
         cachedWorktrees = results[1] || [];
+
+        // Prune attention flags for sessions that no longer exist
+        var activeIds = {};
+        cachedSessions.forEach(function (s) { activeIds[s.id] = true; });
+        Object.keys(attentionSessions).forEach(function (id) {
+          if (!activeIds[id]) delete attentionSessions[id];
+        });
+
         populateSidebarFilters();
         renderUnifiedList();
       })

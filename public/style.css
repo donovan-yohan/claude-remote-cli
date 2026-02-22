@@ -330,7 +330,7 @@ html, body {
 
 .session-sub, .session-time {
   width: 100%;
-  padding-left: 16px;
+  padding-left: 16px; /* aligns with name text: status-dot 8px + margin-right 8px */
 }
 
 .session-actions {
