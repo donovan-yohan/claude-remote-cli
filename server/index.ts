@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename);
 
 // When run via CLI bin, config lives in ~/.config/claude-remote-cli/
 // When run directly (development), fall back to local config.json
-const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', 'config.json');
+const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', '..', 'config.json');
 
 type RepoEntry = { name: string; path: string; root: string };
 
@@ -98,7 +98,7 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json());
   app.use(cookieParser());
-  app.use(express.static(path.join(__dirname, '..', 'public')));
+  app.use(express.static(path.join(__dirname, '..', '..', 'public')));
 
   const requireAuth: express.RequestHandler = (req, res, next) => {
     const token = req.cookies && req.cookies.token;
