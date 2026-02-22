@@ -556,11 +556,12 @@
 
   ctxResumeYolo.addEventListener('click', function (e) {
     e.stopPropagation();
+    var target = contextMenuTarget;
     hideContextMenu();
-    if (!contextMenuTarget) return;
+    if (!target) return;
     startSession(
-      contextMenuTarget.repoPath,
-      contextMenuTarget.worktreePath,
+      target.repoPath,
+      target.worktreePath,
       ['--dangerously-skip-permissions']
     );
   });
