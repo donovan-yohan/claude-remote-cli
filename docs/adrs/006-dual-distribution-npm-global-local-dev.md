@@ -15,8 +15,8 @@ claude-remote-cli needs to be easy to install for end users while remaining conv
 ## Decision
 
 ### CLI Entry Point
-- The package MUST declare a `bin` entry pointing to `bin/claude-remote-cli.js`
-- `bin/claude-remote-cli.js` MUST parse CLI flags (`--port`, `--host`, `--config`, `--version`, `--help`) before delegating to `server/index.js`
+- The package MUST declare a `bin` entry pointing to `dist/bin/claude-remote-cli.js` (compiled from `bin/claude-remote-cli.ts`)
+- The CLI MUST parse CLI flags (`--port`, `--host`, `--config`, `--version`, `--help`) before delegating to the server
 - CLI flags MUST be passed to the server via environment variables (`CLAUDE_REMOTE_CONFIG`, `CLAUDE_REMOTE_PORT`, `CLAUDE_REMOTE_HOST`)
 
 ### Configuration Resolution
@@ -33,8 +33,13 @@ Configuration values MUST be resolved in the following precedence order (highest
 - The config directory MUST be created automatically if it does not exist
 - The `CLAUDE_REMOTE_CONFIG` environment variable MAY override both defaults
 
+### Build Step
+- The project MUST be compiled via `tsc` before running or publishing
+- `npm run build` MUST execute `tsc` to compile TypeScript source to `dist/`
+- `npm start` MUST compile before starting: `tsc && node dist/server/index.js`
+
 ### Published Files
-The `files` field in `package.json` MUST limit the published package to: `bin/`, `server/`, `public/`, and `config.example.json`. Test files, documentation, and development configuration MUST NOT be included in the published package.
+The `files` field in `package.json` MUST limit the published package to: `dist/bin/`, `dist/server/`, `public/`, and `config.example.json`. TypeScript source files, test files, documentation, and development configuration MUST NOT be included in the published package.
 
 ## Consequences
 

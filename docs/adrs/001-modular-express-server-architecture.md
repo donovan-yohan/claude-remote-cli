@@ -17,17 +17,18 @@ The server MUST be organized into seven modules under `server/`, each responsibl
 
 | Module | Responsibility |
 |--------|---------------|
-| `index.js` | Express app setup, HTTP route handlers, server startup |
-| `sessions.js` | PTY process spawning, in-memory session registry, session lifecycle (create/list/get/kill/resize) |
-| `ws.js` | WebSocket upgrade handling, PTY-to-browser data relay, event channel broadcast |
-| `watcher.js` | File system watching for `.claude/worktrees/` directories, debounced event emission |
-| `auth.js` | PIN hashing (bcrypt), PIN verification, rate limiting, cookie token generation |
-| `config.js` | Config file I/O (load/save JSON), default values |
-| `service.js` | Background service install/uninstall/status management (launchd on macOS, systemd on Linux) |
+| `index.ts` | Express app setup, HTTP route handlers, server startup |
+| `sessions.ts` | PTY process spawning, in-memory session registry, session lifecycle (create/list/get/kill/resize) |
+| `ws.ts` | WebSocket upgrade handling, PTY-to-browser data relay, event channel broadcast |
+| `watcher.ts` | File system watching for `.claude/worktrees/` directories, debounced event emission |
+| `auth.ts` | PIN hashing (bcrypt), PIN verification, rate limiting, cookie token generation |
+| `config.ts` | Config file I/O (load/save JSON), default values |
+| `service.ts` | Background service install/uninstall/status management (launchd on macOS, systemd on Linux) |
+| `types.ts` | Shared TypeScript interfaces (Session, Config, ServicePaths, Platform, InstallOpts) |
 
-Modules MUST communicate through direct `require()` imports. There is no dependency injection container, no service layer, and no abstract interfaces. `index.js` serves as the composition root, wiring modules together at startup.
+Modules are TypeScript source files compiled to `dist/server/` via `tsc`. Modules MUST communicate through ESM `import` statements. There is no dependency injection container, no service layer, and no abstract interfaces. `index.ts` serves as the composition root, wiring modules together at startup.
 
-Modules SHOULD NOT import `index.js`. Cross-module dependencies flow downward: `index.js` imports all others; `ws.js` imports `sessions`; all other modules are self-contained.
+Modules SHOULD NOT import `index.ts`. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` imports `sessions`; all other modules are self-contained.
 
 ## Consequences
 

@@ -1,17 +1,32 @@
-'use strict';
+import pty from 'node-pty';
+import crypto from 'node:crypto';
+import type { Session } from './types.js';
 
-const pty = require('node-pty');
-const crypto = require('crypto');
+type SessionSummary = Omit<Session, 'pty' | 'scrollback'>;
 
-// In-memory registry: id -> {id, root, repoName, repoPath, worktreeName, displayName, pty, createdAt}
-const sessions = new Map();
+type CreateParams = {
+  repoName?: string;
+  repoPath: string;
+  root?: string;
+  worktreeName?: string;
+  displayName?: string;
+  command: string;
+  args?: string[];
+  cols?: number;
+  rows?: number;
+};
 
-function create({ repoName, repoPath, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24 }) {
+type CreateResult = SessionSummary & { pid: number | undefined };
+
+// In-memory registry: id -> Session
+const sessions = new Map<string, Session>();
+
+function create({ repoName, repoPath, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24 }: CreateParams): CreateResult {
   const id = crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
 
   // Strip CLAUDECODE env var to allow spawning claude inside a claude-managed server
-  const env = Object.assign({}, process.env);
+  const env = Object.assign({}, process.env) as Record<string, string>;
   delete env.CLAUDECODE;
 
   const ptyProcess = pty.spawn(command, args, {
@@ -23,11 +38,11 @@ function create({ repoName, repoPath, root, worktreeName, displayName, command, 
   });
 
   // Scrollback buffer: stores all PTY output so we can replay on WebSocket (re)connect
-  const scrollback = [];
+  const scrollback: string[] = [];
   let scrollbackBytes = 0;
   const MAX_SCROLLBACK = 256 * 1024; // 256KB max
 
-  const session = {
+  const session: Session = {
     id,
     root: root || '',
     repoName: repoName || '',
@@ -47,7 +62,7 @@ function create({ repoName, repoPath, root, worktreeName, displayName, command, 
     scrollbackBytes += data.length;
     // Trim oldest entries if over limit
     while (scrollbackBytes > MAX_SCROLLBACK && scrollback.length > 1) {
-      scrollbackBytes -= scrollback.shift().length;
+      scrollbackBytes -= (scrollback.shift() as string).length;
     }
   });
 
@@ -55,14 +70,14 @@ function create({ repoName, repoPath, root, worktreeName, displayName, command, 
     sessions.delete(id);
   });
 
-  return { id, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, displayName: session.displayName, pid: ptyProcess.pid, createdAt };
+  return { id, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt };
 }
 
-function get(id) {
+function get(id: string): Session | undefined {
   return sessions.get(id);
 }
 
-function list() {
+function list(): SessionSummary[] {
   return Array.from(sessions.values())
     .map(({ id, root, repoName, repoPath, worktreeName, displayName, createdAt, lastActivity }) => ({
       id,
@@ -77,14 +92,14 @@ function list() {
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
 
-function updateDisplayName(id, displayName) {
+function updateDisplayName(id: string, displayName: string): { id: string; displayName: string } {
   const session = sessions.get(id);
   if (!session) throw new Error('Session not found: ' + id);
   session.displayName = displayName;
   return { id, displayName };
 }
 
-function kill(id) {
+function kill(id: string): void {
   const session = sessions.get(id);
   if (!session) {
     throw new Error(`Session not found: ${id}`);
@@ -93,7 +108,7 @@ function kill(id) {
   sessions.delete(id);
 }
 
-function resize(id, cols, rows) {
+function resize(id: string, cols: number, rows: number): void {
   const session = sessions.get(id);
   if (!session) {
     throw new Error(`Session not found: ${id}`);
@@ -101,4 +116,4 @@ function resize(id, cols, rows) {
   session.pty.resize(cols, rows);
 }
 
-module.exports = { create, get, list, kill, resize, updateDisplayName };
+export { create, get, list, kill, resize, updateDisplayName };

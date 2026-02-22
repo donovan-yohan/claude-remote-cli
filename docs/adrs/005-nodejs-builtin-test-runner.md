@@ -16,23 +16,25 @@ The project needs automated tests for its server modules (auth, config, sessions
 All unit tests MUST use the `node:test` module and `node:assert` for assertions. No external test framework (Jest, Vitest, Mocha, etc.) SHOULD be installed for unit testing.
 
 ### Test Structure
-- Test files MUST be located in the `test/` directory with the naming convention `*.test.js`
-- Tests MUST be runnable via `npm test`, which executes `node --test test/*.test.js`
-- Individual test files MUST be runnable in isolation via `node --test test/<file>.test.js`
+- Test files MUST be TypeScript source files located in `test/` with the naming convention `*.test.ts`
+- Tests MUST be compiled via `tsc -p tsconfig.test.json` before execution
+- Tests MUST be runnable via `npm test`, which executes `tsc -p tsconfig.test.json && node --test dist/test/*.test.js`
+- Individual compiled test files MUST be runnable via `node --test dist/test/<file>.test.js`
 
 ### Current Test Coverage
-Three test files MUST exist:
+Four test files MUST exist:
 
 | File | Coverage |
 |------|----------|
-| `test/auth.test.js` | PIN hashing, PIN verification, rate limiting (threshold and lockout), token generation |
-| `test/config.test.js` | Config loading, default merging, missing file error, save format, default values |
-| `test/sessions.test.js` | Session create/list/get/kill/resize lifecycle, PTY spawning with real processes |
+| `test/auth.test.ts` | PIN hashing, PIN verification, rate limiting (threshold and lockout), token generation |
+| `test/config.test.ts` | Config loading, default merging, missing file error, save format, default values |
+| `test/sessions.test.ts` | Session create/list/get/kill/resize lifecycle, PTY spawning with real processes |
+| `test/service.test.ts` | Platform detection, service path resolution, service file generation (plist/systemd) |
 
 ### Test Isolation
-- `auth.test.js` MUST clear the `require` cache before each test to get fresh module state (fresh rate-limit maps)
-- `sessions.test.js` MUST clean up spawned PTY processes in `afterEach` hooks to prevent resource leaks
-- `config.test.js` MUST use temporary directories and clean up files between tests
+- `auth.test.ts` MUST call the `_resetForTesting()` export from `auth.ts` before each test to get fresh rate-limit state
+- `sessions.test.ts` MUST clean up spawned PTY processes in `afterEach` hooks to prevent resource leaks
+- `config.test.ts` MUST use temporary directories and clean up files between tests
 
 ### Future E2E Testing
 - Playwright is installed as a dev dependency for future browser-level end-to-end tests
@@ -49,7 +51,7 @@ Three test files MUST exist:
 ### Negative
 - `node:test` has fewer convenience features than Jest (no built-in mocking library, no snapshot testing, no parallel test file execution by default)
 - No watch mode out of the box (Jest provides `--watch` for iterative development)
-- Test isolation for `auth.test.js` requires manual `require` cache clearing, which is a workaround rather than a proper module reset
+- Test compilation step adds latency to the test cycle (compile before run)
 
 ### Risks
 - If test complexity grows (e.g., requiring extensive mocking of node-pty or Express middleware), the lack of a built-in mocking library may become a friction point that warrants reconsideration

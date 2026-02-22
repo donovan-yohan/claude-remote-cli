@@ -1,29 +1,34 @@
-'use strict';
+import fs from 'node:fs';
+import http from 'node:http';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import readline from 'node:readline';
 
-const fs = require('fs');
-const http = require('http');
-const path = require('path');
-const readline = require('readline');
+import express from 'express';
+import cookieParser from 'cookie-parser';
 
-const express = require('express');
-const cookieParser = require('cookie-parser');
+import { loadConfig, saveConfig, DEFAULTS } from './config.js';
+import * as auth from './auth.js';
+import * as sessions from './sessions.js';
+import { setupWebSocket } from './ws.js';
+import { WorktreeWatcher } from './watcher.js';
+import type { Config } from './types.js';
 
-const { loadConfig, saveConfig, DEFAULTS } = require('./config');
-const auth = require('./auth');
-const sessions = require('./sessions');
-const { setupWebSocket } = require('./ws');
-const { WorktreeWatcher } = require('./watcher');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // When run via CLI bin, config lives in ~/.config/claude-remote-cli/
 // When run directly (development), fall back to local config.json
 const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', 'config.json');
 
-function parseTTL(ttl) {
+type RepoEntry = { name: string; path: string; root: string };
+
+function parseTTL(ttl: string): number {
   if (typeof ttl !== 'string') return 24 * 60 * 60 * 1000;
   const match = ttl.match(/^(\d+)([smhd])$/);
   if (!match) return 24 * 60 * 60 * 1000;
-  const value = parseInt(match[1], 10);
-  switch (match[2]) {
+  const value = parseInt(match[1]!, 10);
+  switch (match[2]!) {
     case 's': return value * 1000;
     case 'm': return value * 60 * 1000;
     case 'h': return value * 60 * 60 * 1000;
@@ -32,7 +37,7 @@ function parseTTL(ttl) {
   }
 }
 
-function promptPin(question) {
+function promptPin(question: string): Promise<string> {
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.question(question, (answer) => {
@@ -42,9 +47,9 @@ function promptPin(question) {
   });
 }
 
-function scanReposInRoot(rootDir) {
-  const repos = [];
-  let entries;
+function scanReposInRoot(rootDir: string): RepoEntry[] {
+  const repos: RepoEntry[] = [];
+  let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(rootDir, { withFileTypes: true });
   } catch (_) {
@@ -60,20 +65,20 @@ function scanReposInRoot(rootDir) {
   return repos;
 }
 
-function scanAllRepos(rootDirs) {
-  const repos = [];
+function scanAllRepos(rootDirs: string[]): RepoEntry[] {
+  const repos: RepoEntry[] = [];
   for (const rootDir of rootDirs) {
     repos.push(...scanReposInRoot(rootDir));
   }
   return repos;
 }
 
-async function main() {
-  let config;
+async function main(): Promise<void> {
+  let config: Config;
   try {
     config = loadConfig(CONFIG_PATH);
   } catch (_) {
-    config = { ...DEFAULTS };
+    config = { ...DEFAULTS } as Config;
     saveConfig(CONFIG_PATH, config);
   }
 
@@ -88,20 +93,21 @@ async function main() {
     console.log('PIN set successfully.');
   }
 
-  const authenticatedTokens = new Set();
+  const authenticatedTokens = new Set<string>();
 
   const app = express();
   app.use(express.json());
   app.use(cookieParser());
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
-  function requireAuth(req, res, next) {
+  const requireAuth: express.RequestHandler = (req, res, next) => {
     const token = req.cookies && req.cookies.token;
     if (!token || !authenticatedTokens.has(token)) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
     }
     next();
-  }
+  };
 
   const watcher = new WorktreeWatcher();
   watcher.rebuild(config.rootDirs || []);
@@ -111,20 +117,23 @@ async function main() {
 
   // POST /auth
   app.post('/auth', async (req, res) => {
-    const ip = req.ip || req.connection.remoteAddress;
+    const ip = (req.ip || req.connection.remoteAddress) as string;
     if (auth.isRateLimited(ip)) {
-      return res.status(429).json({ error: 'Too many attempts. Try again later.' });
+      res.status(429).json({ error: 'Too many attempts. Try again later.' });
+      return;
     }
 
-    const { pin } = req.body;
+    const { pin } = req.body as { pin?: string };
     if (!pin) {
-      return res.status(400).json({ error: 'PIN required' });
+      res.status(400).json({ error: 'PIN required' });
+      return;
     }
 
-    const valid = await auth.verifyPin(pin, config.pinHash);
+    const valid = await auth.verifyPin(pin, config.pinHash as string);
     if (!valid) {
       auth.recordFailedAttempt(ip);
-      return res.status(401).json({ error: 'Invalid PIN' });
+      res.status(401).json({ error: 'Invalid PIN' });
+      return;
     }
 
     auth.clearRateLimit(ip);
@@ -140,20 +149,20 @@ async function main() {
       maxAge: ttlMs,
     });
 
-    return res.json({ ok: true });
+    res.json({ ok: true });
   });
 
   // GET /sessions
-  app.get('/sessions', requireAuth, (req, res) => {
+  app.get('/sessions', requireAuth, (_req, res) => {
     res.json(sessions.list());
   });
 
   // GET /repos — scan root dirs for repos
-  app.get('/repos', requireAuth, (req, res) => {
+  app.get('/repos', requireAuth, (_req, res) => {
     const repos = scanAllRepos(config.rootDirs || []);
     // Also include legacy manually-added repos
     if (config.repos) {
-      for (const repo of config.repos) {
+      for (const repo of config.repos as unknown as RepoEntry[]) {
         if (!repos.some((r) => r.path === repo.path)) {
           repos.push(repo);
         }
@@ -164,21 +173,21 @@ async function main() {
 
   // GET /worktrees?repo=<path> — list worktrees; omit repo to scan all repos in all rootDirs
   app.get('/worktrees', requireAuth, (req, res) => {
-    const repoParam = req.query.repo;
+    const repoParam = typeof req.query.repo === 'string' ? req.query.repo : undefined;
     const roots = config.rootDirs || [];
-    const worktrees = [];
+    const worktrees: Array<{ name: string; path: string; repoName: string; repoPath: string; root: string }> = [];
 
-    let reposToScan;
+    let reposToScan: RepoEntry[];
     if (repoParam) {
       const root = roots.find(function (r) { return repoParam.startsWith(r); }) || '';
-      reposToScan = [{ path: repoParam, name: repoParam.split('/').filter(Boolean).pop(), root }];
+      reposToScan = [{ path: repoParam, name: repoParam.split('/').filter(Boolean).pop() || '', root }];
     } else {
       reposToScan = scanAllRepos(roots);
     }
 
     for (const repo of reposToScan) {
       const worktreeDir = path.join(repo.path, '.claude', 'worktrees');
-      let entries;
+      let entries: fs.Dirent[];
       try {
         entries = fs.readdirSync(worktreeDir, { withFileTypes: true });
       } catch (_) {
@@ -200,19 +209,21 @@ async function main() {
   });
 
   // GET /roots — list root directories
-  app.get('/roots', requireAuth, (req, res) => {
+  app.get('/roots', requireAuth, (_req, res) => {
     res.json(config.rootDirs || []);
   });
 
   // POST /roots — add a root directory
   app.post('/roots', requireAuth, (req, res) => {
-    const { path: rootPath } = req.body;
+    const { path: rootPath } = req.body as { path?: string };
     if (!rootPath) {
-      return res.status(400).json({ error: 'path is required' });
+      res.status(400).json({ error: 'path is required' });
+      return;
     }
     if (!config.rootDirs) config.rootDirs = [];
     if (config.rootDirs.includes(rootPath)) {
-      return res.status(409).json({ error: 'Root already exists' });
+      res.status(409).json({ error: 'Root already exists' });
+      return;
     }
     config.rootDirs.push(rootPath);
     saveConfig(CONFIG_PATH, config);
@@ -223,9 +234,10 @@ async function main() {
 
   // DELETE /roots — remove a root directory
   app.delete('/roots', requireAuth, (req, res) => {
-    const { path: rootPath } = req.body;
+    const { path: rootPath } = req.body as { path?: string };
     if (!rootPath || !config.rootDirs) {
-      return res.status(400).json({ error: 'path is required' });
+      res.status(400).json({ error: 'path is required' });
+      return;
     }
     config.rootDirs = config.rootDirs.filter((r) => r !== rootPath);
     saveConfig(CONFIG_PATH, config);
@@ -236,9 +248,15 @@ async function main() {
 
   // POST /sessions
   app.post('/sessions', requireAuth, (req, res) => {
-    const { repoPath, repoName, worktreePath, claudeArgs } = req.body;
+    const { repoPath, repoName, worktreePath, claudeArgs } = req.body as {
+      repoPath?: string;
+      repoName?: string;
+      worktreePath?: string;
+      claudeArgs?: string[];
+    };
     if (!repoPath) {
-      return res.status(400).json({ error: 'repoPath is required' });
+      res.status(400).json({ error: 'repoPath is required' });
+      return;
     }
 
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
@@ -248,13 +266,15 @@ async function main() {
     const roots = config.rootDirs || [];
     const root = roots.find(function (r) { return repoPath.startsWith(r); }) || '';
 
-    let args, cwd, worktreeName;
+    let args: string[];
+    let cwd: string;
+    let worktreeName: string;
 
     if (worktreePath) {
       // Resume existing worktree — run claude inside the worktree directory
       args = [...baseArgs];
       cwd = worktreePath;
-      worktreeName = worktreePath.split('/').pop();
+      worktreeName = worktreePath.split('/').pop() || '';
     } else {
       // New worktree
       worktreeName = 'mobile-' + name + '-' + Date.now().toString(36);
@@ -271,13 +291,13 @@ async function main() {
       command: config.claudeCommand,
       args,
     });
-    return res.status(201).json(session);
+    res.status(201).json(session);
   });
 
   // DELETE /sessions/:id
   app.delete('/sessions/:id', requireAuth, (req, res) => {
     try {
-      sessions.kill(req.params.id);
+      sessions.kill(req.params['id'] as string);
       res.json({ ok: true });
     } catch (_) {
       res.status(404).json({ error: 'Session not found' });
@@ -286,11 +306,15 @@ async function main() {
 
   // PATCH /sessions/:id — update displayName and send /rename through PTY
   app.patch('/sessions/:id', requireAuth, (req, res) => {
-    const { displayName } = req.body;
-    if (!displayName) return res.status(400).json({ error: 'displayName is required' });
+    const { displayName } = req.body as { displayName?: string };
+    if (!displayName) {
+      res.status(400).json({ error: 'displayName is required' });
+      return;
+    }
     try {
-      const updated = sessions.updateDisplayName(req.params.id, displayName);
-      const session = sessions.get(req.params.id);
+      const id = req.params['id'] as string;
+      const updated = sessions.updateDisplayName(id, displayName);
+      const session = sessions.get(id);
       if (session && session.pty) {
         session.pty.write('/rename "' + displayName.replace(/"/g, '\\"') + '"\r');
       }

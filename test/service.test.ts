@@ -1,7 +1,6 @@
-const { test } = require('node:test');
-const assert = require('node:assert/strict');
-
-const service = require('../server/service');
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as service from '../server/service.js';
 
 test('getPlatform returns macos or linux', () => {
   const platform = service.getPlatform();

@@ -1,10 +1,11 @@
-'use strict';
+import { WebSocketServer, WebSocket } from 'ws';
+import http from 'node:http';
+import * as sessions from './sessions.js';
+import { WorktreeWatcher } from './watcher.js';
+import type { Session } from './types.js';
 
-const { WebSocketServer } = require('ws');
-const sessions = require('./sessions');
-
-function parseCookies(cookieHeader) {
-  const cookies = {};
+function parseCookies(cookieHeader: string | undefined): Record<string, string> {
+  const cookies: Record<string, string> = {};
   if (!cookieHeader) return cookies;
   cookieHeader.split(';').forEach((part) => {
     const idx = part.indexOf('=');
@@ -16,11 +17,11 @@ function parseCookies(cookieHeader) {
   return cookies;
 }
 
-function setupWebSocket(server, authenticatedTokens, watcher) {
+function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, watcher: WorktreeWatcher | null): { wss: WebSocketServer; broadcastEvent: (type: string) => void } {
   const wss = new WebSocketServer({ noServer: true });
-  const eventClients = new Set();
+  const eventClients = new Set<WebSocket>();
 
-  function broadcastEvent(type) {
+  function broadcastEvent(type: string): void {
     const msg = JSON.stringify({ type });
     for (const client of eventClients) {
       if (client.readyState === client.OPEN) {
@@ -37,7 +38,7 @@ function setupWebSocket(server, authenticatedTokens, watcher) {
 
   server.on('upgrade', (request, socket, head) => {
     const cookies = parseCookies(request.headers.cookie);
-    if (!authenticatedTokens.has(cookies.token)) {
+    if (!authenticatedTokens.has(cookies['token'] ?? '')) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
@@ -60,7 +61,7 @@ function setupWebSocket(server, authenticatedTokens, watcher) {
       return;
     }
 
-    const sessionId = match[1];
+    const sessionId = match[1]!;
     const session = sessions.get(sessionId);
     if (!session) {
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
@@ -69,11 +70,16 @@ function setupWebSocket(server, authenticatedTokens, watcher) {
     }
 
     wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request, session);
+      sessionMap.set(ws, session);
+      wss.emit('connection', ws, request);
     });
   });
 
-  wss.on('connection', (ws, request, session) => {
+  const sessionMap = new WeakMap<WebSocket, Session>();
+
+  wss.on('connection', (ws: WebSocket, _request: http.IncomingMessage) => {
+    const session = sessionMap.get(ws);
+    if (!session) return;
     const ptyProcess = session.pty;
 
     for (const chunk of session.scrollback) {
@@ -112,4 +118,4 @@ function setupWebSocket(server, authenticatedTokens, watcher) {
   return { wss, broadcastEvent };
 }
 
-module.exports = { setupWebSocket };
+export { setupWebSocket };

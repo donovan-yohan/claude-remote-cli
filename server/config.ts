@@ -1,6 +1,7 @@
-const fs = require('fs');
+import fs from 'node:fs';
+import type { Config } from './types.js';
 
-const DEFAULTS = {
+export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs'> = {
   host: '0.0.0.0',
   port: 3456,
   cookieTTL: '24h',
@@ -9,17 +10,15 @@ const DEFAULTS = {
   claudeArgs: [],
 };
 
-function loadConfig(configPath) {
+export function loadConfig(configPath: string): Config {
   if (!fs.existsSync(configPath)) {
     throw new Error(`Config file not found: ${configPath}`);
   }
   const raw = fs.readFileSync(configPath, 'utf8');
-  const parsed = JSON.parse(raw);
+  const parsed = JSON.parse(raw) as Partial<Config>;
   return { ...DEFAULTS, ...parsed };
 }
 
-function saveConfig(configPath, config) {
+export function saveConfig(configPath: string, config: Config): void {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
 }
-
-module.exports = { DEFAULTS, loadConfig, saveConfig };

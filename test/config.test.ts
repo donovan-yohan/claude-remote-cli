@@ -1,12 +1,11 @@
-const { test, before, after, afterEach } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import { test, before, after, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { DEFAULTS, loadConfig, saveConfig } from '../server/config.js';
 
-const { DEFAULTS, loadConfig, saveConfig } = require('../server/config.js');
-
-let tmpDir;
+let tmpDir!: string;
 
 before(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-remote-cli-config-test-'));
@@ -54,7 +53,7 @@ test('saveConfig writes JSON with 2-space indent', () => {
   const configPath = path.join(tmpDir, 'output.json');
   const config = { port: 3456, host: '0.0.0.0' };
 
-  saveConfig(configPath, config);
+  saveConfig(configPath, config as Parameters<typeof saveConfig>[1]);
 
   const raw = fs.readFileSync(configPath, 'utf8');
   assert.equal(raw, JSON.stringify(config, null, 2));

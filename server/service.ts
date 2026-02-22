@@ -1,19 +1,24 @@
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const { DEFAULTS } = require('./config');
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
+import { DEFAULTS } from './config.js';
+import type { Platform, ServicePaths, InstallOpts } from './types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const SERVICE_LABEL = 'com.claude-remote-cli';
 const HOME = process.env.HOME || process.env.USERPROFILE || '~';
 const CONFIG_DIR = path.join(HOME, '.config', 'claude-remote-cli');
 
-function getPlatform() {
+function getPlatform(): Platform {
   if (process.platform === 'darwin') return 'macos';
   if (process.platform === 'linux') return 'linux';
   throw new Error('Unsupported platform: ' + process.platform + '. Only macOS and Linux are supported.');
 }
 
-function getServicePaths() {
+function getServicePaths(): ServicePaths {
   const platform = getPlatform();
   if (platform === 'macos') {
     return {
@@ -29,7 +34,16 @@ function getServicePaths() {
   };
 }
 
-function generateServiceFile(platform, opts) {
+type ServiceFileOpts = {
+  nodePath: string;
+  scriptPath: string;
+  configPath: string;
+  port: string;
+  host: string;
+  logDir: string | null;
+};
+
+function generateServiceFile(platform: Platform, opts: ServiceFileOpts): string {
   const { nodePath, scriptPath, configPath, port, host, logDir } = opts;
 
   if (platform === 'macos') {
@@ -55,9 +69,9 @@ function generateServiceFile(platform, opts) {
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>${path.join(logDir, 'stdout.log')}</string>
+  <string>${path.join(logDir as string, 'stdout.log')}</string>
   <key>StandardErrorPath</key>
-  <string>${path.join(logDir, 'stderr.log')}</string>
+  <string>${path.join(logDir as string, 'stderr.log')}</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
@@ -82,12 +96,12 @@ Environment=PATH=${process.env.PATH}
 WantedBy=default.target`;
 }
 
-function isInstalled() {
+function isInstalled(): boolean {
   const { servicePath } = getServicePaths();
   return fs.existsSync(servicePath);
 }
 
-function install(opts) {
+function install(opts: InstallOpts): void {
   const platform = getPlatform();
   const { servicePath, logDir } = getServicePaths();
 
@@ -123,7 +137,7 @@ function install(opts) {
   }
 }
 
-function uninstall() {
+function uninstall(): void {
   const platform = getPlatform();
   const { servicePath } = getServicePaths();
 
@@ -149,7 +163,9 @@ function uninstall() {
   console.log('Service uninstalled.');
 }
 
-function status() {
+type ServiceStatus = { installed: false; running: false } | { installed: true; running: boolean };
+
+function status(): ServiceStatus {
   const platform = getPlatform();
 
   if (!isInstalled()) {
@@ -160,7 +176,7 @@ function status() {
   return { installed: true, running };
 }
 
-function checkRunning(platform) {
+function checkRunning(platform: Platform): boolean {
   if (platform === 'macos') {
     try {
       const out = execSync('launchctl list ' + SERVICE_LABEL, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
@@ -178,4 +194,4 @@ function checkRunning(platform) {
   }
 }
 
-module.exports = { getPlatform, getServicePaths, generateServiceFile, isInstalled, install, uninstall, status, SERVICE_LABEL, CONFIG_DIR };
+export { getPlatform, getServicePaths, generateServiceFile, isInstalled, install, uninstall, status, SERVICE_LABEL, CONFIG_DIR };

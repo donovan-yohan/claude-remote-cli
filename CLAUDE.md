@@ -8,20 +8,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | Command | Description |
 |---------|-------------|
-| `npm start` | Start the server (`node server/index.js`) |
-| `npm test` | Run all tests (`node --test test/*.test.js`) |
-| `node --test test/auth.test.js` | Run a single test file |
+| `npm run build` | Compile TypeScript (`tsc`) |
+| `npm start` | Build + start server (`tsc && node dist/server/index.js`) |
+| `npm test` | Build + run all tests (`tsc -p tsconfig.test.json && node --test dist/test/*.test.js`) |
 | `claude-remote-cli` | Run as global CLI (after `npm install -g`) |
 | `npm version patch\|minor\|major` | Bump version, commit, and tag (see [deployment guide](docs/guides/deployment.md)) |
 
 ## Architecture
 
-Node.js backend (Express + node-pty + WebSocket) manages Claude Code CLI sessions as PTY processes. Vanilla JS frontend with xterm.js renders terminals in the browser. No build step.
+TypeScript + ESM backend (Express + node-pty + WebSocket) compiled to `dist/`. Vanilla JS frontend with xterm.js renders terminals in the browser.
 
-- `bin/` - CLI entry point, flag parsing, config directory setup
-- `server/` - Express REST API, WebSocket relay, PTY session manager, auth, config
-- `public/` - Single-page app (HTML/CSS/JS), bundled xterm.js vendor libs
-- `test/` - Unit tests using Node.js built-in `node:test`
+- `bin/` - CLI entry point (TypeScript source), compiled to `dist/bin/`
+- `server/` - Express REST API, WebSocket relay, PTY session manager, auth, config, shared types (TypeScript source), compiled to `dist/server/`
+- `public/` - Single-page app (HTML/CSS/JS), bundled xterm.js vendor libs (no build step)
+- `test/` - Unit tests using Node.js built-in `node:test` (TypeScript source), compiled to `dist/test/`
+- `dist/` - Compiled JavaScript output (gitignored)
 
 ## Documentation Map
 
@@ -45,5 +46,5 @@ Node.js backend (Express + node-pty + WebSocket) manages Claude Code CLI session
 - Scrollback buffer is capped at 256KB per session; oldest chunks are trimmed first
 - Config lives at `~/.config/claude-remote-cli/config.json` when installed globally, `./config.json` for local dev
 - PIN reset: delete `pinHash` from config file and restart server
-- Requires Node.js >= 20.0.0
+- Requires Node.js >= 24.0.0 (use `nvm use` with `.nvmrc`)
 - ADRs in `docs/adrs/` enforce structural constraints (e.g., server module list); update ADRs when adding new modules

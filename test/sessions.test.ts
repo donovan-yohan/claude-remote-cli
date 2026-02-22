@@ -1,11 +1,9 @@
-'use strict';
-
-const { describe, it, afterEach } = require('node:test');
-const assert = require('node:assert');
-const sessions = require('../server/sessions');
+import { describe, it, afterEach } from 'node:test';
+import assert from 'node:assert';
+import * as sessions from '../server/sessions.js';
 
 // Track created session IDs so we can clean up after each test
-const createdIds = [];
+const createdIds: string[] = [];
 
 afterEach(() => {
   // Kill any remaining sessions created during tests
@@ -46,11 +44,11 @@ describe('sessions', () => {
     assert.strictEqual(result.repoPath, '/tmp');
     assert.ok(typeof result.pid === 'number', 'should have a numeric pid');
     assert.ok(result.createdAt, 'should have a createdAt timestamp');
-    assert.strictEqual(result.pty, undefined, 'should not expose pty object');
+    assert.strictEqual('pty' in result, false, 'should not expose pty object');
 
     const list = sessions.list();
     assert.strictEqual(list.length, 1);
-    assert.strictEqual(list[0].id, result.id);
+    assert.strictEqual(list[0]?.id, result.id);
   });
 
   it('get returns session by id', () => {

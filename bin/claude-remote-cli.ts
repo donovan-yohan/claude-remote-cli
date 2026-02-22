@@ -1,8 +1,11 @@
 #!/usr/bin/env node
-'use strict';
+import path from 'node:path';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import * as service from '../server/service.js';
+import { DEFAULTS } from '../server/config.js';
 
-const path = require('path');
-const fs = require('fs');
+const require = createRequire(import.meta.url);
 
 // Parse CLI flags
 const args = process.argv.slice(2);
@@ -27,29 +30,28 @@ Options:
 }
 
 if (args.includes('--version') || args.includes('-v')) {
-  const pkg = require('../package.json');
+  const pkg = require('../package.json') as { version: string };
   console.log(pkg.version);
   process.exit(0);
 }
 
-function getArg(flag) {
+function getArg(flag: string): string | undefined {
   const idx = args.indexOf(flag);
   if (idx === -1 || idx + 1 >= args.length) return undefined;
   return args[idx + 1];
 }
 
-function resolveConfigPath() {
+function resolveConfigPath(): string {
   const explicit = getArg('--config');
   if (explicit) return explicit;
-  const { CONFIG_DIR } = require('../server/service');
-  return path.join(CONFIG_DIR, 'config.json');
+  return path.join(service.CONFIG_DIR, 'config.json');
 }
 
-function runServiceCommand(fn) {
+function runServiceCommand(fn: () => void): never {
   try {
     fn();
   } catch (e) {
-    console.error(e.message);
+    console.error((e as Error).message);
     process.exit(1);
   }
   process.exit(0);
@@ -57,12 +59,10 @@ function runServiceCommand(fn) {
 
 const command = args[0];
 if (command === 'install' || command === 'uninstall' || command === 'status' || args.includes('--bg')) {
-  const service = require('../server/service');
-
   if (command === 'uninstall') {
-    runServiceCommand(function () { service.uninstall(); });
+    runServiceCommand(() => { service.uninstall(); });
   } else if (command === 'status') {
-    runServiceCommand(function () {
+    runServiceCommand(() => {
       const st = service.status();
       if (!st.installed) {
         console.log('Service is not installed.');
@@ -73,12 +73,11 @@ if (command === 'install' || command === 'uninstall' || command === 'status' || 
       }
     });
   } else {
-    runServiceCommand(function () {
-      const { DEFAULTS } = require('../server/config');
+    runServiceCommand(() => {
       service.install({
         configPath: resolveConfigPath(),
-        port: getArg('--port') || String(DEFAULTS.port),
-        host: getArg('--host') || DEFAULTS.host,
+        port: getArg('--port') ?? String(DEFAULTS.port),
+        host: getArg('--host') ?? DEFAULTS.host,
       });
     });
   }
@@ -93,8 +92,10 @@ if (!fs.existsSync(configDir)) {
 }
 
 // Pass config path and CLI overrides to the server
-process.env.CLAUDE_REMOTE_CONFIG = configPath;
-if (getArg('--port')) process.env.CLAUDE_REMOTE_PORT = getArg('--port');
-if (getArg('--host')) process.env.CLAUDE_REMOTE_HOST = getArg('--host');
+process.env['CLAUDE_REMOTE_CONFIG'] = configPath;
+const portArg = getArg('--port');
+if (portArg !== undefined) process.env['CLAUDE_REMOTE_PORT'] = portArg;
+const hostArg = getArg('--host');
+if (hostArg !== undefined) process.env['CLAUDE_REMOTE_HOST'] = hostArg;
 
-require('../server/index.js');
+await import('../server/index.js');

@@ -1,21 +1,22 @@
-'use strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { EventEmitter } from 'node:events';
 
-const fs = require('fs');
-const path = require('path');
-const EventEmitter = require('events');
+export class WorktreeWatcher extends EventEmitter {
+  private _watchers: fs.FSWatcher[];
+  private _debounceTimer: ReturnType<typeof setTimeout> | null;
 
-class WorktreeWatcher extends EventEmitter {
   constructor() {
     super();
     this._watchers = [];
     this._debounceTimer = null;
   }
 
-  rebuild(rootDirs) {
+  rebuild(rootDirs: string[]): void {
     this._closeAll();
 
     for (const rootDir of rootDirs) {
-      let entries;
+      let entries: fs.Dirent[];
       try {
         entries = fs.readdirSync(rootDir, { withFileTypes: true });
       } catch (_) {
@@ -30,7 +31,7 @@ class WorktreeWatcher extends EventEmitter {
     }
   }
 
-  _watchRepo(repoPath) {
+  private _watchRepo(repoPath: string): void {
     const worktreeDir = path.join(repoPath, '.claude', 'worktrees');
     if (fs.existsSync(worktreeDir)) {
       this._addWatch(worktreeDir);
@@ -42,7 +43,7 @@ class WorktreeWatcher extends EventEmitter {
     }
   }
 
-  _addWatch(dirPath) {
+  private _addWatch(dirPath: string): void {
     try {
       const watcher = fs.watch(dirPath, { persistent: false }, () => {
         this._debouncedEmit();
@@ -52,14 +53,14 @@ class WorktreeWatcher extends EventEmitter {
     } catch (_) {}
   }
 
-  _debouncedEmit() {
+  private _debouncedEmit(): void {
     if (this._debounceTimer) clearTimeout(this._debounceTimer);
     this._debounceTimer = setTimeout(() => {
       this.emit('worktrees-changed');
     }, 500);
   }
 
-  _closeAll() {
+  private _closeAll(): void {
     for (const w of this._watchers) {
       try { w.close(); } catch (_) {}
     }
@@ -70,9 +71,7 @@ class WorktreeWatcher extends EventEmitter {
     }
   }
 
-  close() {
+  close(): void {
     this._closeAll();
   }
 }
-
-module.exports = { WorktreeWatcher };
