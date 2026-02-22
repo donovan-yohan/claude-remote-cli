@@ -249,7 +249,7 @@
     }
 
     terminalScrollbarThumb.style.display = 'block';
-    var thumbHeight = Math.max(20, (term.rows / totalLines) * trackHeight);
+    var thumbHeight = Math.max(isMobileDevice ? 44 : 20, (term.rows / totalLines) * trackHeight);
     var thumbTop = (viewportTop / (totalLines - term.rows)) * (trackHeight - thumbHeight);
 
     terminalScrollbarThumb.style.height = thumbHeight + 'px';
@@ -262,7 +262,7 @@
     var totalLines = buf.baseY + term.rows;
     if (totalLines <= term.rows) return;
 
-    var thumbHeight = Math.max(20, (term.rows / totalLines) * terminalScrollbar.clientHeight);
+    var thumbHeight = Math.max(isMobileDevice ? 44 : 20, (term.rows / totalLines) * terminalScrollbar.clientHeight);
     var trackUsable = terminalScrollbar.clientHeight - thumbHeight;
     var relativeY = clientY - rect.top - thumbHeight / 2;
     var ratio = Math.max(0, Math.min(1, relativeY / trackUsable));
@@ -287,7 +287,7 @@
       var totalLines = buf.baseY + term.rows;
       if (totalLines <= term.rows) return;
 
-      var thumbHeight = Math.max(20, (term.rows / totalLines) * terminalScrollbar.clientHeight);
+      var thumbHeight = Math.max(isMobileDevice ? 44 : 20, (term.rows / totalLines) * terminalScrollbar.clientHeight);
       var trackUsable = terminalScrollbar.clientHeight - thumbHeight;
       var newTop = Math.max(0, Math.min(trackUsable, scrollbarDragStartTop + deltaY));
       var ratio = newTop / trackUsable;
@@ -1108,10 +1108,20 @@
     var text = btn.dataset.text;
     var key = btn.dataset.key;
 
+    // Flush composed text before sending Enter so pending input isn't lost
+    if (key === '\r' && mobileInput.flushComposedText) {
+      mobileInput.flushComposedText();
+    }
+
     if (text !== undefined) {
       ws.send(text);
     } else if (key !== undefined) {
       ws.send(key);
+    }
+
+    // Clear input after Enter to reset state
+    if (key === '\r' && mobileInput.clearInput) {
+      mobileInput.clearInput();
     }
 
     // Re-focus the mobile input to keep keyboard open
@@ -1342,12 +1352,12 @@
     });
 
     mobileInput.addEventListener('compositionend', function () {
+      isComposing = false;
       if (ws && ws.readyState === WebSocket.OPEN) {
         var currentValue = mobileInput.value;
         sendInputDiff(currentValue);
         lastInputValue = currentValue;
       }
-      setTimeout(function () { isComposing = false; }, 0);
     });
 
     mobileInput.addEventListener('blur', function () {
@@ -1361,6 +1371,23 @@
       isComposing = false;
       lastInputValue = '';
     });
+
+    // Flush any pending composed text to the terminal
+    function flushComposedText() {
+      isComposing = false;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        var currentValue = mobileInput.value;
+        sendInputDiff(currentValue);
+        lastInputValue = currentValue;
+      }
+    }
+    function clearInput() {
+      mobileInput.value = '';
+      lastInputValue = '';
+    }
+    // Expose for toolbar handler
+    mobileInput.flushComposedText = flushComposedText;
+    mobileInput.clearInput = clearInput;
 
     // Handle text input with autocorrect
     var clearTimer = null;
@@ -1389,6 +1416,7 @@
 
       switch (e.key) {
         case 'Enter':
+          flushComposedText();
           ws.send('\r');
           mobileInput.value = '';
           lastInputValue = '';
