@@ -417,6 +417,7 @@ html, body {
 
 /* ===== Touch Toolbar ===== */
 #toolbar {
+  display: none;
   flex-shrink: 0;
   background: var(--surface);
   border-top: 1px solid var(--border);
@@ -992,6 +993,10 @@ dialog#delete-worktree-dialog h2 {
 
   .tb-btn.tb-arrow {
     font-size: 1.2rem;
+  }
+
+  #toolbar {
+    display: block;
   }
 }
 
