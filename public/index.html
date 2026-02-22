@@ -110,6 +110,13 @@
       <label for="custom-path-input">Or enter a local path:</label>
       <input type="text" id="custom-path-input" placeholder="/Users/you/code/my-repo" />
     </div>
+    <div class="dialog-option">
+      <label>
+        <input type="checkbox" id="dialog-yolo" />
+        Yolo mode
+      </label>
+      <span class="dialog-option-hint">Skip all permission prompts</span>
+    </div>
     <div class="dialog-actions">
       <button id="dialog-cancel">Cancel</button>
       <button id="dialog-start" class="btn-accent">New Worktree</button>
@@ -135,7 +142,8 @@
 
   <!-- Context Menu -->
   <div id="context-menu" class="context-menu" hidden>
-    <button id="ctx-delete-worktree" class="context-menu-item">Delete worktree</button>
+    <button id="ctx-resume-yolo" class="context-menu-item">Resume in yolo mode</button>
+    <button id="ctx-delete-worktree" class="context-menu-item ctx-danger">Delete worktree</button>
   </div>
 
   <!-- Delete Worktree Confirmation Dialog -->

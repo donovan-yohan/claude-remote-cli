@@ -590,6 +590,35 @@ dialog#new-session-dialog h2 {
   border-color: var(--accent);
 }
 
+.dialog-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 1rem;
+}
+
+.dialog-option label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.dialog-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.dialog-option-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding-left: 24px;
+}
+
 .dialog-actions {
   display: flex;
   gap: 8px;
@@ -767,6 +796,11 @@ dialog#settings-dialog h2 {
 .context-menu-item:active {
   background: var(--bg);
   color: var(--accent);
+}
+
+.context-menu-item.ctx-danger:hover,
+.context-menu-item.ctx-danger:active {
+  color: #c0392b;
 }
 
 /* ===== Delete Worktree Dialog ===== */

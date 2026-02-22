@@ -352,7 +352,7 @@ async function main(): Promise<void> {
     }
 
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
-    const baseArgs = claudeArgs || config.claudeArgs || [];
+    const baseArgs = [...(config.claudeArgs || []), ...(claudeArgs || [])];
 
     // Compute root by matching repoPath against configured rootDirs
     const roots = config.rootDirs || [];

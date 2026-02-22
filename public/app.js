@@ -34,7 +34,9 @@
   var sidebarRepoFilter = document.getElementById('sidebar-repo-filter');
   var dialogRootSelect = document.getElementById('dialog-root-select');
   var dialogRepoSelect = document.getElementById('dialog-repo-select');
+  var dialogYolo = document.getElementById('dialog-yolo');
   var contextMenu = document.getElementById('context-menu');
+  var ctxResumeYolo = document.getElementById('ctx-resume-yolo');
   var ctxDeleteWorktree = document.getElementById('ctx-delete-worktree');
   var deleteWtDialog = document.getElementById('delete-worktree-dialog');
   var deleteWtName = document.getElementById('delete-wt-name');
@@ -550,7 +552,18 @@
       .catch(function () {});
   }
 
-  // ── Delete Worktree ────────────────────────────────────────────────────────
+  // ── Context Menu Actions ──────────────────────────────────────────────────
+
+  ctxResumeYolo.addEventListener('click', function (e) {
+    e.stopPropagation();
+    hideContextMenu();
+    if (!contextMenuTarget) return;
+    startSession(
+      contextMenuTarget.repoPath,
+      contextMenuTarget.worktreePath,
+      ['--dangerously-skip-permissions']
+    );
+  });
 
   ctxDeleteWorktree.addEventListener('click', function (e) {
     e.stopPropagation();
@@ -658,12 +671,13 @@
     dialogRepoSelect.disabled = false;
   });
 
-  function startSession(repoPath, worktreePath) {
+  function startSession(repoPath, worktreePath, claudeArgs) {
     var body = {
       repoPath: repoPath,
       repoName: repoPath.split('/').filter(Boolean).pop(),
     };
     if (worktreePath) body.worktreePath = worktreePath;
+    if (claudeArgs) body.claudeArgs = claudeArgs;
 
     fetch('/sessions', {
       method: 'POST',
@@ -683,6 +697,7 @@
 
   newSessionBtn.addEventListener('click', function () {
     customPath.value = '';
+    dialogYolo.checked = false;
     populateDialogRootSelect();
 
     var sidebarRoot = sidebarRootFilter.value;
@@ -709,7 +724,8 @@
   dialogStart.addEventListener('click', function () {
     var path = customPath.value.trim() || dialogRepoSelect.value;
     if (!path) return;
-    startSession(path);
+    var args = dialogYolo.checked ? ['--dangerously-skip-permissions'] : undefined;
+    startSession(path, undefined, args);
   });
 
   dialogCancel.addEventListener('click', function () {
