@@ -316,6 +316,24 @@
     return path.split('/').filter(Boolean).pop() || path;
   }
 
+  function formatRelativeTime(isoString) {
+    if (!isoString) return '';
+    var now = Date.now();
+    var then = new Date(isoString).getTime();
+    var diffSec = Math.floor((now - then) / 1000);
+    if (diffSec < 60) return 'just now';
+    var diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return diffMin + ' min ago';
+    var diffHr = Math.floor(diffMin / 60);
+    if (diffHr < 24) return diffHr + (diffHr === 1 ? ' hour ago' : ' hours ago');
+    var diffDay = Math.floor(diffHr / 24);
+    if (diffDay === 1) return 'yesterday';
+    if (diffDay < 7) return diffDay + ' days ago';
+    var d = new Date(isoString);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return months[d.getMonth()] + ' ' + d.getDate();
+  }
+
   function renderUnifiedList() {
     var rootFilter = sidebarRootFilter.value;
     var repoFilter = sidebarRepoFilter.value;
@@ -392,6 +410,11 @@
     infoDiv.appendChild(nameSpan);
     infoDiv.appendChild(subSpan);
 
+    var timeSpan = document.createElement('span');
+    timeSpan.className = 'session-time';
+    timeSpan.textContent = formatRelativeTime(session.lastActivity);
+    infoDiv.appendChild(timeSpan);
+
     var actionsDiv = document.createElement('div');
     actionsDiv.className = 'session-actions';
 
@@ -435,8 +458,9 @@
 
     var nameSpan = document.createElement('span');
     nameSpan.className = 'session-name';
-    nameSpan.textContent = wt.name;
-    nameSpan.title = wt.name;
+    var wtDisplayName = wt.displayName || wt.name;
+    nameSpan.textContent = wtDisplayName;
+    nameSpan.title = wtDisplayName;
 
     var subSpan = document.createElement('span');
     subSpan.className = 'session-sub';
@@ -444,6 +468,11 @@
 
     infoDiv.appendChild(nameSpan);
     infoDiv.appendChild(subSpan);
+
+    var timeSpan = document.createElement('span');
+    timeSpan.className = 'session-time';
+    timeSpan.textContent = formatRelativeTime(wt.lastActivity);
+    infoDiv.appendChild(timeSpan);
 
     li.appendChild(infoDiv);
 
