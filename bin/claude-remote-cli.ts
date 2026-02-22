@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import * as service from '../server/service.js';
 import { DEFAULTS } from '../server/config.js';
 
-const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Parse CLI flags
 const args = process.argv.slice(2);
@@ -30,7 +30,7 @@ Options:
 }
 
 if (args.includes('--version') || args.includes('-v')) {
-  const pkg = require('../package.json') as { version: string };
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8')) as { version: string };
   console.log(pkg.version);
   process.exit(0);
 }

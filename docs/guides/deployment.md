@@ -51,21 +51,22 @@ The workflow (`.github/workflows/publish.yml`) runs on every `v*` tag push:
 ## Pre-Publish Checklist
 
 1. All tests pass: `npm test`
-2. CLI syntax valid: `node -c bin/claude-remote-cli.js`
+2. Build succeeds: `npm run build`
 3. No uncommitted changes: `git status` is clean
-4. README reflects current features and help output
-5. `files` field in `package.json` includes all needed directories
+4. You are on `master` — tags must be pushed from the main branch so CI checks out the correct commit
+5. README reflects current features and help output
+6. `files` field in `package.json` includes all needed directories
 
 ## What Gets Published
 
 Controlled by the `files` field in `package.json`:
 
-- `bin/` — CLI entry point
-- `server/` — All server modules
+- `dist/bin/` — Compiled CLI entry point
+- `dist/server/` — Compiled server modules
 - `public/` — Frontend SPA + vendor libs
 - `config.example.json`
 
-Test files, docs, and config are excluded from the published package.
+TypeScript source, test files, docs, and local config are excluded from the published package.
 
 ## Verifying a Publish
 
