@@ -1,8 +1,7 @@
-'use strict';
-
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { DEFAULTS } = require('./config');
 
 const SERVICE_LABEL = 'com.claude-remote-cli';
 const HOME = process.env.HOME || process.env.USERPROFILE || '~';
@@ -99,8 +98,8 @@ function install(opts) {
   const nodePath = process.execPath;
   const scriptPath = path.resolve(__dirname, '..', 'bin', 'claude-remote-cli.js');
   const configPath = opts.configPath || path.join(CONFIG_DIR, 'config.json');
-  const port = opts.port || '3456';
-  const host = opts.host || '0.0.0.0';
+  const port = opts.port || String(DEFAULTS.port);
+  const host = opts.host || DEFAULTS.host;
 
   const content = generateServiceFile(platform, { nodePath, scriptPath, configPath, port, host, logDir });
 

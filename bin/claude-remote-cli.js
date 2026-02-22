@@ -41,8 +41,8 @@ function getArg(flag) {
 function resolveConfigPath() {
   const explicit = getArg('--config');
   if (explicit) return explicit;
-  const dir = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.config', 'claude-remote-cli');
-  return path.join(dir, 'config.json');
+  const { CONFIG_DIR } = require('../server/service');
+  return path.join(CONFIG_DIR, 'config.json');
 }
 
 function runServiceCommand(fn) {
@@ -74,10 +74,11 @@ if (command === 'install' || command === 'uninstall' || command === 'status' || 
     });
   } else {
     runServiceCommand(function () {
+      const { DEFAULTS } = require('../server/config');
       service.install({
         configPath: resolveConfigPath(),
-        port: getArg('--port') || '3456',
-        host: getArg('--host') || '0.0.0.0',
+        port: getArg('--port') || String(DEFAULTS.port),
+        host: getArg('--host') || DEFAULTS.host,
       });
     });
   }
