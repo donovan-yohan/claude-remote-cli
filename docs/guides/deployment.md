@@ -19,12 +19,26 @@ npm version major   # 0.2.0 → 1.0.0  — breaking changes (CLI flags, config f
 
 ## Publishing to npm
 
+Publishing is automated via GitHub Actions. When you push a version tag, CI runs tests and publishes to npm.
+
 ```bash
-npm test                  # verify all tests pass
-npm version <type>        # bump version (see above)
-npm publish               # publish to npm registry
-git push && git push --tags   # push commit + tag to GitHub
+npm test                      # verify all tests pass locally
+npm version <type>            # bump version (see above)
+git push && git push --tags   # push commit + tag → CI publishes
 ```
+
+The workflow (`.github/workflows/publish.yml`) runs on every `v*` tag push:
+1. Checks out the tagged commit
+2. Installs dependencies with `npm ci`
+3. Runs `npm test`
+4. Publishes with `npm publish --provenance`
+
+### CI Setup (one-time)
+
+1. Create a GitHub environment called `release` in the repo (Settings → Environments)
+2. On npmjs.com, configure **trusted publishing** for `claude-remote-cli` with:
+   - Workflow filename: `publish.yml`
+   - Environment name: `release`
 
 ## When to Use Each Version Type
 
