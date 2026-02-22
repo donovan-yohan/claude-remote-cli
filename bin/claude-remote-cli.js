@@ -9,8 +9,15 @@ const args = process.argv.slice(2);
 
 if (args.includes('--help') || args.includes('-h')) {
   console.log(`Usage: claude-remote-cli [options]
+       claude-remote-cli <command>
+
+Commands:
+  install            Install as a background service (survives reboot)
+  uninstall          Stop and remove the background service
+  status             Show whether the service is running
 
 Options:
+  --bg               Shortcut: install and start as background service
   --port <port>      Override server port (default: 3456)
   --host <host>      Override bind address (default: 0.0.0.0)
   --config <path>    Path to config.json (default: ~/.config/claude-remote-cli/config.json)
@@ -31,12 +38,57 @@ function getArg(flag) {
   return args[idx + 1];
 }
 
-// Determine config directory
-const configDir = getArg('--config')
-  ? path.dirname(getArg('--config'))
-  : path.join(process.env.HOME || process.env.USERPROFILE || '~', '.config', 'claude-remote-cli');
+function resolveConfigPath() {
+  var explicit = getArg('--config');
+  if (explicit) return explicit;
+  var dir = path.join(process.env.HOME || process.env.USERPROFILE || '~', '.config', 'claude-remote-cli');
+  return path.join(dir, 'config.json');
+}
 
-const configPath = getArg('--config') || path.join(configDir, 'config.json');
+function runServiceCommand(fn) {
+  try {
+    fn();
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+// Subcommands
+var command = args[0];
+if (command === 'install' || command === 'uninstall' || command === 'status' || args.includes('--bg')) {
+  var service = require('../server/service');
+
+  if (command === 'uninstall') {
+    runServiceCommand(function () { service.uninstall(); });
+  }
+
+  if (command === 'status') {
+    runServiceCommand(function () {
+      var st = service.status();
+      if (!st.installed) {
+        console.log('Service is not installed.');
+      } else if (st.running) {
+        console.log('Service is installed and running.');
+      } else {
+        console.log('Service is installed but not running.');
+      }
+    });
+  }
+
+  // install or --bg
+  runServiceCommand(function () {
+    service.install({
+      configPath: resolveConfigPath(),
+      port: getArg('--port') || '3456',
+      host: getArg('--host') || '0.0.0.0',
+    });
+  });
+}
+
+var configPath = resolveConfigPath();
+var configDir = path.dirname(configPath);
 
 // Ensure config directory exists
 if (!fs.existsSync(configDir)) {
