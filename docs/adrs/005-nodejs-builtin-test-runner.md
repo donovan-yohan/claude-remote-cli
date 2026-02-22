@@ -22,15 +22,18 @@ All unit tests MUST use the `node:test` module and `node:assert` for assertions.
 - Individual compiled test files MUST be runnable via `node --test dist/test/<file>.test.js`
 
 ### Current Test Coverage
-Five test files MUST exist:
+Eight test files MUST exist:
 
 | File | Coverage |
 |------|----------|
 | `test/auth.test.ts` | PIN hashing, PIN verification, rate limiting (threshold and lockout), token generation |
 | `test/clipboard.test.ts` | Clipboard tool detection, unsupported MIME type rejection |
-| `test/config.test.ts` | Config loading, default merging, missing file error, save format, default values |
+| `test/config.test.ts` | Config loading, default merging, missing file error, save format, default values, worktree metadata |
 | `test/sessions.test.ts` | Session create/list/get/kill/resize/write lifecycle, PTY spawning with real processes |
 | `test/service.test.ts` | Platform detection, service path resolution, service file generation (plist/systemd) |
+| `test/paths.test.ts` | Project root resolution, public/ directory accessibility, dist/ layout |
+| `test/version.test.ts` | Semantic version comparison (`semverLessThan`) |
+| `test/worktrees.test.ts` | DELETE /worktrees path validation (rejects paths outside `.claude/worktrees/`) |
 
 ### Test Isolation
 - `auth.test.ts` MUST call the `_resetForTesting()` export from `auth.ts` before each test to get fresh rate-limit state

@@ -24,6 +24,12 @@
 - Scrollback buffer: max 256KB per session, auto-trims oldest entries
 - Session auto-deleted when PTY exits; WebSocket closed on exit
 - `claudeArgs` from POST body are merged with `config.claudeArgs` (config args first, request args appended)
+- Resuming a worktree passes `--continue` to the Claude CLI (not `--resume`)
+- Sessions module exports: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`
+
+## Worktree Metadata Persistence
+
+Worktree metadata (display name, last activity) is persisted to `~/.config/claude-remote-cli/worktree-meta/<worktree-name>.json` so that session names and timestamps survive server restarts. Metadata is written on session creation, rename, and activity; read when listing inactive worktrees in the sidebar.
 
 ## Yolo Mode
 
@@ -76,7 +82,22 @@ Scans configured `rootDirs` one level deep for git repos. Hidden directories (st
 - All frontend state lives in `public/app.js` module-level variables inside a single IIFE
 - Vendor libraries (xterm.js, addon-fit.js) bundled in `public/vendor/`, loaded via `<script>` tags
 - DOM manipulation via `document.getElementById`, `document.createElement`, and event listeners
-- Mobile-first responsive design with touch toolbar
+- Mobile-first responsive design with touch toolbar (hidden on desktop to maximize terminal space)
+
+## Clipboard Image Passthrough
+
+Allows pasting images from the client clipboard into the remote terminal:
+
+1. **Browser paste event** (macOS Cmd+V) or **Ctrl+V interception** (Windows/Linux) detects image in clipboard
+2. Image is base64-encoded and POSTed to `POST /sessions/:id/image`
+3. Server saves to `/tmp/claude-remote-cli/:sessionId/paste-:timestamp.:ext`
+4. Server attempts to set the system clipboard via `clipboard.ts` (osascript on macOS, xclip on Linux)
+5. If clipboard set succeeds: sends `\x16` (Ctrl+V) to PTY stdin so Claude reads it
+6. If clipboard set fails: returns the file path; frontend shows an "Insert Path" button
+
+**Platform-specific Ctrl+V handling:** On Windows/Linux, xterm.js intercepts Ctrl+V internally without firing a native paste event, so a custom key event handler (`attachCustomKeyEventHandler`) reads the clipboard via the Clipboard API. On macOS, Ctrl+V sends raw `\x16` to the terminal (used by vim etc.), so only Cmd+V triggers clipboard paste.
+
+Drag-and-drop image upload uses the same `uploadImage()` flow.
 
 ## Background Service
 

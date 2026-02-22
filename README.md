@@ -17,14 +17,14 @@ claude-remote-cli
 git clone https://github.com/donovan-yohan/claude-remote-cli.git
 cd claude-remote-cli
 npm install
-node server/index.js
+npm start
 ```
 
 On first launch you'll be prompted to set a PIN. Then open `http://localhost:3456` in your browser.
 
 ## Prerequisites
 
-- **Node.js 20+**
+- **Node.js 24+**
 - **Claude Code CLI** installed and available in your PATH (or configure `claudeCommand` in config)
 
 ## Platform Support
@@ -38,6 +38,7 @@ Usage: claude-remote-cli [options]
        claude-remote-cli <command>
 
 Commands:
+  update             Update to the latest version from npm
   install            Install as a background service (survives reboot)
   uninstall          Stop and remove the background service
   status             Show whether the service is running
@@ -106,32 +107,45 @@ The PIN hash is stored in config under `pinHash`. To reset:
 
 - **PIN-protected access** with rate limiting
 - **Worktree isolation** — each session runs in its own Claude Code `--worktree`
-- **Resume sessions** — click inactive worktrees to reconnect
+- **Resume sessions** — click inactive worktrees to reconnect with `--continue`
+- **Persistent session names** — display names and timestamps survive server restarts
+- **Clipboard image paste** — paste screenshots directly into remote terminal sessions (macOS clipboard + xclip on Linux)
+- **Yolo mode** — skip permission prompts with `--dangerously-skip-permissions` (per-session checkbox or context menu)
+- **Worktree cleanup** — delete inactive worktrees from the context menu (removes worktree, prunes refs, deletes branch)
 - **Sidebar filters** — filter by root directory, repo, or text search
-- **Inline rename** — rename sessions with the pencil icon (syncs with Claude Code's `/rename`)
+- **Inline rename** — rename sessions with the pencil icon
 - **Scrollback buffer** — reconnect to a session and see prior output
-- **Touch toolbar** — mobile-friendly buttons for special keys (arrows, Enter, Escape, Ctrl+C, Tab, y/n)
+- **Touch toolbar** — mobile-friendly buttons for special keys (hidden on desktop)
 - **Responsive layout** — works on desktop and mobile with slide-out sidebar
 - **Real-time updates** — worktree changes on disk are pushed to the browser instantly via WebSocket
+- **Update notifications** — toast notification when a new version is available, with one-click update
+- **CLI self-update** — `claude-remote-cli update` to update from npm
 
 ## Architecture
+
+TypeScript + ESM backend compiled to `dist/`. Vanilla JS frontend (no build step).
 
 ```
 claude-remote-cli/
 ├── bin/
-│   └── claude-remote-cli.js  # CLI entry point
+│   └── claude-remote-cli.ts  # CLI entry point
 ├── server/
-│   ├── index.js       # Express server, REST API routes
-│   ├── sessions.js    # PTY session manager (node-pty)
-│   ├── ws.js          # WebSocket relay (PTY ↔ browser)
-│   ├── watcher.js     # File watcher for .claude/worktrees/ changes
-│   ├── auth.js        # PIN hashing, verification, rate limiting
-│   └── config.js      # Config loading/saving
+│   ├── index.ts        # Express server, REST API routes
+│   ├── sessions.ts     # PTY session manager (node-pty)
+│   ├── ws.ts           # WebSocket relay (PTY ↔ browser)
+│   ├── watcher.ts      # File watcher for .claude/worktrees/ changes
+│   ├── auth.ts         # PIN hashing, verification, rate limiting
+│   ├── config.ts       # Config loading/saving, worktree metadata
+│   ├── clipboard.ts    # System clipboard operations (image paste)
+│   ├── service.ts      # Background service management (launchd/systemd)
+│   └── types.ts        # Shared TypeScript interfaces
 ├── public/
-│   ├── index.html     # Single-page app
-│   ├── app.js         # Frontend logic
-│   ├── style.css      # Styles (dark theme)
-│   └── vendor/        # Self-hosted xterm.js + addon-fit
+│   ├── index.html      # Single-page app
+│   ├── app.js          # Frontend logic (ES5, no build step)
+│   ├── style.css       # Styles (dark theme)
+│   └── vendor/         # Self-hosted xterm.js + addon-fit
+├── test/               # Unit tests (node:test)
+├── dist/               # Compiled output (gitignored)
 ├── config.example.json
 └── package.json
 ```

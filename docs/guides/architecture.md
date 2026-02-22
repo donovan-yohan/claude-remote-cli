@@ -8,7 +8,7 @@ Remote web interface for Claude Code CLI sessions. TypeScript + ESM backend (Exp
 
 ## Server Modules
 
-Eight TypeScript modules under `server/`, compiled to `dist/server/` via `tsc`:
+Nine TypeScript modules under `server/`, compiled to `dist/server/` via `tsc`:
 
 | Module | Role |
 |--------|------|
@@ -17,9 +17,10 @@ Eight TypeScript modules under `server/`, compiled to `dist/server/` via `tsc`:
 | `server/ws.ts` | WebSocket upgrade handler, bidirectional PTY relay, scrollback replay on connect |
 | `server/watcher.ts` | File system watching for `.claude/worktrees/` directories, debounced event emission |
 | `server/auth.ts` | PIN hashing (bcrypt), rate limiting (5 fails = 15-min lockout), cookie token generation |
-| `server/config.ts` | Config loading/saving with defaults |
+| `server/config.ts` | Config loading/saving with defaults, worktree metadata persistence |
+| `server/clipboard.ts` | System clipboard detection and image-set operations (osascript on macOS, xclip on Linux) |
 | `server/service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
-| `server/types.ts` | Shared TypeScript interfaces (Session, Config, ServicePaths, Platform, InstallOpts) |
+| `server/types.ts` | Shared TypeScript interfaces (Session, Config, ServicePaths, WorktreeMetadata, Platform, InstallOpts) |
 
 Modules communicate via ESM `import` statements. `index.ts` is the composition root and should not be imported by other modules.
 
@@ -29,7 +30,7 @@ Single-page app in `public/`. No build step, no framework. ES5-compatible syntax
 
 | File | Role |
 |------|------|
-| `public/app.js` | All frontend logic: session management, WebSocket, terminal, filtering, sidebar, update toast |
+| `public/app.js` | All frontend logic: session management, WebSocket, terminal, filtering, sidebar, update toast, clipboard image paste, context menus, touch toolbar |
 | `public/index.html` | HTML structure with PIN gate, sidebar, terminal container, dialogs, context menus |
 | `public/style.css` | Dark theme, responsive mobile-first layout |
 | `public/vendor/` | Bundled xterm.js and addon-fit.js |
@@ -68,6 +69,7 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.wat
 | `POST` | `/roots` | Add a root directory (rebuilds watcher + broadcasts) |
 | `DELETE` | `/roots` | Remove a root directory (rebuilds watcher + broadcasts) |
 | `GET` | `/version` | Check for updates (compares installed vs. npm registry latest) |
+| `POST` | `/sessions/:id/image` | Upload clipboard image (base64), set system clipboard, paste into PTY |
 | `POST` | `/update` | Self-update via `npm install -g claude-remote-cli@latest` |
 
 ## WebSocket Channels
@@ -90,8 +92,15 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.wat
   lastActivity: string;  // ISO timestamp
   scrollback: string[];  // data chunks, max 256KB total
 }
+
+// Persisted to ~/.config/claude-remote-cli/worktree-meta/<name>.json
+interface WorktreeMetadata {
+  worktreePath: string;
+  displayName: string;
+  lastActivity: string;
+}
 ```
 
 ## CLI Entry Point
 
-`bin/claude-remote-cli.ts` (compiled to `dist/bin/claude-remote-cli.js`) — Parses flags (`--port`, `--host`, `--config`, `--version`, `--help`, `--bg`, `install`, `uninstall`, `status`), manages config directory at `~/.config/claude-remote-cli/`, prompts for PIN on first run.
+`bin/claude-remote-cli.ts` (compiled to `dist/bin/claude-remote-cli.js`) — Parses flags (`--port`, `--host`, `--config`, `--version`, `--help`, `--bg`, `install`, `uninstall`, `status`, `update`), manages config directory at `~/.config/claude-remote-cli/`, prompts for PIN on first run.

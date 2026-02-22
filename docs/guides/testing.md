@@ -16,8 +16,9 @@ node --test dist/test/auth.test.js                    # Run a single compiled te
 | File | Covers |
 |------|--------|
 | `test/auth.test.ts` | PIN hashing, verification, rate limiting, token generation |
-| `test/config.test.ts` | Config loading/saving, defaults merging |
-| `test/sessions.test.ts` | PTY spawning, session lifecycle (create/get/list/kill/resize) |
+| `test/clipboard.test.ts` | Clipboard tool detection, unsupported MIME type rejection |
+| `test/config.test.ts` | Config loading/saving, defaults merging, worktree metadata persistence |
+| `test/sessions.test.ts` | PTY spawning, session lifecycle (create/get/list/kill/resize/write) |
 | `test/service.test.ts` | Platform detection, service path generation, service file templates |
 | `test/paths.test.ts` | Project root resolution, public/ directory accessibility, dist/ layout |
 | `test/version.test.ts` | Semantic version comparison (`semverLessThan`) |
