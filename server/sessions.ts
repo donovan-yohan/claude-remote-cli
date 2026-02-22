@@ -1,6 +1,7 @@
 import pty from 'node-pty';
 import crypto from 'node:crypto';
 import type { Session } from './types.js';
+import { readMeta, writeMeta } from './config.js';
 
 type SessionSummary = Omit<Session, 'pty' | 'scrollback'>;
 
@@ -14,6 +15,7 @@ type CreateParams = {
   args?: string[];
   cols?: number;
   rows?: number;
+  configPath?: string;
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
@@ -21,7 +23,7 @@ type CreateResult = SessionSummary & { pid: number | undefined };
 // In-memory registry: id -> Session
 const sessions = new Map<string, Session>();
 
-function create({ repoName, repoPath, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24 }: CreateParams): CreateResult {
+function create({ repoName, repoPath, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
   const id = crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
 
@@ -56,6 +58,17 @@ function create({ repoName, repoPath, root, worktreeName, displayName, command, 
   };
   sessions.set(id, session);
 
+  // Load existing metadata to preserve a previously-set displayName
+  if (configPath && worktreeName) {
+    const existing = readMeta(configPath, repoPath);
+    if (existing && existing.displayName) {
+      session.displayName = existing.displayName;
+    }
+    writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: createdAt });
+  }
+
+  let metaFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
   ptyProcess.onData((data) => {
     session.lastActivity = new Date().toISOString();
     scrollback.push(data);
@@ -64,9 +77,19 @@ function create({ repoName, repoPath, root, worktreeName, displayName, command, 
     while (scrollbackBytes > MAX_SCROLLBACK && scrollback.length > 1) {
       scrollbackBytes -= (scrollback.shift() as string).length;
     }
+    if (configPath && worktreeName && !metaFlushTimer) {
+      metaFlushTimer = setTimeout(() => {
+        metaFlushTimer = null;
+        writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
+      }, 5000);
+    }
   });
 
   ptyProcess.onExit(() => {
+    if (metaFlushTimer) clearTimeout(metaFlushTimer);
+    if (configPath && worktreeName) {
+      writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
+    }
     sessions.delete(id);
   });
 

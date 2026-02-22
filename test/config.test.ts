@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { DEFAULTS, loadConfig, saveConfig } from '../server/config.js';
+import { DEFAULTS, loadConfig, saveConfig, ensureMetaDir, readMeta, writeMeta } from '../server/config.js';
 
 let tmpDir!: string;
 
@@ -12,8 +12,13 @@ before(() => {
 });
 
 afterEach(() => {
-  for (const file of fs.readdirSync(tmpDir)) {
-    fs.unlinkSync(path.join(tmpDir, file));
+  for (const entry of fs.readdirSync(tmpDir, { withFileTypes: true })) {
+    const fullPath = path.join(tmpDir, entry.name);
+    if (entry.isDirectory()) {
+      fs.rmSync(fullPath, { recursive: true });
+    } else {
+      fs.unlinkSync(fullPath);
+    }
   }
 });
 
@@ -66,4 +71,34 @@ test('DEFAULTS has expected keys and values', () => {
   assert.deepEqual(DEFAULTS.repos, []);
   assert.equal(DEFAULTS.claudeCommand, 'claude');
   assert.deepEqual(DEFAULTS.claudeArgs, []);
+});
+
+test('ensureMetaDir creates worktree-meta directory', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  ensureMetaDir(configPath);
+  const metaPath = path.join(tmpDir, 'worktree-meta');
+  assert.ok(fs.existsSync(metaPath));
+});
+
+test('writeMeta creates and readMeta reads metadata file', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  const meta = { worktreePath: '/tmp/test-worktree', displayName: 'My Feature', lastActivity: '2026-02-22T00:00:00.000Z' };
+  writeMeta(configPath, meta);
+  const read = readMeta(configPath, '/tmp/test-worktree');
+  assert.deepEqual(read, meta);
+});
+
+test('readMeta returns null for non-existent metadata', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  const result = readMeta(configPath, '/no/such/worktree');
+  assert.equal(result, null);
+});
+
+test('writeMeta overwrites existing metadata', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  writeMeta(configPath, { worktreePath: '/tmp/wt', displayName: 'Old Name', lastActivity: '2026-01-01T00:00:00.000Z' });
+  writeMeta(configPath, { worktreePath: '/tmp/wt', displayName: 'New Name', lastActivity: '2026-02-22T00:00:00.000Z' });
+  const read = readMeta(configPath, '/tmp/wt');
+  assert.equal(read!.displayName, 'New Name');
+  assert.equal(read!.lastActivity, '2026-02-22T00:00:00.000Z');
 });
