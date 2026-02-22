@@ -32,9 +32,9 @@ function getServicePaths() {
 
 function generateServiceFile(platform, opts) {
   const { nodePath, scriptPath, configPath, port, host } = opts;
+  const { logDir } = getServicePaths();
 
   if (platform === 'macos') {
-    const logDir = path.join(CONFIG_DIR, 'logs');
     return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -134,9 +134,17 @@ function uninstall() {
   }
 
   if (platform === 'macos') {
-    try { execSync('launchctl unload ' + servicePath, { stdio: 'inherit' }); } catch (_) {}
+    try {
+      execSync('launchctl unload ' + servicePath, { stdio: 'inherit' });
+    } catch (_) {
+      // Ignore errors from already-unloaded services
+    }
   } else {
-    try { execSync('systemctl --user disable --now claude-remote-cli', { stdio: 'inherit' }); } catch (_) {}
+    try {
+      execSync('systemctl --user disable --now claude-remote-cli', { stdio: 'inherit' });
+    } catch (_) {
+      // Ignore errors from already-disabled services
+    }
   }
 
   fs.unlinkSync(servicePath);
@@ -150,24 +158,26 @@ function status() {
     return { installed: false, running: false };
   }
 
-  let running = false;
+  const running = checkRunning(platform);
+  return { installed: true, running };
+}
+
+function checkRunning(platform) {
   if (platform === 'macos') {
     try {
       const out = execSync('launchctl list ' + SERVICE_LABEL, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-      running = !out.includes('"LastExitStatus" = -1');
+      return !out.includes('"LastExitStatus" = -1');
     } catch (_) {
-      running = false;
-    }
-  } else {
-    try {
-      execSync('systemctl --user is-active claude-remote-cli', { stdio: ['pipe', 'pipe', 'pipe'] });
-      running = true;
-    } catch (_) {
-      running = false;
+      return false;
     }
   }
 
-  return { installed: true, running };
+  try {
+    execSync('systemctl --user is-active claude-remote-cli', { stdio: ['pipe', 'pipe', 'pipe'] });
+    return true;
+  } catch (_) {
+    return false;
+  }
 }
 
 module.exports = { getPlatform, getServicePaths, generateServiceFile, isInstalled, install, uninstall, status, SERVICE_LABEL, CONFIG_DIR };

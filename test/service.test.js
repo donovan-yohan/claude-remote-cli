@@ -14,9 +14,9 @@ describe('service', function () {
 
   it('getServicePaths returns expected keys', function () {
     const paths = service.getServicePaths();
-    assert.ok(paths.servicePath, 'should have servicePath');
-    assert.ok(paths.logDir !== undefined, 'should have logDir');
-    assert.ok(paths.label, 'should have label');
+    assert.ok(paths.servicePath, 'missing servicePath');
+    assert.strictEqual(typeof paths.label, 'string', 'label should be a string');
+    assert.ok('logDir' in paths, 'missing logDir key');
   });
 
   it('generateServiceFile for macos contains plist XML', function () {
@@ -27,11 +27,11 @@ describe('service', function () {
       port: '3456',
       host: '0.0.0.0',
     });
-    assert.ok(content.includes('<!DOCTYPE plist'), 'should be plist XML');
-    assert.ok(content.includes('com.claude-remote-cli'), 'should have label');
-    assert.ok(content.includes('RunAtLoad'), 'should have RunAtLoad');
-    assert.ok(content.includes('KeepAlive'), 'should have KeepAlive');
-    assert.ok(content.includes('3456'), 'should include port');
+    assert.match(content, /<!DOCTYPE plist/, 'should be plist XML');
+    assert.match(content, /com\.claude-remote-cli/, 'should have label');
+    assert.match(content, /RunAtLoad/, 'should have RunAtLoad');
+    assert.match(content, /KeepAlive/, 'should have KeepAlive');
+    assert.match(content, /3456/, 'should include port');
   });
 
   it('generateServiceFile for linux contains systemd unit', function () {
@@ -42,11 +42,11 @@ describe('service', function () {
       port: '3456',
       host: '0.0.0.0',
     });
-    assert.ok(content.includes('[Unit]'), 'should have Unit section');
-    assert.ok(content.includes('[Service]'), 'should have Service section');
-    assert.ok(content.includes('[Install]'), 'should have Install section');
-    assert.ok(content.includes('Restart=on-failure'), 'should restart on failure');
-    assert.ok(content.includes('3456'), 'should include port');
+    assert.match(content, /\[Unit\]/, 'should have Unit section');
+    assert.match(content, /\[Service\]/, 'should have Service section');
+    assert.match(content, /\[Install\]/, 'should have Install section');
+    assert.match(content, /Restart=on-failure/, 'should restart on failure');
+    assert.match(content, /3456/, 'should include port');
   });
 
   it('isInstalled returns false when service file does not exist', function () {
