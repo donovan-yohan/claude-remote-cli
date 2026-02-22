@@ -41,7 +41,7 @@ TypeScript + ESM backend (Express + node-pty + WebSocket) compiled to `dist/`. V
 
 ## Deployment
 
-This is an npm package. Deploy via `npm publish`. See [deployment guide](docs/guides/deployment.md).
+This is an npm package. Publishing is automated via GitHub Actions — bump version with `npm version`, push to `master` with tags, and CI publishes. See [deployment guide](docs/guides/deployment.md).
 
 ## Gotchas
 
