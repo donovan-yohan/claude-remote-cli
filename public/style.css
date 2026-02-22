@@ -242,6 +242,10 @@ html, body {
   color: rgba(255, 255, 255, 0.7);
 }
 
+#session-list li.active-session.active .session-time {
+  color: rgba(255, 255, 255, 0.5);
+}
+
 /* Inactive worktree (outline) */
 #session-list li.inactive-worktree {
   background: transparent;
@@ -275,6 +279,15 @@ html, body {
 .session-sub {
   font-size: 0.7rem;
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-time {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  opacity: 0.6;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

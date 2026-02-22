@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 
-import { loadConfig, saveConfig, DEFAULTS } from './config.js';
+import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, ensureMetaDir } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { setupWebSocket } from './ws.js';
@@ -26,6 +26,9 @@ const execFileAsync = promisify(execFile);
 // When run via CLI bin, config lives in ~/.config/claude-remote-cli/
 // When run directly (development), fall back to local config.json
 const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', '..', 'config.json');
+
+// Ensure worktree metadata directory exists alongside config
+ensureMetaDir(CONFIG_PATH);
 
 const VERSION_CACHE_TTL = 5 * 60 * 1000;
 let versionCache: { latest: string; fetchedAt: number } | null = null;
@@ -216,7 +219,7 @@ async function main(): Promise<void> {
   app.get('/worktrees', requireAuth, (req, res) => {
     const repoParam = typeof req.query.repo === 'string' ? req.query.repo : undefined;
     const roots = config.rootDirs || [];
-    const worktrees: Array<{ name: string; path: string; repoName: string; repoPath: string; root: string }> = [];
+    const worktrees: Array<{ name: string; path: string; repoName: string; repoPath: string; root: string; displayName: string; lastActivity: string }> = [];
 
     let reposToScan: RepoEntry[];
     if (repoParam) {
@@ -236,12 +239,16 @@ async function main(): Promise<void> {
       }
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
+        const wtPath = path.join(worktreeDir, entry.name);
+        const meta = readMeta(CONFIG_PATH, wtPath);
         worktrees.push({
           name: entry.name,
-          path: path.join(worktreeDir, entry.name),
+          path: wtPath,
           repoName: repo.name,
           repoPath: repo.path,
           root: repo.root,
+          displayName: meta ? meta.displayName : '',
+          lastActivity: meta ? meta.lastActivity : '',
         });
       }
     }
@@ -365,8 +372,8 @@ async function main(): Promise<void> {
     let worktreeName: string;
 
     if (worktreePath) {
-      // Resume existing worktree — run claude inside the worktree directory
-      args = [...baseArgs];
+      // Resume existing worktree — run claude --continue inside the worktree directory
+      args = ['--continue', ...baseArgs];
       cwd = worktreePath;
       worktreeName = worktreePath.split('/').pop() || '';
     } else {
@@ -384,6 +391,7 @@ async function main(): Promise<void> {
       displayName: worktreeName,
       command: config.claudeCommand,
       args,
+      configPath: CONFIG_PATH,
     });
     res.status(201).json(session);
   });
@@ -398,7 +406,7 @@ async function main(): Promise<void> {
     }
   });
 
-  // PATCH /sessions/:id — update displayName and send /rename through PTY
+  // PATCH /sessions/:id — update displayName and persist to metadata
   app.patch('/sessions/:id', requireAuth, (req, res) => {
     const { displayName } = req.body as { displayName?: string };
     if (!displayName) {
@@ -409,8 +417,8 @@ async function main(): Promise<void> {
       const id = req.params['id'] as string;
       const updated = sessions.updateDisplayName(id, displayName);
       const session = sessions.get(id);
-      if (session && session.pty) {
-        session.pty.write('/rename "' + displayName.replace(/"/g, '\\"') + '"\r');
+      if (session) {
+        writeMeta(CONFIG_PATH, { worktreePath: session.repoPath, displayName, lastActivity: session.lastActivity });
       }
       res.json(updated);
     } catch (_) {

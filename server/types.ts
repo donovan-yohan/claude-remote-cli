@@ -13,6 +13,12 @@ export interface Session {
   scrollback: string[];
 }
 
+export interface WorktreeMetadata {
+  worktreePath: string;
+  displayName: string;
+  lastActivity: string;
+}
+
 export interface Config {
   host: string;
   port: number;
