@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import fs from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import * as service from '../server/service.js';
 import { DEFAULTS } from '../server/config.js';
+
+const execFileAsync = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -15,6 +19,7 @@ if (args.includes('--help') || args.includes('-h')) {
        claude-remote-cli <command>
 
 Commands:
+  update             Update to the latest version from npm
   install            Install as a background service (survives reboot)
   uninstall          Stop and remove the background service
   status             Show whether the service is running
@@ -58,6 +63,35 @@ function runServiceCommand(fn: () => void): never {
 }
 
 const command = args[0];
+if (command === 'update') {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8')) as { version: string };
+    console.log(`Current version: ${pkg.version}`);
+    console.log('Updating claude-remote-cli...');
+    await execFileAsync('npm', ['install', '-g', 'claude-remote-cli@latest']);
+    const updatedPkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8')) as { version: string };
+    if (updatedPkg.version === pkg.version) {
+      console.log(`Already on the latest version (${pkg.version}).`);
+    } else {
+      console.log(`Updated to ${updatedPkg.version}.`);
+      if (service.isInstalled()) {
+        console.log('Background service detected — restarting...');
+        service.uninstall();
+        service.install({
+          configPath: resolveConfigPath(),
+          port: getArg('--port') ?? String(DEFAULTS.port),
+          host: getArg('--host') ?? DEFAULTS.host,
+        });
+        console.log('Service restarted.');
+      }
+    }
+  } catch (e) {
+    console.error('Update failed:', (e as Error).message);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 if (command === 'install' || command === 'uninstall' || command === 'status' || args.includes('--bg')) {
   if (command === 'uninstall') {
     runServiceCommand(() => { service.uninstall(); });
