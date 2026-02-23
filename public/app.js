@@ -39,6 +39,8 @@
   var dialogYolo = document.getElementById('dialog-yolo');
   var dialogBranchInput = document.getElementById('dialog-branch-input');
   var dialogBranchList = document.getElementById('dialog-branch-list');
+  var dialogContinue = document.getElementById('dialog-continue');
+  var dialogContinueField = document.getElementById('dialog-continue-field');
   var contextMenu = document.getElementById('context-menu');
   var ctxResumeYolo = document.getElementById('ctx-resume-yolo');
   var ctxDeleteWorktree = document.getElementById('ctx-delete-worktree');
@@ -60,6 +62,10 @@
   var terminalScrollbarThumb = document.getElementById('terminal-scrollbar-thumb');
   var mobileInput = document.getElementById('mobile-input');
   var mobileHeader = document.getElementById('mobile-header');
+  var sidebarTabs = document.querySelectorAll('.sidebar-tab');
+  var tabReposCount = document.getElementById('tab-repos-count');
+  var tabWorktreesCount = document.getElementById('tab-worktrees-count');
+  var activeTab = 'repos';
   var isMobileDevice = 'ontouchstart' in window;
 
   // Context menu state
@@ -92,6 +98,7 @@
   var cachedWorktrees = [];
   var allRepos = [];
   var allBranches = [];
+  var cachedRepos = [];
   var attentionSessions = {};
 
   function loadBranches(repoPath) {
@@ -523,10 +530,13 @@
     Promise.all([
       fetch('/sessions').then(function (res) { return res.json(); }),
       fetch('/worktrees').then(function (res) { return res.json(); }),
+      fetch('/repos').then(function (res) { return res.json(); }),
     ])
       .then(function (results) {
         cachedSessions = results[0] || [];
         cachedWorktrees = results[1] || [];
+        var reposData = results[2] || [];
+        cachedRepos = reposData.repos || reposData || [];
 
         // Prune attention flags for sessions that no longer exist
         var activeIds = {};
@@ -606,6 +616,16 @@
     renderUnifiedList();
   });
 
+  sidebarTabs.forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      activeTab = tab.dataset.tab;
+      sidebarTabs.forEach(function (t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      newSessionBtn.textContent = activeTab === 'repos' ? '+ New Session' : '+ New Worktree';
+      renderUnifiedList();
+    });
+  });
+
   function rootShortName(path) {
     return path.split('/').filter(Boolean).pop() || path;
   }
@@ -633,7 +653,42 @@
     var repoFilter = sidebarRepoFilter.value;
     var textFilter = sessionFilter.value.toLowerCase();
 
-    var filteredSessions = cachedSessions.filter(function (s) {
+    // Split sessions by type
+    var repoSessions = cachedSessions.filter(function (s) { return s.type === 'repo'; });
+    var worktreeSessions = cachedSessions.filter(function (s) { return s.type !== 'repo'; });
+
+    // Filtered repo sessions
+    var filteredRepoSessions = repoSessions.filter(function (s) {
+      if (rootFilter && s.root !== rootFilter) return false;
+      if (repoFilter && s.repoName !== repoFilter) return false;
+      if (textFilter) {
+        var name = (s.displayName || s.repoName || s.id).toLowerCase();
+        if (name.indexOf(textFilter) === -1) return false;
+      }
+      return true;
+    });
+
+    // Idle repos: all repos without an active repo session
+    var activeRepoPathSet = new Set();
+    repoSessions.forEach(function (s) { activeRepoPathSet.add(s.repoPath); });
+
+    var filteredIdleRepos = cachedRepos.filter(function (r) {
+      if (activeRepoPathSet.has(r.path)) return false;
+      if (rootFilter && r.root !== rootFilter) return false;
+      if (repoFilter && r.name !== repoFilter) return false;
+      if (textFilter) {
+        var name = (r.name || '').toLowerCase();
+        if (name.indexOf(textFilter) === -1) return false;
+      }
+      return true;
+    });
+
+    filteredIdleRepos.sort(function (a, b) {
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    // Filtered worktree sessions
+    var filteredWorktreeSessions = worktreeSessions.filter(function (s) {
       if (rootFilter && s.root !== rootFilter) return false;
       if (repoFilter && s.repoName !== repoFilter) return false;
       if (textFilter) {
@@ -643,8 +698,9 @@
       return true;
     });
 
+    // Inactive worktrees (deduped against active sessions)
     var activeWorktreePaths = new Set();
-    cachedSessions.forEach(function (s) {
+    worktreeSessions.forEach(function (s) {
       if (s.repoPath) activeWorktreePaths.add(s.repoPath);
     });
 
@@ -663,22 +719,44 @@
       return (a.name || '').localeCompare(b.name || '');
     });
 
+    // Update tab counts
+    tabReposCount.textContent = filteredRepoSessions.length + filteredIdleRepos.length;
+    tabWorktreesCount.textContent = filteredWorktreeSessions.length + filteredWorktrees.length;
+
+    // Render based on active tab
     sessionList.innerHTML = '';
 
-    filteredSessions.forEach(function (session) {
-      sessionList.appendChild(createActiveSessionLi(session));
-    });
+    if (activeTab === 'repos') {
+      filteredRepoSessions.forEach(function (session) {
+        sessionList.appendChild(createActiveSessionLi(session));
+      });
 
-    if (filteredSessions.length > 0 && filteredWorktrees.length > 0) {
-      var divider = document.createElement('li');
-      divider.className = 'session-divider';
-      divider.textContent = 'Available';
-      sessionList.appendChild(divider);
+      if (filteredRepoSessions.length > 0 && filteredIdleRepos.length > 0) {
+        var divider = document.createElement('li');
+        divider.className = 'session-divider';
+        divider.textContent = 'Available';
+        sessionList.appendChild(divider);
+      }
+
+      filteredIdleRepos.forEach(function (repo) {
+        sessionList.appendChild(createIdleRepoLi(repo));
+      });
+    } else {
+      filteredWorktreeSessions.forEach(function (session) {
+        sessionList.appendChild(createActiveSessionLi(session));
+      });
+
+      if (filteredWorktreeSessions.length > 0 && filteredWorktrees.length > 0) {
+        var divider = document.createElement('li');
+        divider.className = 'session-divider';
+        divider.textContent = 'Available';
+        sessionList.appendChild(divider);
+      }
+
+      filteredWorktrees.forEach(function (wt) {
+        sessionList.appendChild(createInactiveWorktreeLi(wt));
+      });
     }
-
-    filteredWorktrees.forEach(function (wt) {
-      sessionList.appendChild(createInactiveWorktreeLi(wt));
-    });
 
     highlightActiveSession();
   }
@@ -819,6 +897,38 @@
         clearTimeout(longPressTimer);
         longPressTimer = null;
       }
+    });
+
+    return li;
+  }
+
+  function createIdleRepoLi(repo) {
+    var li = document.createElement('li');
+    li.className = 'inactive-worktree';
+    li.title = repo.path;
+
+    var infoDiv = document.createElement('div');
+    infoDiv.className = 'session-info';
+
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'session-name';
+    nameSpan.textContent = repo.name;
+    nameSpan.title = repo.name;
+
+    var dot = document.createElement('span');
+    dot.className = 'status-dot status-dot--inactive';
+
+    var subSpan = document.createElement('span');
+    subSpan.className = 'session-sub';
+    subSpan.textContent = repo.root ? rootShortName(repo.root) : repo.path;
+
+    infoDiv.appendChild(dot);
+    infoDiv.appendChild(nameSpan);
+    infoDiv.appendChild(subSpan);
+    li.appendChild(infoDiv);
+
+    li.addEventListener('click', function () {
+      openNewSessionDialogForRepo(repo);
     });
 
     return li;
@@ -1043,9 +1153,75 @@
       .catch(function () {});
   }
 
+  function showDialogForTab(tab) {
+    var dialogBranchField = dialogBranchInput.closest('.dialog-field');
+    if (tab === 'repos') {
+      dialogBranchField.hidden = true;
+      dialogContinueField.hidden = false;
+      dialogStart.textContent = 'New Session';
+    } else {
+      dialogBranchField.hidden = false;
+      dialogContinueField.hidden = true;
+      dialogStart.textContent = 'New Worktree';
+    }
+  }
+
+  function openNewSessionDialogForRepo(repo) {
+    customPath.value = '';
+    dialogYolo.checked = false;
+    dialogContinue.checked = false;
+    dialogBranchInput.value = '';
+    dialogBranchList.hidden = true;
+    allBranches = [];
+    populateDialogRootSelect();
+
+    if (repo.root) {
+      dialogRootSelect.value = repo.root;
+      dialogRootSelect.dispatchEvent(new Event('change'));
+      dialogRepoSelect.value = repo.path;
+    }
+
+    showDialogForTab('repos');
+    dialog.showModal();
+  }
+
+  function startRepoSession(repoPath, continueSession, claudeArgs) {
+    var body = {
+      repoPath: repoPath,
+      repoName: repoPath.split('/').filter(Boolean).pop(),
+    };
+    if (continueSession) body.continue = true;
+    if (claudeArgs) body.claudeArgs = claudeArgs;
+
+    fetch('/sessions/repo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+      .then(function (res) {
+        if (res.status === 409) {
+          return res.json().then(function (data) {
+            if (dialog.open) dialog.close();
+            refreshAll();
+            if (data.sessionId) connectToSession(data.sessionId);
+            return null;
+          });
+        }
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data) return;
+        if (dialog.open) dialog.close();
+        refreshAll();
+        if (data.id) connectToSession(data.id);
+      })
+      .catch(function () {});
+  }
+
   newSessionBtn.addEventListener('click', function () {
     customPath.value = '';
     dialogYolo.checked = false;
+    dialogContinue.checked = false;
     dialogBranchInput.value = '';
     dialogBranchList.hidden = true;
     allBranches = [];
@@ -1069,6 +1245,7 @@
       dialogRepoSelect.disabled = true;
     }
 
+    showDialogForTab(activeTab);
     dialog.showModal();
   });
 
@@ -1076,8 +1253,13 @@
     var repoPathValue = customPath.value.trim() || dialogRepoSelect.value;
     if (!repoPathValue) return;
     var args = dialogYolo.checked ? ['--dangerously-skip-permissions'] : undefined;
-    var branch = dialogBranchInput.value.trim() || undefined;
-    startSession(repoPathValue, undefined, args, branch);
+
+    if (!dialogContinueField.hidden) {
+      startRepoSession(repoPathValue, dialogContinue.checked, args);
+    } else {
+      var branch = dialogBranchInput.value.trim() || undefined;
+      startSession(repoPathValue, undefined, args, branch);
+    }
   });
 
   customPath.addEventListener('blur', function () {
