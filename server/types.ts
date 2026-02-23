@@ -18,6 +18,7 @@ export interface WorktreeMetadata {
   worktreePath: string;
   displayName: string;
   lastActivity: string;
+  branchName?: string;
 }
 
 export interface Config {

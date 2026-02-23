@@ -32,14 +32,12 @@ export class WorktreeWatcher extends EventEmitter {
   }
 
   private _watchRepo(repoPath: string): void {
-    const worktreeDir = path.join(repoPath, '.claude', 'worktrees');
+    const worktreeDir = path.join(repoPath, '.worktrees');
     if (fs.existsSync(worktreeDir)) {
       this._addWatch(worktreeDir);
     } else {
-      const claudeDir = path.join(repoPath, '.claude');
-      if (fs.existsSync(claudeDir)) {
-        this._addWatch(claudeDir);
-      }
+      // Watch the repo root so we detect when .worktrees/ is first created
+      this._addWatch(repoPath);
     }
   }
 
