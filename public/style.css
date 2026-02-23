@@ -618,6 +618,62 @@ dialog#new-session-dialog h2 {
   cursor: not-allowed;
 }
 
+/* ===== Branch Input ===== */
+.branch-input-wrapper {
+  position: relative;
+}
+
+.branch-input-wrapper input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.875rem;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+.branch-input-wrapper input:focus {
+  border-color: var(--accent);
+}
+
+.branch-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 6px 6px;
+  list-style: none;
+  z-index: 10;
+  margin: 0;
+  padding: 0;
+}
+
+.branch-dropdown li {
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.branch-dropdown li:hover,
+.branch-dropdown li.highlighted {
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.branch-dropdown li.branch-create-new {
+  color: var(--accent);
+  font-style: italic;
+}
+
 .repo-group-label {
   font-size: 0.75rem;
   font-weight: 600;
