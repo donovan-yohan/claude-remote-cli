@@ -14,7 +14,7 @@ import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, ensureMetaDir } 
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { setupWebSocket } from './ws.js';
-import { WorktreeWatcher } from './watcher.js';
+import { WorktreeWatcher, WORKTREE_DIRS } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import type { Config } from './types.js';
@@ -269,26 +269,28 @@ async function main(): Promise<void> {
     }
 
     for (const repo of reposToScan) {
-      const worktreeDir = path.join(repo.path, '.worktrees');
-      let entries: fs.Dirent[];
-      try {
-        entries = fs.readdirSync(worktreeDir, { withFileTypes: true });
-      } catch (_) {
-        continue;
-      }
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const wtPath = path.join(worktreeDir, entry.name);
-        const meta = readMeta(CONFIG_PATH, wtPath);
-        worktrees.push({
-          name: entry.name,
-          path: wtPath,
-          repoName: repo.name,
-          repoPath: repo.path,
-          root: repo.root,
-          displayName: meta ? meta.displayName : '',
-          lastActivity: meta ? meta.lastActivity : '',
-        });
+      for (const dir of WORKTREE_DIRS) {
+        const worktreeDir = path.join(repo.path, dir);
+        let entries: fs.Dirent[];
+        try {
+          entries = fs.readdirSync(worktreeDir, { withFileTypes: true });
+        } catch (_) {
+          continue;
+        }
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          const wtPath = path.join(worktreeDir, entry.name);
+          const meta = readMeta(CONFIG_PATH, wtPath);
+          worktrees.push({
+            name: entry.name,
+            path: wtPath,
+            repoName: repo.name,
+            repoPath: repo.path,
+            root: repo.root,
+            displayName: meta ? meta.displayName : '',
+            lastActivity: meta ? meta.lastActivity : '',
+          });
+        }
       }
     }
 
@@ -341,9 +343,11 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Validate the path is inside a .worktrees/ directory
-    if (!worktreePath.includes(path.sep + '.worktrees' + path.sep)) {
-      res.status(400).json({ error: 'Path is not inside a .worktrees/ directory' });
+    // Validate the path is inside a known worktree directory
+    const validDir = worktreePath.includes(path.sep + '.worktrees' + path.sep)
+      || worktreePath.includes(path.sep + '.claude' + path.sep + 'worktrees' + path.sep);
+    if (!validDir) {
+      res.status(400).json({ error: 'Path is not inside a worktree directory' });
       return;
     }
 

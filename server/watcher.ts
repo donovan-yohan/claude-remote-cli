@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 
+export const WORKTREE_DIRS = ['.worktrees', '.claude/worktrees'];
+
 export class WorktreeWatcher extends EventEmitter {
   private _watchers: fs.FSWatcher[];
   private _debounceTimer: ReturnType<typeof setTimeout> | null;
@@ -32,11 +34,16 @@ export class WorktreeWatcher extends EventEmitter {
   }
 
   private _watchRepo(repoPath: string): void {
-    const worktreeDir = path.join(repoPath, '.worktrees');
-    if (fs.existsSync(worktreeDir)) {
-      this._addWatch(worktreeDir);
-    } else {
-      // Watch the repo root so we detect when .worktrees/ is first created
+    let anyWatched = false;
+    for (const dir of WORKTREE_DIRS) {
+      const worktreeDir = path.join(repoPath, dir);
+      if (fs.existsSync(worktreeDir)) {
+        this._addWatch(worktreeDir);
+        anyWatched = true;
+      }
+    }
+    if (!anyWatched) {
+      // Watch repo root so we detect when either dir is first created
       this._addWatch(repoPath);
     }
   }
