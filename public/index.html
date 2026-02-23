@@ -131,6 +131,15 @@
       <select id="dialog-repo-select" disabled><option value="">Select a repo...</option></select>
     </div>
 
+    <div class="dialog-field">
+      <label for="dialog-branch-input">Branch</label>
+      <div class="branch-input-wrapper">
+        <input type="text" id="dialog-branch-input" placeholder="Search or create branch..." autocomplete="off" />
+        <ul id="dialog-branch-list" class="branch-dropdown" hidden></ul>
+      </div>
+      <span class="dialog-option-hint">Leave empty for auto-generated name</span>
+    </div>
+
     <hr class="dialog-separator" />
     <div class="dialog-custom-path">
       <label for="custom-path-input">Or enter a local path:</label>
