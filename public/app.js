@@ -1108,8 +1108,8 @@
     var text = btn.dataset.text;
     var key = btn.dataset.key;
 
-    // Flush composed text before sending Enter so pending input isn't lost
-    if (key === '\r' && mobileInput.flushComposedText) {
+    // Flush composed text before sending Enter/newline so pending input isn't lost
+    if ((key === '\r' || key === '\x1b[13;2u') && mobileInput.flushComposedText) {
       mobileInput.flushComposedText();
     }
 
@@ -1119,8 +1119,8 @@
       ws.send(key);
     }
 
-    // Clear input after Enter to reset state
-    if (key === '\r' && mobileInput.clearInput) {
+    // Clear input after Enter/newline to reset state
+    if ((key === '\r' || key === '\x1b[13;2u') && mobileInput.clearInput) {
       mobileInput.clearInput();
     }
 
@@ -1419,7 +1419,11 @@
       switch (e.key) {
         case 'Enter':
           flushComposedText();
-          ws.send('\r');
+          if (e.shiftKey) {
+            ws.send('\x1b[13;2u'); // kitty protocol: Shift+Enter (newline)
+          } else {
+            ws.send('\r');
+          }
           mobileInput.value = '';
           lastInputValue = '';
           break;
