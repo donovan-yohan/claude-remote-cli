@@ -1,7 +1,10 @@
 import type { IPty } from 'node-pty';
 
+export type SessionType = 'repo' | 'worktree';
+
 export interface Session {
   id: string;
+  type: SessionType;
   root: string;
   repoName: string;
   repoPath: string;
