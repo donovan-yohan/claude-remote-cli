@@ -117,6 +117,21 @@ function scanAllRepos(rootDirs: string[]): RepoEntry[] {
   return repos;
 }
 
+function ensureGitignore(repoPath: string, entry: string): void {
+  const gitignorePath = path.join(repoPath, '.gitignore');
+  try {
+    if (fs.existsSync(gitignorePath)) {
+      const content = fs.readFileSync(gitignorePath, 'utf-8');
+      if (content.split('\n').some((line: string) => line.trim() === entry)) return;
+      fs.appendFileSync(gitignorePath, '\n' + entry + '\n');
+    } else {
+      fs.writeFileSync(gitignorePath, entry + '\n');
+    }
+  } catch (_) {
+    // Non-fatal: gitignore update failure shouldn't block session creation
+  }
+}
+
 async function main(): Promise<void> {
   let config: Config;
   try {
@@ -215,6 +230,31 @@ async function main(): Promise<void> {
     res.json(repos);
   });
 
+  // GET /branches?repo=<path> — list local and remote branches for a repo
+  app.get('/branches', requireAuth, async (req, res) => {
+    const repoPath = typeof req.query.repo === 'string' ? req.query.repo : undefined;
+    if (!repoPath) {
+      res.status(400).json({ error: 'repo query parameter is required' });
+      return;
+    }
+
+    try {
+      // Fetch all local and remote branches
+      const { stdout } = await execFileAsync('git', ['branch', '-a', '--format=%(refname:short)'], { cwd: repoPath });
+      const branches = stdout
+        .split('\n')
+        .map((b: string) => b.trim())
+        .filter((b: string) => b && !b.includes('HEAD'))
+        .map((b: string) => b.replace(/^origin\//, ''));
+
+      // Deduplicate (local and remote may share names)
+      const unique = [...new Set(branches)];
+      res.json(unique.sort());
+    } catch (_) {
+      res.json([]);
+    }
+  });
+
   // GET /worktrees?repo=<path> — list worktrees; omit repo to scan all repos in all rootDirs
   app.get('/worktrees', requireAuth, (req, res) => {
     const repoParam = typeof req.query.repo === 'string' ? req.query.repo : undefined;
@@ -230,7 +270,7 @@ async function main(): Promise<void> {
     }
 
     for (const repo of reposToScan) {
-      const worktreeDir = path.join(repo.path, '.claude', 'worktrees');
+      const worktreeDir = path.join(repo.path, '.worktrees');
       let entries: fs.Dirent[];
       try {
         entries = fs.readdirSync(worktreeDir, { withFileTypes: true });
@@ -302,9 +342,9 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Validate the path is inside a .claude/worktrees/ directory
-    if (!worktreePath.includes(path.sep + '.claude' + path.sep + 'worktrees' + path.sep)) {
-      res.status(400).json({ error: 'Path is not inside a .claude/worktrees/ directory' });
+    // Validate the path is inside a .worktrees/ directory
+    if (!worktreePath.includes(path.sep + '.worktrees' + path.sep)) {
+      res.status(400).json({ error: 'Path is not inside a .worktrees/ directory' });
       return;
     }
 
@@ -316,8 +356,9 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Derive branch name from worktree directory name
-    const branchName = worktreePath.split('/').pop() || '';
+    // Derive branch name from metadata or worktree directory name
+    const meta = readMeta(CONFIG_PATH, worktreePath);
+    const branchName = (meta && meta.branchName) || worktreePath.split('/').pop() || '';
 
     try {
       // Remove the worktree (will fail if uncommitted changes — no --force)
@@ -348,11 +389,12 @@ async function main(): Promise<void> {
   });
 
   // POST /sessions
-  app.post('/sessions', requireAuth, (req, res) => {
-    const { repoPath, repoName, worktreePath, claudeArgs } = req.body as {
+  app.post('/sessions', requireAuth, async (req, res) => {
+    const { repoPath, repoName, worktreePath, branchName, claudeArgs } = req.body as {
       repoPath?: string;
       repoName?: string;
       worktreePath?: string;
+      branchName?: string;
       claudeArgs?: string[];
     };
     if (!repoPath) {
@@ -371,21 +413,77 @@ async function main(): Promise<void> {
     let cwd: string;
     let worktreeName: string;
     let sessionRepoPath: string;
+    let resolvedBranch = '';
 
     if (worktreePath) {
-      // Resume existing worktree — run claude --continue inside the worktree directory
+      // Resume existing worktree
       args = ['--continue', ...baseArgs];
       cwd = worktreePath;
       sessionRepoPath = worktreePath;
       worktreeName = worktreePath.split('/').pop() || '';
     } else {
-      // New worktree — PTY spawns in the repo root (so `claude --worktree X` works),
-      // but repoPath points to the expected worktree dir for identity/metadata matching
-      worktreeName = 'mobile-' + name + '-' + Date.now().toString(36);
-      args = ['--worktree', worktreeName, ...baseArgs];
-      cwd = repoPath;
-      sessionRepoPath = path.join(repoPath, '.claude', 'worktrees', worktreeName);
+      // Create new worktree via git
+      let dirName: string;
+      if (branchName) {
+        dirName = branchName.replace(/\//g, '-');
+        resolvedBranch = branchName;
+      } else {
+        dirName = 'mobile-' + name + '-' + Date.now().toString(36);
+        resolvedBranch = dirName;
+      }
+
+      const worktreeDir = path.join(repoPath, '.worktrees');
+      let targetDir = path.join(worktreeDir, dirName);
+
+      // Handle duplicate directory names
+      if (fs.existsSync(targetDir)) {
+        targetDir = targetDir + '-' + Date.now().toString(36);
+        dirName = path.basename(targetDir);
+      }
+
+      // Ensure .worktrees/ is gitignored
+      ensureGitignore(repoPath, '.worktrees/');
+
+      try {
+        // Check if branch exists locally or on remote
+        let branchExists = false;
+        if (branchName) {
+          try {
+            await execFileAsync('git', ['rev-parse', '--verify', branchName], { cwd: repoPath });
+            branchExists = true;
+          } catch (_) {
+            // Check remote
+            try {
+              await execFileAsync('git', ['rev-parse', '--verify', 'origin/' + branchName], { cwd: repoPath });
+              branchExists = true;
+              // Use the remote-tracking branch
+              resolvedBranch = 'origin/' + branchName;
+            } catch (_) {
+              branchExists = false;
+            }
+          }
+        }
+
+        if (branchName && branchExists) {
+          await execFileAsync('git', ['worktree', 'add', targetDir, resolvedBranch], { cwd: repoPath });
+        } else if (branchName) {
+          await execFileAsync('git', ['worktree', 'add', '-b', branchName, targetDir, 'HEAD'], { cwd: repoPath });
+        } else {
+          await execFileAsync('git', ['worktree', 'add', '-b', dirName, targetDir, 'HEAD'], { cwd: repoPath });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to create worktree';
+        res.status(500).json({ error: message });
+        return;
+      }
+
+      worktreeName = dirName;
+      sessionRepoPath = targetDir;
+      cwd = targetDir;
+      args = [...baseArgs];
     }
+
+    const displayName = branchName || worktreeName;
 
     const session = sessions.create({
       repoName: name,
@@ -393,11 +491,22 @@ async function main(): Promise<void> {
       cwd,
       root,
       worktreeName,
-      displayName: worktreeName,
+      displayName,
       command: config.claudeCommand,
       args,
       configPath: CONFIG_PATH,
     });
+
+    // Store branch name in metadata
+    if (resolvedBranch) {
+      writeMeta(CONFIG_PATH, {
+        worktreePath: sessionRepoPath,
+        displayName,
+        lastActivity: new Date().toISOString(),
+        branchName: branchName || worktreeName,
+      });
+    }
+
     res.status(201).json(session);
   });
 
