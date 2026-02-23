@@ -22,7 +22,7 @@ node --test dist/test/auth.test.js                    # Run a single compiled te
 | `test/service.test.ts` | Platform detection, service path generation, service file templates |
 | `test/paths.test.ts` | Project root resolution, public/ directory accessibility, dist/ layout |
 | `test/version.test.ts` | Semantic version comparison (`semverLessThan`) |
-| `test/worktrees.test.ts` | DELETE /worktrees path validation (rejects paths outside `.claude/worktrees/`) |
+| `test/worktrees.test.ts` | DELETE /worktrees path validation (rejects paths outside `.worktrees/`), branch-to-directory name conversion |
 
 ## Test Isolation Patterns
 

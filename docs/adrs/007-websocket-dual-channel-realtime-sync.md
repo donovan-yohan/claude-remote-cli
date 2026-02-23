@@ -32,7 +32,7 @@ The server MUST expose two separate WebSocket channels, both handled by a single
 - Connected clients are tracked in an in-memory `Set` and removed on close
 
 ### WorktreeWatcher Integration
-- `WorktreeWatcher` (in `server/watcher.js`) MUST monitor `.claude/worktrees/` directories across all configured root directories using `fs.watch`
+- `WorktreeWatcher` (in `server/watcher.js`) MUST monitor `.worktrees/` directories across all configured root directories using `fs.watch`
 - File system change events MUST be debounced with a 500ms delay before emitting a `worktrees-changed` event
 - The `worktrees-changed` event MUST trigger a broadcast to all event channel clients via `broadcastEvent`
 - REST endpoints that modify roots (POST/DELETE `/roots`) MUST also trigger `worktrees-changed` broadcasts and rebuild the watcher

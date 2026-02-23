@@ -122,8 +122,9 @@ function ensureGitignore(repoPath: string, entry: string): void {
   try {
     if (fs.existsSync(gitignorePath)) {
       const content = fs.readFileSync(gitignorePath, 'utf-8');
-      if (content.split('\n').some((line: string) => line.trim() === entry)) return;
-      fs.appendFileSync(gitignorePath, '\n' + entry + '\n');
+      if (content.split('\n').some((line) => line.trim() === entry)) return;
+      const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+      fs.appendFileSync(gitignorePath, prefix + entry + '\n');
     } else {
       fs.writeFileSync(gitignorePath, entry + '\n');
     }
@@ -239,15 +240,13 @@ async function main(): Promise<void> {
     }
 
     try {
-      // Fetch all local and remote branches
       const { stdout } = await execFileAsync('git', ['branch', '-a', '--format=%(refname:short)'], { cwd: repoPath });
       const branches = stdout
         .split('\n')
-        .map((b: string) => b.trim())
-        .filter((b: string) => b && !b.includes('HEAD'))
-        .map((b: string) => b.replace(/^origin\//, ''));
+        .map((b) => b.trim())
+        .filter((b) => b && !b.includes('HEAD'))
+        .map((b) => b.replace(/^origin\//, ''));
 
-      // Deduplicate (local and remote may share names)
       const unique = [...new Set(branches)];
       res.json(unique.sort());
     } catch (_) {
@@ -361,10 +360,11 @@ async function main(): Promise<void> {
     const branchName = (meta && meta.branchName) || worktreePath.split('/').pop() || '';
 
     try {
-      // Remove the worktree (will fail if uncommitted changes — no --force)
+      // Will fail if uncommitted changes -- no --force
       await execFileAsync('git', ['worktree', 'remove', worktreePath], { cwd: repoPath });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to remove worktree';
+    } catch (err: unknown) {
+      const execErr = err as { stderr?: string; message?: string };
+      const message = (execErr.stderr || execErr.message || 'Failed to remove worktree').trim();
       res.status(500).json({ error: message });
       return;
     }
@@ -435,31 +435,25 @@ async function main(): Promise<void> {
       const worktreeDir = path.join(repoPath, '.worktrees');
       let targetDir = path.join(worktreeDir, dirName);
 
-      // Handle duplicate directory names
       if (fs.existsSync(targetDir)) {
         targetDir = targetDir + '-' + Date.now().toString(36);
         dirName = path.basename(targetDir);
       }
 
-      // Ensure .worktrees/ is gitignored
       ensureGitignore(repoPath, '.worktrees/');
 
       try {
-        // Check if branch exists locally or on remote
+        // Check if branch exists locally or on a remote
         let branchExists = false;
         if (branchName) {
-          try {
-            await execFileAsync('git', ['rev-parse', '--verify', branchName], { cwd: repoPath });
+          const localCheck = await execFileAsync('git', ['rev-parse', '--verify', branchName], { cwd: repoPath }).then(() => true, () => false);
+          if (localCheck) {
             branchExists = true;
-          } catch (_) {
-            // Check remote
-            try {
-              await execFileAsync('git', ['rev-parse', '--verify', 'origin/' + branchName], { cwd: repoPath });
+          } else {
+            const remoteCheck = await execFileAsync('git', ['rev-parse', '--verify', 'origin/' + branchName], { cwd: repoPath }).then(() => true, () => false);
+            if (remoteCheck) {
               branchExists = true;
-              // Use the remote-tracking branch
               resolvedBranch = 'origin/' + branchName;
-            } catch (_) {
-              branchExists = false;
             }
           }
         }
@@ -471,8 +465,9 @@ async function main(): Promise<void> {
         } else {
           await execFileAsync('git', ['worktree', 'add', '-b', dirName, targetDir, 'HEAD'], { cwd: repoPath });
         }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to create worktree';
+      } catch (err: unknown) {
+        const execErr = err as { stderr?: string; message?: string };
+        const message = (execErr.stderr || execErr.message || 'Failed to create worktree').trim();
         res.status(500).json({ error: message });
         return;
       }
@@ -497,8 +492,7 @@ async function main(): Promise<void> {
       configPath: CONFIG_PATH,
     });
 
-    // Store branch name in metadata
-    if (resolvedBranch) {
+    if (!worktreePath) {
       writeMeta(CONFIG_PATH, {
         worktreePath: sessionRepoPath,
         displayName,

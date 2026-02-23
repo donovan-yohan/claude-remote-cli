@@ -15,7 +15,7 @@ Nine TypeScript modules under `server/`, compiled to `dist/server/` via `tsc`:
 | `server/index.ts` | Composition root: Express app, REST API routes, auth middleware, static file serving |
 | `server/sessions.ts` | PTY spawning via `node-pty`, session lifecycle, scrollback buffering (256KB max) |
 | `server/ws.ts` | WebSocket upgrade handler, bidirectional PTY relay, scrollback replay on connect |
-| `server/watcher.ts` | File system watching for `.claude/worktrees/` directories, debounced event emission |
+| `server/watcher.ts` | File system watching for `.worktrees/` directories, debounced event emission |
 | `server/auth.ts` | PIN hashing (bcrypt), rate limiting (5 fails = 15-min lockout), cookie token generation |
 | `server/config.ts` | Config loading/saving with defaults, worktree metadata persistence |
 | `server/clipboard.ts` | System clipboard detection and image-set operations (osascript on macOS, xclip on Linux) |
@@ -42,7 +42,7 @@ Browser (xterm.js) <--WebSocket /ws/:id--> server/ws.ts <--PTY I/O--> node-pty <
                                                 |
                                            scrollback buffer (in-memory, per session)
 
-Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.watch on .claude/worktrees/)
+Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.watch on .worktrees/)
                                                            <-- POST/DELETE /roots (manual broadcast)
 ```
 
@@ -59,7 +59,8 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.wat
 |--------|------|-------------|
 | `POST` | `/auth` | Authenticate with PIN, returns session cookie |
 | `GET` | `/sessions` | List active sessions |
-| `POST` | `/sessions` | Create new session or resume worktree (accepts `claudeArgs` for flags like `--dangerously-skip-permissions`) |
+| `POST` | `/sessions` | Create new session or resume worktree (accepts `branchName` for branch selection and `claudeArgs` for flags) |
+| `GET` | `/branches` | List local and remote branches for a repo |
 | `PATCH` | `/sessions/:id` | Rename session (syncs `/rename` to PTY) |
 | `DELETE` | `/sessions/:id` | Terminate session |
 | `GET` | `/repos` | Scan root directories for git repos |
@@ -188,7 +189,7 @@ interface WorktreeMetadata {
 - [ADR-007] When the PTY process exits, the server MUST close the WebSocket with code 1000.
 - [ADR-007] The event channel MUST be accessible at `/ws/events` and MUST be server-to-client only; event messages MUST be JSON objects with a `type` field.
 - [ADR-007] Connected event channel clients MUST be tracked in an in-memory `Set` and removed on close.
-- [ADR-007] File system changes in `.claude/worktrees/` directories MUST be debounced 500ms before emitting a `worktrees-changed` broadcast to all event channel clients.
+- [ADR-007] File system changes in `.worktrees/` directories MUST be debounced 500ms before emitting a `worktrees-changed` broadcast to all event channel clients.
 - [ADR-007] REST endpoints that modify roots (POST/DELETE `/roots`) MUST also trigger `worktrees-changed` broadcasts and rebuild the watcher.
 - [ADR-007] The frontend MUST auto-reconnect the event socket with a 3-second delay on close.
 - [ADR-007] The PTY channel MUST auto-reconnect with exponential backoff (1s–10s, max 30 attempts) on unexpected close; code 1000 (PTY exit) MUST NOT trigger reconnect.

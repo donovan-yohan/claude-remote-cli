@@ -20,7 +20,7 @@ The server MUST be organized into nine TypeScript modules under `server/`, each 
 | `index.ts` | Express app setup, HTTP route handlers, server startup |
 | `sessions.ts` | PTY process spawning, in-memory session registry, session lifecycle (create/list/get/kill/resize/write) |
 | `ws.ts` | WebSocket upgrade handling, PTY-to-browser data relay, event channel broadcast |
-| `watcher.ts` | File system watching for `.claude/worktrees/` directories, debounced event emission |
+| `watcher.ts` | File system watching for `.worktrees/` directories, debounced event emission |
 | `auth.ts` | PIN hashing (bcrypt), PIN verification, rate limiting, cookie token generation |
 | `config.ts` | Config file I/O (load/save JSON), default values |
 | `service.ts` | Background service install/uninstall/status management (launchd on macOS, systemd on Linux) |

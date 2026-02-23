@@ -33,7 +33,7 @@ Eight test files MUST exist:
 | `test/service.test.ts` | Platform detection, service path resolution, service file generation (plist/systemd) |
 | `test/paths.test.ts` | Project root resolution, public/ directory accessibility, dist/ layout |
 | `test/version.test.ts` | Semantic version comparison (`semverLessThan`) |
-| `test/worktrees.test.ts` | DELETE /worktrees path validation (rejects paths outside `.claude/worktrees/`) |
+| `test/worktrees.test.ts` | DELETE /worktrees path validation (rejects paths outside `.worktrees/`), branch-to-directory name conversion |
 
 ### Test Isolation
 - `auth.test.ts` MUST call the `_resetForTesting()` export from `auth.ts` before each test to get fresh rate-limit state

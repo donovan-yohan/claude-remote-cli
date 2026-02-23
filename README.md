@@ -142,9 +142,10 @@ The PIN hash is stored in config under `pinHash`. To reset:
 ## Features
 
 - **PIN-protected access** with rate limiting
-- **Worktree isolation** — each session runs in its own Claude Code `--worktree`
+- **Branch-aware sessions** — create worktrees from new or existing branches with a type-to-search branch picker
+- **Worktree isolation** — each session runs in its own git worktree under `.worktrees/`
 - **Resume sessions** — click inactive worktrees to reconnect with `--continue`
-- **Persistent session names** — display names and timestamps survive server restarts
+- **Persistent session names** — display names, branch names, and timestamps survive server restarts
 - **Clipboard image paste** — paste screenshots directly into remote terminal sessions (macOS clipboard + xclip on Linux)
 - **Yolo mode** — skip permission prompts with `--dangerously-skip-permissions` (per-session checkbox or context menu)
 - **Worktree cleanup** — delete inactive worktrees from the context menu (removes worktree, prunes refs, deletes branch)
@@ -169,7 +170,7 @@ claude-remote-cli/
 │   ├── index.ts        # Express server, REST API routes
 │   ├── sessions.ts     # PTY session manager (node-pty)
 │   ├── ws.ts           # WebSocket relay (PTY ↔ browser)
-│   ├── watcher.ts      # File watcher for .claude/worktrees/ changes
+│   ├── watcher.ts      # File watcher for .worktrees/ changes
 │   ├── auth.ts         # PIN hashing, verification, rate limiting
 │   ├── config.ts       # Config loading/saving, worktree metadata
 │   ├── clipboard.ts    # System clipboard operations (image paste)

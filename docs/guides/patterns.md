@@ -52,7 +52,7 @@ The flag is per-session and not persisted — resuming a worktree normally will 
 
 `DELETE /worktrees` removes a worktree from disk:
 
-1. Validates path is inside `.claude/worktrees/`
+1. Validates path is inside `.worktrees/`
 2. Checks no active session is using the worktree (409 if conflict)
 3. `git worktree remove <path>` (fails if uncommitted changes — no `--force`)
 4. `git worktree prune` (non-fatal on failure)
@@ -77,7 +77,7 @@ Scans configured `rootDirs` one level deep for git repos. Hidden directories (st
 
 ## Real-Time Worktree Sync
 
-- `WorktreeWatcher` monitors `.claude/worktrees/` dirs using `fs.watch` (macOS/Linux only)
+- `WorktreeWatcher` monitors `.worktrees/` dirs using `fs.watch` (macOS/Linux only)
 - File system events are debounced (500ms) before broadcasting `worktrees-changed` via `/ws/events`
 - REST root changes (POST/DELETE `/roots`) also trigger watcher rebuild + broadcast
 - Frontend auto-reconnects the event socket with 3-second retry on close
