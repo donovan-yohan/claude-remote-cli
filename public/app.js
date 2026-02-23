@@ -1286,16 +1286,32 @@
   (function () {
     if (!isMobileDevice) return;
 
-    // ── Debug Panel (temporary) ──
+    // ── Debug Panel (hidden by default, toggle with button) ──
     var debugPanel = document.createElement('div');
     debugPanel.id = 'debug-panel';
-    debugPanel.style.cssText = 'position:fixed;top:0;left:0;right:0;height:30vh;overflow-y:auto;background:rgba(0,0,0,0.92);color:#0f0;font:11px/1.4 monospace;padding:6px;z-index:9999;pointer-events:auto;';
+    debugPanel.style.cssText = 'position:fixed;top:0;left:0;right:0;height:30vh;overflow-y:auto;background:rgba(0,0,0,0.92);color:#0f0;font:11px/1.4 monospace;padding:6px 6px 6px 40px;z-index:9999;display:none;';
     document.body.appendChild(debugPanel);
+
+    var debugToggle = document.createElement('button');
+    debugToggle.id = 'debug-toggle';
+    debugToggle.textContent = 'dbg';
+    debugToggle.style.cssText = 'position:fixed;bottom:60px;right:8px;z-index:10000;background:#333;color:#0f0;border:1px solid #0f0;border-radius:6px;font:12px monospace;padding:6px 10px;opacity:0.5;min-width:44px;min-height:44px;';
+    document.body.appendChild(debugToggle);
+
+    var debugVisible = false;
+    debugToggle.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      debugVisible = !debugVisible;
+      debugPanel.style.display = debugVisible ? 'block' : 'none';
+      debugToggle.style.opacity = debugVisible ? '1' : '0.6';
+    });
+
     var debugLines = [];
     function dbg(msg) {
       var t = performance.now().toFixed(1);
       debugLines.push('[' + t + '] ' + msg);
-      if (debugLines.length > 60) debugLines.shift();
+      if (debugLines.length > 200) debugLines.shift();
       debugPanel.innerHTML = debugLines.join('<br>');
       debugPanel.scrollTop = debugPanel.scrollHeight;
     }
@@ -1347,7 +1363,7 @@
     // Handles autocorrect expansions, deletions, and same-length replacements.
     function sendInputDiff(currentValue) {
       if (currentValue === lastInputValue) {
-        dbg('  sendInputDiff: NO-OP (same)');
+        dbg('sendInputDiff: NO-OP (same)');
         return;
       }
 
@@ -1356,7 +1372,7 @@
       var charsToDelete = codepointCount(deletedSlice);
       var newChars = currentValue.slice(commonLen);
 
-      dbg('  sendInputDiff: del=' + charsToDelete + ' "' + deletedSlice + '" add="' + newChars + '"');
+      dbg('sendInputDiff: del=' + charsToDelete + ' "' + deletedSlice + '" add="' + newChars + '"');
 
       for (var i = 0; i < charsToDelete; i++) {
         ws.send('\x7f'); // backspace
@@ -1418,6 +1434,10 @@
 
     // Handle text input with autocorrect
     var clearTimer = null;
+    mobileInput.addEventListener('beforeinput', function (e) {
+      dbg('BEFORE_INPUT type="' + e.inputType + '" data="' + (e.data || '') + '" composing=' + isComposing);
+    });
+
     mobileInput.addEventListener('input', function (e) {
       dbg('INPUT type="' + e.inputType + '" composing=' + isComposing + ' val="' + mobileInput.value + '" last="' + lastInputValue + '"');
 
@@ -1439,10 +1459,6 @@
       var currentValue = mobileInput.value;
       sendInputDiff(currentValue);
       lastInputValue = currentValue;
-    });
-
-    mobileInput.addEventListener('beforeinput', function (e) {
-      dbg('BEFORE_INPUT type="' + e.inputType + '" data="' + (e.data || '') + '" composing=' + isComposing);
     });
 
     // Handle special keys (Enter, Backspace, Escape, arrows, Tab)
