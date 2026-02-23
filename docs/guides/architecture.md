@@ -20,7 +20,7 @@ Nine TypeScript modules under `server/`, compiled to `dist/server/` via `tsc`:
 | `server/config.ts` | Config loading/saving with defaults, worktree metadata persistence |
 | `server/clipboard.ts` | System clipboard detection and image-set operations (osascript on macOS, xclip on Linux) |
 | `server/service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
-| `server/types.ts` | Shared TypeScript interfaces (Session, Config, ServicePaths, WorktreeMetadata, Platform, InstallOpts) |
+| `server/types.ts` | Shared TypeScript interfaces (Session, SessionType, Config, ServicePaths, WorktreeMetadata, Platform, InstallOpts) |
 
 Modules communicate via ESM `import` statements. `index.ts` is the composition root and should not be imported by other modules.
 
@@ -59,7 +59,8 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.wat
 |--------|------|-------------|
 | `POST` | `/auth` | Authenticate with PIN, returns session cookie |
 | `GET` | `/sessions` | List active sessions |
-| `POST` | `/sessions` | Create new session or resume worktree (accepts `branchName` for branch selection and `claudeArgs` for flags) |
+| `POST` | `/sessions` | Create new worktree session or resume existing worktree (accepts `branchName` for branch selection and `claudeArgs` for flags) |
+| `POST` | `/sessions/repo` | Create a repo session (no worktree) — one per repo, supports `continue` for `--continue` mode |
 | `GET` | `/branches` | List local and remote branches for a repo |
 | `PATCH` | `/sessions/:id` | Rename session (syncs `/rename` to PTY) |
 | `DELETE` | `/sessions/:id` | Terminate session |
@@ -83,10 +84,11 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.wat
 ```typescript
 {
   id: string;            // crypto.randomBytes(8).toString('hex')
+  type: SessionType;     // 'repo' | 'worktree' — determines sidebar tab and cleanup behavior
   root: string;          // configured root directory
   repoName: string;      // repository name
   repoPath: string;      // working directory (repo or worktree path)
-  worktreeName: string;  // Claude Code worktree name
+  worktreeName: string;  // Claude Code worktree name (empty for repo sessions)
   displayName: string;   // user-friendly name
   pty: IPty;             // node-pty process handle
   createdAt: string;     // ISO timestamp
@@ -150,7 +152,7 @@ interface WorktreeMetadata {
 - [ADR-003] Each session MUST maintain a scrollback buffer capped at 256KB; oldest chunks MUST be trimmed first (FIFO eviction) when the cap is exceeded.
 - [ADR-003] On WebSocket connection, the full scrollback buffer MUST be replayed to the client before attaching the live data handler.
 - [ADR-003] The `CLAUDECODE` environment variable MUST be stripped from the PTY environment; the PTY MUST be configured with `xterm-256color` as the terminal name.
-- [ADR-003] The sessions module MUST export: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`, `onIdleChange`.
+- [ADR-003] The sessions module MUST export: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`, `onIdleChange`, `findRepoSession`.
 
 ### Authentication
 
