@@ -166,4 +166,99 @@ describe('sessions', () => {
     assert.strictEqual(list.length, 1);
     assert.strictEqual(list[0]?.idle, false);
   });
+
+  it('type defaults to worktree when not specified', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    assert.strictEqual(result.type, 'worktree');
+
+    const session = sessions.get(result.id);
+    assert.ok(session);
+    assert.strictEqual(session.type, 'worktree');
+  });
+
+  it('type is set to repo when specified', () => {
+    const result = sessions.create({
+      type: 'repo',
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    assert.strictEqual(result.type, 'repo');
+
+    const session = sessions.get(result.id);
+    assert.ok(session);
+    assert.strictEqual(session.type, 'repo');
+  });
+
+  it('list includes type field', () => {
+    const r1 = sessions.create({
+      type: 'repo',
+      repoName: 'repo-a',
+      repoPath: '/tmp/a',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(r1.id);
+
+    const r2 = sessions.create({
+      type: 'worktree',
+      repoName: 'repo-b',
+      repoPath: '/tmp/b',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(r2.id);
+
+    const list = sessions.list();
+    const repoSession = list.find(function (s) { return s.id === r1.id; });
+    const wtSession = list.find(function (s) { return s.id === r2.id; });
+
+    assert.ok(repoSession);
+    assert.strictEqual(repoSession.type, 'repo');
+    assert.ok(wtSession);
+    assert.strictEqual(wtSession.type, 'worktree');
+  });
+
+  it('findRepoSession returns undefined when no repo sessions exist', () => {
+    const result = sessions.findRepoSession('/tmp');
+    assert.strictEqual(result, undefined);
+  });
+
+  it('findRepoSession returns repo session matching repoPath', () => {
+    const created = sessions.create({
+      type: 'repo',
+      repoName: 'test-repo',
+      repoPath: '/tmp/my-repo',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(created.id);
+
+    const found = sessions.findRepoSession('/tmp/my-repo');
+    assert.ok(found, 'should find the repo session');
+    assert.strictEqual(found.id, created.id);
+    assert.strictEqual(found.type, 'repo');
+  });
+
+  it('findRepoSession ignores worktree sessions at same path', () => {
+    const created = sessions.create({
+      type: 'worktree',
+      repoName: 'test-repo',
+      repoPath: '/tmp/my-repo',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(created.id);
+
+    const found = sessions.findRepoSession('/tmp/my-repo');
+    assert.strictEqual(found, undefined, 'should not match worktree sessions');
+  });
 });
