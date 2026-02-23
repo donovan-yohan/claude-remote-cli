@@ -535,8 +535,7 @@
       .then(function (results) {
         cachedSessions = results[0] || [];
         cachedWorktrees = results[1] || [];
-        var reposData = results[2] || [];
-        cachedRepos = reposData.repos || reposData || [];
+        cachedRepos = results[2] || [];
 
         // Prune attention flags for sessions that no longer exist
         var activeIds = {};
@@ -730,14 +729,9 @@
       filteredRepoSessions.forEach(function (session) {
         sessionList.appendChild(createActiveSessionLi(session));
       });
-
       if (filteredRepoSessions.length > 0 && filteredIdleRepos.length > 0) {
-        var divider = document.createElement('li');
-        divider.className = 'session-divider';
-        divider.textContent = 'Available';
-        sessionList.appendChild(divider);
+        sessionList.appendChild(createSectionDivider('Available'));
       }
-
       filteredIdleRepos.forEach(function (repo) {
         sessionList.appendChild(createIdleRepoLi(repo));
       });
@@ -745,14 +739,9 @@
       filteredWorktreeSessions.forEach(function (session) {
         sessionList.appendChild(createActiveSessionLi(session));
       });
-
       if (filteredWorktreeSessions.length > 0 && filteredWorktrees.length > 0) {
-        var divider = document.createElement('li');
-        divider.className = 'session-divider';
-        divider.textContent = 'Available';
-        sessionList.appendChild(divider);
+        sessionList.appendChild(createSectionDivider('Available'));
       }
-
       filteredWorktrees.forEach(function (wt) {
         sessionList.appendChild(createInactiveWorktreeLi(wt));
       });
@@ -900,6 +889,13 @@
     });
 
     return li;
+  }
+
+  function createSectionDivider(label) {
+    var divider = document.createElement('li');
+    divider.className = 'session-divider';
+    divider.textContent = label;
+    return divider;
   }
 
   function createIdleRepoLi(repo) {
@@ -1153,6 +1149,16 @@
       .catch(function () {});
   }
 
+  function resetDialogFields() {
+    customPath.value = '';
+    dialogYolo.checked = false;
+    dialogContinue.checked = false;
+    dialogBranchInput.value = '';
+    dialogBranchList.hidden = true;
+    allBranches = [];
+    populateDialogRootSelect();
+  }
+
   function showDialogForTab(tab) {
     var dialogBranchField = dialogBranchInput.closest('.dialog-field');
     if (tab === 'repos') {
@@ -1167,13 +1173,7 @@
   }
 
   function openNewSessionDialogForRepo(repo) {
-    customPath.value = '';
-    dialogYolo.checked = false;
-    dialogContinue.checked = false;
-    dialogBranchInput.value = '';
-    dialogBranchList.hidden = true;
-    allBranches = [];
-    populateDialogRootSelect();
+    resetDialogFields();
 
     if (repo.root) {
       dialogRootSelect.value = repo.root;
@@ -1186,10 +1186,7 @@
   }
 
   function startRepoSession(repoPath, continueSession, claudeArgs) {
-    var body = {
-      repoPath: repoPath,
-      repoName: repoPath.split('/').filter(Boolean).pop(),
-    };
+    var body = { repoPath: repoPath };
     if (continueSession) body.continue = true;
     if (claudeArgs) body.claudeArgs = claudeArgs;
 
@@ -1219,13 +1216,7 @@
   }
 
   newSessionBtn.addEventListener('click', function () {
-    customPath.value = '';
-    dialogYolo.checked = false;
-    dialogContinue.checked = false;
-    dialogBranchInput.value = '';
-    dialogBranchList.hidden = true;
-    allBranches = [];
-    populateDialogRootSelect();
+    resetDialogFields();
 
     var sidebarRoot = sidebarRootFilter.value;
     if (sidebarRoot) {
@@ -1254,7 +1245,7 @@
     if (!repoPathValue) return;
     var args = dialogYolo.checked ? ['--dangerously-skip-permissions'] : undefined;
 
-    if (!dialogContinueField.hidden) {
+    if (activeTab === 'repos') {
       startRepoSession(repoPathValue, dialogContinue.checked, args);
     } else {
       var branch = dialogBranchInput.value.trim() || undefined;

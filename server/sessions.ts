@@ -184,13 +184,7 @@ function write(id: string, data: string): void {
 }
 
 function findRepoSession(repoPath: string): SessionSummary | undefined {
-  for (const session of sessions.values()) {
-    if (session.type === 'repo' && session.repoPath === repoPath) {
-      const { id, type, root, repoName, repoPath: rp, worktreeName, displayName, createdAt, lastActivity, idle } = session;
-      return { id, type, root, repoName, repoPath: rp, worktreeName, displayName, createdAt, lastActivity, idle };
-    }
-  }
-  return undefined;
+  return list().find((s) => s.type === 'repo' && s.repoPath === repoPath);
 }
 
 export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange, findRepoSession };

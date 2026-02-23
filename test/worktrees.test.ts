@@ -56,22 +56,6 @@ describe('branch name to directory name', () => {
   });
 });
 
-describe('repo session path validation', () => {
-  it('repo root paths are valid (not inside .worktrees/)', () => {
-    const repoPath = '/Users/me/code/my-repo';
-    const sep = '/';
-    const insideWorktrees = repoPath.includes(sep + '.worktrees' + sep);
-    assert.equal(insideWorktrees, false, 'repo root path should not be inside .worktrees/');
-  });
-
-  it('repo session and worktree session paths are distinguishable', () => {
-    const repoPath = '/Users/me/code/my-repo';
-    const worktreePath = '/Users/me/code/my-repo/.worktrees/feature-branch';
-    const sep = '/';
-    assert.equal(repoPath.includes(sep + '.worktrees' + sep), false);
-    assert.equal(worktreePath.includes(sep + '.worktrees' + sep), true);
-  });
-});
 
 describe('CLI worktree arg parsing', () => {
   it('should extract --yolo and leave other args intact', () => {
