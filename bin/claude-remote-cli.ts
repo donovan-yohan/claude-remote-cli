@@ -23,12 +23,17 @@ Commands:
   install            Install as a background service (survives reboot)
   uninstall          Stop and remove the background service
   status             Show whether the service is running
+  worktree           Manage git worktrees (wraps git worktree)
+    add [path] [-b branch] [--yolo]   Create worktree and launch Claude
+    remove <path>                      Forward to git worktree remove
+    list                               Forward to git worktree list
 
 Options:
   --bg               Shortcut: install and start as background service
   --port <port>      Override server port (default: 3456)
   --host <host>      Override bind address (default: 0.0.0.0)
   --config <path>    Path to config.json (default: ~/.config/claude-remote-cli/config.json)
+  --yolo             With 'worktree add': pass --dangerously-skip-permissions to Claude
   --version, -v      Show version
   --help, -h         Show this help`);
   process.exit(0);
@@ -90,6 +95,93 @@ if (command === 'update') {
     process.exit(1);
   }
   process.exit(0);
+}
+
+if (command === 'worktree') {
+  const wtArgs = args.slice(1); // everything after 'worktree'
+  const subCommand = wtArgs[0]; // 'add', 'remove', 'list', etc.
+
+  if (!subCommand) {
+    console.error('Usage: claude-remote-cli worktree <add|remove|list> [options]');
+    process.exit(1);
+  }
+
+  // For non-add commands, just forward to git worktree
+  if (subCommand !== 'add') {
+    try {
+      const result = await execFileAsync('git', ['worktree', ...wtArgs]);
+      if (result.stdout) console.log(result.stdout.trimEnd());
+    } catch (err: unknown) {
+      const execErr = err as { stderr?: string; message?: string };
+      console.error((execErr.stderr || execErr.message || 'git worktree failed').trimEnd());
+      process.exit(1);
+    }
+    process.exit(0);
+  }
+
+  // Handle 'add' — strip --yolo, determine path, forward to git, then launch claude
+  const hasYolo = wtArgs.includes('--yolo');
+  const gitWtArgs = wtArgs.filter(a => a !== '--yolo'); // ['add', ...]
+
+  // Determine the target directory (first positional arg after 'add' that doesn't start with '-')
+  const addSubArgs = gitWtArgs.slice(1); // everything after 'add'
+  let targetDir: string | undefined;
+
+  // Find the branch name from -b flag for default path
+  const bIdx = gitWtArgs.indexOf('-b');
+  const branchForDefault = bIdx !== -1 && bIdx + 1 < gitWtArgs.length ? gitWtArgs[bIdx + 1]! : undefined;
+
+  if (addSubArgs.length === 0 || addSubArgs[0]!.startsWith('-')) {
+    // No positional path — generate a default under .worktrees/
+    let repoRoot: string;
+    try {
+      const result = await execFileAsync('git', ['rev-parse', '--show-toplevel']);
+      repoRoot = result.stdout.trim();
+    } catch {
+      console.error('Not inside a git repository.');
+      process.exit(1);
+    }
+    const dirName = branchForDefault
+      ? branchForDefault.replace(/\//g, '-')
+      : 'worktree-' + Date.now().toString(36);
+    targetDir = path.join(repoRoot, '.worktrees', dirName);
+    // Insert the path into git args: ['add', <path>, ...rest]
+    gitWtArgs.splice(1, 0, targetDir);
+  } else {
+    targetDir = path.resolve(addSubArgs[0]!);
+  }
+
+  // Run git worktree add
+  try {
+    const result = await execFileAsync('git', ['worktree', ...gitWtArgs]);
+    if (result.stdout) console.log(result.stdout.trimEnd());
+  } catch (err: unknown) {
+    const execErr = err as { stderr?: string; message?: string };
+    console.error((execErr.stderr || execErr.message || 'git worktree add failed').trimEnd());
+    process.exit(1);
+  }
+
+  console.log(`Worktree created at ${targetDir}`);
+
+  // Launch claude in the worktree
+  const claudeArgs: string[] = [];
+  if (hasYolo) claudeArgs.push('--dangerously-skip-permissions');
+
+  console.log(`Launching claude${hasYolo ? ' (yolo mode)' : ''} in ${targetDir}...`);
+
+  const { spawn } = await import('node:child_process');
+  const child = spawn('claude', claudeArgs, {
+    cwd: targetDir,
+    stdio: 'inherit',
+    env: { ...process.env, CLAUDECODE: undefined },
+  });
+
+  child.on('exit', (code) => {
+    process.exit(code ?? 0);
+  });
+
+  // Prevent the rest of the CLI from running (server startup, etc.)
+  await new Promise(() => {}); // hang until child exits via the handler above
 }
 
 if (command === 'install' || command === 'uninstall' || command === 'status' || args.includes('--bg')) {
