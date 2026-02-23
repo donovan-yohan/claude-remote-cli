@@ -3,12 +3,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Session } from './types.js';
+import type { Session, SessionType } from './types.js';
 import { readMeta, writeMeta } from './config.js';
 
 type SessionSummary = Omit<Session, 'pty' | 'scrollback'>;
 
 type CreateParams = {
+  type?: SessionType;
   repoName?: string;
   repoPath: string;
   cwd?: string;
@@ -35,7 +36,7 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallback = cb;
 }
 
-function create({ repoName, repoPath, cwd, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
+function create({ type, repoName, repoPath, cwd, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
   const id = crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
 
@@ -58,6 +59,7 @@ function create({ repoName, repoPath, cwd, root, worktreeName, displayName, comm
 
   const session: Session = {
     id,
+    type: type || 'worktree',
     root: root || '',
     repoName: repoName || '',
     repoPath,
@@ -125,7 +127,7 @@ function create({ repoName, repoPath, cwd, root, worktreeName, displayName, comm
     fs.rm(tmpDir, { recursive: true, force: true }, () => {});
   });
 
-  return { id, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
+  return { id, type: session.type, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
 }
 
 function get(id: string): Session | undefined {
@@ -134,8 +136,9 @@ function get(id: string): Session | undefined {
 
 function list(): SessionSummary[] {
   return Array.from(sessions.values())
-    .map(({ id, root, repoName, repoPath, worktreeName, displayName, createdAt, lastActivity, idle }) => ({
+    .map(({ id, type, root, repoName, repoPath, worktreeName, displayName, createdAt, lastActivity, idle }) => ({
       id,
+      type,
       root,
       repoName,
       repoPath,
@@ -180,4 +183,8 @@ function write(id: string, data: string): void {
   session.pty.write(data);
 }
 
-export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange };
+function findRepoSession(repoPath: string): SessionSummary | undefined {
+  return list().find((s) => s.type === 'repo' && s.repoPath === repoPath);
+}
+
+export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange, findRepoSession };

@@ -40,6 +40,7 @@ describe('branch name to directory name', () => {
   });
 });
 
+
 describe('CLI worktree arg parsing', () => {
   it('should extract --yolo and leave other args intact', () => {
     const args = ['add', './.worktrees/my-feature', '-b', 'my-feature', '--yolo'];

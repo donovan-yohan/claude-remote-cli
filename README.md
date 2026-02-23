@@ -142,8 +142,10 @@ The PIN hash is stored in config under `pinHash`. To reset:
 ## Features
 
 - **PIN-protected access** with rate limiting
-- **Branch-aware sessions** — create worktrees from new or existing branches with a type-to-search branch picker
-- **Worktree isolation** — each session runs in its own git worktree under `.worktrees/`
+- **Repo sessions** — open Claude directly in any repo root, with fresh or `--continue` mode (one session per repo)
+- **Branch-aware worktrees** — create worktrees from new or existing branches with a type-to-search branch picker
+- **Tabbed sidebar** — switch between Repos and Worktrees views with shared filters and item counts
+- **Worktree isolation** — each worktree session runs in its own git worktree under `.worktrees/`
 - **Resume sessions** — click inactive worktrees to reconnect with `--continue`
 - **Persistent session names** — display names, branch names, and timestamps survive server restarts
 - **Clipboard image paste** — paste screenshots directly into remote terminal sessions (macOS clipboard + xclip on Linux)

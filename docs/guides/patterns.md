@@ -26,7 +26,16 @@
 - Session auto-deleted when PTY exits; WebSocket closed with code 1000 on exit
 - `claudeArgs` from POST body are merged with `config.claudeArgs` (config args first, request args appended)
 - Resuming a worktree passes `--continue` to the Claude CLI (not `--resume`)
-- Sessions module exports: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`, `onIdleChange`
+- Sessions module exports: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`, `onIdleChange`, `findRepoSession`
+
+## Session Types
+
+Sessions have a `type` field: `'repo'` or `'worktree'` (default).
+
+- **Repo sessions** (`POST /sessions/repo`) run Claude directly in the repo root directory. No git worktree is created. One active repo session allowed per repo path — enforced by `findRepoSession()` returning 409 on conflict. Supports `continue: true` for `--continue` mode.
+- **Worktree sessions** (`POST /sessions`) create a git worktree under `.worktrees/` and run Claude there. Multiple worktree sessions per repo are allowed (each in its own worktree).
+
+The frontend sidebar has two tabs (Repos / Worktrees) that filter sessions by type. The new-session dialog is tab-aware: repo mode hides the branch input and shows a "Continue previous conversation" checkbox; worktree mode shows the branch input.
 
 ## Idle Detection
 
@@ -100,7 +109,8 @@ Scans configured `rootDirs` one level deep for git repos. Hidden directories (st
 - Vendor libraries (xterm.js, addon-fit.js) bundled in `public/vendor/`, loaded via `<script>` tags
 - DOM manipulation via `document.getElementById`, `document.createElement`, and event listeners
 - Mobile-first responsive design with touch toolbar (hidden on desktop to maximize terminal space)
-- Sidebar status dots: green (running), blue (idle), amber glow (needs attention), gray (inactive worktree)
+- Sidebar has two tabs: Repos (repo sessions + idle repos) and Worktrees (worktree sessions + inactive worktrees), with filtered counts
+- Sidebar status dots: green (running), blue (idle), amber glow (needs attention), gray (inactive repo/worktree)
 - Attention state: tracked client-side in `attentionSessions` object; set when a session becomes idle while not actively viewed; cleared when user opens the session
 
 ## Clipboard Image Passthrough

@@ -18,11 +18,11 @@ node --test dist/test/auth.test.js                    # Run a single compiled te
 | `test/auth.test.ts` | PIN hashing, verification, rate limiting, token generation |
 | `test/clipboard.test.ts` | Clipboard tool detection, unsupported MIME type rejection |
 | `test/config.test.ts` | Config loading/saving, defaults merging, worktree metadata persistence |
-| `test/sessions.test.ts` | PTY spawning, session lifecycle (create/get/list/kill/resize/write) |
+| `test/sessions.test.ts` | PTY spawning, session lifecycle (create/get/list/kill/resize/write), session type field (`repo`/`worktree`), `findRepoSession` lookup |
 | `test/service.test.ts` | Platform detection, service path generation, service file templates |
 | `test/paths.test.ts` | Project root resolution, public/ directory accessibility, dist/ layout |
 | `test/version.test.ts` | Semantic version comparison (`semverLessThan`) |
-| `test/worktrees.test.ts` | DELETE /worktrees path validation (rejects paths outside `.worktrees/`), branch-to-directory name conversion |
+| `test/worktrees.test.ts` | DELETE /worktrees path validation (rejects paths outside `.worktrees/`), branch-to-directory name conversion, repo session path validation |
 
 ## Test Isolation Patterns
 

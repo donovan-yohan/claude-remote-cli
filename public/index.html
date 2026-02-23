@@ -52,6 +52,10 @@
         </select>
         <input type="text" id="session-filter" placeholder="Filter..." />
       </div>
+      <div class="sidebar-tabs">
+        <button class="sidebar-tab active" data-tab="repos">Repos (<span id="tab-repos-count">0</span>)</button>
+        <button class="sidebar-tab" data-tab="worktrees">Worktrees (<span id="tab-worktrees-count">0</span>)</button>
+      </div>
       <ul id="session-list"></ul>
       <button id="new-session-btn">+ New Session</button>
       <button id="settings-btn">Settings</button>
@@ -138,6 +142,14 @@
         <ul id="dialog-branch-list" class="branch-dropdown" hidden></ul>
       </div>
       <span class="dialog-option-hint">Leave empty for auto-generated name</span>
+    </div>
+
+    <div class="dialog-field" id="dialog-continue-field" hidden>
+      <label>
+        <input type="checkbox" id="dialog-continue" />
+        Continue previous conversation
+      </label>
+      <span class="dialog-option-hint">Resume where you left off (--continue)</span>
     </div>
 
     <hr class="dialog-separator" />

@@ -483,6 +483,7 @@ async function main(): Promise<void> {
     const displayName = branchName || worktreeName;
 
     const session = sessions.create({
+      type: 'worktree',
       repoName: name,
       repoPath: sessionRepoPath,
       cwd,
@@ -502,6 +503,47 @@ async function main(): Promise<void> {
         branchName: branchName || worktreeName,
       });
     }
+
+    res.status(201).json(session);
+  });
+
+  // POST /sessions/repo — start a session in the repo root (no worktree)
+  app.post('/sessions/repo', requireAuth, (req, res) => {
+    const { repoPath, repoName, continue: continueSession, claudeArgs } = req.body as {
+      repoPath?: string;
+      repoName?: string;
+      continue?: boolean;
+      claudeArgs?: string[];
+    };
+    if (!repoPath) {
+      res.status(400).json({ error: 'repoPath is required' });
+      return;
+    }
+
+    // One repo session at a time
+    const existing = sessions.findRepoSession(repoPath);
+    if (existing) {
+      res.status(409).json({ error: 'A session already exists for this repo', sessionId: existing.id });
+      return;
+    }
+
+    const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
+    const baseArgs = [...(config.claudeArgs || []), ...(claudeArgs || [])];
+    const args = continueSession ? ['--continue', ...baseArgs] : [...baseArgs];
+
+    const roots = config.rootDirs || [];
+    const root = roots.find(function (r) { return repoPath.startsWith(r); }) || '';
+
+    const session = sessions.create({
+      type: 'repo',
+      repoName: name,
+      repoPath,
+      cwd: repoPath,
+      root,
+      displayName: name,
+      command: config.claudeCommand,
+      args,
+    });
 
     res.status(201).json(session);
   });
