@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import fs from 'node:fs';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import * as service from '../server/service.js';
@@ -10,6 +10,11 @@ import { DEFAULTS } from '../server/config.js';
 const execFileAsync = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function execErrorMessage(err: unknown, fallback: string): string {
+  const e = err as { stderr?: string; message?: string };
+  return (e.stderr || e.message || fallback).trimEnd();
+}
 
 // Parse CLI flags
 const args = process.argv.slice(2);
@@ -98,41 +103,35 @@ if (command === 'update') {
 }
 
 if (command === 'worktree') {
-  const wtArgs = args.slice(1); // everything after 'worktree'
-  const subCommand = wtArgs[0]; // 'add', 'remove', 'list', etc.
+  const wtArgs = args.slice(1);
+  const subCommand = wtArgs[0];
 
   if (!subCommand) {
     console.error('Usage: claude-remote-cli worktree <add|remove|list> [options]');
     process.exit(1);
   }
 
-  // For non-add commands, just forward to git worktree
   if (subCommand !== 'add') {
     try {
       const result = await execFileAsync('git', ['worktree', ...wtArgs]);
       if (result.stdout) console.log(result.stdout.trimEnd());
     } catch (err: unknown) {
-      const execErr = err as { stderr?: string; message?: string };
-      console.error((execErr.stderr || execErr.message || 'git worktree failed').trimEnd());
+      console.error(execErrorMessage(err, 'git worktree failed'));
       process.exit(1);
     }
     process.exit(0);
   }
 
-  // Handle 'add' — strip --yolo, determine path, forward to git, then launch claude
+  // Handle 'add' -- strip --yolo, determine path, forward to git, then launch claude
   const hasYolo = wtArgs.includes('--yolo');
-  const gitWtArgs = wtArgs.filter(a => a !== '--yolo'); // ['add', ...]
-
-  // Determine the target directory (first positional arg after 'add' that doesn't start with '-')
-  const addSubArgs = gitWtArgs.slice(1); // everything after 'add'
+  const gitWtArgs = wtArgs.filter(function (a) { return a !== '--yolo'; });
+  const addSubArgs = gitWtArgs.slice(1);
   let targetDir: string | undefined;
 
-  // Find the branch name from -b flag for default path
   const bIdx = gitWtArgs.indexOf('-b');
   const branchForDefault = bIdx !== -1 && bIdx + 1 < gitWtArgs.length ? gitWtArgs[bIdx + 1]! : undefined;
 
   if (addSubArgs.length === 0 || addSubArgs[0]!.startsWith('-')) {
-    // No positional path — generate a default under .worktrees/
     let repoRoot: string;
     try {
       const result = await execFileAsync('git', ['rev-parse', '--show-toplevel']);
@@ -145,31 +144,26 @@ if (command === 'worktree') {
       ? branchForDefault.replace(/\//g, '-')
       : 'worktree-' + Date.now().toString(36);
     targetDir = path.join(repoRoot, '.worktrees', dirName);
-    // Insert the path into git args: ['add', <path>, ...rest]
     gitWtArgs.splice(1, 0, targetDir);
   } else {
     targetDir = path.resolve(addSubArgs[0]!);
   }
 
-  // Run git worktree add
   try {
     const result = await execFileAsync('git', ['worktree', ...gitWtArgs]);
     if (result.stdout) console.log(result.stdout.trimEnd());
   } catch (err: unknown) {
-    const execErr = err as { stderr?: string; message?: string };
-    console.error((execErr.stderr || execErr.message || 'git worktree add failed').trimEnd());
+    console.error(execErrorMessage(err, 'git worktree add failed'));
     process.exit(1);
   }
 
   console.log(`Worktree created at ${targetDir}`);
 
-  // Launch claude in the worktree
   const claudeArgs: string[] = [];
   if (hasYolo) claudeArgs.push('--dangerously-skip-permissions');
 
   console.log(`Launching claude${hasYolo ? ' (yolo mode)' : ''} in ${targetDir}...`);
 
-  const { spawn } = await import('node:child_process');
   const child = spawn('claude', claudeArgs, {
     cwd: targetDir,
     stdio: 'inherit',
@@ -180,8 +174,8 @@ if (command === 'worktree') {
     process.exit(code ?? 0);
   });
 
-  // Prevent the rest of the CLI from running (server startup, etc.)
-  await new Promise(() => {}); // hang until child exits via the handler above
+  // Block until child exits via the handler above
+  await new Promise(() => {});
 }
 
 if (command === 'install' || command === 'uninstall' || command === 'status' || args.includes('--bg')) {

@@ -1,30 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-
-function isValidWorktreePath(worktreePath: string): boolean {
-  const sep = '/';
-  return worktreePath.includes(sep + '.worktrees' + sep)
-    || worktreePath.includes(sep + '.claude/worktrees' + sep);
-}
+import { WORKTREE_DIRS, isValidWorktreePath } from '../server/watcher.js';
 
 describe('worktree directories constant', () => {
-  it('should include both .worktrees and .claude/worktrees', async () => {
-    const { WORKTREE_DIRS } = await import('../server/watcher.js');
+  it('should include both .worktrees and .claude/worktrees', () => {
     assert.deepEqual(WORKTREE_DIRS, ['.worktrees', '.claude/worktrees']);
   });
 });
 
-describe('worktree scanning paths', () => {
-  it('should check both .worktrees and .claude/worktrees directories', async () => {
-    const { WORKTREE_DIRS } = await import('../server/watcher.js');
-    const repoPath = '/Users/me/code/repo';
-    const scannedPaths = WORKTREE_DIRS.map(d => repoPath + '/' + d);
-    assert.ok(scannedPaths.includes(repoPath + '/.worktrees'));
-    assert.ok(scannedPaths.includes(repoPath + '/.claude/worktrees'));
-  });
-});
-
-describe('DELETE /worktrees validation', () => {
+describe('isValidWorktreePath', () => {
   it('should reject paths not inside any worktree directory', () => {
     assert.equal(isValidWorktreePath('/some/random/path'), false);
   });

@@ -4,6 +4,13 @@ import { EventEmitter } from 'node:events';
 
 export const WORKTREE_DIRS = ['.worktrees', '.claude/worktrees'];
 
+export function isValidWorktreePath(worktreePath: string): boolean {
+  const resolved = path.resolve(worktreePath);
+  return WORKTREE_DIRS.some(function (dir) {
+    return resolved.includes(path.sep + dir + path.sep);
+  });
+}
+
 export class WorktreeWatcher extends EventEmitter {
   private _watchers: fs.FSWatcher[];
   private _debounceTimer: ReturnType<typeof setTimeout> | null;

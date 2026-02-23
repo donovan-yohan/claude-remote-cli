@@ -14,7 +14,7 @@ import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, ensureMetaDir } 
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { setupWebSocket } from './ws.js';
-import { WorktreeWatcher, WORKTREE_DIRS } from './watcher.js';
+import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import type { Config } from './types.js';
@@ -63,6 +63,11 @@ async function getLatestVersion(): Promise<string | null> {
   } catch (_) {
     return null;
   }
+}
+
+function execErrorMessage(err: unknown, fallback: string): string {
+  const e = err as { stderr?: string; message?: string };
+  return (e.stderr || e.message || fallback).trim();
 }
 
 type RepoEntry = { name: string; path: string; root: string };
@@ -343,10 +348,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Validate the path is inside a known worktree directory
-    const validDir = worktreePath.includes(path.sep + '.worktrees' + path.sep)
-      || worktreePath.includes(path.sep + '.claude' + path.sep + 'worktrees' + path.sep);
-    if (!validDir) {
+    if (!isValidWorktreePath(worktreePath)) {
       res.status(400).json({ error: 'Path is not inside a worktree directory' });
       return;
     }
@@ -367,9 +369,7 @@ async function main(): Promise<void> {
       // Will fail if uncommitted changes -- no --force
       await execFileAsync('git', ['worktree', 'remove', worktreePath], { cwd: repoPath });
     } catch (err: unknown) {
-      const execErr = err as { stderr?: string; message?: string };
-      const message = (execErr.stderr || execErr.message || 'Failed to remove worktree').trim();
-      res.status(500).json({ error: message });
+      res.status(500).json({ error: execErrorMessage(err, 'Failed to remove worktree') });
       return;
     }
 
@@ -470,9 +470,7 @@ async function main(): Promise<void> {
           await execFileAsync('git', ['worktree', 'add', '-b', dirName, targetDir, 'HEAD'], { cwd: repoPath });
         }
       } catch (err: unknown) {
-        const execErr = err as { stderr?: string; message?: string };
-        const message = (execErr.stderr || execErr.message || 'Failed to create worktree').trim();
-        res.status(500).json({ error: message });
+        res.status(500).json({ error: execErrorMessage(err, 'Failed to create worktree') });
         return;
       }
 
