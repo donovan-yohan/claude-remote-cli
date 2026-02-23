@@ -1359,6 +1359,28 @@
       return count;
     }
 
+    // Batched send: accumulates payload across rapid input events (e.g. autocorrect
+    // fires deleteContentBackward + insertText ~2ms apart) and flushes in one
+    // ws.send() so the PTY receives backspaces + replacement text atomically.
+    var sendBuffer = '';
+    var sendTimer = null;
+    var SEND_DELAY = 10; // ms – enough to batch autocorrect pairs, imperceptible for typing
+
+    function scheduleSend(data) {
+      sendBuffer += data;
+      if (sendTimer !== null) clearTimeout(sendTimer);
+      sendTimer = setTimeout(flushSendBuffer, SEND_DELAY);
+    }
+
+    function flushSendBuffer() {
+      sendTimer = null;
+      if (sendBuffer && ws && ws.readyState === WebSocket.OPEN) {
+        dbg('FLUSH: "' + sendBuffer.replace(/\x7f/g, '\u232b') + '" (' + sendBuffer.length + ' bytes)');
+        ws.send(sendBuffer);
+      }
+      sendBuffer = '';
+    }
+
     // Send the diff between lastInputValue and currentValue to the terminal.
     // Handles autocorrect expansions, deletions, and same-length replacements.
     function sendInputDiff(currentValue) {
@@ -1374,11 +1396,13 @@
 
       dbg('sendInputDiff: del=' + charsToDelete + ' "' + deletedSlice + '" add="' + newChars + '"');
 
+      var payload = '';
       for (var i = 0; i < charsToDelete; i++) {
-        ws.send('\x7f'); // backspace
+        payload += '\x7f';
       }
-      if (newChars) {
-        ws.send(newChars);
+      payload += newChars;
+      if (payload) {
+        scheduleSend(payload);
       }
     }
 
@@ -1413,9 +1437,7 @@
       lastInputValue = '';
     });
 
-    // Flush any pending composed text to the terminal.
-    // Safe to call even if compositionend already ran: sendInputDiff
-    // is a no-op when lastInputValue === mobileInput.value.
+    // Flush any pending composed text and buffered sends to the terminal.
     function flushComposedText() {
       isComposing = false;
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -1423,6 +1445,7 @@
         sendInputDiff(currentValue);
         lastInputValue = currentValue;
       }
+      flushSendBuffer();
     }
     function clearInput() {
       mobileInput.value = '';
