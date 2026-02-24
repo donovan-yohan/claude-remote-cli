@@ -104,6 +104,26 @@
     e.stopPropagation();
     onrename?.();
   }
+
+  function measureOverflow(node: HTMLElement) {
+    const update = () => {
+      const overflow = node.scrollWidth - node.clientWidth;
+      if (overflow > 0) {
+        node.style.setProperty('--scroll-distance', `-${overflow}px`);
+        node.classList.add('has-overflow');
+      } else {
+        node.classList.remove('has-overflow');
+      }
+    };
+
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(node);
+
+    return {
+      destroy() { ro.disconnect(); }
+    };
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -118,7 +138,7 @@
   <div class="session-info">
     <div class="session-row-1">
       <span class={statusDotClass}></span>
-      <span class="session-name">{displayName}</span>
+      <span class="session-name" use:measureOverflow>{displayName}</span>
       {#if isActive}
         <div class="session-actions">
           {#if onrename}
@@ -247,15 +267,40 @@
     white-space: nowrap;
     font-weight: 500;
     color: var(--text);
-    /* Fade mask instead of ellipsis */
+  }
+
+  /* Fade mask only when text overflows */
+  .session-name.has-overflow {
     mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
     -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
   }
 
-  /* On hover: remove mask so actions can be seen, reveal actions */
-  li:hover .session-name {
-    mask-image: linear-gradient(to right, black calc(100% - 56px), transparent);
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 56px), transparent);
+  /* On hover: remove mask and animate text scroll to reveal full name */
+  li:hover .session-name.has-overflow {
+    mask-image: none;
+    -webkit-mask-image: none;
+    animation: text-scroll 4s linear 0.5s forwards;
+  }
+
+  @keyframes text-scroll {
+    0%, 5% { transform: translateX(0); }
+    45%, 55% { transform: translateX(var(--scroll-distance)); }
+    95%, 100% { transform: translateX(0); }
+  }
+
+  /* Selected state: use white mask for overflow fade */
+  li.active-session.selected .session-name {
+    color: #fff;
+  }
+
+  li.active-session.selected .session-name.has-overflow {
+    mask-image: linear-gradient(to right, white calc(100% - 32px), transparent);
+    -webkit-mask-image: linear-gradient(to right, white calc(100% - 32px), transparent);
+  }
+
+  li.active-session.selected:hover .session-name.has-overflow {
+    mask-image: none;
+    -webkit-mask-image: none;
   }
 
   .session-actions {
@@ -264,11 +309,18 @@
     gap: 2px;
     flex-shrink: 0;
     opacity: 0;
-    transition: opacity 0.15s;
+    transition: opacity 0.15s 0.1s; /* 100ms delay to avoid flash on quick passes */
   }
 
   li:hover .session-actions {
     opacity: 1;
+  }
+
+  /* Mobile: always show actions on touch devices */
+  @media (hover: none) {
+    .session-actions {
+      opacity: 1;
+    }
   }
 
   .session-rename-btn {
@@ -281,10 +333,12 @@
     border-radius: 4px;
     touch-action: manipulation;
     flex-shrink: 0;
+    transition: color 0.15s, transform 0.15s;
   }
 
   .session-rename-btn:hover {
     color: var(--accent);
+    transform: scale(1.1);
   }
 
   .session-kill {
@@ -297,12 +351,14 @@
     border-radius: 4px;
     touch-action: manipulation;
     flex-shrink: 0;
+    transition: color 0.15s, background 0.15s, transform 0.15s;
   }
 
   .session-kill:hover,
   .session-kill:active {
     color: var(--accent);
     background: rgba(217, 119, 87, 0.15);
+    transform: scale(1.1);
   }
 
   /* Row 2: pr icon + root · repo */
