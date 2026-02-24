@@ -12,11 +12,13 @@
   let {
     onSelectSession,
     onOpenNewSession,
-    onContextMenu,
+    onResumeYolo,
+    onDeleteWorktree,
   }: {
     onSelectSession: (id: string) => void;
     onOpenNewSession: (repo?: RepoInfo) => void;
-    onContextMenu: (e: MouseEvent, wt: WorktreeInfo) => void;
+    onResumeYolo: (wt: WorktreeInfo) => void;
+    onDeleteWorktree: (wt: WorktreeInfo) => void;
   } = $props();
 
   let startingWorktreePath: string | null = null;
@@ -175,7 +177,8 @@
         variant={{ kind: 'inactive-worktree', worktree: wt }}
         gitStatus={state.gitStatuses[wt.repoPath + ':' + wt.name]}
         onclick={() => handleStartWorktreeSession(wt)}
-        oncontextmenu={(e) => onContextMenu(e, wt)}
+        onresumeYolo={() => onResumeYolo(wt)}
+        ondelete={() => onDeleteWorktree(wt)}
       />
     {/each}
   {/if}

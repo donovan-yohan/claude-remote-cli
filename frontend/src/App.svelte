@@ -16,7 +16,6 @@
   import NewSessionDialog from './components/dialogs/NewSessionDialog.svelte';
   import SettingsDialog from './components/dialogs/SettingsDialog.svelte';
   import DeleteWorktreeDialog from './components/dialogs/DeleteWorktreeDialog.svelte';
-  import ContextMenu from './components/ContextMenu.svelte';
 
   const auth = getAuth();
   const ui = getUi();
@@ -29,7 +28,6 @@
   let newSessionDialogRef: NewSessionDialog;
   let settingsDialogRef: SettingsDialog;
   let deleteWorktreeDialogRef: DeleteWorktreeDialog;
-  let contextMenuRef: ContextMenu;
 
   onMount(() => {
     checkExistingAuth();
@@ -78,16 +76,11 @@
     settingsDialogRef?.open();
   }
 
-  function handleContextMenu(e: MouseEvent, wt: WorktreeInfo) {
-    e.preventDefault();
-    contextMenuRef?.show(e.clientX, e.clientY, wt);
+  function handleResumeYolo(wt: WorktreeInfo) {
+    newSessionDialogRef?.open({ name: wt.repoName, path: wt.repoPath, root: wt.root }, { yolo: true });
   }
 
-  function handleContextMenuResumeYolo(wt: WorktreeInfo) {
-    newSessionDialogRef?.open({ name: wt.repoName, path: wt.repoPath, root: wt.root });
-  }
-
-  function handleContextMenuDelete(wt: WorktreeInfo) {
+  function handleDeleteWorktree(wt: WorktreeInfo) {
     deleteWorktreeDialogRef?.open(wt);
   }
 
@@ -160,7 +153,8 @@
       onSelectSession={handleSelectSession}
       onOpenNewSession={handleOpenNewSession}
       onOpenSettings={handleOpenSettings}
-      onContextMenu={handleContextMenu}
+      onResumeYolo={handleResumeYolo}
+      onDeleteWorktree={handleDeleteWorktree}
     />
 
     <div class="terminal-area">
@@ -203,11 +197,6 @@
   />
   <SettingsDialog bind:this={settingsDialogRef} />
   <DeleteWorktreeDialog bind:this={deleteWorktreeDialogRef} />
-  <ContextMenu
-    bind:this={contextMenuRef}
-    onResumeYolo={handleContextMenuResumeYolo}
-    onDeleteWorktree={handleContextMenuDelete}
-  />
 
   <!-- Toasts -->
   <UpdateToast />
