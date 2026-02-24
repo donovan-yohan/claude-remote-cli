@@ -4,14 +4,14 @@ Execution plans for active and completed work.
 
 ## Current State
 
-- No active plans
+- 1 active plan
 - 15 completed plans (including design docs and implementation plans)
 
 ## Active Plans
 
 | Plan | Created | Status |
 |------|---------|--------|
-| (none) | — | — |
+| `2026-02-24-pull-requests-tab.md` | 2026-02-24 | Active |
 
 ## Completed Plans
 
