@@ -1,0 +1,62 @@
+import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from '../types.js';
+import * as api from '../api.js';
+
+let sessions = $state<SessionSummary[]>([]);
+let worktrees = $state<WorktreeInfo[]>([]);
+let repos = $state<RepoInfo[]>([]);
+let activeSessionId = $state<string | null>(null);
+let attentionSessions = $state<Record<string, boolean>>({});
+let gitStatuses = $state<Record<string, GitStatus>>({});
+
+export function getSessionState() {
+  return {
+    get sessions() { return sessions; },
+    get worktrees() { return worktrees; },
+    get repos() { return repos; },
+    get activeSessionId() { return activeSessionId; },
+    set activeSessionId(id: string | null) { activeSessionId = id; },
+    get attentionSessions() { return attentionSessions; },
+    get gitStatuses() { return gitStatuses; },
+  };
+}
+
+export async function refreshAll(): Promise<void> {
+  try {
+    const [s, w, r] = await Promise.all([
+      api.fetchSessions(),
+      api.fetchWorktrees(),
+      api.fetchRepos(),
+    ]);
+    sessions = s;
+    worktrees = w;
+    repos = r;
+
+    // Prune stale attention flags
+    const activeIds = new Set(sessions.map(sess => sess.id));
+    for (const id of Object.keys(attentionSessions)) {
+      if (!activeIds.has(id)) delete attentionSessions[id];
+    }
+  } catch { /* silent */ }
+}
+
+export function setAttention(sessionId: string, idle: boolean): void {
+  if (idle && sessionId !== activeSessionId) {
+    attentionSessions[sessionId] = true;
+  } else {
+    delete attentionSessions[sessionId];
+  }
+}
+
+export function clearAttention(sessionId: string): void {
+  delete attentionSessions[sessionId];
+}
+
+export function setGitStatus(key: string, status: GitStatus): void {
+  gitStatuses[key] = status;
+}
+
+export function getSessionStatus(session: SessionSummary): 'attention' | 'idle' | 'running' {
+  if (attentionSessions[session.id]) return 'attention';
+  if (session.idle) return 'idle';
+  return 'running';
+}
