@@ -29,26 +29,29 @@
 
 ## Progress
 
-- [ ] Task 1: Add `PullRequest` and `PullRequestsResponse` types
-- [ ] Task 2: Add `GET /pull-requests` server endpoint with structured errors
-- [ ] Task 3: Install `@tanstack/svelte-query` v6 and set up QueryClientProvider
-- [ ] Task 4: Add `fetchPullRequests` API client function
-- [ ] Task 5: Add `'prs'` to `TabId` union and `prRoleFilter` to UI state
-- [ ] Task 6: Restructure sidebar layout — move filters below tabs
-- [ ] Task 7: Add third tab to `SessionList.svelte` tab bar
-- [ ] Task 8: Create `PullRequestItem.svelte` component
-- [ ] Task 9: Render PR list in `SessionList.svelte` with svelte-query, error messages, refresh button, repo highlight
-- [ ] Task 10: Add Author/Reviewer filter toggle
-- [ ] Task 11: PR click cascade — active session → inactive worktree → create new
-- [ ] Task 12: Build and manual smoke test
+- [x] Task 1: Add `PullRequest` and `PullRequestsResponse` types _(completed 2026-02-24)_
+- [x] Task 2: Add `GET /pull-requests` server endpoint with structured errors _(completed 2026-02-24)_
+- [x] Task 3: Install `@tanstack/svelte-query` v6 and set up QueryClientProvider _(completed 2026-02-24)_
+- [x] Task 4: Add `fetchPullRequests` API client function _(completed 2026-02-24)_
+- [x] Task 5: Add `'prs'` to `TabId` union and `prRoleFilter` to UI state _(completed 2026-02-24)_
+- [x] Task 6: Restructure sidebar layout — move filters below tabs _(completed 2026-02-24)_
+- [x] Task 7: Add third tab to `SessionList.svelte` tab bar _(completed 2026-02-24)_
+- [x] Task 8: Create `PullRequestItem.svelte` component _(completed 2026-02-24)_
+- [x] Task 9: Render PR list in `SessionList.svelte` with svelte-query, error messages, refresh button, repo highlight _(completed 2026-02-24)_
+- [x] Task 10: Add Author/Reviewer filter toggle _(completed 2026-02-24)_
+- [x] Task 11: PR click cascade — active session → inactive worktree → create new _(completed 2026-02-24)_
+- [x] Task 12: Build and manual smoke test _(completed 2026-02-24)_
 
 ## Surprises & Discoveries
 
-_None yet — updated during execution by /harness:orchestrate._
+| 2026-02-24 | `createQuery` in svelte-query v6 for Svelte 5 takes an `Accessor<T>` (function returning options), not a plain object | Used `createQuery<PullRequestsResponse>(() => ({...}))` pattern |
+| 2026-02-24 | Adding `'prs'` to `TabId` union caused type error in `NewSessionDialog.svelte` which assigns `ui.activeTab` to a local `'repos' | 'worktrees'` variable | Added fallback: `activeTab = ui.activeTab === 'prs' ? 'repos' : ui.activeTab` |
+| 2026-02-24 | PullRequestItem row-2/row-3 uses `padding-left: 20px` instead of spacer elements, consistent with current SessionItem pattern (pill buttons era) | Matched current codebase convention |
 
 ## Plan Drift
 
-_None yet — updated when tasks deviate from plan during execution._
+| Tasks 1-5 | Execute sequentially via separate workers | Implemented directly by orchestrator due to worker permission issues; all tasks batched into two commits | Workers couldn't get Edit/Write permissions |
+| Task 8 | PullRequestItem uses spacer elements for row indentation | Used `padding-left: 20px` instead | Matches current SessionItem pattern after pill buttons refactor |
 
 ---
 
