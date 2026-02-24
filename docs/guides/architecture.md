@@ -20,7 +20,7 @@ Nine TypeScript modules under `server/`, compiled to `dist/server/` via `tsc`:
 | `server/config.ts` | Config loading/saving with defaults, worktree metadata persistence |
 | `server/clipboard.ts` | System clipboard detection and image-set operations (osascript on macOS, xclip on Linux) |
 | `server/service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
-| `server/types.ts` | Shared TypeScript interfaces (Session, SessionType, Config, ServicePaths, WorktreeMetadata, Platform, InstallOpts) |
+| `server/types.ts` | Shared TypeScript interfaces (Session, SessionType, Config, ServicePaths, WorktreeMetadata, GitStatus, Platform, InstallOpts) |
 
 Modules communicate via ESM `import` statements. `index.ts` is the composition root and should not be imported by other modules.
 
@@ -44,7 +44,7 @@ Browser (xterm.js) <--WebSocket /ws/:id--> server/ws.ts <--PTY I/O--> node-pty <
                                                 |
                                            scrollback buffer (in-memory, per session)
 
-Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.watch on .worktrees/)
+Browser (Svelte)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.watch on .worktrees/)
                                                            <-- POST/DELETE /roots (manual broadcast)
 ```
 
@@ -64,6 +64,7 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.wat
 | `POST` | `/sessions` | Create new worktree session or resume existing worktree (accepts `branchName` for branch selection and `claudeArgs` for flags) |
 | `POST` | `/sessions/repo` | Create a repo session (no worktree) — one per repo, supports `continue` for `--continue` mode |
 | `GET` | `/branches` | List local and remote branches for a repo |
+| `GET` | `/git-status` | Get PR state and diff stats for a branch (via `gh` CLI with `git diff` fallback) |
 | `PATCH` | `/sessions/:id` | Rename session (syncs `/rename` to PTY) |
 | `DELETE` | `/sessions/:id` | Terminate session |
 | `GET` | `/repos` | Scan root directories for git repos |

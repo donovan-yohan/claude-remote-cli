@@ -1,7 +1,7 @@
 # ADR-002: Vanilla JS Frontend with No Build Step
 
 ## Status
-Accepted
+Superseded by Svelte 5 migration (2026-02-24)
 
 ## Date
 2026-02-21
