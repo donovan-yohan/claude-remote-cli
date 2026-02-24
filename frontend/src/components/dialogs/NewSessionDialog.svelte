@@ -104,8 +104,9 @@
     branchDropdownVisible = false;
   }
 
-  export async function open(repo?: RepoInfo | null) {
+  export async function open(repo?: RepoInfo | null, options?: { yolo?: boolean }) {
     reset();
+    if (options?.yolo) yoloMode = true;
     activeTab = ui.activeTab;
 
     // Load repos fresh
