@@ -1,7 +1,6 @@
 <script lang="ts">
   import { getUi, closeSidebar } from '../lib/state/ui.svelte.js';
   import type { RepoInfo, WorktreeInfo } from '../lib/types.js';
-  import SessionFilters from './SessionFilters.svelte';
   import SessionList from './SessionList.svelte';
 
   const ui = getUi();
@@ -20,7 +19,11 @@
     onDeleteWorktree: (wt: WorktreeInfo) => void;
   } = $props();
 
-  let newSessionLabel = $derived(ui.activeTab === 'repos' ? '+ New Session' : '+ New Worktree');
+  let newSessionLabel = $derived(
+    ui.activeTab === 'repos' ? '+ New Session' :
+    ui.activeTab === 'prs' ? '+ New Session' :
+    '+ New Worktree'
+  );
 </script>
 
 <aside class="sidebar" class:open={ui.sidebarOpen}>
@@ -28,8 +31,6 @@
     <span class="sidebar-label">Sessions</span>
     <button class="icon-btn" aria-label="Close sidebar" onclick={closeSidebar}>✕</button>
   </div>
-
-  <SessionFilters />
 
   <SessionList
     {onSelectSession}
