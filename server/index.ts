@@ -107,8 +107,15 @@ function scanReposInRoot(rootDir: string): RepoEntry[] {
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     const fullPath = path.join(rootDir, entry.name);
-    if (fs.existsSync(path.join(fullPath, '.git'))) {
-      repos.push({ name: entry.name, path: fullPath, root: rootDir });
+    const dotGit = path.join(fullPath, '.git');
+    try {
+      // Only count directories with a .git *directory* as repos.
+      // Worktrees and submodules have a .git *file* and should be skipped.
+      if (fs.statSync(dotGit).isDirectory()) {
+        repos.push({ name: entry.name, path: fullPath, root: rootDir });
+      }
+    } catch (_) {
+      // .git doesn't exist — not a repo
     }
   }
   return repos;
@@ -468,7 +475,15 @@ async function main(): Promise<void> {
       }
     }
 
-    res.json(worktrees);
+    // Deduplicate by path (a worktree can appear via multiple repo scans)
+    const seen = new Set<string>();
+    const unique = worktrees.filter(wt => {
+      if (seen.has(wt.path)) return false;
+      seen.add(wt.path);
+      return true;
+    });
+
+    res.json(unique);
   });
 
   // GET /roots — list root directories
