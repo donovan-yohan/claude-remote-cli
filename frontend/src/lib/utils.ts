@@ -20,4 +20,7 @@ export function formatRelativeTime(isoString: string): string {
   return months[d.getMonth()] + ' ' + d.getDate();
 }
 
-export const isMobileDevice = typeof window !== 'undefined' && 'ontouchstart' in window;
+export const isMobileDevice =
+  typeof window !== 'undefined' &&
+  'ontouchstart' in window &&
+  /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);

@@ -21,6 +21,11 @@
   padding: 0;
 }
 
+/* Restore native <dialog> centering (overridden by the global margin reset) */
+dialog {
+  margin: auto;
+}
+
 html, body {
   height: 100%;
   overflow: hidden;

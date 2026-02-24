@@ -19,6 +19,8 @@
     onContextMenu: (e: MouseEvent, wt: WorktreeInfo) => void;
   } = $props();
 
+  let startingWorktreePathPath: string | null = null;
+
   // Split sessions by type
   let repoSessions = $derived(state.sessions.filter(s => s.type === 'repo'));
   let worktreeSessions = $derived(state.sessions.filter(s => s.type !== 'repo'));
@@ -93,8 +95,24 @@
     onSelectSession(session.id);
   }
 
-  function handleStartWorktreeSession(wt: WorktreeInfo) {
-    onOpenNewSession({ name: wt.repoName, path: wt.repoPath, root: wt.root });
+  async function handleStartWorktreeSession(wt: WorktreeInfo) {
+    if (startingWorktreePath) return;
+    startingWorktreePath = wt.path;
+    try {
+      const session = await api.createSession({
+        repoPath: wt.repoPath,
+        repoName: wt.repoName,
+        worktreePath: wt.path,
+      });
+      await refreshAll();
+      if (session?.id) {
+        onSelectSession(session.id);
+      }
+    } catch {
+      // Ignore — user can retry
+    } finally {
+      startingWorktreePath = null;
+    }
   }
 
   function handleStartRepoSession(repo: RepoInfo) {
