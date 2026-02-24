@@ -107,7 +107,7 @@
   export async function open(repo?: RepoInfo | null, options?: { yolo?: boolean }) {
     reset();
     if (options?.yolo) yoloMode = true;
-    activeTab = ui.activeTab;
+    activeTab = ui.activeTab === 'prs' ? 'repos' : ui.activeTab;
 
     // Load repos fresh
     try {

@@ -1,10 +1,11 @@
-export type TabId = 'repos' | 'worktrees';
+export type TabId = 'repos' | 'worktrees' | 'prs';
 
 let sidebarOpen = $state(false);
 let activeTab = $state<TabId>('repos');
 let rootFilter = $state('');
 let repoFilter = $state('');
 let searchFilter = $state('');
+let prRoleFilter = $state<'all' | 'author' | 'reviewer'>('all');
 
 export function getUi() {
   return {
@@ -18,6 +19,8 @@ export function getUi() {
     set repoFilter(v: string) { repoFilter = v; },
     get searchFilter() { return searchFilter; },
     set searchFilter(v: string) { searchFilter = v; },
+    get prRoleFilter() { return prRoleFilter; },
+    set prRoleFilter(v: 'all' | 'author' | 'reviewer') { prRoleFilter = v; },
   };
 }
 

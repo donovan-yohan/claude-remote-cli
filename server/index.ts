@@ -17,7 +17,7 @@ import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
-import type { Config } from './types.js';
+import type { Config, PullRequest, PullRequestsResponse } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -322,6 +322,88 @@ async function main(): Promise<void> {
     }
 
     res.json({ prState, additions, deletions });
+  });
+
+  // GET /pull-requests?repo=<path>
+  app.get('/pull-requests', requireAuth, async (req, res) => {
+    const repoPath = typeof req.query.repo === 'string' ? req.query.repo : undefined;
+    if (!repoPath) {
+      res.status(400).json({ prs: [], error: 'repo query parameter is required' } satisfies PullRequestsResponse);
+      return;
+    }
+
+    const fields = 'number,title,url,headRefName,state,author,updatedAt,additions,deletions,reviewDecision';
+
+    // Get current GitHub user
+    let currentUser = '';
+    try {
+      const { stdout: whoami } = await execFileAsync('gh', ['api', 'user', '--jq', '.login'], { cwd: repoPath });
+      currentUser = whoami.trim();
+    } catch {
+      const response: PullRequestsResponse = { prs: [], error: 'gh_not_authenticated' };
+      res.json(response);
+      return;
+    }
+
+    // Fetch authored PRs
+    const authored: PullRequest[] = [];
+    try {
+      const { stdout } = await execFileAsync('gh', [
+        'pr', 'list', '--author', currentUser, '--state', 'open', '--limit', '30',
+        '--json', fields,
+      ], { cwd: repoPath });
+      const raw = JSON.parse(stdout) as Array<Record<string, unknown>>;
+      for (const pr of raw) {
+        authored.push({
+          number: pr.number as number,
+          title: pr.title as string,
+          url: pr.url as string,
+          headRefName: pr.headRefName as string,
+          state: pr.state as 'OPEN' | 'CLOSED' | 'MERGED',
+          author: (pr.author as { login?: string })?.login ?? currentUser,
+          role: 'author',
+          updatedAt: pr.updatedAt as string,
+          additions: (pr.additions as number) ?? 0,
+          deletions: (pr.deletions as number) ?? 0,
+          reviewDecision: (pr.reviewDecision as string) ?? null,
+        });
+      }
+    } catch { /* no authored PRs or gh error */ }
+
+    // Fetch review-requested PRs
+    const reviewing: PullRequest[] = [];
+    try {
+      const { stdout } = await execFileAsync('gh', [
+        'pr', 'list', '--search', `review-requested:${currentUser}`, '--state', 'open', '--limit', '30',
+        '--json', fields,
+      ], { cwd: repoPath });
+      const raw = JSON.parse(stdout) as Array<Record<string, unknown>>;
+      for (const pr of raw) {
+        reviewing.push({
+          number: pr.number as number,
+          title: pr.title as string,
+          url: pr.url as string,
+          headRefName: pr.headRefName as string,
+          state: pr.state as 'OPEN' | 'CLOSED' | 'MERGED',
+          author: (pr.author as { login?: string })?.login ?? '',
+          role: 'reviewer',
+          updatedAt: pr.updatedAt as string,
+          additions: (pr.additions as number) ?? 0,
+          deletions: (pr.deletions as number) ?? 0,
+          reviewDecision: (pr.reviewDecision as string) ?? null,
+        });
+      }
+    } catch { /* no review-requested PRs or gh error */ }
+
+    // Deduplicate: if a PR appears in both (user is author AND reviewer), keep as 'author'
+    const seen = new Set(authored.map(pr => pr.number));
+    const combined = [...authored, ...reviewing.filter(pr => !seen.has(pr.number))];
+
+    // Sort by updatedAt descending
+    combined.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+    const response: PullRequestsResponse = { prs: combined };
+    res.json(response);
   });
 
   // GET /worktrees?repo=<path> — list worktrees; omit repo to scan all repos in all rootDirs

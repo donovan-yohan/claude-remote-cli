@@ -16,6 +16,17 @@
   import NewSessionDialog from './components/dialogs/NewSessionDialog.svelte';
   import SettingsDialog from './components/dialogs/SettingsDialog.svelte';
   import DeleteWorktreeDialog from './components/dialogs/DeleteWorktreeDialog.svelte';
+  import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+        refetchOnWindowFocus: false,
+      },
+    },
+  });
 
   const auth = getAuth();
   const ui = getUi();
@@ -141,6 +152,7 @@
 {:else if !auth.authenticated}
   <PinGate />
 {:else}
+  <QueryClientProvider client={queryClient}>
   <div class="main-app">
     <!-- Sidebar overlay (mobile) -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -201,6 +213,7 @@
   <!-- Toasts -->
   <UpdateToast />
   <ImageToast bind:this={imageToastRef} />
+  </QueryClientProvider>
 {/if}
 
 <style>

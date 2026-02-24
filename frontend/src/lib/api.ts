@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from './types.js';
+import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse } from './types.js';
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -46,6 +46,10 @@ export async function fetchGitStatus(repoPath: string, branch: string): Promise<
   return json<GitStatus>(
     await fetch('/git-status?repo=' + encodeURIComponent(repoPath) + '&branch=' + encodeURIComponent(branch)),
   );
+}
+
+export async function fetchPullRequests(repoPath: string): Promise<PullRequestsResponse> {
+  return json<PullRequestsResponse>(await fetch('/pull-requests?repo=' + encodeURIComponent(repoPath)));
 }
 
 export async function createSession(body: {
