@@ -1356,6 +1356,22 @@
     if (e.key === 'Enter') addRootBtn.click();
   });
 
+  var settingsDevtools = document.getElementById('settings-devtools');
+
+  // Initialize developer tools toggle from localStorage
+  var devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
+  settingsDevtools.checked = devtoolsEnabled;
+
+  settingsDevtools.addEventListener('change', function () {
+    devtoolsEnabled = settingsDevtools.checked;
+    localStorage.setItem('devtools-enabled', devtoolsEnabled ? 'true' : 'false');
+    // Update debug toggle visibility immediately
+    var debugToggle = document.getElementById('debug-toggle');
+    if (debugToggle) {
+      debugToggle.style.display = devtoolsEnabled ? '' : 'none';
+    }
+  });
+
   settingsClose.addEventListener('click', function () {
     settingsDialog.close();
     loadRepos();
@@ -1565,6 +1581,10 @@
     debugToggle.id = 'debug-toggle';
     debugToggle.textContent = 'dbg';
     debugToggle.style.cssText = 'position:fixed;bottom:60px;right:8px;z-index:10000;background:#333;color:#0f0;border:1px solid #0f0;border-radius:6px;font:12px monospace;padding:6px 10px;opacity:0.5;min-width:44px;min-height:44px;';
+    // Hide debug toggle unless developer tools are enabled in settings
+    if (localStorage.getItem('devtools-enabled') !== 'true') {
+      debugToggle.style.display = 'none';
+    }
     document.body.appendChild(debugToggle);
 
     var debugVisible = false;
@@ -1723,6 +1743,24 @@
     // Expose for toolbar handler
     mobileInput.flushComposedText = flushComposedText;
     mobileInput.clearInput = clearInput;
+
+    // ── Form submit handler for reliable Enter on mobile ──
+    // On Android Chrome with Gboard, keydown fires with key="Unidentified" and
+    // keyCode=229 during active composition/prediction (which is nearly always).
+    // Wrapping the input in a <form> ensures the browser fires a "submit" event
+    // when Enter is pressed, regardless of composition state.
+    var inputForm = document.getElementById('mobile-input-form');
+    if (inputForm) {
+      inputForm.addEventListener('submit', function (e) {
+        e.preventDefault();
+        dbg('FORM_SUBMIT composing=' + isComposing + ' val="' + mobileInput.value + '"');
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        flushComposedText();
+        ws.send('\r');
+        mobileInput.value = '';
+        lastInputValue = '';
+      });
+    }
 
     // Handle text input with autocorrect
     var clearTimer = null;

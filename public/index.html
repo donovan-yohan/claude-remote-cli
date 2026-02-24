@@ -70,7 +70,9 @@
         <button id="menu-btn" class="icon-btn" aria-label="Open sessions menu">&#9776;</button>
         <span id="session-title" class="mobile-title">No session</span>
       </div>
-      <input type="text" id="mobile-input" dir="ltr" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Terminal input" />
+      <form id="mobile-input-form" action="javascript:void(0)">
+        <input type="text" id="mobile-input" dir="ltr" autocomplete="off" enterkeyhint="send" aria-label="Terminal input" />
+      </form>
       <div id="terminal-container"></div>
       <div id="terminal-scrollbar"><div id="terminal-scrollbar-thumb"></div></div>
       <div id="no-session-msg">No active session. Create or select a session to begin.</div>
@@ -181,6 +183,13 @@
         <input type="text" id="add-root-path" placeholder="/Users/you/code" />
         <button id="add-root-btn" class="btn-accent">Add</button>
       </div>
+    </div>
+    <div class="settings-section">
+      <label class="settings-label">Developer</label>
+      <label class="settings-checkbox">
+        <input type="checkbox" id="settings-devtools" />
+        <span>Show developer tools button</span>
+      </label>
     </div>
     <div class="dialog-actions">
       <button id="settings-close">Done</button>

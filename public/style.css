@@ -931,6 +931,26 @@ dialog#settings-dialog h2 {
   margin-bottom: 1rem;
 }
 
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+#mobile-input-form {
+  display: contents;
+}
+
 .btn-accent {
   background: var(--accent) !important;
   border-color: var(--accent) !important;
