@@ -32,3 +32,22 @@ export interface GitStatus {
   additions: number;
   deletions: number;
 }
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  url: string;
+  headRefName: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  author: string;
+  role: 'author' | 'reviewer';
+  updatedAt: string;
+  additions: number;
+  deletions: number;
+  reviewDecision: string | null;
+}
+
+export interface PullRequestsResponse {
+  prs: PullRequest[];
+  error?: string | undefined;
+}

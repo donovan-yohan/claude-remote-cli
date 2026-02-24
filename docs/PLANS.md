@@ -4,7 +4,7 @@ Execution plans for active and completed work.
 
 ## Current State
 
-- No active plans
+- 1 active plan
 - 15 completed plans (including design docs and implementation plans)
 
 ## Active Plans
@@ -12,6 +12,7 @@ Execution plans for active and completed work.
 | Plan | Created | Status |
 |------|---------|--------|
 | [`session-card-action-buttons`](exec-plans/active/2026-02-24-session-card-action-buttons.md) | 2026-02-24 | Replace context menu with inline pill buttons |
+| `2026-02-24-pull-requests-tab.md` | 2026-02-24 | Completed |
 
 ## Completed Plans
 

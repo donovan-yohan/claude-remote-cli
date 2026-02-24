@@ -14,10 +14,11 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | Component | Role |
 |-----------|------|
 | `App.svelte` | Root layout: sidebar + terminal + mobile header |
-| `Sidebar.svelte` | Two-tab sidebar (Repos / Worktrees), session list, filters |
-| `SessionList.svelte` | Filtered session list with status grouping |
+| `Sidebar.svelte` | Three-tab sidebar (Repos / Worktrees / PRs), session list, filters |
+| `SessionList.svelte` | Filtered session/PR list with status grouping and svelte-query PR fetching |
 | `SessionItem.svelte` | 3-row session card: status dot + name, git metadata, time + diff stats |
-| `SessionFilters.svelte` | Filter controls for session list |
+| `SessionFilters.svelte` | Filter controls (root, repo, search) + Author/Reviewer toggle for PRs tab |
+| `PullRequestItem.svelte` | 3-row PR card: state icon + title, author + role badge, time + diff stats |
 | `Terminal.svelte` | xterm.js terminal wrapper with WebSocket connection |
 | `Toolbar.svelte` | Mobile touch toolbar for terminal interaction |
 | `MobileHeader.svelte` | Mobile header with session info |
@@ -30,7 +31,7 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 
 ## State Management
 
-State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting reactive state and mutation functions. Components import state — they do not own it.
+State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting reactive state and mutation functions. Components import state — they do not own it. PR data is managed via `@tanstack/svelte-query` v6 (cache + manual refresh), not in state modules.
 
 ## Conventions
 
@@ -51,7 +52,10 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 
 ## Key Patterns
 
-- The new-session dialog is tab-aware: repo mode hides branch input and shows "Continue previous conversation" checkbox; worktree mode shows branch input
+- The new-session dialog is tab-aware: repo mode hides branch input and shows "Continue previous conversation" checkbox; worktree mode shows branch input; PRs tab falls back to repo mode
+- PRs tab uses `@tanstack/svelte-query` `createQuery` with `Accessor` pattern: `createQuery<T>(() => ({...}))` — the options must be wrapped in a function for Svelte 5 runes reactivity
+- Filters (root, repo, search) live below the tab bar; repo dropdown pulses with accent border when PRs tab is active and no repo is selected
+- PR click cascade: active session → inactive worktree → create new worktree + session
 - Worktree naming convention: `mobile-<name>-<timestamp>`
 - Settings dialog close triggers `refreshAll()` for immediate sidebar update
 - Cookie TTL uses human-readable format: `s` (seconds), `m` (minutes), `h` (hours), `d` (days). Default: `24h`
