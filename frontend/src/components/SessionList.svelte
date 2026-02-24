@@ -15,12 +15,12 @@
   let {
     onSelectSession,
     onOpenNewSession,
-    onResumeYolo,
+    onNewWorktree,
     onDeleteWorktree,
   }: {
     onSelectSession: (id: string) => void;
     onOpenNewSession: (repo?: RepoInfo) => void;
-    onResumeYolo: (wt: WorktreeInfo) => void;
+    onNewWorktree: (repo: RepoInfo) => void;
     onDeleteWorktree: (wt: WorktreeInfo) => void;
   } = $props();
 
@@ -93,7 +93,7 @@
   let prList = $derived(prData?.prs ?? []);
 
   let filteredPullRequests = $derived(
-    prList.filter(pr => {
+    prList.filter((pr: PullRequest) => {
       if (ui.prRoleFilter !== 'all' && pr.role !== ui.prRoleFilter) return false;
       if (ui.searchFilter && pr.title.toLowerCase().indexOf(ui.searchFilter.toLowerCase()) === -1) return false;
       return true;
@@ -200,8 +200,70 @@
     }
   }
 
-  function handleStartRepoSession(repo: RepoInfo) {
-    onOpenNewSession(repo);
+  async function handleStartWorktreeSessionYolo(wt: WorktreeInfo) {
+    if (startingWorktreePath) return;
+    startingWorktreePath = wt.path;
+    try {
+      const session = await api.createSession({
+        repoPath: wt.repoPath,
+        repoName: wt.repoName,
+        worktreePath: wt.path,
+        claudeArgs: ['--dangerously-skip-permissions'],
+      });
+      await refreshAll();
+      if (session?.id) {
+        onSelectSession(session.id);
+      }
+    } catch {
+      // Ignore — user can retry
+    } finally {
+      startingWorktreePath = null;
+    }
+  }
+
+  async function handleStartRepoSession(repo: RepoInfo) {
+    try {
+      const session = await api.createRepoSession({
+        repoPath: repo.path,
+        repoName: repo.name,
+        continue: true,
+      });
+      await refreshAll();
+      if (session?.id) {
+        onSelectSession(session.id);
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && 'sessionId' in err) {
+        const conflictErr = err as Error & { sessionId?: string };
+        await refreshAll();
+        if (conflictErr.sessionId) {
+          onSelectSession(conflictErr.sessionId);
+        }
+      }
+    }
+  }
+
+  async function handleStartRepoSessionYolo(repo: RepoInfo) {
+    try {
+      const session = await api.createRepoSession({
+        repoPath: repo.path,
+        repoName: repo.name,
+        continue: true,
+        claudeArgs: ['--dangerously-skip-permissions'],
+      });
+      await refreshAll();
+      if (session?.id) {
+        onSelectSession(session.id);
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && 'sessionId' in err) {
+        const conflictErr = err as Error & { sessionId?: string };
+        await refreshAll();
+        if (conflictErr.sessionId) {
+          onSelectSession(conflictErr.sessionId);
+        }
+      }
+    }
   }
 </script>
 
@@ -249,6 +311,8 @@
       <SessionItem
         variant={{ kind: 'idle-repo', repo }}
         onclick={() => handleStartRepoSession(repo)}
+        onresumeYolo={() => handleStartRepoSessionYolo(repo)}
+        onNewWorktree={() => onNewWorktree(repo)}
       />
     {/each}
   {:else if ui.activeTab === 'worktrees'}
@@ -269,7 +333,7 @@
         variant={{ kind: 'inactive-worktree', worktree: wt }}
         gitStatus={state.gitStatuses[wt.repoPath + ':' + wt.name]}
         onclick={() => handleStartWorktreeSession(wt)}
-        onresumeYolo={() => onResumeYolo(wt)}
+        onresumeYolo={() => handleStartWorktreeSessionYolo(wt)}
         ondelete={() => onDeleteWorktree(wt)}
       />
     {/each}

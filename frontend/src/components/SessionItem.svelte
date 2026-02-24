@@ -21,6 +21,7 @@
     onrename,
     onresumeYolo,
     ondelete,
+    onNewWorktree,
   }: {
     variant: ItemVariant;
     gitStatus?: GitStatus | undefined;
@@ -29,6 +30,7 @@
     onrename?: () => void;
     onresumeYolo?: () => void;
     ondelete?: () => void;
+    onNewWorktree?: () => void;
   } = $props();
 
   let displayName = $derived(
@@ -110,7 +112,7 @@
 
   function handleNewWorktree(e: MouseEvent) {
     e.stopPropagation();
-    onclick();
+    onNewWorktree?.();
   }
 
 </script>
@@ -165,7 +167,12 @@
         <button class="action-pill action-pill--danger" aria-label="Delete worktree" onclick={handleDelete}>🗑</button>
       {/if}
     {:else if variant.kind === 'idle-repo'}
-      <button class="action-pill action-pill--mono" aria-label="New worktree" onclick={handleNewWorktree}>+ worktree</button>
+      {#if onresumeYolo}
+        <button class="action-pill action-pill--mono" aria-label="Start in yolo mode" onclick={handleResumeYolo}>YOLO</button>
+      {/if}
+      {#if onNewWorktree}
+        <button class="action-pill action-pill--mono" aria-label="New worktree" onclick={handleNewWorktree}>+ worktree</button>
+      {/if}
     {/if}
   </div>
 </li>

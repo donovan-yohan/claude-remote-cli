@@ -9,13 +9,13 @@
     onSelectSession,
     onOpenNewSession,
     onOpenSettings,
-    onResumeYolo,
+    onNewWorktree,
     onDeleteWorktree,
   }: {
     onSelectSession: (id: string) => void;
     onOpenNewSession: (repo?: RepoInfo) => void;
     onOpenSettings: () => void;
-    onResumeYolo: (wt: WorktreeInfo) => void;
+    onNewWorktree: (repo: RepoInfo) => void;
     onDeleteWorktree: (wt: WorktreeInfo) => void;
   } = $props();
 
@@ -68,7 +68,7 @@
     <SessionList
       {onSelectSession}
       {onOpenNewSession}
-      {onResumeYolo}
+      {onNewWorktree}
       {onDeleteWorktree}
     />
 

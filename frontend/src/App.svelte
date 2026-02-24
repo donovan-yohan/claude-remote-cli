@@ -4,6 +4,7 @@
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
   import { getSessionState, refreshAll, setAttention, clearAttention } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
+  import { isMobileDevice } from './lib/utils.js';
   import type { RepoInfo, WorktreeInfo } from './lib/types.js';
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
@@ -39,9 +40,38 @@
   let newSessionDialogRef: NewSessionDialog;
   let settingsDialogRef: SettingsDialog;
   let deleteWorktreeDialogRef: DeleteWorktreeDialog;
+  let mainAppEl: HTMLDivElement;
+
+  // Mobile keyboard state
+  let keyboardOpen = $state(false);
 
   onMount(() => {
     checkExistingAuth();
+
+    // Mobile: track virtual keyboard via visualViewport API
+    if (isMobileDevice && window.visualViewport) {
+      const vv = window.visualViewport;
+      const onViewportResize = () => {
+        const kbHeight = window.innerHeight - vv.height;
+        keyboardOpen = kbHeight > 50;
+        if (mainAppEl) {
+          if (keyboardOpen) {
+            mainAppEl.style.height = vv.height + 'px';
+          } else {
+            mainAppEl.style.height = '';
+          }
+        }
+        // Prevent iOS from scrolling the viewport when keyboard opens
+        window.scrollTo(0, 0);
+        terminalRef?.fitTerm();
+      };
+      vv.addEventListener('resize', onViewportResize);
+      vv.addEventListener('scroll', onViewportResize);
+      return () => {
+        vv.removeEventListener('resize', onViewportResize);
+        vv.removeEventListener('scroll', onViewportResize);
+      };
+    }
   });
 
   // Refresh sessions when authenticated
@@ -87,8 +117,8 @@
     settingsDialogRef?.open();
   }
 
-  function handleResumeYolo(wt: WorktreeInfo) {
-    newSessionDialogRef?.open({ name: wt.repoName, path: wt.repoPath, root: wt.root }, { yolo: true });
+  function handleNewWorktree(repo: RepoInfo) {
+    newSessionDialogRef?.open(repo, { tab: 'worktrees' });
   }
 
   function handleDeleteWorktree(wt: WorktreeInfo) {
@@ -153,7 +183,7 @@
   <PinGate />
 {:else}
   <QueryClientProvider client={queryClient}>
-  <div class="main-app">
+  <div class="main-app" bind:this={mainAppEl}>
     <!-- Sidebar overlay (mobile) -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -165,7 +195,7 @@
       onSelectSession={handleSelectSession}
       onOpenNewSession={handleOpenNewSession}
       onOpenSettings={handleOpenSettings}
-      onResumeYolo={handleResumeYolo}
+      onNewWorktree={handleNewWorktree}
       onDeleteWorktree={handleDeleteWorktree}
     />
 
@@ -173,6 +203,7 @@
       <MobileHeader
         title={sessionTitle}
         onMenuClick={openSidebar}
+        hidden={keyboardOpen}
       />
 
       <Terminal
@@ -252,6 +283,12 @@
 
   /* Mobile */
   @media (max-width: 600px) {
+    .main-app {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+    }
+
     .sidebar-overlay {
       display: block;
       position: fixed;

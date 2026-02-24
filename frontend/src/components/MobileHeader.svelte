@@ -2,13 +2,15 @@
   let {
     title,
     onMenuClick,
+    hidden = false,
   }: {
     title: string;
     onMenuClick: () => void;
+    hidden?: boolean;
   } = $props();
 </script>
 
-<div class="mobile-header">
+<div class="mobile-header" class:hidden>
   <button
     class="icon-btn"
     aria-label="Open sessions menu"
@@ -32,6 +34,9 @@
   @media (max-width: 768px) {
     .mobile-header {
       display: flex;
+    }
+    .mobile-header.hidden {
+      display: none;
     }
   }
 

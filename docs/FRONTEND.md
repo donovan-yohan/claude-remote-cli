@@ -52,7 +52,9 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 
 ## Key Patterns
 
-- The new-session dialog is tab-aware: repo mode hides branch input and shows "Continue previous conversation" checkbox; worktree mode shows branch input; PRs tab falls back to repo mode
+- The new-session dialog is tab-aware: repo mode hides branch input and shows "Continue previous conversation" checkbox; worktree mode shows branch input; PRs tab falls back to repo mode. The `open()` method accepts an optional `tab` option to force a specific tab (e.g., `{ tab: 'worktrees' }`)
+- Idle repo items skip the dialog: clicking the card body creates a repo session directly with `continue: true`; the YOLO pill creates a repo session with `continue: true` + `--dangerously-skip-permissions`; the `+ worktree` pill opens the new session dialog defaulted to the worktrees tab
+- Inactive worktree YOLO buttons also skip the dialog, creating a worktree session directly with `--dangerously-skip-permissions`
 - PRs tab uses `@tanstack/svelte-query` `createQuery` with `Accessor` pattern: `createQuery<T>(() => ({...}))` — the options must be wrapped in a function for Svelte 5 runes reactivity
 - Filters (root, repo, search) live below the tab bar; repo dropdown pulses with accent border when PRs tab is active and no repo is selected
 - PR click cascade: active session → inactive worktree → create new worktree + session
@@ -60,6 +62,16 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - Settings dialog close triggers `refreshAll()` for immediate sidebar update
 - Cookie TTL uses human-readable format: `s` (seconds), `m` (minutes), `h` (hours), `d` (days). Default: `24h`
 - Root directory scanning: one level deep for git repos, hidden directories excluded
+
+## Mobile Keyboard Handling
+
+- `visualViewport` API tracks keyboard open/close: when `window.innerHeight - vv.height > 50`, keyboard is considered open
+- When keyboard is open: `.main-app` height is set to `visualViewport.height`, `MobileHeader` is hidden, terminal is re-fit via `fitTerm()`
+- `window.scrollTo(0, 0)` prevents iOS viewport scroll when keyboard opens
+- On mobile, `.main-app` uses `position: fixed; inset: 0` to prevent page-level scrolling
+- Tapping the terminal area focuses the hidden `MobileInput` via a `touchend` handler on `terminal-wrapper`
+- Toolbar buttons use `touchstart` with `preventDefault()` to prevent keyboard dismissal, then `onRefocusMobileInput()` to retain focus
+- `MobileInput` is a hidden `<form>` + `<input>` off-screen (`left: -9999px`) that captures text/composition events and diffs input to PTY
 
 ## See Also
 

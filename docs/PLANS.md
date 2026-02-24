@@ -4,20 +4,19 @@ Execution plans for active and completed work.
 
 ## Current State
 
-- 1 active plan
-- 15 completed plans (including design docs and implementation plans)
+- 0 active plans
+- 17 completed plans (including design docs and implementation plans)
 
 ## Active Plans
 
-| Plan | Created | Status |
-|------|---------|--------|
-| [`session-card-action-buttons`](exec-plans/active/2026-02-24-session-card-action-buttons.md) | 2026-02-24 | Replace context menu with inline pill buttons |
-| `2026-02-24-pull-requests-tab.md` | 2026-02-24 | Completed |
+_None._
 
 ## Completed Plans
 
 | Plan | Created | Topic |
 |------|---------|-------|
+| `session-card-action-buttons` | 2026-02-24 | Replace context menu with inline pill buttons |
+| `pull-requests-tab` | 2026-02-24 | Pull requests sidebar tab |
 | `session-resilience-design.md` | 2026-02-22 | Session reconnection and resilience design |
 | `session-resilience.md` | 2026-02-22 | Session resilience implementation |
 | `svelte-migration-menu-ui.md` | 2026-02-23 | Svelte migration for menu UI |

@@ -1,6 +1,6 @@
 # Session Card Action Buttons — Implementation Plan
 
-> **Status**: Active | **Created**: 2026-02-24 | **Last Updated**: 2026-02-24
+> **Status**: Completed | **Created**: 2026-02-24 | **Last Updated**: 2026-02-24
 > **Design Doc**: `docs/design-docs/2026-02-24-session-card-action-buttons-design.md`
 > **For Claude:** Use /harness:orchestrate to execute this plan.
 
@@ -28,7 +28,10 @@
 
 ## Plan Drift
 
-_None yet — updated when tasks deviate from plan during execution._
+| Date | What changed | Why |
+|------|-------------|-----|
+| 2026-02-24 | Idle repo click now creates session directly (no dialog). YOLO button added to idle repos. `+ worktree` opens dialog in worktrees tab. | User feedback: clicking idle repo should skip dialog; YOLO should be one-tap. |
+| 2026-02-24 | Inactive worktree YOLO creates session directly (no dialog). Was: opens dialog with yolo pre-selected. | Consistency: all YOLO actions are direct, no dialog. |
 
 ---
 

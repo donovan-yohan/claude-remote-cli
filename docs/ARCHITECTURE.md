@@ -43,6 +43,7 @@ Svelte 5 SPA built by Vite, output to `dist/frontend/`. Express serves the compi
 | `frontend/src/lib/api.ts` | REST API client functions |
 | `frontend/src/lib/ws.ts` | WebSocket connection management (PTY relay + event channel) |
 | `frontend/src/lib/types.ts` | Frontend TypeScript interfaces |
+| `frontend/src/lib/actions.ts` | Shared Svelte actions (scroll-on-hover, longpress-click) |
 
 **Architecture Invariant:** The frontend does NOT vendor any libraries. xterm.js, xterm-addon-fit, and `@tanstack/svelte-query` are npm dependencies. State lives in `.svelte.ts` modules, not in component files (PR data is an exception — managed via svelte-query cache).
 

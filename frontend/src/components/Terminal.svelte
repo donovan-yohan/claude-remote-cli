@@ -29,6 +29,12 @@
     if (!isMobileDevice) term?.focus();
   }
 
+  export function fitTerm() {
+    fitAddon?.fit();
+    if (term) sendPtyResize(term.cols, term.rows);
+    updateScrollbar();
+  }
+
   onMount(() => {
     const t = new Terminal({
       cursorBlink: true,
@@ -277,6 +283,12 @@
   export function setMobileInputRef(el: HTMLInputElement | null) {
     mobileInputRef = el;
   }
+
+  function onTerminalTouchEnd(e: TouchEvent) {
+    if (scrollbarDragging) return;
+    if ((e.target as HTMLElement).closest('.terminal-scrollbar-thumb')) return;
+    mobileInputRef?.focus();
+  }
 </script>
 
 <svelte:document
@@ -284,9 +296,11 @@
   ontouchend={isMobileDevice ? onDocumentTouchEnd : undefined}
 />
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="terminal-wrapper"
   class:drag-over={dragOver}
+  ontouchend={isMobileDevice ? onTerminalTouchEnd : undefined}
 >
   <div
     class="terminal-container"

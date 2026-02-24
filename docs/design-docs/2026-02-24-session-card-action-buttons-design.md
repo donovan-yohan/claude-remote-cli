@@ -37,8 +37,10 @@ Remove `row-2-spacer` and `row-3-spacer` elements. Apply `padding-left: 16px` to
 
 ### Data Flow
 
-- Inactive worktree buttons: `SessionItem` gets `onresumeYolo` and `ondelete` props. `SessionList` handles them and calls up to `App.svelte` which opens the appropriate dialog.
-- Idle repo `+ worktree` button: uses the existing `onclick` handler (same as clicking the card — opens new session dialog for that repo).
+- Inactive worktree buttons: `SessionItem` gets `onresumeYolo` and `ondelete` props. `SessionList` handles YOLO internally (creates session directly with `--dangerously-skip-permissions`, no dialog). Delete is passed up to `App.svelte` which opens the delete worktree dialog.
+- Idle repo card body click: `SessionList.handleStartRepoSession()` creates a repo session directly with `continue: true` (no dialog).
+- Idle repo YOLO button: `SessionList.handleStartRepoSessionYolo()` creates a repo session directly with `continue: true` + `--dangerously-skip-permissions` (no dialog).
+- Idle repo `+ worktree` button: calls `onNewWorktree` which opens the new session dialog forced to the worktrees tab via `open(repo, { tab: 'worktrees' })`.
 
 ### Cleanup
 

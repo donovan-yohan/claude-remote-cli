@@ -104,10 +104,10 @@
     branchDropdownVisible = false;
   }
 
-  export async function open(repo?: RepoInfo | null, options?: { yolo?: boolean }) {
+  export async function open(repo?: RepoInfo | null, options?: { yolo?: boolean; tab?: 'repos' | 'worktrees' }) {
     reset();
     if (options?.yolo) yoloMode = true;
-    activeTab = ui.activeTab === 'prs' ? 'repos' : ui.activeTab;
+    activeTab = options?.tab ?? (ui.activeTab === 'prs' ? 'repos' : ui.activeTab);
 
     // Load repos fresh
     try {
