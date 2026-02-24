@@ -10,12 +10,14 @@
     onSelectSession,
     onOpenNewSession,
     onOpenSettings,
-    onContextMenu,
+    onResumeYolo,
+    onDeleteWorktree,
   }: {
     onSelectSession: (id: string) => void;
     onOpenNewSession: (repo?: RepoInfo) => void;
     onOpenSettings: () => void;
-    onContextMenu: (e: MouseEvent, wt: WorktreeInfo) => void;
+    onResumeYolo: (wt: WorktreeInfo) => void;
+    onDeleteWorktree: (wt: WorktreeInfo) => void;
   } = $props();
 
   let newSessionLabel = $derived(ui.activeTab === 'repos' ? '+ New Session' : '+ New Worktree');
@@ -32,7 +34,8 @@
   <SessionList
     {onSelectSession}
     {onOpenNewSession}
-    {onContextMenu}
+    {onResumeYolo}
+    {onDeleteWorktree}
   />
 
   <button class="new-session-btn" onclick={() => onOpenNewSession()}>

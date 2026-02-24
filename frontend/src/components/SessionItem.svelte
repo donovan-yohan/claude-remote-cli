@@ -16,16 +16,18 @@
     variant,
     gitStatus,
     onclick,
-    oncontextmenu,
     onkill,
     onrename,
+    onresumeYolo,
+    ondelete,
   }: {
     variant: ItemVariant;
     gitStatus?: GitStatus | undefined;
     onclick: () => void;
-    oncontextmenu?: (e: MouseEvent) => void;
     onkill?: () => void;
     onrename?: () => void;
+    onresumeYolo?: () => void;
+    ondelete?: () => void;
   } = $props();
 
   let displayName = $derived(
@@ -87,14 +89,6 @@
     onclick();
   }
 
-  function handleContextMenu(e: MouseEvent) {
-    if (oncontextmenu) {
-      e.preventDefault();
-      e.stopPropagation();
-      oncontextmenu(e);
-    }
-  }
-
   function handleKill(e: MouseEvent) {
     e.stopPropagation();
     onkill?.();
@@ -103,6 +97,21 @@
   function handleRename(e: MouseEvent) {
     e.stopPropagation();
     onrename?.();
+  }
+
+  function handleResumeYolo(e: MouseEvent) {
+    e.stopPropagation();
+    onresumeYolo?.();
+  }
+
+  function handleDelete(e: MouseEvent) {
+    e.stopPropagation();
+    ondelete?.();
+  }
+
+  function handleNewWorktree(e: MouseEvent) {
+    e.stopPropagation();
+    onclick();
   }
 
   function measureOverflow(node: HTMLElement) {
@@ -133,34 +142,39 @@
   class:inactive-worktree={!isActive}
   class:selected={isSelected}
   onclick={handleClick}
-  oncontextmenu={handleContextMenu}
 >
   <div class="session-info">
     <div class="session-row-1">
       <span class={statusDotClass}></span>
       <span class="session-name" use:measureOverflow>{displayName}</span>
-      {#if isActive}
-        <div class="session-actions">
+      <div class="session-actions">
+        {#if variant.kind === 'active'}
           {#if onrename}
-            <button class="session-rename-btn" aria-label="Rename session" onclick={handleRename}>✎</button>
+            <button class="action-pill" aria-label="Rename session" onclick={handleRename}>✎</button>
           {/if}
           {#if onkill}
-            <button class="session-kill" aria-label="Kill session" onclick={handleKill}>×</button>
+            <button class="action-pill action-pill--danger" aria-label="Kill session" onclick={handleKill}>×</button>
           {/if}
-        </div>
-      {/if}
+        {:else if variant.kind === 'inactive-worktree'}
+          {#if onresumeYolo}
+            <button class="action-pill action-pill--mono" aria-label="Resume in yolo mode" onclick={handleResumeYolo}>YOLO</button>
+          {/if}
+          {#if ondelete}
+            <button class="action-pill action-pill--danger" aria-label="Delete worktree" onclick={handleDelete}>🗑</button>
+          {/if}
+        {:else if variant.kind === 'idle-repo'}
+          <button class="action-pill action-pill--mono" aria-label="New worktree" onclick={handleNewWorktree}>+ worktree</button>
+        {/if}
+      </div>
     </div>
     <div class="session-row-2">
       {#if prIcon}
         <span class={prIconClass}>{prIcon}</span>
-      {:else}
-        <span class="row-2-spacer"></span>
       {/if}
       <span class="session-sub">{rootName}{repoName ? ' · ' + repoName : ''}</span>
     </div>
     {#if lastActivity || (gitStatus && (gitStatus.additions || gitStatus.deletions))}
       <div class="session-row-3">
-        <span class="row-3-spacer"></span>
         <span class="session-time">{lastActivity}</span>
         {#if gitStatus && (gitStatus.additions || gitStatus.deletions)}
           <span class="git-diff">
@@ -303,62 +317,75 @@
     -webkit-mask-image: none;
   }
 
+  /* Pill action buttons */
+  .action-pill {
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    color: var(--text);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 12px;
+    touch-action: manipulation;
+    flex-shrink: 0;
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1;
+  }
+
+  .action-pill:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .action-pill--mono {
+    font-family: monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.02em;
+  }
+
+  .action-pill--danger:hover {
+    background: rgba(231, 76, 60, 0.15);
+    color: #e74c3c;
+  }
+
+  /* Selected card overrides */
+  li.active-session.selected .action-pill {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+  }
+
+  li.active-session.selected .action-pill:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  li.active-session.selected .action-pill--danger:hover {
+    background: rgba(231, 76, 60, 0.25);
+    color: #fca5a5;
+  }
+
   .session-actions {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     flex-shrink: 0;
     opacity: 0;
-    transition: opacity 0.15s 0.1s; /* 100ms delay to avoid flash on quick passes */
+    visibility: hidden;
+    transition: opacity 0.15s 0.1s, visibility 0.15s 0.1s;
   }
 
-  li:hover .session-actions {
+  li:hover .session-actions,
+  li:focus-within .session-actions {
     opacity: 1;
+    visibility: visible;
   }
 
-  /* Mobile: always show actions on touch devices */
   @media (hover: none) {
     .session-actions {
       opacity: 1;
+      visibility: visible;
     }
-  }
-
-  .session-rename-btn {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 4px;
-    touch-action: manipulation;
-    flex-shrink: 0;
-    transition: color 0.15s, transform 0.15s;
-  }
-
-  .session-rename-btn:hover {
-    color: var(--accent);
-    transform: scale(1.1);
-  }
-
-  .session-kill {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 1.1rem;
-    cursor: pointer;
-    padding: 2px 6px;
-    border-radius: 4px;
-    touch-action: manipulation;
-    flex-shrink: 0;
-    transition: color 0.15s, background 0.15s, transform 0.15s;
-  }
-
-  .session-kill:hover,
-  .session-kill:active {
-    color: var(--accent);
-    background: rgba(217, 119, 87, 0.15);
-    transform: scale(1.1);
   }
 
   /* Row 2: pr icon + root · repo */
@@ -367,20 +394,12 @@
     align-items: center;
     gap: 4px;
     min-width: 0;
-    padding-left: 0;
-  }
-
-  .row-2-spacer {
-    display: inline-block;
-    width: 16px; /* aligns with name: dot 8px + margin 8px */
-    flex-shrink: 0;
+    padding-left: 16px;
   }
 
   .pr-icon {
     font-size: 0.65rem;
     flex-shrink: 0;
-    width: 16px;
-    text-align: center;
   }
 
   .pr-open { color: #4ade80; }
@@ -402,12 +421,7 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
-  }
-
-  .row-3-spacer {
-    display: inline-block;
-    width: 16px;
-    flex-shrink: 0;
+    padding-left: 16px;
   }
 
   .session-time {

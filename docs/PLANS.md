@@ -11,7 +11,7 @@ Execution plans for active and completed work.
 
 | Plan | Created | Status |
 |------|---------|--------|
-| (none) | — | — |
+| [`session-card-action-buttons`](exec-plans/active/2026-02-24-session-card-action-buttons.md) | 2026-02-24 | Replace context menu with inline pill buttons |
 
 ## Completed Plans
 
