@@ -160,10 +160,28 @@ async function main(): Promise<void> {
 
   const authenticatedTokens = new Set<string>();
 
+  // Build frontend if missing (e.g. fresh clone in development)
+  const frontendDir = path.join(__dirname, '..', 'frontend');
+  if (!fs.existsSync(path.join(frontendDir, 'index.html'))) {
+    const packageRoot = path.join(__dirname, '..', '..');
+    const viteConfig = path.join(packageRoot, 'frontend', 'vite.config.ts');
+    if (fs.existsSync(viteConfig)) {
+      console.log('Frontend not built — building now...');
+      try {
+        await execFileAsync('npx', ['vite', 'build', '--config', 'frontend/vite.config.ts'], { cwd: packageRoot });
+        console.log('Frontend build complete.');
+      } catch (err) {
+        console.error('Frontend build failed:', err instanceof Error ? err.message : err);
+      }
+    } else {
+      console.warn('Frontend assets missing and source not available — UI will not be served.');
+    }
+  }
+
   const app = express();
   app.use(express.json({ limit: '15mb' }));
   app.use(cookieParser());
-  app.use(express.static(path.join(__dirname, '..', 'frontend')));
+  app.use(express.static(frontendDir));
 
   const requireAuth: express.RequestHandler = (req, res, next) => {
     const token = req.cookies && req.cookies.token;

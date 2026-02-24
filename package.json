@@ -17,6 +17,7 @@
     "dev": "vite --config frontend/vite.config.ts",
     "start": "tsc && vite build --config frontend/vite.config.ts && node dist/server/index.js",
     "test": "tsc -p tsconfig.test.json && node --test dist/test/*.test.js",
+    "prepublishOnly": "npm run build",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper 2>/dev/null || true"
   },
   "engines": {
