@@ -36,7 +36,26 @@ export async function refreshAll(): Promise<void> {
     for (const id of Object.keys(attentionSessions)) {
       if (!activeIds.has(id)) delete attentionSessions[id];
     }
+
+    refreshGitStatuses();
   } catch { /* silent */ }
+}
+
+let gitStatusTimer: ReturnType<typeof setTimeout> | null = null;
+
+export async function refreshGitStatuses(): Promise<void> {
+  if (gitStatusTimer) clearTimeout(gitStatusTimer);
+  gitStatusTimer = setTimeout(async () => {
+    for (const wt of worktrees) {
+      const branch = wt.name; // worktree dir name is typically the branch
+      const key = wt.repoPath + ':' + branch;
+      if (gitStatuses[key]) continue; // already cached
+      try {
+        const status = await api.fetchGitStatus(wt.repoPath, branch);
+        gitStatuses[key] = status;
+      } catch { /* silent */ }
+    }
+  }, 500);
 }
 
 export function setAttention(sessionId: string, idle: boolean): void {
