@@ -283,10 +283,18 @@ async function main(): Promise<void> {
       if (typeof data.additions === 'number') additions = data.additions;
       if (typeof data.deletions === 'number') deletions = data.deletions;
     } catch {
-      // No PR or gh not available — fall back to git diff
+      // No PR or gh not available — fall back to git diff against default branch
       try {
+        // Detect default branch (main, master, etc.)
+        let baseBranch = 'main';
+        try {
+          const { stdout: headRef } = await execFileAsync('git', [
+            'symbolic-ref', 'refs/remotes/origin/HEAD', '--short',
+          ], { cwd: repoPath });
+          baseBranch = headRef.trim().replace(/^origin\//, '');
+        } catch { /* use main as fallback */ }
         const { stdout } = await execFileAsync('git', [
-          'diff', '--shortstat', 'HEAD...main',
+          'diff', '--shortstat', baseBranch + '...' + branch,
         ], { cwd: repoPath });
         const addMatch = stdout.match(/(\d+) insertion/);
         const delMatch = stdout.match(/(\d+) deletion/);

@@ -94,8 +94,7 @@
   }
 
   function handleStartWorktreeSession(wt: WorktreeInfo) {
-    // Stub — opens new session for worktree (dialog handled by parent)
-    onOpenNewSession();
+    onOpenNewSession({ name: wt.repoName, path: wt.repoPath, root: wt.root });
   }
 
   function handleStartRepoSession(repo: RepoInfo) {

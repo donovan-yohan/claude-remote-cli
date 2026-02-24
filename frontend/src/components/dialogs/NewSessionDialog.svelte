@@ -35,26 +35,26 @@
   let branchDropdownVisible = $state(false);
 
   // Derived
-  let roots = $derived(() => {
+  let roots = $derived.by(() => {
     const r = new Set<string>();
     allRepos.forEach(repo => { if (repo.root) r.add(repo.root); });
     return Array.from(r).sort();
   });
 
-  let filteredRepos = $derived(() => {
+  let filteredRepos = $derived.by(() => {
     if (!selectedRoot) return [];
     return allRepos.filter(r => r.root === selectedRoot).sort((a, b) => a.name.localeCompare(b.name));
   });
 
-  let filteredBranches = $derived(() => {
+  let filteredBranches = $derived.by(() => {
     if (!branchInput.trim()) return [];
     const lower = branchInput.toLowerCase();
     return allBranches.filter(b => b.toLowerCase().includes(lower)).slice(0, 10);
   });
 
-  let hasExactBranchMatch = $derived(() => {
-    return allBranches.some(b => b === branchInput);
-  });
+  let hasExactBranchMatch = $derived(
+    allBranches.some(b => b === branchInput),
+  );
 
   function rootShortName(path: string): string {
     return path.split('/').filter(Boolean).pop() || path;
@@ -232,7 +232,7 @@
           onchange={onRootChange}
         >
           <option value="">Select a root...</option>
-          {#each roots() as root (root)}
+          {#each roots as root (root)}
             <option value={root}>{rootShortName(root)}</option>
           {/each}
         </select>
@@ -249,7 +249,7 @@
           disabled={!selectedRoot}
         >
           <option value="">Select a repo...</option>
-          {#each filteredRepos() as repo (repo.path)}
+          {#each filteredRepos as repo (repo.path)}
             <option value={repo.path}>{repo.name}</option>
           {/each}
         </select>
@@ -270,9 +270,9 @@
               onfocus={() => { if (branchInput.trim()) branchDropdownVisible = true; }}
               autocomplete="off"
             />
-            {#if branchDropdownVisible && (filteredBranches().length > 0 || (branchInput.trim() && !hasExactBranchMatch()))}
+            {#if branchDropdownVisible && (filteredBranches.length > 0 || (branchInput.trim() && !hasExactBranchMatch))}
               <ul class="branch-dropdown">
-                {#if !hasExactBranchMatch() && branchInput.trim()}
+                {#if !hasExactBranchMatch && branchInput.trim()}
                   <li
                     class="branch-create-new"
                     onmousedown={() => selectBranch(branchInput.trim())}
@@ -282,7 +282,7 @@
                     Create new: {branchInput.trim()}
                   </li>
                 {/if}
-                {#each filteredBranches() as branch (branch)}
+                {#each filteredBranches as branch (branch)}
                   <li
                     onmousedown={() => selectBranch(branch)}
                     role="option"
