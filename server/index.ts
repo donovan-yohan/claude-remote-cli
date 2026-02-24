@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 
-import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, ensureMetaDir } from './config.js';
+import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { setupWebSocket } from './ws.js';
@@ -369,8 +369,17 @@ async function main(): Promise<void> {
       // Will fail if uncommitted changes -- no --force
       await execFileAsync('git', ['worktree', 'remove', worktreePath], { cwd: repoPath });
     } catch (err: unknown) {
-      res.status(500).json({ error: execErrorMessage(err, 'Failed to remove worktree') });
-      return;
+      // If git worktree remove fails, the directory may be an orphaned worktree
+      // that git no longer tracks. Try to remove the directory directly.
+      if (fs.existsSync(worktreePath)) {
+        try {
+          fs.rmSync(worktreePath, { recursive: true });
+        } catch (rmErr: unknown) {
+          res.status(500).json({ error: execErrorMessage(rmErr, 'Failed to remove worktree directory') });
+          return;
+        }
+      }
+      // If directory doesn't exist, the worktree is already gone — continue to cleanup
     }
 
     try {
@@ -388,6 +397,9 @@ async function main(): Promise<void> {
         // Non-fatal: branch may not exist or may be checked out elsewhere
       }
     }
+
+    // Clean up metadata file
+    deleteMeta(CONFIG_PATH, worktreePath);
 
     res.json({ ok: true });
   });

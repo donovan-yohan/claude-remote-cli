@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { DEFAULTS, loadConfig, saveConfig, ensureMetaDir, readMeta, writeMeta } from '../server/config.js';
+import { DEFAULTS, loadConfig, saveConfig, ensureMetaDir, readMeta, writeMeta, deleteMeta } from '../server/config.js';
 
 let tmpDir!: string;
 
@@ -101,4 +101,17 @@ test('writeMeta overwrites existing metadata', () => {
   const read = readMeta(configPath, '/tmp/wt');
   assert.equal(read!.displayName, 'New Name');
   assert.equal(read!.lastActivity, '2026-02-22T00:00:00.000Z');
+});
+
+test('deleteMeta removes metadata file', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  writeMeta(configPath, { worktreePath: '/tmp/del-test', displayName: 'To Delete', lastActivity: '2026-02-22T00:00:00.000Z' });
+  assert.ok(readMeta(configPath, '/tmp/del-test'));
+  deleteMeta(configPath, '/tmp/del-test');
+  assert.equal(readMeta(configPath, '/tmp/del-test'), null);
+});
+
+test('deleteMeta is a no-op for non-existent metadata', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  assert.doesNotThrow(() => deleteMeta(configPath, '/no/such/path'));
 });

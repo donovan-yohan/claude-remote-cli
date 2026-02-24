@@ -55,3 +55,12 @@ export function writeMeta(configPath: string, meta: WorktreeMetadata): void {
   ensureMetaDir(configPath);
   fs.writeFileSync(fp, JSON.stringify(meta, null, 2), 'utf8');
 }
+
+export function deleteMeta(configPath: string, worktreePath: string): void {
+  const fp = metaFilePath(configPath, worktreePath);
+  try {
+    fs.unlinkSync(fp);
+  } catch (_) {
+    // File may not exist; ignore
+  }
+}
