@@ -10,6 +10,7 @@
     const roots = new Set<string>();
     for (const s of state.sessions) { if (s.root) roots.add(s.root); }
     for (const wt of state.worktrees) { if (wt.root) roots.add(wt.root); }
+    for (const r of state.repos) { if (r.root) roots.add(r.root); }
     return [...roots].sort();
   })());
 
@@ -20,6 +21,9 @@
     }
     for (const wt of state.worktrees) {
       if ((!ui.rootFilter || wt.root === ui.rootFilter) && wt.repoName) repos.add(wt.repoName);
+    }
+    for (const r of state.repos) {
+      if ((!ui.rootFilter || r.root === ui.rootFilter) && r.name) repos.add(r.name);
     }
     return [...repos].sort();
   })());
