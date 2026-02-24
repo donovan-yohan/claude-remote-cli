@@ -163,7 +163,7 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json({ limit: '15mb' }));
   app.use(cookieParser());
-  app.use(express.static(path.join(__dirname, '..', '..', 'public')));
+  app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
   const requireAuth: express.RequestHandler = (req, res, next) => {
     const token = req.cookies && req.cookies.token;
