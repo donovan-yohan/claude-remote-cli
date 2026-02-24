@@ -19,7 +19,7 @@
     onContextMenu: (e: MouseEvent, wt: WorktreeInfo) => void;
   } = $props();
 
-  let startingWorktreePathPath: string | null = null;
+  let startingWorktreePath: string | null = null;
 
   // Split sessions by type
   let repoSessions = $derived(state.sessions.filter(s => s.type === 'repo'));

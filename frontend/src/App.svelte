@@ -58,8 +58,7 @@
   // Wire MobileInput ref into Terminal after both are mounted
   $effect(() => {
     if (terminalRef && mobileInputRef) {
-      const inputEl = mobileInputRef['inputEl'] as HTMLInputElement | undefined;
-      terminalRef.setMobileInputRef(inputEl ?? null);
+      terminalRef.setMobileInputRef(mobileInputRef.getInputEl());
     }
   });
 
@@ -127,7 +126,7 @@
     input.onchange = () => {
       const file = input.files?.[0];
       if (file) {
-        terminalRef?.['handleImageUpload']?.(file, file.type);
+        terminalRef?.handleImageUpload(file, file.type);
       }
     };
     input.click();

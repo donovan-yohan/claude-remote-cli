@@ -43,6 +43,10 @@
 
   // ── Exposed methods ──────────────────────────────────────────────────────────
 
+  export function getInputEl(): HTMLInputElement | null {
+    return inputEl ?? null;
+  }
+
   export function focus() {
     inputEl?.focus();
   }

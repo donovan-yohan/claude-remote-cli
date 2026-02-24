@@ -5,8 +5,11 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
+    "skipLibCheck": true,
     "noEmit": true,
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },

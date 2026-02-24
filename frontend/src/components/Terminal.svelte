@@ -212,7 +212,7 @@
 
   // ── Image upload ─────────────────────────────────────────────────────────────
 
-  async function handleImageUpload(blob: Blob, mimeType: string) {
+  export async function handleImageUpload(blob: Blob, mimeType: string) {
     if (imageUploadInProgress || !sessionId) return;
     imageUploadInProgress = true;
     onImageUpload?.('Pasting image\u2026', false);

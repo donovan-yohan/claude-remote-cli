@@ -21,7 +21,7 @@
     onrename,
   }: {
     variant: ItemVariant;
-    gitStatus?: GitStatus;
+    gitStatus?: GitStatus | undefined;
     onclick: () => void;
     oncontextmenu?: (e: MouseEvent) => void;
     onkill?: () => void;

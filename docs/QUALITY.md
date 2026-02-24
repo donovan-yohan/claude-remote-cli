@@ -7,14 +7,30 @@ Testing patterns and quality standards for claude-remote-cli.
 - Node.js built-in `node:test` + `node:assert` — no external test framework
 - TypeScript test files in `test/`, compiled via `tsc -p tsconfig.test.json`
 - Eight test files covering all server modules
+- `svelte-check` runs in `build`, `test`, and standalone `check` — catches type errors in `.svelte` files
 - E2E tests (Playwright) planned but not yet implemented
 
 ## Commands
 
 ```bash
-npm test                                    # Compile + run all tests
+npm test                                    # svelte-check + compile + run all tests
+npm run check                               # Type check everything (server tsc + svelte-check)
+npm run check:svelte                        # Type check frontend only (svelte-check)
 node --test dist/test/auth.test.js          # Run a single compiled test
 ```
+
+## Type Checking
+
+Two type-checking tools cover the full codebase:
+
+| Tool | Scope | Runs in |
+|------|-------|---------|
+| `tsc` | Server (`server/`, `bin/`) | `build`, `test`, `check` |
+| `svelte-check` | Frontend (`frontend/src/`) | `build`, `test`, `check`, `check:svelte` |
+
+Both `build` and `test` fail on type errors. CI runs both via `npm run build && npm test`, ensuring no code with type errors can be published.
+
+`frontend/tsconfig.json` strict flags: `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, `noFallthroughCasesInSwitch`, `skipLibCheck`.
 
 ## Test Files
 

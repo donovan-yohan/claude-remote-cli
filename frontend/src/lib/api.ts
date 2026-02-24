@@ -50,10 +50,10 @@ export async function fetchGitStatus(repoPath: string, branch: string): Promise<
 
 export async function createSession(body: {
   repoPath: string;
-  repoName?: string;
-  worktreePath?: string;
-  branchName?: string;
-  claudeArgs?: string[];
+  repoName?: string | undefined;
+  worktreePath?: string | undefined;
+  branchName?: string | undefined;
+  claudeArgs?: string[] | undefined;
 }): Promise<SessionSummary> {
   return json<SessionSummary>(
     await fetch('/sessions', {
@@ -66,9 +66,9 @@ export async function createSession(body: {
 
 export async function createRepoSession(body: {
   repoPath: string;
-  repoName?: string;
-  continue?: boolean;
-  claudeArgs?: string[];
+  repoName?: string | undefined;
+  continue?: boolean | undefined;
+  claudeArgs?: string[] | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions/repo', {
     method: 'POST',
