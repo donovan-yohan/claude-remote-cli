@@ -40,6 +40,7 @@
       cursorBlink: true,
       fontSize: 14,
       fontFamily: 'Menlo, monospace',
+      scrollback: 10000,
       theme: {
         background: '#000000',
         foreground: '#d4d4d4',
@@ -360,7 +361,7 @@
     padding: 4px;
   }
 
-  .terminal-container.drag-over {
+  .terminal-wrapper.drag-over {
     outline: 2px dashed var(--accent);
     outline-offset: -2px;
   }

@@ -59,6 +59,11 @@ export async function refreshGitStatuses(): Promise<void> {
 }
 
 export function setAttention(sessionId: string, idle: boolean): void {
+  // Update the idle flag on the session object so getSessionStatus() reflects
+  // the real-time state without waiting for a full refreshAll() round-trip.
+  const session = sessions.find(s => s.id === sessionId);
+  if (session) session.idle = idle;
+
   if (idle && sessionId !== activeSessionId) {
     attentionSessions[sessionId] = true;
   } else {

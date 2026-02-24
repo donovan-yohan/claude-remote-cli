@@ -51,6 +51,8 @@
     // Mobile: track virtual keyboard via visualViewport API
     if (isMobileDevice && window.visualViewport) {
       const vv = window.visualViewport;
+      let fitTimer: ReturnType<typeof setTimeout> | null = null;
+
       const onViewportResize = () => {
         const kbHeight = window.innerHeight - vv.height;
         keyboardOpen = kbHeight > 50;
@@ -63,13 +65,16 @@
         }
         // Prevent iOS from scrolling the viewport when keyboard opens
         window.scrollTo(0, 0);
-        terminalRef?.fitTerm();
+        // Debounce fitTerm — visualViewport fires resize/scroll rapidly
+        if (fitTimer) clearTimeout(fitTimer);
+        fitTimer = setTimeout(() => terminalRef?.fitTerm(), 100);
       };
       vv.addEventListener('resize', onViewportResize);
       vv.addEventListener('scroll', onViewportResize);
       return () => {
         vv.removeEventListener('resize', onViewportResize);
         vv.removeEventListener('scroll', onViewportResize);
+        if (fitTimer) clearTimeout(fitTimer);
       };
     }
   });
@@ -222,10 +227,7 @@
         onRefocusMobileInput={handleRefocusMobileInput}
       />
 
-      <MobileInput
-        bind:this={mobileInputRef}
-        onTerminalTouchFocus={() => mobileInputRef?.focus()}
-      />
+      <MobileInput bind:this={mobileInputRef} />
 
       <div class="no-session-msg">
         {#if !sessionState.activeSessionId}

@@ -1,5 +1,14 @@
 import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse } from './types.js';
 
+export class ConflictError extends Error {
+  sessionId: string;
+  constructor(sessionId: string) {
+    super('conflict');
+    this.name = 'ConflictError';
+    this.sessionId = sessionId;
+  }
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<T>;
@@ -81,7 +90,7 @@ export async function createRepoSession(body: {
   });
   if (res.status === 409) {
     const data = await res.json() as { sessionId?: string };
-    throw Object.assign(new Error('conflict'), { sessionId: data.sessionId });
+    throw new ConflictError(data.sessionId ?? '');
   }
   return json<SessionSummary>(res);
 }

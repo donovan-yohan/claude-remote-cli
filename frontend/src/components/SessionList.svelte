@@ -1,8 +1,8 @@
 <script lang="ts">
   import { getUi } from '../lib/state/ui.svelte.js';
-  import { getSessionState, getSessionStatus, clearAttention } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, getSessionStatus, clearAttention, refreshAll } from '../lib/state/sessions.svelte.js';
   import * as api from '../lib/api.js';
-  import { refreshAll } from '../lib/state/sessions.svelte.js';
+  import { ConflictError } from '../lib/api.js';
   import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest, PullRequestsResponse } from '../lib/types.js';
   import { createQuery } from '@tanstack/svelte-query';
   import SessionItem from './SessionItem.svelte';
@@ -180,7 +180,7 @@
     onSelectSession(session.id);
   }
 
-  async function handleStartWorktreeSession(wt: WorktreeInfo) {
+  async function handleStartWorktreeSession(wt: WorktreeInfo, yolo = false) {
     if (startingWorktreePath) return;
     startingWorktreePath = wt.path;
     try {
@@ -188,11 +188,10 @@
         repoPath: wt.repoPath,
         repoName: wt.repoName,
         worktreePath: wt.path,
+        ...(yolo && { claudeArgs: ['--dangerously-skip-permissions'] }),
       });
       await refreshAll();
-      if (session?.id) {
-        onSelectSession(session.id);
-      }
+      if (session?.id) onSelectSession(session.id);
     } catch {
       // Ignore — user can retry
     } finally {
@@ -200,68 +199,20 @@
     }
   }
 
-  async function handleStartWorktreeSessionYolo(wt: WorktreeInfo) {
-    if (startingWorktreePath) return;
-    startingWorktreePath = wt.path;
-    try {
-      const session = await api.createSession({
-        repoPath: wt.repoPath,
-        repoName: wt.repoName,
-        worktreePath: wt.path,
-        claudeArgs: ['--dangerously-skip-permissions'],
-      });
-      await refreshAll();
-      if (session?.id) {
-        onSelectSession(session.id);
-      }
-    } catch {
-      // Ignore — user can retry
-    } finally {
-      startingWorktreePath = null;
-    }
-  }
-
-  async function handleStartRepoSession(repo: RepoInfo) {
+  async function handleStartRepoSession(repo: RepoInfo, yolo = false) {
     try {
       const session = await api.createRepoSession({
         repoPath: repo.path,
         repoName: repo.name,
         continue: true,
+        ...(yolo && { claudeArgs: ['--dangerously-skip-permissions'] }),
       });
       await refreshAll();
-      if (session?.id) {
-        onSelectSession(session.id);
-      }
+      if (session?.id) onSelectSession(session.id);
     } catch (err: unknown) {
-      if (err instanceof Error && 'sessionId' in err) {
-        const conflictErr = err as Error & { sessionId?: string };
+      if (err instanceof ConflictError && err.sessionId) {
         await refreshAll();
-        if (conflictErr.sessionId) {
-          onSelectSession(conflictErr.sessionId);
-        }
-      }
-    }
-  }
-
-  async function handleStartRepoSessionYolo(repo: RepoInfo) {
-    try {
-      const session = await api.createRepoSession({
-        repoPath: repo.path,
-        repoName: repo.name,
-        continue: true,
-        claudeArgs: ['--dangerously-skip-permissions'],
-      });
-      await refreshAll();
-      if (session?.id) {
-        onSelectSession(session.id);
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && 'sessionId' in err) {
-        const conflictErr = err as Error & { sessionId?: string };
-        await refreshAll();
-        if (conflictErr.sessionId) {
-          onSelectSession(conflictErr.sessionId);
-        }
+        onSelectSession(err.sessionId);
       }
     }
   }
@@ -311,7 +262,7 @@
       <SessionItem
         variant={{ kind: 'idle-repo', repo }}
         onclick={() => handleStartRepoSession(repo)}
-        onresumeYolo={() => handleStartRepoSessionYolo(repo)}
+        onresumeYolo={() => handleStartRepoSession(repo, true)}
         onNewWorktree={() => onNewWorktree(repo)}
       />
     {/each}
@@ -333,7 +284,7 @@
         variant={{ kind: 'inactive-worktree', worktree: wt }}
         gitStatus={state.gitStatuses[wt.repoPath + ':' + wt.name]}
         onclick={() => handleStartWorktreeSession(wt)}
-        onresumeYolo={() => handleStartWorktreeSessionYolo(wt)}
+        onresumeYolo={() => handleStartWorktreeSession(wt, true)}
         ondelete={() => onDeleteWorktree(wt)}
       />
     {/each}
