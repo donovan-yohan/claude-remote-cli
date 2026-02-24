@@ -40,6 +40,7 @@
       cursorBlink: true,
       fontSize: 14,
       fontFamily: 'Menlo, monospace',
+      scrollback: 10000,
       theme: {
         background: '#000000',
         foreground: '#d4d4d4',

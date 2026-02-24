@@ -2,6 +2,7 @@
   import { getUi } from '../lib/state/ui.svelte.js';
   import { getSessionState, getSessionStatus, clearAttention, refreshAll } from '../lib/state/sessions.svelte.js';
   import * as api from '../lib/api.js';
+  import { ConflictError } from '../lib/api.js';
   import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest, PullRequestsResponse } from '../lib/types.js';
   import { createQuery } from '@tanstack/svelte-query';
   import SessionItem from './SessionItem.svelte';
@@ -196,12 +197,10 @@
         repoPath: wt.repoPath,
         repoName: wt.repoName,
         worktreePath: wt.path,
-        claudeArgs: yolo ? ['--dangerously-skip-permissions'] : undefined,
+        ...(yolo && { claudeArgs: ['--dangerously-skip-permissions'] }),
       });
       await refreshAll();
-      if (session?.id) {
-        onSelectSession(session.id);
-      }
+      if (session?.id) onSelectSession(session.id);
     } catch {
       // Ignore — user can retry
     } finally {
@@ -215,19 +214,14 @@
         repoPath: repo.path,
         repoName: repo.name,
         continue: true,
-        claudeArgs: yolo ? ['--dangerously-skip-permissions'] : undefined,
+        ...(yolo && { claudeArgs: ['--dangerously-skip-permissions'] }),
       });
       await refreshAll();
-      if (session?.id) {
-        onSelectSession(session.id);
-      }
+      if (session?.id) onSelectSession(session.id);
     } catch (err: unknown) {
-      if (err instanceof Error && 'sessionId' in err) {
-        const conflictErr = err as Error & { sessionId?: string };
+      if (err instanceof ConflictError && err.sessionId) {
         await refreshAll();
-        if (conflictErr.sessionId) {
-          onSelectSession(conflictErr.sessionId);
-        }
+        onSelectSession(err.sessionId);
       }
     }
   }

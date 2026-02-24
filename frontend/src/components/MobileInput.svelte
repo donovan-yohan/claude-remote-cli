@@ -3,17 +3,11 @@
   import { isMobileDevice } from '../lib/utils.js';
   import { sendPtyData, isPtyConnected } from '../lib/ws.js';
 
-  let {
-    onTerminalTouchFocus,
-  }: {
-    // Called when mobile input receives focus (to re-focus the hidden input from outside)
-    onTerminalTouchFocus?: () => void;
-  } = $props();
-
   let inputEl: HTMLInputElement;
   let formEl: HTMLFormElement;
 
   let lastInputValue = '';
+  let beforeInputSnapshot: string | null = null; // Captured in beforeinput, before Gboard mutates the DOM
   let isComposing = false;
   let sendBuffer = '';
   let sendTimer: ReturnType<typeof setTimeout> | null = null;
@@ -29,11 +23,22 @@
   onMount(() => {
     devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
 
+    // Set a non-standard autocomplete value to suppress Chrome/Gboard's
+    // "Passwords, cards, and addresses" autofill strip. Chrome ignores
+    // autocomplete="off" but skips autofill for unrecognized values.
+    // Done at runtime to bypass Svelte's type checker.
+    if (inputEl) inputEl.setAttribute('autocomplete', 'new-terminal-input');
+
     // Listen for devtools toggle from settings
-    window.addEventListener('devtools-changed', () => {
+    const onDevtoolsChanged = () => {
       devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
       if (!devtoolsEnabled) debugVisible = false;
-    });
+    };
+    window.addEventListener('devtools-changed', onDevtoolsChanged);
+
+    return () => {
+      window.removeEventListener('devtools-changed', onDevtoolsChanged);
+    };
   });
 
   function dbg(msg: string) {
@@ -55,7 +60,7 @@
     isComposing = false;
     if (isPtyConnected()) {
       const currentValue = inputEl.value;
-      sendInputDiff(currentValue);
+      sendInputDiff(lastInputValue, currentValue);
       lastInputValue = currentValue;
     }
     flushSendBuffer();
@@ -100,15 +105,15 @@
     return count;
   }
 
-  function sendInputDiff(currentValue: string) {
-    if (currentValue === lastInputValue) {
+  function sendInputDiff(fromValue: string, toValue: string) {
+    if (toValue === fromValue) {
       dbg('sendInputDiff: NO-OP (same)');
       return;
     }
-    const commonLen = commonPrefixLength(lastInputValue, currentValue);
-    const deletedSlice = lastInputValue.slice(commonLen);
+    const commonLen = commonPrefixLength(fromValue, toValue);
+    const deletedSlice = fromValue.slice(commonLen);
     const charsToDelete = codepointCount(deletedSlice);
-    const newChars = currentValue.slice(commonLen);
+    const newChars = toValue.slice(commonLen);
 
     dbg('sendInputDiff: del=' + charsToDelete + ' "' + deletedSlice + '" add="' + newChars + '"');
 
@@ -134,7 +139,7 @@
     isComposing = false;
     if (isPtyConnected()) {
       const currentValue = inputEl.value;
-      sendInputDiff(currentValue);
+      sendInputDiff(lastInputValue, currentValue);
       lastInputValue = currentValue;
     }
   }
@@ -153,12 +158,22 @@
   }
 
   function onBeforeInput(e: InputEvent) {
-    dbg('BEFORE_INPUT type="' + e.inputType + '" data="' + (e.data ?? '') + '" composing=' + isComposing);
+    // Snapshot the DOM value BEFORE Gboard mutates it.
+    // Gboard may silently delete characters before firing this event,
+    // making lastInputValue stale. The snapshot is the true baseline.
+    beforeInputSnapshot = inputEl.value;
+    dbg('BEFORE_INPUT type="' + e.inputType + '" data="' + (e.data ?? '') + '" composing=' + isComposing + ' snap="' + beforeInputSnapshot + '"');
   }
 
   function onInput(e: Event) {
     const ie = e as InputEvent;
-    dbg('INPUT type="' + ie.inputType + '" composing=' + isComposing + ' val="' + inputEl.value + '" last="' + lastInputValue + '"');
+    const currentValue = inputEl.value;
+    // Use the beforeinput snapshot as baseline — it reflects the actual DOM
+    // state before Gboard's mutation, unlike lastInputValue which can be stale
+    // when Gboard performs silent deletions during autocorrect.
+    const baseline = beforeInputSnapshot ?? lastInputValue;
+    dbg('INPUT type="' + ie.inputType + '" composing=' + isComposing + ' val="' + currentValue + '" baseline="' + baseline + '"');
+    beforeInputSnapshot = null;
 
     // Reset auto-clear timer
     if (clearTimer) clearTimeout(clearTimer);
@@ -174,8 +189,7 @@
       return;
     }
 
-    const currentValue = inputEl.value;
-    sendInputDiff(currentValue);
+    sendInputDiff(baseline, currentValue);
     lastInputValue = currentValue;
   }
 
@@ -249,7 +263,7 @@
   >
     <input
       bind:this={inputEl}
-      type="text"
+      type="search"
       class="mobile-input"
       dir="ltr"
       autocomplete="off"
@@ -310,6 +324,13 @@
     font-size: 16px; /* Prevents zoom on iOS */
   }
 
+  /* Hide the clear (X) button that type="search" renders */
+  .mobile-input::-webkit-search-cancel-button,
+  .mobile-input::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
   .debug-toggle {
     position: fixed;
     bottom: 60px;
@@ -331,8 +352,10 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 30vh;
-    overflow-y: auto;
+    height: 40vh;
+    height: 40dvh; /* dynamic viewport height, accounts for browser chrome */
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
     background: rgba(0, 0, 0, 0.92);
     color: #0f0;
     font: 11px/1.4 monospace;
@@ -340,5 +363,6 @@
     z-index: 9999;
     white-space: pre-wrap;
     word-break: break-all;
+    overscroll-behavior: contain;
   }
 </style>

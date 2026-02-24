@@ -60,18 +60,12 @@
     if (isMobileDevice) onRefocusMobileInput();
   }
 
-  function onToolbarTouchStart(e: TouchEvent) {
-    const btn = (e.target as HTMLElement).closest('button');
-    if (!btn) return;
+  function onToolbarMouseDown(e: MouseEvent) {
+    // preventDefault on mousedown blocks the browser's focus-transfer default,
+    // keeping the hidden MobileInput focused so the keyboard stays open.
+    // This works on Android Chrome where touchstart.preventDefault() does not
+    // reliably prevent focus loss (the synthesized mousedown carries the focus logic).
     e.preventDefault();
-    const match = buttons.find(
-      (b) => b.id === btn.id || (b.key && btn.dataset['key'] === b.key),
-    );
-    if (match) handleButton(match);
-  }
-
-  function onToolbarClick(e: MouseEvent) {
-    if (isMobileDevice) return; // already handled by touchstart
     const btn = (e.target as HTMLElement).closest('button');
     if (!btn) return;
     const match = buttons.find(
@@ -86,8 +80,7 @@
 <div
   class="toolbar"
   role="toolbar"
-  ontouchstart={onToolbarTouchStart}
-  onclick={onToolbarClick}
+  onmousedown={onToolbarMouseDown}
 >
   <div class="toolbar-grid">
     {#each buttons as btn (btn.label)}
@@ -110,6 +103,7 @@
     background: var(--surface);
     border-top: 1px solid var(--border);
     padding: 4px;
+    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
     flex-shrink: 0;
   }
 
