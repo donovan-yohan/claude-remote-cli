@@ -1,9 +1,22 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
+  import PinGate from './components/PinGate.svelte';
+
+  const auth = getAuth();
+
+  onMount(() => {
+    checkExistingAuth();
+  });
 </script>
 
-<div class="placeholder">
-  <p>Svelte 5 migration in progress</p>
-</div>
+{#if auth.checking}
+  <!-- Loading -->
+{:else if !auth.authenticated}
+  <PinGate />
+{:else}
+  <p class="placeholder">Authenticated! Main app will go here.</p>
+{/if}
 
 <style>
   .placeholder {
