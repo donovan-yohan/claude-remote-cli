@@ -50,59 +50,71 @@
     fitAddon = new FitAddon();
     t.loadAddon(fitAddon);
     t.open(containerEl);
+    if (isMobileDevice) {
+      // Disable xterm's internal textarea to prevent focus fights with MobileInput.
+      // Relies on internal class name — re-verify after @xterm/xterm upgrades.
+      const xtermTextarea = containerEl.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
+      if (xtermTextarea) {
+        xtermTextarea.disabled = true;
+        xtermTextarea.tabIndex = -1;
+      }
+    }
     fitAddon.fit();
 
-    t.onData((data) => sendPtyData(data));
+    // Desktop-only: wire xterm's own input handlers.
+    // On mobile, MobileInput sends directly via sendPtyData() — skip to avoid double-sends.
+    if (!isMobileDevice) {
+      t.onData((data) => sendPtyData(data));
 
-    // Custom key handler: Ctrl+V on non-Mac for clipboard/image paste
-    const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
-    t.attachCustomKeyEventHandler((e) => {
-      if (isMobileDevice) return false;
-      if (
-        !isMac &&
-        e.type === 'keydown' &&
-        e.ctrlKey &&
-        !e.shiftKey &&
-        !e.altKey &&
-        !e.metaKey &&
-        (e.key === 'v' || e.key === 'V')
-      ) {
-        if (navigator.clipboard && navigator.clipboard.read) {
-          navigator.clipboard
-            .read()
-            .then((clipboardItems) => {
-              let imageBlob: ClipboardItem | null = null;
-              let imageType: string | null = null;
-              for (const item of clipboardItems) {
-                for (const type of item.types) {
-                  if (type.startsWith('image/')) {
-                    imageType = type;
-                    imageBlob = item;
-                    break;
+      // Ctrl+V on non-Mac for clipboard/image paste
+      const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
+      t.attachCustomKeyEventHandler((e) => {
+        if (
+          !isMac &&
+          e.type === 'keydown' &&
+          e.ctrlKey &&
+          !e.shiftKey &&
+          !e.altKey &&
+          !e.metaKey &&
+          (e.key === 'v' || e.key === 'V')
+        ) {
+          if (navigator.clipboard && navigator.clipboard.read) {
+            navigator.clipboard
+              .read()
+              .then((clipboardItems) => {
+                let imageBlob: ClipboardItem | null = null;
+                let imageType: string | null = null;
+                for (const item of clipboardItems) {
+                  for (const type of item.types) {
+                    if (type.startsWith('image/')) {
+                      imageType = type;
+                      imageBlob = item;
+                      break;
+                    }
                   }
+                  if (imageBlob) break;
                 }
-                if (imageBlob) break;
-              }
-              if (imageBlob && imageType) {
-                imageBlob.getType(imageType).then((blob) => handleImageUpload(blob, imageType!));
-              } else {
-                navigator.clipboard.readText().then((text) => {
-                  if (text) t.paste(text);
-                });
-              }
-            })
-            .catch(() => {
-              if (navigator.clipboard.readText) {
-                navigator.clipboard.readText().then((text) => {
-                  if (text) t.paste(text);
-                }).catch(() => { /* ignore */ });
-              }
-            });
-          return false;
+                if (imageBlob && imageType) {
+                  imageBlob.getType(imageType).then((blob) => handleImageUpload(blob, imageType!));
+                } else {
+                  navigator.clipboard.readText().then((text) => {
+                    if (text) t.paste(text);
+                  });
+                }
+              })
+              .catch(() => {
+                if (navigator.clipboard.readText) {
+                  navigator.clipboard.readText().then((text) => {
+                    if (text) t.paste(text);
+                  }).catch(() => { /* ignore */ });
+                }
+              });
+            return false;
+          }
         }
-      }
-      return true;
-    });
+        return true;
+      });
+    }
 
     // Scrollbar updates
     t.onScroll(updateScrollbar);

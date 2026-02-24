@@ -40,6 +40,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - Attention state: tracked in `attentionSessions` reactive state; set when session becomes idle while not viewed; cleared when user opens session
 - Hover effects: fade mask on overflow text, scroll reveal animation, action button opacity reveal
 - Avoid naming local variables `state` in `.svelte` files — conflicts with `$state` rune
+- `bind:this` refs used in `$effect` must be declared with `$state()` — plain `let` refs won't trigger effect re-runs in Svelte 5
 
 ## WebSocket Reconnection
 
@@ -72,6 +73,8 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - Tapping the terminal area focuses the hidden `MobileInput` via a `touchend` handler on `terminal-wrapper`
 - Toolbar buttons use `touchstart` with `preventDefault()` to prevent keyboard dismissal, then `onRefocusMobileInput()` to retain focus
 - `MobileInput` is a hidden `<form>` + `<input>` off-screen (`left: -9999px`) that captures text/composition events and diffs input to PTY
+- xterm's internal `.xterm-helper-textarea` is disabled on mobile (`disabled` + `tabIndex=-1`) to prevent focus fights with `MobileInput`
+- `t.onData()` is only wired on desktop; on mobile, `MobileInput` sends directly via `sendPtyData()` to avoid double-sending
 
 ## See Also
 

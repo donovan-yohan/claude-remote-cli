@@ -33,14 +33,14 @@
   const ui = getUi();
   const sessionState = getSessionState();
 
-  // Component refs
-  let terminalRef: Terminal;
-  let mobileInputRef: MobileInput;
-  let imageToastRef: ImageToast;
-  let newSessionDialogRef: NewSessionDialog;
-  let settingsDialogRef: SettingsDialog;
-  let deleteWorktreeDialogRef: DeleteWorktreeDialog;
-  let mainAppEl: HTMLDivElement;
+  // Component refs — must be $state() so $effect can track bind:this assignments
+  let terminalRef = $state<Terminal | undefined>();
+  let mobileInputRef = $state<MobileInput | undefined>();
+  let imageToastRef = $state<ImageToast | undefined>();
+  let newSessionDialogRef = $state<NewSessionDialog | undefined>();
+  let settingsDialogRef = $state<SettingsDialog | undefined>();
+  let deleteWorktreeDialogRef = $state<DeleteWorktreeDialog | undefined>();
+  let mainAppEl = $state<HTMLDivElement | undefined>();
 
   // Mobile keyboard state
   let keyboardOpen = $state(false);
@@ -94,10 +94,12 @@
     }
   });
 
-  // Wire MobileInput ref into Terminal after both are mounted
+  // Wire MobileInput ref into Terminal after both are mounted (mobile only)
   $effect(() => {
+    if (!isMobileDevice) return;
     if (terminalRef && mobileInputRef) {
-      terminalRef.setMobileInputRef(mobileInputRef.getInputEl());
+      const el = mobileInputRef.getInputEl();
+      if (el) terminalRef.setMobileInputRef(el);
     }
   });
 
