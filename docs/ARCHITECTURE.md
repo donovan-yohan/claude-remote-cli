@@ -44,7 +44,7 @@ Svelte 5 SPA built by Vite, output to `dist/frontend/`. Express serves the compi
 | `frontend/src/lib/ws.ts` | WebSocket connection management (PTY relay + event channel) |
 | `frontend/src/lib/types.ts` | Frontend TypeScript interfaces |
 
-**Architecture Invariant:** The frontend does NOT vendor any libraries. xterm.js and xterm-addon-fit are npm dependencies. State lives in `.svelte.ts` modules, not in component files.
+**Architecture Invariant:** The frontend does NOT vendor any libraries. xterm.js, xterm-addon-fit, and `@tanstack/svelte-query` are npm dependencies. State lives in `.svelte.ts` modules, not in component files (PR data is an exception — managed via svelte-query cache).
 
 ### `bin/`
 
@@ -86,6 +86,7 @@ Browser (Svelte)   <--WebSocket /ws/events-- ws.ts <-- watcher.ts (fs.watch on .
 | `POST` | `/sessions/repo` | Create repo session (no worktree, supports `continue`) |
 | `GET` | `/branches` | List local and remote branches |
 | `GET` | `/git-status` | PR state and diff stats for a branch |
+| `GET` | `/pull-requests` | Open PRs (authored + review-requested) for a repo via `gh` CLI |
 | `PATCH` | `/sessions/:id` | Rename session |
 | `DELETE` | `/sessions/:id` | Terminate session |
 | `GET` | `/repos` | Scan root directories for git repos |
@@ -168,7 +169,7 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 - [ADR-005] All unit tests MUST use `node:test` and `node:assert`; no external test framework.
 - [ADR-005] Test files MUST be TypeScript in `test/` with `*.test.ts` naming.
-- [ADR-005] Eight test files MUST exist: `auth`, `clipboard`, `config`, `sessions`, `service`, `paths`, `version`, `worktrees`.
+- [ADR-005] Nine test files MUST exist: `auth`, `clipboard`, `config`, `sessions`, `service`, `paths`, `version`, `worktrees`, `pull-requests`.
 - [ADR-005] E2E tests (Playwright) SHOULD be separate from unit tests.
 
 ### Distribution and CLI

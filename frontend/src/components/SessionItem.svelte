@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from '../lib/types.js';
   import { formatRelativeTime, rootShortName } from '../lib/utils.js';
+  import { scrollOnHover, createLongpressClick } from '../lib/actions.js';
 
   type ActiveVariant = {
     kind: 'active';
@@ -85,66 +86,7 @@
     gitStatus.prState === 'closed' ? 'pr-icon pr-closed' : '',
   );
 
-  let isLongpressActive = false;
-
-  function handleClick() {
-    if (isLongpressActive) return;
-    onclick();
-  }
-
-  function longpressable(node: HTMLElement) {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let deactivateTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const activate = () => {
-      isLongpressActive = true;
-      node.classList.add('longpress');
-      node.dispatchEvent(new CustomEvent('longpressstart'));
-    };
-
-    const deactivate = () => {
-      isLongpressActive = false;
-      node.classList.remove('longpress');
-      node.dispatchEvent(new CustomEvent('longpressend'));
-    };
-
-    const onTouchStart = () => {
-      if (deactivateTimer) { clearTimeout(deactivateTimer); deactivateTimer = null; }
-      timer = setTimeout(activate, 500);
-    };
-
-    const onTouchMove = () => {
-      if (timer) { clearTimeout(timer); timer = null; }
-    };
-
-    const onTouchEnd = () => {
-      if (timer) { clearTimeout(timer); timer = null; }
-      if (isLongpressActive) {
-        deactivateTimer = setTimeout(deactivate, 3000);
-      }
-    };
-
-    const onTouchCancel = () => {
-      if (timer) { clearTimeout(timer); timer = null; }
-      if (isLongpressActive) deactivate();
-    };
-
-    node.addEventListener('touchstart', onTouchStart, { passive: true });
-    node.addEventListener('touchmove', onTouchMove, { passive: true });
-    node.addEventListener('touchend', onTouchEnd, { passive: true });
-    node.addEventListener('touchcancel', onTouchCancel, { passive: true });
-
-    return {
-      destroy() {
-        if (timer) clearTimeout(timer);
-        if (deactivateTimer) clearTimeout(deactivateTimer);
-        node.removeEventListener('touchstart', onTouchStart);
-        node.removeEventListener('touchmove', onTouchMove);
-        node.removeEventListener('touchend', onTouchEnd);
-        node.removeEventListener('touchcancel', onTouchCancel);
-      }
-    };
-  }
+  const { action: longpressAction, handleClick } = createLongpressClick(() => onclick());
 
   function handleKill(e: MouseEvent) {
     e.stopPropagation();
@@ -171,57 +113,6 @@
     onclick();
   }
 
-  function scrollOnHover(node: HTMLElement) {
-    const textEl = node.firstElementChild as HTMLElement;
-    const li = node.closest('li') as HTMLElement;
-    if (!textEl || !li) return;
-
-    let overflow = 0;
-
-    const measure = () => {
-      overflow = node.scrollWidth - node.clientWidth;
-      if (overflow > 0) {
-        node.classList.add('has-overflow');
-      } else {
-        node.classList.remove('has-overflow');
-        textEl.style.transform = '';
-        textEl.style.transition = '';
-      }
-    };
-
-    const onEnter = () => {
-      if (overflow <= 0) return;
-      const duration = Math.max(0.6, overflow / 80);
-      textEl.style.transition = `transform ${duration}s linear 0.3s`;
-      textEl.style.transform = `translateX(-${overflow}px)`;
-    };
-
-    const onLeave = () => {
-      if (overflow <= 0) return;
-      const duration = Math.max(0.4, overflow / 100);
-      textEl.style.transition = `transform ${duration}s linear`;
-      textEl.style.transform = 'translateX(0)';
-    };
-
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(node);
-
-    li.addEventListener('mouseenter', onEnter);
-    li.addEventListener('mouseleave', onLeave);
-    li.addEventListener('longpressstart', onEnter);
-    li.addEventListener('longpressend', onLeave);
-
-    return {
-      destroy() {
-        ro.disconnect();
-        li.removeEventListener('mouseenter', onEnter);
-        li.removeEventListener('mouseleave', onLeave);
-        li.removeEventListener('longpressstart', onEnter);
-        li.removeEventListener('longpressend', onLeave);
-      }
-    };
-  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -231,7 +122,7 @@
   class:inactive-worktree={!isActive}
   class:selected={isSelected}
   onclick={handleClick}
-  use:longpressable
+  use:longpressAction
 >
   <div class="session-info">
     <div class="session-row-1">
@@ -342,7 +233,6 @@
   .session-row-1 {
     display: flex;
     align-items: center;
-    gap: 0;
     min-width: 0;
   }
 

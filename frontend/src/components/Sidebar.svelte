@@ -1,7 +1,6 @@
 <script lang="ts">
   import { getUi, closeSidebar, saveSidebarWidth, toggleSidebarCollapsed, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH, COLLAPSED_SIDEBAR_WIDTH } from '../lib/state/ui.svelte.js';
   import type { RepoInfo, WorktreeInfo } from '../lib/types.js';
-  import SessionFilters from './SessionFilters.svelte';
   import SessionList from './SessionList.svelte';
 
   const ui = getUi();
@@ -20,7 +19,7 @@
     onDeleteWorktree: (wt: WorktreeInfo) => void;
   } = $props();
 
-  let newSessionLabel = $derived(ui.activeTab === 'repos' ? '+ New Session' : '+ New Worktree');
+  let newSessionLabel = $derived(ui.activeTab === 'worktrees' ? '+ New Worktree' : '+ New Session');
   let effectiveWidth = $derived(ui.sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : ui.sidebarWidth);
 
   function startResize(e: MouseEvent) {
@@ -66,8 +65,6 @@
   </div>
 
   {#if !ui.sidebarCollapsed}
-    <SessionFilters />
-
     <SessionList
       {onSelectSession}
       {onOpenNewSession}
@@ -92,8 +89,7 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    width: var(--sidebar-width);
-    min-width: var(--sidebar-width);
+    /* width and min-width set via inline style (effectiveWidth) */
     background: var(--surface);
     border-right: 1px solid var(--border);
     overflow: hidden;

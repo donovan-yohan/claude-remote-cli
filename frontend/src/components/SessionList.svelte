@@ -3,8 +3,11 @@
   import { getSessionState, getSessionStatus, clearAttention } from '../lib/state/sessions.svelte.js';
   import * as api from '../lib/api.js';
   import { refreshAll } from '../lib/state/sessions.svelte.js';
-  import type { SessionSummary, WorktreeInfo, RepoInfo } from '../lib/types.js';
+  import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest, PullRequestsResponse } from '../lib/types.js';
+  import { createQuery } from '@tanstack/svelte-query';
   import SessionItem from './SessionItem.svelte';
+  import SessionFilters from './SessionFilters.svelte';
+  import PullRequestItem from './PullRequestItem.svelte';
 
   const ui = getUi();
   const state = getSessionState();
@@ -72,9 +75,89 @@
       .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
   );
 
+  // PR fetching via svelte-query
+  let prRepoPath = $derived((() => {
+    if (ui.activeTab !== 'prs' || !ui.repoFilter) return null;
+    const repo = state.repos.find(r => r.name === ui.repoFilter);
+    return repo?.path ?? null;
+  })());
+
+  const prQuery = createQuery<PullRequestsResponse>(() => ({
+    queryKey: ['pull-requests', prRepoPath],
+    queryFn: () => prRepoPath ? api.fetchPullRequests(prRepoPath) : Promise.resolve({ prs: [] } as PullRequestsResponse),
+    enabled: !!prRepoPath,
+  }));
+
+  let prData = $derived(prQuery.data);
+  let prError = $derived(prData?.error ?? null);
+  let prList = $derived(prData?.prs ?? []);
+
+  let filteredPullRequests = $derived(
+    prList.filter(pr => {
+      if (ui.prRoleFilter !== 'all' && pr.role !== ui.prRoleFilter) return false;
+      if (ui.searchFilter && pr.title.toLowerCase().indexOf(ui.searchFilter.toLowerCase()) === -1) return false;
+      return true;
+    })
+  );
+
   // Tab counts
   let reposCount = $derived(filteredRepoSessions.length + filteredIdleRepos.length);
   let worktreesCount = $derived(filteredWorktreeSessions.length + filteredWorktrees.length);
+  let prsCount = $derived(filteredPullRequests.length);
+
+  // PR click cascade helpers
+  function findSessionForBranch(branchName: string): SessionSummary | undefined {
+    return state.sessions.find(s =>
+      s.type === 'worktree' && s.worktreeName === branchName
+    );
+  }
+
+  function findWorktreeForBranch(branchName: string): WorktreeInfo | undefined {
+    return state.worktrees.find(wt => wt.name === branchName);
+  }
+
+  async function handlePRClick(pr: PullRequest) {
+    // Step 1: Active session for this branch? → route to it
+    const existingSession = findSessionForBranch(pr.headRefName);
+    if (existingSession) {
+      clearAttention(existingSession.id);
+      onSelectSession(existingSession.id);
+      return;
+    }
+
+    // Step 2: Inactive worktree for this branch? → resume it
+    const existingWorktree = findWorktreeForBranch(pr.headRefName);
+    if (existingWorktree) {
+      try {
+        const session = await api.createSession({
+          repoPath: existingWorktree.repoPath,
+          repoName: existingWorktree.repoName,
+          worktreePath: existingWorktree.path,
+        });
+        await refreshAll();
+        if (session?.id) {
+          onSelectSession(session.id);
+        }
+      } catch { /* user can retry */ }
+      return;
+    }
+
+    // Step 3: No local worktree → create new worktree + session
+    const repo = state.repos.find(r => r.name === ui.repoFilter);
+    if (!repo) return;
+
+    try {
+      const session = await api.createSession({
+        repoPath: repo.path,
+        repoName: repo.name,
+        branchName: pr.headRefName,
+      });
+      await refreshAll();
+      if (session?.id) {
+        onSelectSession(session.id);
+      }
+    } catch { /* user can retry */ }
+  }
 
   async function handleKillSession(session: SessionSummary) {
     await api.killSession(session.id);
@@ -137,7 +220,16 @@
   >
     Worktrees <span class="tab-count">{worktreesCount}</span>
   </button>
+  <button
+    class="sidebar-tab"
+    class:active={ui.activeTab === 'prs'}
+    onclick={() => { ui.activeTab = 'prs'; }}
+  >
+    PRs <span class="tab-count">{prsCount}</span>
+  </button>
 </div>
+
+<SessionFilters />
 
 <ul class="session-list">
   {#if ui.activeTab === 'repos'}
@@ -159,7 +251,7 @@
         onclick={() => handleStartRepoSession(repo)}
       />
     {/each}
-  {:else}
+  {:else if ui.activeTab === 'worktrees'}
     {#each filteredWorktreeSessions as session (session.id)}
       <SessionItem
         variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: state.activeSessionId === session.id }}
@@ -181,6 +273,38 @@
         ondelete={() => onDeleteWorktree(wt)}
       />
     {/each}
+  {:else}
+    {#if ui.repoFilter}
+      <div class="pr-toolbar">
+        <button
+          class="refresh-btn"
+          onclick={() => prQuery.refetch()}
+          disabled={prQuery.isFetching}
+          aria-label="Refresh pull requests"
+        >
+          <span class:spinning={prQuery.isFetching}>↻</span>
+        </button>
+      </div>
+    {/if}
+    {#if !ui.repoFilter}
+      <li class="pr-hint">Select a repo to view pull requests</li>
+    {:else if prQuery.isLoading}
+      <li class="pr-hint">Loading pull requests...</li>
+    {:else if prError === 'gh_not_authenticated'}
+      <li class="pr-hint">GitHub CLI not authenticated<br /><span class="pr-hint-sub">Run <code>gh auth login</code> on the host</span></li>
+    {:else if prError}
+      <li class="pr-hint">Could not fetch pull requests</li>
+    {:else if filteredPullRequests.length === 0}
+      <li class="pr-hint">No open pull requests</li>
+    {:else}
+      {#each filteredPullRequests as pr (pr.number)}
+        <PullRequestItem
+          {pr}
+          isActiveSession={!!findSessionForBranch(pr.headRefName)}
+          onclick={() => handlePRClick(pr)}
+        />
+      {/each}
+    {/if}
   {/if}
 </ul>
 
@@ -233,5 +357,65 @@
     padding: 8px 12px 4px;
     opacity: 0.6;
     list-style: none;
+  }
+
+  .pr-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 10px 0;
+  }
+
+  .refresh-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 2px 6px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .refresh-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .spinning {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  :global(.pr-hint) {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 20px 12px;
+    opacity: 0.6;
+    list-style: none;
+  }
+
+  :global(.pr-hint-sub) {
+    font-size: 0.65rem;
+    opacity: 0.8;
+    display: block;
+    margin-top: 4px;
+  }
+
+  :global(.pr-hint code) {
+    background: var(--bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.65rem;
   }
 </style>
