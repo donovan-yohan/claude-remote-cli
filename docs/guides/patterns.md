@@ -103,15 +103,19 @@ Scans configured `rootDirs` one level deep for git repos. Hidden directories (st
 
 ## Frontend Conventions
 
-- Vanilla JS, no build step, no framework
-- ES5-compatible syntax: `var`, function expressions, `.then()` chains (no arrow functions, destructuring, or template literals)
-- All frontend state lives in `public/app.js` module-level variables inside a single IIFE
-- Vendor libraries (xterm.js, addon-fit.js) bundled in `public/vendor/`, loaded via `<script>` tags
-- DOM manipulation via `document.getElementById`, `document.createElement`, and event listeners
+- Svelte 5 with runes syntax (`$state`, `$derived`, `$effect`, `$props()`) — TypeScript throughout
+- Vite builds `frontend/` to `dist/frontend/`; Express serves compiled output
+- State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting reactive state and mutation functions
+- xterm.js consumed as npm dependency (`@xterm/xterm`, `@xterm/addon-fit`) — no vendored files
+- Components in `frontend/src/components/`; dialogs in `frontend/src/components/dialogs/`
+- Scoped `<style>` blocks in each component; global CSS variables in `frontend/src/app.css`
 - Mobile-first responsive design with touch toolbar (hidden on desktop to maximize terminal space)
 - Sidebar has two tabs: Repos (repo sessions + idle repos) and Worktrees (worktree sessions + inactive worktrees), with filtered counts
 - Sidebar status dots: green (running), blue (idle), amber glow (needs attention), gray (inactive repo/worktree)
-- Attention state: tracked client-side in `attentionSessions` object; set when a session becomes idle while not actively viewed; cleared when user opens the session
+- Session items use 3-row layout: status dot + name, git icon + metadata, time + diff stats
+- Hover effects: fade mask on overflow text, scroll reveal animation, action button opacity reveal
+- Attention state: tracked in `attentionSessions` reactive state; set when a session becomes idle while not actively viewed; cleared when user opens the session
+- Avoid naming local variables `state` in `.svelte` files — conflicts with the `$state` rune
 
 ## Clipboard Image Passthrough
 

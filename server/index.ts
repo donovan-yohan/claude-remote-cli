@@ -163,7 +163,7 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json({ limit: '15mb' }));
   app.use(cookieParser());
-  app.use(express.static(path.join(__dirname, '..', '..', 'public')));
+  app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
   const requireAuth: express.RequestHandler = (req, res, next) => {
     const token = req.cookies && req.cookies.token;
@@ -257,6 +257,53 @@ async function main(): Promise<void> {
     } catch (_) {
       res.json([]);
     }
+  });
+
+  // GET /git-status?repo=<path>&branch=<name>
+  app.get('/git-status', requireAuth, async (req, res) => {
+    const repoPath = typeof req.query.repo === 'string' ? req.query.repo : undefined;
+    const branch = typeof req.query.branch === 'string' ? req.query.branch : undefined;
+    if (!repoPath || !branch) {
+      res.status(400).json({ error: 'repo and branch query parameters are required' });
+      return;
+    }
+
+    let prState: 'open' | 'merged' | 'closed' | null = null;
+    let additions = 0;
+    let deletions = 0;
+
+    // Try gh CLI for PR status
+    try {
+      const { stdout } = await execFileAsync('gh', [
+        'pr', 'view', branch,
+        '--json', 'state,additions,deletions',
+      ], { cwd: repoPath });
+      const data = JSON.parse(stdout) as { state?: string; additions?: number; deletions?: number };
+      if (data.state) prState = data.state.toLowerCase() as 'open' | 'merged' | 'closed';
+      if (typeof data.additions === 'number') additions = data.additions;
+      if (typeof data.deletions === 'number') deletions = data.deletions;
+    } catch {
+      // No PR or gh not available — fall back to git diff against default branch
+      try {
+        // Detect default branch (main, master, etc.)
+        let baseBranch = 'main';
+        try {
+          const { stdout: headRef } = await execFileAsync('git', [
+            'symbolic-ref', 'refs/remotes/origin/HEAD', '--short',
+          ], { cwd: repoPath });
+          baseBranch = headRef.trim().replace(/^origin\//, '');
+        } catch { /* use main as fallback */ }
+        const { stdout } = await execFileAsync('git', [
+          'diff', '--shortstat', baseBranch + '...' + branch,
+        ], { cwd: repoPath });
+        const addMatch = stdout.match(/(\d+) insertion/);
+        const delMatch = stdout.match(/(\d+) deletion/);
+        if (addMatch) additions = parseInt(addMatch[1]!, 10);
+        if (delMatch) deletions = parseInt(delMatch[1]!, 10);
+      } catch { /* no diff data */ }
+    }
+
+    res.json({ prState, additions, deletions });
   });
 
   // GET /worktrees?repo=<path> — list worktrees; omit repo to scan all repos in all rootDirs

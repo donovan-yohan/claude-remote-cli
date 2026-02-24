@@ -10,5 +10,5 @@
     "rootDir": "."
   },
   "include": ["server/**/*.ts", "bin/**/*.ts"],
-  "exclude": ["public/", "test/", "node_modules/", "dist/"]
+  "exclude": ["public/", "frontend/", "test/", "node_modules/", "dist/"]
 }

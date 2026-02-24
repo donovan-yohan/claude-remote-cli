@@ -4,7 +4,7 @@
 
 ## Overview
 
-Remote web interface for Claude Code CLI sessions. TypeScript + ESM backend (Express + node-pty + WebSocket) compiled to `dist/`. Vanilla JS frontend with xterm.js renders terminals in the browser.
+Remote web interface for Claude Code CLI sessions. TypeScript + ESM backend (Express + node-pty + WebSocket) compiled to `dist/`. Svelte 5 frontend (runes + Vite) compiled to `dist/frontend/`.
 
 ## Server Modules
 
@@ -20,20 +20,22 @@ Nine TypeScript modules under `server/`, compiled to `dist/server/` via `tsc`:
 | `server/config.ts` | Config loading/saving with defaults, worktree metadata persistence |
 | `server/clipboard.ts` | System clipboard detection and image-set operations (osascript on macOS, xclip on Linux) |
 | `server/service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
-| `server/types.ts` | Shared TypeScript interfaces (Session, SessionType, Config, ServicePaths, WorktreeMetadata, Platform, InstallOpts) |
+| `server/types.ts` | Shared TypeScript interfaces (Session, SessionType, Config, ServicePaths, WorktreeMetadata, GitStatus, Platform, InstallOpts) |
 
 Modules communicate via ESM `import` statements. `index.ts` is the composition root and should not be imported by other modules.
 
 ## Frontend
 
-Single-page app in `public/`. No build step, no framework. ES5-compatible syntax only.
+Svelte 5 SPA in `frontend/`, built by Vite and output to `dist/frontend/`. Express serves the compiled output.
 
-| File | Role |
-|------|------|
-| `public/app.js` | All frontend logic: session management, WebSocket, terminal, filtering, sidebar, update toast, clipboard image paste, context menus, touch toolbar |
-| `public/index.html` | HTML structure with PIN gate, sidebar, terminal container, dialogs, context menus |
-| `public/style.css` | Dark theme, responsive mobile-first layout |
-| `public/vendor/` | Bundled xterm.js and addon-fit.js |
+| File / Directory | Role |
+|------------------|------|
+| `frontend/src/` | Svelte 5 components and TypeScript modules using runes syntax |
+| `frontend/index.html` | HTML entry point (Vite template) |
+| `frontend/vite.config.ts` | Vite build configuration, output to `dist/frontend/` |
+| `dist/frontend/` | Compiled SPA served by Express |
+
+xterm.js is consumed as an npm dependency (no manual vendoring). The server serves `dist/frontend/` via `express.static(path.join(__dirname, '..', 'frontend'))` from `dist/server/`.
 
 ## Data Flow
 
@@ -42,7 +44,7 @@ Browser (xterm.js) <--WebSocket /ws/:id--> server/ws.ts <--PTY I/O--> node-pty <
                                                 |
                                            scrollback buffer (in-memory, per session)
 
-Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.watch on .worktrees/)
+Browser (Svelte)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.watch on .worktrees/)
                                                            <-- POST/DELETE /roots (manual broadcast)
 ```
 
@@ -62,6 +64,7 @@ Browser (app.js)   <--WebSocket /ws/events-- server/ws.ts <-- watcher.ts (fs.wat
 | `POST` | `/sessions` | Create new worktree session or resume existing worktree (accepts `branchName` for branch selection and `claudeArgs` for flags) |
 | `POST` | `/sessions/repo` | Create a repo session (no worktree) — one per repo, supports `continue` for `--continue` mode |
 | `GET` | `/branches` | List local and remote branches for a repo |
+| `GET` | `/git-status` | Get PR state and diff stats for a branch (via `gh` CLI with `git diff` fallback) |
 | `PATCH` | `/sessions/:id` | Rename session (syncs `/rename` to PTY) |
 | `DELETE` | `/sessions/:id` | Terminate session |
 | `GET` | `/repos` | Scan root directories for git repos |
@@ -136,12 +139,12 @@ interface WorktreeMetadata {
 
 ### Frontend
 
-- [ADR-002] The frontend MUST be a single-page application using plain HTML, CSS, and JavaScript in `public/`; there MUST NOT be a build step, transpiler, or bundler.
-- [ADR-002] All application logic MUST reside in `public/app.js` as a single IIFE; styles MUST be in `public/style.css`; the HTML entry point MUST be `public/index.html`.
-- [ADR-002] Vendor dependencies (xterm.js, xterm-addon-fit) MUST be self-hosted as pre-built files in `public/vendor/` and loaded via `<script>` tags.
-- [ADR-002] Frontend code MUST use ES5-compatible syntax (var declarations, function expressions, `.then()` chains); no arrow functions, destructuring, or template literals in `app.js`.
-- [ADR-002] DOM manipulation MUST use `document.getElementById`, `document.createElement`, and event listeners directly; no virtual DOM or template engine.
-- [ADR-008] The `public/` frontend MUST remain unchanged as ES5 vanilla JavaScript; no TypeScript or build step for frontend code.
+> ADR-002 (vanilla JS constraint) was superseded by the Svelte 5 migration. The rules below reflect the current state.
+
+- The frontend MUST be a single-page application built with Svelte 5 (runes syntax) and TypeScript in `frontend/`.
+- Vite MUST be used as the build tool; compiled output goes to `dist/frontend/`.
+- Express MUST serve `dist/frontend/` via `express.static`; the static path MUST resolve one level up from `dist/server/` (i.e., `path.join(__dirname, '..', 'frontend')`).
+- xterm.js and xterm-addon-fit MUST be consumed as npm dependencies (no manual vendoring).
 
 ### PTY session management
 
@@ -181,7 +184,7 @@ interface WorktreeMetadata {
 - [ADR-006] Configuration MUST be resolved in this precedence order: CLI flags > environment variables > config file > built-in defaults.
 - [ADR-006] Config file location MUST be `~/.config/claude-remote-cli/config.json` for global installs and `./config.json` for local dev; the config directory MUST be created automatically if absent.
 - [ADR-006] The `CLAUDE_REMOTE_CONFIG` environment variable MAY override the default config file path.
-- [ADR-006] The `files` field in `package.json` MUST limit the published package to `dist/bin/`, `dist/server/`, `public/`, and `config.example.json`; TypeScript source, test files, and documentation MUST NOT be published.
+- [ADR-006] The `files` field in `package.json` MUST limit the published package to `dist/` and `config.example.json`; TypeScript source, test files, and documentation MUST NOT be published.
 - [ADR-008] The project MUST be compiled via `tsc` before running or publishing; `npm start` MUST compile before starting.
 
 ### WebSocket channels

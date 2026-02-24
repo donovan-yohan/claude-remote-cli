@@ -41,6 +41,12 @@ export interface ServicePaths {
   label: string;
 }
 
+export interface GitStatus {
+  prState: 'open' | 'merged' | 'closed' | null;
+  additions: number;
+  deletions: number;
+}
+
 export type Platform = 'macos' | 'linux';
 
 export interface InstallOpts {
