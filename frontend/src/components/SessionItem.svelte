@@ -85,8 +85,65 @@
     gitStatus.prState === 'closed' ? 'pr-icon pr-closed' : '',
   );
 
+  let isLongpressActive = false;
+
   function handleClick() {
+    if (isLongpressActive) return;
     onclick();
+  }
+
+  function longpressable(node: HTMLElement) {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let deactivateTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const activate = () => {
+      isLongpressActive = true;
+      node.classList.add('longpress');
+      node.dispatchEvent(new CustomEvent('longpressstart'));
+    };
+
+    const deactivate = () => {
+      isLongpressActive = false;
+      node.classList.remove('longpress');
+      node.dispatchEvent(new CustomEvent('longpressend'));
+    };
+
+    const onTouchStart = () => {
+      if (deactivateTimer) { clearTimeout(deactivateTimer); deactivateTimer = null; }
+      timer = setTimeout(activate, 500);
+    };
+
+    const onTouchMove = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+    };
+
+    const onTouchEnd = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (isLongpressActive) {
+        deactivateTimer = setTimeout(deactivate, 3000);
+      }
+    };
+
+    const onTouchCancel = () => {
+      if (timer) { clearTimeout(timer); timer = null; }
+      if (isLongpressActive) deactivate();
+    };
+
+    node.addEventListener('touchstart', onTouchStart, { passive: true });
+    node.addEventListener('touchmove', onTouchMove, { passive: true });
+    node.addEventListener('touchend', onTouchEnd, { passive: true });
+    node.addEventListener('touchcancel', onTouchCancel, { passive: true });
+
+    return {
+      destroy() {
+        if (timer) clearTimeout(timer);
+        if (deactivateTimer) clearTimeout(deactivateTimer);
+        node.removeEventListener('touchstart', onTouchStart);
+        node.removeEventListener('touchmove', onTouchMove);
+        node.removeEventListener('touchend', onTouchEnd);
+        node.removeEventListener('touchcancel', onTouchCancel);
+      }
+    };
   }
 
   function handleKill(e: MouseEvent) {
@@ -114,23 +171,55 @@
     onclick();
   }
 
-  function measureOverflow(node: HTMLElement) {
-    const update = () => {
-      const overflow = node.scrollWidth - node.clientWidth;
+  function scrollOnHover(node: HTMLElement) {
+    const textEl = node.firstElementChild as HTMLElement;
+    const li = node.closest('li') as HTMLElement;
+    if (!textEl || !li) return;
+
+    let overflow = 0;
+
+    const measure = () => {
+      overflow = node.scrollWidth - node.clientWidth;
       if (overflow > 0) {
-        node.style.setProperty('--scroll-distance', `-${overflow}px`);
         node.classList.add('has-overflow');
       } else {
         node.classList.remove('has-overflow');
+        textEl.style.transform = '';
+        textEl.style.transition = '';
       }
     };
 
-    update();
-    const ro = new ResizeObserver(update);
+    const onEnter = () => {
+      if (overflow <= 0) return;
+      const duration = Math.max(0.6, overflow / 80);
+      textEl.style.transition = `transform ${duration}s linear 0.3s`;
+      textEl.style.transform = `translateX(-${overflow}px)`;
+    };
+
+    const onLeave = () => {
+      if (overflow <= 0) return;
+      const duration = Math.max(0.4, overflow / 100);
+      textEl.style.transition = `transform ${duration}s linear`;
+      textEl.style.transform = 'translateX(0)';
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(node);
 
+    li.addEventListener('mouseenter', onEnter);
+    li.addEventListener('mouseleave', onLeave);
+    li.addEventListener('longpressstart', onEnter);
+    li.addEventListener('longpressend', onLeave);
+
     return {
-      destroy() { ro.disconnect(); }
+      destroy() {
+        ro.disconnect();
+        li.removeEventListener('mouseenter', onEnter);
+        li.removeEventListener('mouseleave', onLeave);
+        li.removeEventListener('longpressstart', onEnter);
+        li.removeEventListener('longpressend', onLeave);
+      }
     };
   }
 </script>
@@ -142,30 +231,14 @@
   class:inactive-worktree={!isActive}
   class:selected={isSelected}
   onclick={handleClick}
+  use:longpressable
 >
   <div class="session-info">
     <div class="session-row-1">
       <span class={statusDotClass}></span>
-      <span class="session-name" use:measureOverflow>{displayName}</span>
-      <div class="session-actions">
-        {#if variant.kind === 'active'}
-          {#if onrename}
-            <button class="action-pill" aria-label="Rename session" onclick={handleRename}>✎</button>
-          {/if}
-          {#if onkill}
-            <button class="action-pill action-pill--danger" aria-label="Kill session" onclick={handleKill}>×</button>
-          {/if}
-        {:else if variant.kind === 'inactive-worktree'}
-          {#if onresumeYolo}
-            <button class="action-pill action-pill--mono" aria-label="Resume in yolo mode" onclick={handleResumeYolo}>YOLO</button>
-          {/if}
-          {#if ondelete}
-            <button class="action-pill action-pill--danger" aria-label="Delete worktree" onclick={handleDelete}>🗑</button>
-          {/if}
-        {:else if variant.kind === 'idle-repo'}
-          <button class="action-pill action-pill--mono" aria-label="New worktree" onclick={handleNewWorktree}>+ worktree</button>
-        {/if}
-      </div>
+      <span class="session-name" use:scrollOnHover>
+        <span class="session-name-text">{displayName}</span>
+      </span>
     </div>
     <div class="session-row-2">
       {#if prIcon}
@@ -185,10 +258,30 @@
       </div>
     {/if}
   </div>
+  <div class="session-actions">
+    {#if variant.kind === 'active'}
+      {#if onrename}
+        <button class="action-pill" aria-label="Rename session" onclick={handleRename}>✎</button>
+      {/if}
+      {#if onkill}
+        <button class="action-pill action-pill--danger" aria-label="Kill session" onclick={handleKill}>×</button>
+      {/if}
+    {:else if variant.kind === 'inactive-worktree'}
+      {#if onresumeYolo}
+        <button class="action-pill action-pill--mono" aria-label="Resume in yolo mode" onclick={handleResumeYolo}>YOLO</button>
+      {/if}
+      {#if ondelete}
+        <button class="action-pill action-pill--danger" aria-label="Delete worktree" onclick={handleDelete}>🗑</button>
+      {/if}
+    {:else if variant.kind === 'idle-repo'}
+      <button class="action-pill action-pill--mono" aria-label="New worktree" onclick={handleNewWorktree}>+ worktree</button>
+    {/if}
+  </div>
 </li>
 
 <style>
   li {
+    position: relative;
     display: flex;
     align-items: flex-start;
     padding: 8px 10px;
@@ -205,7 +298,8 @@
     background: var(--bg);
   }
 
-  li.active-session:hover {
+  li.active-session:hover,
+  li.active-session:global(.longpress) {
     background: var(--border);
   }
 
@@ -230,7 +324,8 @@
     opacity: 0.7;
   }
 
-  li.inactive-worktree:hover {
+  li.inactive-worktree:hover,
+  li.inactive-worktree:global(.longpress) {
     opacity: 1;
     border-color: var(--accent);
   }
@@ -243,7 +338,7 @@
     flex: 1;
   }
 
-  /* Row 1: dot + name + actions */
+  /* Row 1: dot + name */
   .session-row-1 {
     display: flex;
     align-items: center;
@@ -283,23 +378,23 @@
     color: var(--text);
   }
 
+  .session-name-text {
+    display: inline-block;
+    white-space: nowrap;
+    will-change: transform;
+  }
+
   /* Fade mask only when text overflows */
   .session-name.has-overflow {
     mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
     -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
   }
 
-  /* On hover: remove mask and animate text scroll to reveal full name */
-  li:hover .session-name.has-overflow {
+  /* On hover/longpress: remove mask — JS handles the scroll */
+  li:hover .session-name.has-overflow,
+  li:global(.longpress) .session-name.has-overflow {
     mask-image: none;
     -webkit-mask-image: none;
-    animation: text-scroll 4s linear 0.5s forwards;
-  }
-
-  @keyframes text-scroll {
-    0%, 5% { transform: translateX(0); }
-    45%, 55% { transform: translateX(var(--scroll-distance)); }
-    95%, 100% { transform: translateX(0); }
   }
 
   /* Selected state: use white mask for overflow fade */
@@ -312,7 +407,8 @@
     -webkit-mask-image: linear-gradient(to right, white calc(100% - 32px), transparent);
   }
 
-  li.active-session.selected:hover .session-name.has-overflow {
+  li.active-session.selected:hover .session-name.has-overflow,
+  li.active-session.selected:global(.longpress) .session-name.has-overflow {
     mask-image: none;
     -webkit-mask-image: none;
   }
@@ -366,26 +462,23 @@
   }
 
   .session-actions {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
     gap: 4px;
-    flex-shrink: 0;
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.15s 0.1s, visibility 0.15s 0.1s;
   }
 
   li:hover .session-actions,
-  li:focus-within .session-actions {
+  li:focus-within .session-actions,
+  li:global(.longpress) .session-actions {
     opacity: 1;
     visibility: visible;
-  }
-
-  @media (hover: none) {
-    .session-actions {
-      opacity: 1;
-      visibility: visible;
-    }
   }
 
   /* Row 2: pr icon + root · repo */
