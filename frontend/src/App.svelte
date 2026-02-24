@@ -2,41 +2,146 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, setAttention, clearAttention } from './lib/state/sessions.svelte.js';
+  import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import type { RepoInfo, WorktreeInfo } from './lib/types.js';
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
+  import Terminal from './components/Terminal.svelte';
+  import Toolbar from './components/Toolbar.svelte';
+  import MobileHeader from './components/MobileHeader.svelte';
+  import MobileInput from './components/MobileInput.svelte';
+  import UpdateToast from './components/UpdateToast.svelte';
+  import ImageToast from './components/ImageToast.svelte';
+  import NewSessionDialog from './components/dialogs/NewSessionDialog.svelte';
+  import SettingsDialog from './components/dialogs/SettingsDialog.svelte';
+  import DeleteWorktreeDialog from './components/dialogs/DeleteWorktreeDialog.svelte';
+  import ContextMenu from './components/ContextMenu.svelte';
 
   const auth = getAuth();
   const ui = getUi();
-  const state = getSessionState();
+  const sessionState = getSessionState();
+
+  // Component refs
+  let terminalRef: Terminal;
+  let mobileInputRef: MobileInput;
+  let imageToastRef: ImageToast;
+  let newSessionDialogRef: NewSessionDialog;
+  let settingsDialogRef: SettingsDialog;
+  let deleteWorktreeDialogRef: DeleteWorktreeDialog;
+  let contextMenuRef: ContextMenu;
 
   onMount(() => {
     checkExistingAuth();
   });
 
+  // Refresh sessions when authenticated
   $effect(() => {
     if (auth.authenticated) {
       refreshAll();
     }
   });
 
+  // Connect event socket when authenticated
+  $effect(() => {
+    if (auth.authenticated) {
+      connectEventSocket((msg) => {
+        if (msg.type === 'worktrees-changed') {
+          refreshAll();
+        } else if (msg.type === 'session-idle-changed' && msg.sessionId) {
+          setAttention(msg.sessionId, msg.idle ?? false);
+        }
+      });
+    }
+  });
+
+  // Wire MobileInput ref into Terminal after both are mounted
+  $effect(() => {
+    if (terminalRef && mobileInputRef) {
+      const inputEl = mobileInputRef['inputEl'] as HTMLInputElement | undefined;
+      terminalRef.setMobileInputRef(inputEl ?? null);
+    }
+  });
+
   function handleSelectSession(id: string) {
-    state.activeSessionId = id;
+    sessionState.activeSessionId = id;
+    clearAttention(id);
     closeSidebar();
+    terminalRef?.focusTerm();
+    mobileInputRef?.onSessionChange?.();
   }
 
-  function handleOpenNewSession(_repo?: RepoInfo) {
-    // Stub — dialog components added in Task 6
+  function handleOpenNewSession(repo?: RepoInfo) {
+    newSessionDialogRef?.open(repo);
   }
 
   function handleOpenSettings() {
-    // Stub — dialog components added in Task 6
+    settingsDialogRef?.open();
   }
 
-  function handleContextMenu(_e: MouseEvent, _wt: WorktreeInfo) {
-    // Stub — context menu added in Task 6
+  function handleContextMenu(e: MouseEvent, wt: WorktreeInfo) {
+    e.preventDefault();
+    contextMenuRef?.show(e.clientX, e.clientY, wt);
   }
+
+  function handleContextMenuResumeYolo(wt: WorktreeInfo) {
+    newSessionDialogRef?.open({ name: wt.repoName, path: wt.repoPath, root: wt.root });
+  }
+
+  function handleContextMenuDelete(wt: WorktreeInfo) {
+    deleteWorktreeDialogRef?.open(wt);
+  }
+
+  function handleNewSessionCreated(sessionId: string) {
+    sessionState.activeSessionId = sessionId;
+    closeSidebar();
+    terminalRef?.focusTerm();
+  }
+
+  // Image upload handlers
+  function handleImageUpload(text: string, showInsert: boolean, path?: string) {
+    imageToastRef?.show(text, showInsert, path);
+    if (!showInsert) {
+      imageToastRef?.autoDismiss(3000);
+    }
+  }
+
+  // Mobile toolbar handlers
+  function handleSendKey(key: string) {
+    sendPtyData(key);
+  }
+
+  function handleFlushComposedText() {
+    mobileInputRef?.flushComposedText?.();
+  }
+
+  function handleClearInput() {
+    mobileInputRef?.clearInput?.();
+  }
+
+  function handleUploadImage() {
+    // Trigger file input for image upload
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (file) {
+        terminalRef?.['handleImageUpload']?.(file, file.type);
+      }
+    };
+    input.click();
+  }
+
+  function handleRefocusMobileInput() {
+    mobileInputRef?.focus?.();
+  }
+
+  let sessionTitle = $derived(
+    sessionState.activeSessionId
+      ? (sessionState.sessions.find(s => s.id === sessionState.activeSessionId)?.displayName || 'Session')
+      : 'Claude Remote CLI'
+  );
 </script>
 
 {#if auth.checking}
@@ -60,23 +165,54 @@
     />
 
     <div class="terminal-area">
-      <!-- Mobile header -->
-      <div class="mobile-header">
-        <button class="icon-btn" aria-label="Open sidebar" onclick={openSidebar}>☰</button>
-        <span class="mobile-title">
-          {state.activeSessionId
-            ? (state.sessions.find(s => s.id === state.activeSessionId)?.displayName || 'Session')
-            : 'Claude Remote CLI'}
-        </span>
-      </div>
+      <MobileHeader
+        title={sessionTitle}
+        onMenuClick={openSidebar}
+      />
+
+      <Terminal
+        bind:this={terminalRef}
+        sessionId={sessionState.activeSessionId}
+        onImageUpload={handleImageUpload}
+      />
+
+      <Toolbar
+        onSendKey={handleSendKey}
+        onFlushComposedText={handleFlushComposedText}
+        onClearInput={handleClearInput}
+        onUploadImage={handleUploadImage}
+        onRefocusMobileInput={handleRefocusMobileInput}
+      />
+
+      <MobileInput
+        bind:this={mobileInputRef}
+        onTerminalTouchFocus={() => mobileInputRef?.focus()}
+      />
 
       <div class="no-session-msg">
-        {#if !state.activeSessionId}
+        {#if !sessionState.activeSessionId}
           <p>Select or create a session</p>
         {/if}
       </div>
     </div>
   </div>
+
+  <!-- Dialogs & overlays -->
+  <NewSessionDialog
+    bind:this={newSessionDialogRef}
+    onSessionCreated={handleNewSessionCreated}
+  />
+  <SettingsDialog bind:this={settingsDialogRef} />
+  <DeleteWorktreeDialog bind:this={deleteWorktreeDialogRef} />
+  <ContextMenu
+    bind:this={contextMenuRef}
+    onResumeYolo={handleContextMenuResumeYolo}
+    onDeleteWorktree={handleContextMenuDelete}
+  />
+
+  <!-- Toasts -->
+  <UpdateToast />
+  <ImageToast bind:this={imageToastRef} />
 {/if}
 
 <style>
@@ -102,10 +238,6 @@
     position: relative;
   }
 
-  .mobile-header {
-    display: none;
-  }
-
   .no-session-msg {
     position: absolute;
     top: 50%;
@@ -117,27 +249,6 @@
     pointer-events: none;
   }
 
-  .icon-btn {
-    background: none;
-    border: none;
-    color: var(--text);
-    font-size: 1.4rem;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    touch-action: manipulation;
-  }
-
-  .icon-btn:active {
-    background: var(--border);
-  }
-
-  .mobile-title {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--text-muted);
-  }
-
   /* Mobile */
   @media (max-width: 600px) {
     .sidebar-overlay {
@@ -146,16 +257,6 @@
       inset: 0;
       background: rgba(0, 0, 0, 0.5);
       z-index: 99;
-    }
-
-    .mobile-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
     }
 
     .terminal-area {
