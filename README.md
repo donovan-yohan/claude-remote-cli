@@ -2,6 +2,14 @@
 
 Remote web interface for interacting with Claude Code CLI sessions from any device.
 
+## Prerequisites
+
+| Dependency | Why |
+|------------|-----|
+| **[Node.js 24+](https://nodejs.org/)** | Runtime for the server |
+| **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)** | The CLI that powers each terminal session — must be in your `PATH` |
+| **[GitHub CLI (`gh`)](https://cli.github.com/)** | *Optional* — required for the **PRs tab**. Run `gh auth login` after installing. |
+
 ## Getting Started
 
 ### 1. Install
@@ -9,8 +17,6 @@ Remote web interface for interacting with Claude Code CLI sessions from any devi
 ```bash
 npm install -g claude-remote-cli
 ```
-
-Requires **Node.js 24+** and **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)** installed and available in your PATH.
 
 ### 2. Start the server
 
@@ -142,17 +148,19 @@ The PIN hash is stored in config under `pinHash`. To reset:
 ## Features
 
 - **PIN-protected access** with rate limiting
-- **Repo sessions** — open Claude directly in any repo root, with fresh or `--continue` mode (one session per repo)
+- **Repo sessions** — click any idle repo to instantly open Claude with `--continue` (no dialog), or start fresh from the new-session dialog
 - **Branch-aware worktrees** — create worktrees from new or existing branches with a type-to-search branch picker
-- **Tabbed sidebar** — switch between Repos and Worktrees views with shared filters and item counts
+- **Tabbed sidebar** — switch between Repos, Worktrees, and PRs views with shared filters and item counts
 - **Worktree isolation** — each worktree session runs in its own git worktree under `.worktrees/`
 - **Resume sessions** — click inactive worktrees to reconnect with `--continue`
 - **Persistent session names** — display names, branch names, and timestamps survive server restarts
 - **Clipboard image paste** — paste screenshots directly into remote terminal sessions (macOS clipboard + xclip on Linux)
-- **Yolo mode** — skip permission prompts with `--dangerously-skip-permissions` (per-session checkbox or context menu)
-- **Worktree cleanup** — delete inactive worktrees from the context menu (removes worktree, prunes refs, deletes branch)
+- **Pull requests tab** — view your open PRs (authored and review-requested) per repo via `gh` CLI, with Author/Reviewer filter and one-click session creation from any PR branch
+- **Yolo mode** — skip permission prompts with `--dangerously-skip-permissions` (per-session pill button)
+- **Worktree cleanup** — delete inactive worktrees via the trash pill button (removes worktree, prunes refs, deletes branch)
 - **Sidebar filters** — filter by root directory, repo, or text search
-- **Inline rename** — rename sessions with the pencil icon
+- **Inline actions** — pill buttons on session cards for rename, YOLO, worktree creation, and delete (hover on desktop, long-press on mobile)
+- **Resizable sidebar** — drag the sidebar edge to resize; collapse/expand with a button (persisted to localStorage)
 - **Scrollback buffer** — reconnect to a session and see prior output
 - **Touch toolbar** — mobile-friendly buttons for special keys (hidden on desktop)
 - **Responsive layout** — works on desktop and mobile with slide-out sidebar
@@ -162,7 +170,7 @@ The PIN hash is stored in config under `pinHash`. To reset:
 
 ## Architecture
 
-TypeScript + ESM backend compiled to `dist/`. Vanilla JS frontend (no build step).
+TypeScript + ESM backend (Express + node-pty + WebSocket) compiled to `dist/`. Svelte 5 frontend (runes + Vite) compiled to `dist/frontend/`.
 
 ```
 claude-remote-cli/
@@ -178,11 +186,13 @@ claude-remote-cli/
 │   ├── clipboard.ts    # System clipboard operations (image paste)
 │   ├── service.ts      # Background service management (launchd/systemd)
 │   └── types.ts        # Shared TypeScript interfaces
-├── public/
-│   ├── index.html      # Single-page app
-│   ├── app.js          # Frontend logic (ES5, no build step)
-│   ├── style.css       # Styles (dark theme)
-│   └── vendor/         # Self-hosted xterm.js + addon-fit
+├── frontend/
+│   └── src/
+│       ├── components/  # Svelte 5 components (Sidebar, Terminal, SessionList, etc.)
+│       ├── lib/state/   # Reactive state modules (.svelte.ts)
+│       ├── lib/api.ts   # REST API client
+│       ├── lib/ws.ts    # WebSocket connection management
+│       └── lib/types.ts # Frontend TypeScript interfaces
 ├── test/               # Unit tests (node:test)
 ├── dist/               # Compiled output (gitignored)
 ├── config.example.json
