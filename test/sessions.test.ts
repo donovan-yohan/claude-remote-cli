@@ -261,4 +261,58 @@ describe('sessions', () => {
     const found = sessions.findRepoSession('/tmp/my-repo');
     assert.strictEqual(found, undefined, 'should not match worktree sessions');
   });
+
+  it('branchName defaults to worktreeName when not specified', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      worktreeName: 'dy-feat-my-feature',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    assert.strictEqual(result.branchName, 'dy-feat-my-feature');
+  });
+
+  it('branchName is set independently from worktreeName', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      worktreeName: 'dy-feat-my-feature',
+      branchName: 'dy/feat/my-feature',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    assert.strictEqual(result.worktreeName, 'dy-feat-my-feature');
+    assert.strictEqual(result.branchName, 'dy/feat/my-feature');
+  });
+
+  it('list includes branchName field', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      worktreeName: 'my-wt',
+      branchName: 'feat/my-branch',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    const list = sessions.list();
+    const session = list.find(s => s.id === result.id);
+    assert.ok(session);
+    assert.strictEqual(session.branchName, 'feat/my-branch');
+  });
+
+  it('branchName defaults to empty string when neither branchName nor worktreeName provided', () => {
+    const result = sessions.create({
+      type: 'repo',
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    assert.strictEqual(result.branchName, '');
+  });
 });

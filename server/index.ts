@@ -14,7 +14,7 @@ import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensu
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { setupWebSocket } from './ws.js';
-import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath } from './watcher.js';
+import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import type { Config, PullRequest, PullRequestsResponse } from './types.js';
@@ -407,10 +407,10 @@ async function main(): Promise<void> {
   });
 
   // GET /worktrees?repo=<path> — list worktrees; omit repo to scan all repos in all rootDirs
-  app.get('/worktrees', requireAuth, (req, res) => {
+  app.get('/worktrees', requireAuth, async (req, res) => {
     const repoParam = typeof req.query.repo === 'string' ? req.query.repo : undefined;
     const roots = config.rootDirs || [];
-    const worktrees: Array<{ name: string; path: string; repoName: string; repoPath: string; root: string; displayName: string; lastActivity: string }> = [];
+    const worktrees: Array<{ name: string; path: string; repoName: string; repoPath: string; root: string; displayName: string; lastActivity: string; branchName: string }> = [];
 
     let reposToScan: RepoEntry[];
     if (repoParam) {
@@ -421,27 +421,49 @@ async function main(): Promise<void> {
     }
 
     for (const repo of reposToScan) {
-      for (const dir of WORKTREE_DIRS) {
-        const worktreeDir = path.join(repo.path, dir);
-        let entries: fs.Dirent[];
-        try {
-          entries = fs.readdirSync(worktreeDir, { withFileTypes: true });
-        } catch (_) {
-          continue;
-        }
-        for (const entry of entries) {
-          if (!entry.isDirectory()) continue;
-          const wtPath = path.join(worktreeDir, entry.name);
-          const meta = readMeta(CONFIG_PATH, wtPath);
+      // Use git worktree list to discover all worktrees (including those at arbitrary paths)
+      try {
+        const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repo.path });
+        const parsed = parseWorktreeListPorcelain(stdout, repo.path);
+        for (const wt of parsed) {
+          const dirName = wt.path.split('/').pop() || '';
+          const meta = readMeta(CONFIG_PATH, wt.path);
           worktrees.push({
-            name: entry.name,
-            path: wtPath,
+            name: dirName,
+            path: wt.path,
             repoName: repo.name,
             repoPath: repo.path,
             root: repo.root,
-            displayName: meta ? meta.displayName : '',
-            lastActivity: meta ? meta.lastActivity : '',
+            displayName: meta?.displayName || wt.branch || dirName,
+            lastActivity: meta?.lastActivity || '',
+            branchName: wt.branch || meta?.branchName || dirName,
           });
+        }
+      } catch {
+        // git worktree list failed — fall back to directory scanning
+        for (const dir of WORKTREE_DIRS) {
+          const worktreeDir = path.join(repo.path, dir);
+          let entries: fs.Dirent[];
+          try {
+            entries = fs.readdirSync(worktreeDir, { withFileTypes: true });
+          } catch (_) {
+            continue;
+          }
+          for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const wtPath = path.join(worktreeDir, entry.name);
+            const meta = readMeta(CONFIG_PATH, wtPath);
+            worktrees.push({
+              name: entry.name,
+              path: wtPath,
+              repoName: repo.name,
+              repoPath: repo.path,
+              root: repo.root,
+              displayName: meta?.displayName || '',
+              lastActivity: meta?.lastActivity || '',
+              branchName: meta?.branchName || entry.name,
+            });
+          }
         }
       }
     }
@@ -595,7 +617,7 @@ async function main(): Promise<void> {
         resolvedBranch = dirName;
       }
 
-      const worktreeDir = path.join(repoPath, '.worktrees');
+      const worktreeDir = path.join(repoPath, WORKTREE_DIRS[0]!);
       let targetDir = path.join(worktreeDir, dirName);
 
       if (fs.existsSync(targetDir)) {
@@ -603,7 +625,9 @@ async function main(): Promise<void> {
         dirName = path.basename(targetDir);
       }
 
-      ensureGitignore(repoPath, '.worktrees/');
+      for (const dir of WORKTREE_DIRS) {
+        ensureGitignore(repoPath, dir + '/');
+      }
 
       try {
         // Check if branch exists locally or on a remote
@@ -648,6 +672,7 @@ async function main(): Promise<void> {
       cwd,
       root,
       worktreeName,
+      branchName: branchName || worktreeName,
       displayName,
       command: config.claudeCommand,
       args,

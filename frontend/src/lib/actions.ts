@@ -1,10 +1,11 @@
 /**
  * Shared Svelte actions for list item interactions.
- * Used by SessionItem and PullRequestItem for consistent hover/longpress UX.
+ * Used by SessionItem and PullRequestItem for consistent hover/tap-to-reveal UX.
  */
+import { isMobileDevice } from './utils.js';
 
 /**
- * Svelte action: scrolls overflowing text on hover/longpress.
+ * Svelte action: scrolls overflowing text on hover/tap-reveal.
  * Requires an inner element (first child) that will be translated.
  * Applies `.has-overflow` class to the node when text overflows.
  */
@@ -46,6 +47,7 @@ export function scrollOnHover(node: HTMLElement) {
 
   li.addEventListener('mouseenter', onEnter);
   li.addEventListener('mouseleave', onLeave);
+  // Custom events dispatched by mobileReveal for tap-to-reveal
   li.addEventListener('longpressstart', onEnter);
   li.addEventListener('longpressend', onLeave);
 
@@ -61,84 +63,84 @@ export function scrollOnHover(node: HTMLElement) {
 }
 
 /**
- * Svelte action: adds longpress support for touch devices.
- * After 500ms hold, adds `.longpress` class and dispatches `longpressstart`.
- * On release, keeps state for 3s (to allow button taps), then dispatches `longpressend`.
+ * Mobile tap-to-reveal action.
+ * First tap reveals actions (adds `.longpress` class), second tap clicks through.
+ * Auto-dismisses after 5s or when tapping outside.
+ * On desktop, this is a no-op.
  */
-function longpressable(node: HTMLElement) {
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let deactivateTimer: ReturnType<typeof setTimeout> | null = null;
-  let active = false;
+function mobileReveal(node: HTMLElement) {
+  if (!isMobileDevice) {
+    return {
+      destroy() {},
+      get revealed() { return false; },
+      show() {},
+      scheduleDismiss() {},
+    };
+  }
 
-  const activate = () => {
-    active = true;
+  let revealed = false;
+  let dismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function show() {
+    revealed = true;
     node.classList.add('longpress');
     node.dispatchEvent(new CustomEvent('longpressstart'));
-  };
+    scheduleDismiss();
+  }
 
-  const deactivate = () => {
-    active = false;
+  function hide() {
+    revealed = false;
     node.classList.remove('longpress');
     node.dispatchEvent(new CustomEvent('longpressend'));
-  };
+    if (dismissTimer) { clearTimeout(dismissTimer); dismissTimer = null; }
+  }
 
-  const onTouchStart = () => {
-    if (deactivateTimer) { clearTimeout(deactivateTimer); deactivateTimer = null; }
-    timer = setTimeout(activate, 500);
-  };
+  function scheduleDismiss() {
+    if (dismissTimer) clearTimeout(dismissTimer);
+    dismissTimer = setTimeout(hide, 5000);
+  }
 
-  const onTouchMove = () => {
-    if (timer) { clearTimeout(timer); timer = null; }
-  };
-
-  const onTouchEnd = () => {
-    if (timer) { clearTimeout(timer); timer = null; }
-    if (active) {
-      deactivateTimer = setTimeout(deactivate, 3000);
+  // Dismiss when tapping outside the item
+  function onDocumentTouchStart(e: TouchEvent) {
+    if (revealed && !node.contains(e.target as Node)) {
+      hide();
     }
-  };
+  }
 
-  const onTouchCancel = () => {
-    if (timer) { clearTimeout(timer); timer = null; }
-    if (active) deactivate();
-  };
-
-  node.addEventListener('touchstart', onTouchStart, { passive: true });
-  node.addEventListener('touchmove', onTouchMove, { passive: true });
-  node.addEventListener('touchend', onTouchEnd, { passive: true });
-  node.addEventListener('touchcancel', onTouchCancel, { passive: true });
+  document.addEventListener('touchstart', onDocumentTouchStart, { passive: true });
 
   return {
     destroy() {
-      if (timer) clearTimeout(timer);
-      if (deactivateTimer) clearTimeout(deactivateTimer);
-      node.removeEventListener('touchstart', onTouchStart);
-      node.removeEventListener('touchmove', onTouchMove);
-      node.removeEventListener('touchend', onTouchEnd);
-      node.removeEventListener('touchcancel', onTouchCancel);
+      if (dismissTimer) clearTimeout(dismissTimer);
+      document.removeEventListener('touchstart', onDocumentTouchStart);
     },
-    get active() { return active; },
+    get revealed() { return revealed; },
+    show,
+    scheduleDismiss,
   };
 }
 
 /**
- * Creates a longpress Svelte action and a guarded click handler.
- * The click handler suppresses the callback while longpress is active.
- *
- * Usage in a component:
- *   const { action: longpressAction, handleClick } = createLongpressClick(onclick);
- *   <li use:longpressAction onclick={handleClick}>
+ * Creates a mobile tap-to-reveal Svelte action and a guarded click handler.
+ * On mobile: first tap reveals actions, second tap triggers the callback.
+ * On desktop: clicks always trigger the callback (actions shown on hover).
  */
 export function createLongpressClick(onclick: () => void) {
-  let ref: ReturnType<typeof longpressable> | undefined;
+  let ref: ReturnType<typeof mobileReveal> | undefined;
 
   function action(node: HTMLElement) {
-    ref = longpressable(node);
+    ref = mobileReveal(node);
     return ref;
   }
 
   function handleClick() {
-    if (ref?.active) return;
+    if (ref && isMobileDevice) {
+      if (!ref.revealed) {
+        ref.show();
+        return; // suppress — first tap just reveals
+      }
+      ref.scheduleDismiss();
+    }
     onclick();
   }
 

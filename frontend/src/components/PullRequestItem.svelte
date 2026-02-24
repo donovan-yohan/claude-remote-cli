@@ -6,39 +6,51 @@
   let {
     pr,
     isActiveSession,
+    isSelected = false,
     onclick,
+    onYolo,
   }: {
     pr: PullRequest;
     isActiveSession: boolean;
+    isSelected?: boolean;
     onclick: () => void;
+    onYolo?: () => void;
   } = $props();
 
-  let stateIcon = $derived(
-    pr.state === 'OPEN' ? '○' :
-    pr.state === 'MERGED' ? '⬤' :
-    '⊗'
-  );
+  let stateIcon = $derived.by(() => {
+    switch (pr.state) {
+      case 'OPEN': return '○';
+      case 'MERGED': return '⬤';
+      default: return '⊗';
+    }
+  });
 
-  let stateClass = $derived(
-    pr.state === 'OPEN' ? 'pr-state pr-open' :
-    pr.state === 'MERGED' ? 'pr-state pr-merged' :
-    'pr-state pr-closed'
-  );
+  let stateClass = $derived.by(() => {
+    switch (pr.state) {
+      case 'OPEN': return 'pr-state pr-open';
+      case 'MERGED': return 'pr-state pr-merged';
+      default: return 'pr-state pr-closed';
+    }
+  });
 
   let roleBadge = $derived(pr.role === 'author' ? 'Author' : 'Reviewer');
 
-  let reviewIcon = $derived(
-    pr.reviewDecision === 'APPROVED' ? '✓' :
-    pr.reviewDecision === 'CHANGES_REQUESTED' ? '✗' :
-    pr.reviewDecision === 'REVIEW_REQUIRED' ? '⏳' :
-    ''
-  );
+  let reviewIcon = $derived.by(() => {
+    switch (pr.reviewDecision) {
+      case 'APPROVED': return '✓';
+      case 'CHANGES_REQUESTED': return '✗';
+      case 'REVIEW_REQUIRED': return '⏳';
+      default: return '';
+    }
+  });
 
-  let reviewClass = $derived(
-    pr.reviewDecision === 'APPROVED' ? 'review-approved' :
-    pr.reviewDecision === 'CHANGES_REQUESTED' ? 'review-changes' :
-    'review-pending'
-  );
+  let reviewClass = $derived.by(() => {
+    switch (pr.reviewDecision) {
+      case 'APPROVED': return 'review-approved';
+      case 'CHANGES_REQUESTED': return 'review-changes';
+      default: return 'review-pending';
+    }
+  });
 
   let relativeTime = $derived(formatRelativeTime(pr.updatedAt));
 
@@ -48,6 +60,11 @@
     e.stopPropagation();
     window.open(pr.url, '_blank', 'noopener');
   }
+
+  function handleYolo(e: MouseEvent) {
+    e.stopPropagation();
+    onYolo?.();
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -55,6 +72,7 @@
 <li
   class="pr-item"
   class:active-session={isActiveSession}
+  class:selected={isSelected}
   onclick={handleClick}
   use:longpressAction
 >
@@ -85,7 +103,12 @@
     {#if reviewIcon}
       <span class="review-badge {reviewClass}" title={pr.reviewDecision ?? ''}>{reviewIcon}</span>
     {/if}
-    <button class="external-link-btn" aria-label="Open in GitHub" onclick={handleExternalClick}>↗</button>
+    {#if onYolo}
+      <button class="action-pill action-pill--mono" aria-label="Start in yolo mode" onclick={handleYolo}>YOLO</button>
+    {/if}
+    <button class="external-link-btn" aria-label="Open in GitHub" onclick={handleExternalClick}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+    </button>
   </div>
 </li>
 
@@ -117,6 +140,27 @@
     background: var(--bg);
     border-color: var(--accent);
     opacity: 1;
+  }
+
+  li.pr-item.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    opacity: 1;
+  }
+
+  li.pr-item.selected .pr-title {
+    color: #fff;
+  }
+
+  li.pr-item.selected .pr-meta,
+  li.pr-item.selected .pr-time {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  li.pr-item.selected .role-badge {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
   }
 
   .pr-info {
@@ -192,22 +236,67 @@
     visibility: visible;
   }
 
+  .action-pill {
+    background: var(--border);
+    border: none;
+    color: var(--text);
+    font-size: 0.75rem;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 12px;
+    touch-action: manipulation;
+    flex-shrink: 0;
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1;
+  }
+
+  .action-pill:hover {
+    background: #505050;
+  }
+
+  .action-pill--mono {
+    font-family: monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.02em;
+  }
+
+  li.pr-item.selected .action-pill {
+    background: #b35a3a;
+    color: #fff;
+  }
+
+  li.pr-item.selected .action-pill:hover {
+    background: #9a4d32;
+  }
+
   .external-link-btn {
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 0.85rem;
     cursor: pointer;
     padding: 2px 4px;
     border-radius: 4px;
     touch-action: manipulation;
     flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
     transition: color 0.15s, transform 0.15s;
   }
 
   .external-link-btn:hover {
     color: var(--accent);
     transform: scale(1.1);
+  }
+
+  li.pr-item.selected .external-link-btn {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  li.pr-item.selected .external-link-btn:hover {
+    color: #fff;
   }
 
   .review-badge {

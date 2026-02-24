@@ -33,37 +33,37 @@
     onNewWorktree?: () => void;
   } = $props();
 
-  let displayName = $derived(
-    variant.kind === 'active'
-      ? (variant.session.displayName || variant.session.repoName || variant.session.id)
-      : variant.kind === 'inactive-worktree'
-        ? (variant.worktree.displayName || variant.worktree.name)
-        : variant.repo.name,
-  );
+  let displayName = $derived.by(() => {
+    switch (variant.kind) {
+      case 'active': return variant.session.displayName || variant.session.repoName || variant.session.id;
+      case 'inactive-worktree': return variant.worktree.displayName || variant.worktree.name;
+      case 'idle-repo': return variant.repo.name;
+    }
+  });
 
-  let rootName = $derived(
-    variant.kind === 'active'
-      ? (variant.session.root ? rootShortName(variant.session.root) : '')
-      : variant.kind === 'inactive-worktree'
-        ? (variant.worktree.root ? rootShortName(variant.worktree.root) : '')
-        : (variant.repo.root ? rootShortName(variant.repo.root) : variant.repo.path),
-  );
+  let rootName = $derived.by(() => {
+    switch (variant.kind) {
+      case 'active': return variant.session.root ? rootShortName(variant.session.root) : '';
+      case 'inactive-worktree': return variant.worktree.root ? rootShortName(variant.worktree.root) : '';
+      case 'idle-repo': return variant.repo.root ? rootShortName(variant.repo.root) : variant.repo.path;
+    }
+  });
 
-  let repoName = $derived(
-    variant.kind === 'active'
-      ? (variant.session.repoName || '')
-      : variant.kind === 'inactive-worktree'
-        ? (variant.worktree.repoName || '')
-        : '',
-  );
+  let repoName = $derived.by(() => {
+    switch (variant.kind) {
+      case 'active': return variant.session.repoName || '';
+      case 'inactive-worktree': return variant.worktree.repoName || '';
+      case 'idle-repo': return '';
+    }
+  });
 
-  let lastActivity = $derived(
-    variant.kind === 'active'
-      ? formatRelativeTime(variant.session.lastActivity)
-      : variant.kind === 'inactive-worktree'
-        ? formatRelativeTime(variant.worktree.lastActivity)
-        : '',
-  );
+  let lastActivity = $derived.by(() => {
+    switch (variant.kind) {
+      case 'active': return formatRelativeTime(variant.session.lastActivity);
+      case 'inactive-worktree': return formatRelativeTime(variant.worktree.lastActivity);
+      case 'idle-repo': return '';
+    }
+  });
 
   let statusDotClass = $derived(
     variant.kind === 'active'
@@ -74,19 +74,25 @@
   let isSelected = $derived(variant.kind === 'active' && variant.isSelected);
   let isActive = $derived(variant.kind === 'active');
 
-  let prIcon = $derived(
-    !gitStatus ? '' :
-    gitStatus.prState === 'open' ? '○' :
-    gitStatus.prState === 'merged' ? '⬤' :
-    gitStatus.prState === 'closed' ? '⊗' : '',
-  );
+  let prIcon = $derived.by(() => {
+    if (!gitStatus) return '';
+    switch (gitStatus.prState) {
+      case 'open': return '○';
+      case 'merged': return '⬤';
+      case 'closed': return '⊗';
+      default: return '';
+    }
+  });
 
-  let prIconClass = $derived(
-    !gitStatus ? '' :
-    gitStatus.prState === 'open' ? 'pr-icon pr-open' :
-    gitStatus.prState === 'merged' ? 'pr-icon pr-merged' :
-    gitStatus.prState === 'closed' ? 'pr-icon pr-closed' : '',
-  );
+  let prIconClass = $derived.by(() => {
+    if (!gitStatus) return '';
+    switch (gitStatus.prState) {
+      case 'open': return 'pr-icon pr-open';
+      case 'merged': return 'pr-icon pr-merged';
+      case 'closed': return 'pr-icon pr-closed';
+      default: return '';
+    }
+  });
 
   const { action: longpressAction, handleClick } = createLongpressClick(() => onclick());
 
@@ -312,7 +318,7 @@
 
   /* Pill action buttons */
   .action-pill {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--border);
     border: none;
     color: var(--text);
     font-size: 0.75rem;
@@ -329,7 +335,7 @@
   }
 
   .action-pill:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: #505050;
   }
 
   .action-pill--mono {
@@ -339,22 +345,22 @@
   }
 
   .action-pill--danger:hover {
-    background: rgba(231, 76, 60, 0.15);
+    background: #4a2020;
     color: #e74c3c;
   }
 
   /* Selected card overrides */
   li.active-session.selected .action-pill {
-    background: rgba(255, 255, 255, 0.2);
+    background: #b35a3a;
     color: #fff;
   }
 
   li.active-session.selected .action-pill:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: #9a4d32;
   }
 
   li.active-session.selected .action-pill--danger:hover {
-    background: rgba(231, 76, 60, 0.25);
+    background: #8b2020;
     color: #fca5a5;
   }
 

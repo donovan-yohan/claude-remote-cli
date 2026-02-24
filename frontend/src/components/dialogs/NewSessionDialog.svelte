@@ -2,6 +2,7 @@
   import { fetchBranches, createSession, createRepoSession, fetchRepos } from '../../lib/api.js';
   import { getSessionState, refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getUi } from '../../lib/state/ui.svelte.js';
+  import { rootShortName } from '../../lib/utils.js';
   import type { RepoInfo } from '../../lib/types.js';
 
   let {
@@ -55,10 +56,6 @@
   let hasExactBranchMatch = $derived(
     allBranches.some(b => b === branchInput),
   );
-
-  function rootShortName(path: string): string {
-    return path.split('/').filter(Boolean).pop() || path;
-  }
 
   async function loadBranchesForRepo(repoPath: string) {
     allBranches = [];
@@ -116,7 +113,7 @@
       allRepos = [];
     }
 
-    // Pre-select from prop or argument
+    // Pre-select from explicit repo argument, prop, or sidebar filters
     const target = repo ?? preselectedRepo;
     if (target?.root) {
       selectedRoot = target.root;
@@ -124,6 +121,24 @@
       await Promise.resolve();
       selectedRepoPath = target.path;
       await loadBranchesForRepo(target.path);
+    } else {
+      // No explicit repo — pre-fill from sidebar filters
+      if (ui.repoFilter) {
+        // Find matching repo by name (optionally scoped to root filter)
+        const matchingRepo = allRepos.find(r =>
+          r.name === ui.repoFilter && (!ui.rootFilter || r.root === ui.rootFilter)
+        );
+        if (matchingRepo?.root) {
+          selectedRoot = matchingRepo.root;
+          await Promise.resolve();
+          selectedRepoPath = matchingRepo.path;
+          if (activeTab === 'worktrees') {
+            await loadBranchesForRepo(matchingRepo.path);
+          }
+        }
+      } else if (ui.rootFilter) {
+        selectedRoot = ui.rootFilter;
+      }
     }
 
     dialogEl.showModal();

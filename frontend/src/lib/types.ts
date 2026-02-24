@@ -5,6 +5,7 @@ export interface SessionSummary {
   repoName: string;
   repoPath: string;
   worktreeName: string;
+  branchName: string;
   displayName: string;
   createdAt: string;
   lastActivity: string;
@@ -19,6 +20,7 @@ export interface WorktreeInfo {
   root: string;
   displayName: string;
   lastActivity: string;
+  branchName: string;
 }
 
 export interface RepoInfo {

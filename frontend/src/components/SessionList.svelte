@@ -1,8 +1,7 @@
 <script lang="ts">
   import { getUi } from '../lib/state/ui.svelte.js';
-  import { getSessionState, getSessionStatus, clearAttention } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, getSessionStatus, clearAttention, refreshAll } from '../lib/state/sessions.svelte.js';
   import * as api from '../lib/api.js';
-  import { refreshAll } from '../lib/state/sessions.svelte.js';
   import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest, PullRequestsResponse } from '../lib/types.js';
   import { createQuery } from '@tanstack/svelte-query';
   import SessionItem from './SessionItem.svelte';
@@ -100,23 +99,30 @@
     })
   );
 
+  // Active session (for PR selected highlighting)
+  let activeSession = $derived(
+    state.activeSessionId ? state.sessions.find(s => s.id === state.activeSessionId) : undefined,
+  );
+
   // Tab counts
   let reposCount = $derived(filteredRepoSessions.length + filteredIdleRepos.length);
   let worktreesCount = $derived(filteredWorktreeSessions.length + filteredWorktrees.length);
   let prsCount = $derived(filteredPullRequests.length);
 
-  // PR click cascade helpers
+  // PR click cascade helpers — match by git branch name
   function findSessionForBranch(branchName: string): SessionSummary | undefined {
     return state.sessions.find(s =>
-      s.type === 'worktree' && s.worktreeName === branchName
+      s.type === 'worktree' && s.branchName === branchName
     );
   }
 
   function findWorktreeForBranch(branchName: string): WorktreeInfo | undefined {
-    return state.worktrees.find(wt => wt.name === branchName);
+    return state.worktrees.find(wt => wt.branchName === branchName);
   }
 
-  async function handlePRClick(pr: PullRequest) {
+  async function handlePRClick(pr: PullRequest, yolo = false) {
+    const claudeArgs = yolo ? ['--dangerously-skip-permissions'] : undefined;
+
     // Step 1: Active session for this branch? → route to it
     const existingSession = findSessionForBranch(pr.headRefName);
     if (existingSession) {
@@ -133,6 +139,7 @@
           repoPath: existingWorktree.repoPath,
           repoName: existingWorktree.repoName,
           worktreePath: existingWorktree.path,
+          claudeArgs,
         });
         await refreshAll();
         if (session?.id) {
@@ -151,6 +158,7 @@
         repoPath: repo.path,
         repoName: repo.name,
         branchName: pr.headRefName,
+        claudeArgs,
       });
       await refreshAll();
       if (session?.id) {
@@ -180,7 +188,7 @@
     onSelectSession(session.id);
   }
 
-  async function handleStartWorktreeSession(wt: WorktreeInfo) {
+  async function handleStartWorktreeSession(wt: WorktreeInfo, yolo = false) {
     if (startingWorktreePath) return;
     startingWorktreePath = wt.path;
     try {
@@ -188,6 +196,7 @@
         repoPath: wt.repoPath,
         repoName: wt.repoName,
         worktreePath: wt.path,
+        claudeArgs: yolo ? ['--dangerously-skip-permissions'] : undefined,
       });
       await refreshAll();
       if (session?.id) {
@@ -200,56 +209,13 @@
     }
   }
 
-  async function handleStartWorktreeSessionYolo(wt: WorktreeInfo) {
-    if (startingWorktreePath) return;
-    startingWorktreePath = wt.path;
-    try {
-      const session = await api.createSession({
-        repoPath: wt.repoPath,
-        repoName: wt.repoName,
-        worktreePath: wt.path,
-        claudeArgs: ['--dangerously-skip-permissions'],
-      });
-      await refreshAll();
-      if (session?.id) {
-        onSelectSession(session.id);
-      }
-    } catch {
-      // Ignore — user can retry
-    } finally {
-      startingWorktreePath = null;
-    }
-  }
-
-  async function handleStartRepoSession(repo: RepoInfo) {
+  async function handleStartRepoSession(repo: RepoInfo, yolo = false) {
     try {
       const session = await api.createRepoSession({
         repoPath: repo.path,
         repoName: repo.name,
         continue: true,
-      });
-      await refreshAll();
-      if (session?.id) {
-        onSelectSession(session.id);
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && 'sessionId' in err) {
-        const conflictErr = err as Error & { sessionId?: string };
-        await refreshAll();
-        if (conflictErr.sessionId) {
-          onSelectSession(conflictErr.sessionId);
-        }
-      }
-    }
-  }
-
-  async function handleStartRepoSessionYolo(repo: RepoInfo) {
-    try {
-      const session = await api.createRepoSession({
-        repoPath: repo.path,
-        repoName: repo.name,
-        continue: true,
-        claudeArgs: ['--dangerously-skip-permissions'],
+        claudeArgs: yolo ? ['--dangerously-skip-permissions'] : undefined,
       });
       await refreshAll();
       if (session?.id) {
@@ -311,7 +277,7 @@
       <SessionItem
         variant={{ kind: 'idle-repo', repo }}
         onclick={() => handleStartRepoSession(repo)}
-        onresumeYolo={() => handleStartRepoSessionYolo(repo)}
+        onresumeYolo={() => handleStartRepoSession(repo, true)}
         onNewWorktree={() => onNewWorktree(repo)}
       />
     {/each}
@@ -333,7 +299,7 @@
         variant={{ kind: 'inactive-worktree', worktree: wt }}
         gitStatus={state.gitStatuses[wt.repoPath + ':' + wt.name]}
         onclick={() => handleStartWorktreeSession(wt)}
-        onresumeYolo={() => handleStartWorktreeSessionYolo(wt)}
+        onresumeYolo={() => handleStartWorktreeSession(wt, true)}
         ondelete={() => onDeleteWorktree(wt)}
       />
     {/each}
@@ -365,7 +331,9 @@
         <PullRequestItem
           {pr}
           isActiveSession={!!findSessionForBranch(pr.headRefName)}
+          isSelected={activeSession?.type === 'worktree' && activeSession?.branchName === pr.headRefName && activeSession?.repoName === ui.repoFilter}
           onclick={() => handlePRClick(pr)}
+          onYolo={() => handlePRClick(pr, true)}
         />
       {/each}
     {/if}

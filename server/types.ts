@@ -9,6 +9,7 @@ export interface Session {
   repoName: string;
   repoPath: string;
   worktreeName: string;
+  branchName: string;
   displayName: string;
   pty: IPty;
   createdAt: string;

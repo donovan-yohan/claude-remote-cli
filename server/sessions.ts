@@ -15,6 +15,7 @@ type CreateParams = {
   cwd?: string;
   root?: string;
   worktreeName?: string;
+  branchName?: string;
   displayName?: string;
   command: string;
   args?: string[];
@@ -36,7 +37,7 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallback = cb;
 }
 
-function create({ type, repoName, repoPath, cwd, root, worktreeName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
+function create({ type, repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
   const id = crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
 
@@ -64,6 +65,7 @@ function create({ type, repoName, repoPath, cwd, root, worktreeName, displayName
     repoName: repoName || '',
     repoPath,
     worktreeName: worktreeName || '',
+    branchName: branchName || worktreeName || '',
     displayName: displayName || worktreeName || repoName || '',
     pty: ptyProcess,
     createdAt,
@@ -127,7 +129,7 @@ function create({ type, repoName, repoPath, cwd, root, worktreeName, displayName
     fs.rm(tmpDir, { recursive: true, force: true }, () => {});
   });
 
-  return { id, type: session.type, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
+  return { id, type: session.type, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
 }
 
 function get(id: string): Session | undefined {
@@ -136,13 +138,14 @@ function get(id: string): Session | undefined {
 
 function list(): SessionSummary[] {
   return Array.from(sessions.values())
-    .map(({ id, type, root, repoName, repoPath, worktreeName, displayName, createdAt, lastActivity, idle }) => ({
+    .map(({ id, type, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle }) => ({
       id,
       type,
       root,
       repoName,
       repoPath,
       worktreeName,
+      branchName,
       displayName,
       createdAt,
       lastActivity,

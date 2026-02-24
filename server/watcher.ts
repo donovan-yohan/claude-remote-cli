@@ -11,6 +11,35 @@ export function isValidWorktreePath(worktreePath: string): boolean {
   });
 }
 
+export interface ParsedWorktree {
+  path: string;
+  branch: string;
+}
+
+/**
+ * Parse `git worktree list --porcelain` output into structured entries.
+ * Skips the main worktree (matching repoPath) and bare/detached entries.
+ */
+export function parseWorktreeListPorcelain(stdout: string, repoPath: string): ParsedWorktree[] {
+  const results: ParsedWorktree[] = [];
+  const blocks = stdout.split('\n\n').filter(Boolean);
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    let wtPath = '';
+    let branch = '';
+    let bare = false;
+    for (const line of lines) {
+      if (line.startsWith('worktree ')) wtPath = line.slice(9);
+      if (line.startsWith('branch refs/heads/')) branch = line.slice(18);
+      if (line === 'bare') bare = true;
+    }
+    // Skip the main worktree (repo root), bare repos, and detached HEAD
+    if (!wtPath || wtPath === repoPath || bare || !branch) continue;
+    results.push({ path: wtPath, branch });
+  }
+  return results;
+}
+
 export class WorktreeWatcher extends EventEmitter {
   private _watchers: fs.FSWatcher[];
   private _debounceTimer: ReturnType<typeof setTimeout> | null;
