@@ -16,11 +16,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture
 
-TypeScript + ESM backend (Express + node-pty + WebSocket) compiled to `dist/`. Vanilla JS frontend with xterm.js renders terminals in the browser.
+TypeScript + ESM backend (Express + node-pty + WebSocket) compiled to `dist/`. Svelte 5 frontend (runes + Vite) compiled to `dist/frontend/`.
 
 - `bin/` - CLI entry point (TypeScript source), compiled to `dist/bin/`
 - `server/` - Express REST API, WebSocket relay, PTY session manager, auth, config, shared types (TypeScript source), compiled to `dist/server/`
-- `public/` - Single-page app (HTML/CSS/JS), bundled xterm.js vendor libs (no build step)
+- `frontend/` - Svelte 5 SPA (TypeScript + Svelte components, Vite build), compiled to `dist/frontend/`
 - `test/` - Unit tests using Node.js built-in `node:test` (TypeScript source), compiled to `dist/test/`
 - `dist/` - Compiled JavaScript output (gitignored)
 

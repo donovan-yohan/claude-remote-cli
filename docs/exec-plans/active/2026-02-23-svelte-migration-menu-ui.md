@@ -1,6 +1,6 @@
 # Svelte 5 Migration & Menu UI Redesign
 
-> **Status**: Active | **Created**: 2026-02-23 | **Last Updated**: 2026-02-23
+> **Status**: Active | **Created**: 2026-02-23 | **Last Updated**: 2026-02-24
 > **Design Doc**: `docs/plans/2026-02-23-svelte-migration-menu-ui-design.md`
 > **For Claude:** Use /harness:orchestrate to execute this plan.
 
@@ -20,20 +20,25 @@
 
 ## Progress
 
-- [ ] Task 1: Scaffold Vite + Svelte 5 project
-- [ ] Task 2: State modules — Auth, UI, Sessions
-- [ ] Task 3: PinGate + App shell components
-- [ ] Task 4: Sidebar + Session list components
-- [ ] Task 5: Terminal component + WebSocket integration
-- [ ] Task 6: Dialogs — New Session, Settings, Delete Worktree, Context Menu
-- [ ] Task 7: Update Toast + Event socket integration
-- [ ] Task 8: Git status endpoint + Frontend integration
-- [ ] Task 9: Session item hover effects — Fade, scroll, action reveal
+- [x] Task 1: Scaffold Vite + Svelte 5 project _(completed 2026-02-24)_
+- [x] Task 2: State modules — Auth, UI, Sessions _(completed 2026-02-24)_
+- [x] Task 3: PinGate + App shell components _(completed 2026-02-24)_
+- [x] Task 4: Sidebar + Session list components _(completed 2026-02-24)_
+- [x] Task 5: Terminal component + WebSocket integration _(completed 2026-02-24)_
+- [x] Task 6: Dialogs — New Session, Settings, Delete Worktree, Context Menu _(completed 2026-02-24)_
+- [x] Task 7: Update Toast + Event socket integration _(completed 2026-02-24)_
+- [x] Task 8: Git status endpoint + Frontend integration _(completed 2026-02-24)_
+- [x] Task 9: Session item hover effects — Fade, scroll, action reveal _(completed 2026-02-24)_
 - [ ] Task 10: Cleanup — Remove old frontend, update docs
 
 ## Surprises & Discoveries
 
-_None yet — updated during execution by /harness:orchestrate._
+| Date | What | Impact | Resolution |
+|------|------|--------|------------|
+| 2026-02-24 | @sveltejs/vite-plugin-svelte@7 requires Vite v8 beta | Used v5.1.1 (compatible with Vite 6) instead | No impact — stable release works fine |
+| 2026-02-24 | No built-in tsconfig to extend from plugin | Wrote frontend tsconfig from scratch | Minimal — just needed DOM lib + bundler moduleResolution |
+| 2026-02-24 | Vite config not at project root | All vite commands need `--config frontend/vite.config.ts` | Updated package.json scripts accordingly |
+| 2026-02-24 | Svelte 5 `$state` naming conflict | Local var named `state` conflicts with `$state` rune | Renamed to `sessionState` in App.svelte |
 
 ## Plan Drift
 
