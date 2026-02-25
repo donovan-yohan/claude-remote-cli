@@ -27,10 +27,14 @@
 | Date | What | Impact | Resolution |
 |------|------|--------|------------|
 | 2026-02-25 | `getTargetRanges()[0]` needs explicit `StaticRange` cast for svelte-check | Type narrowing didn't work with optional chaining | Used `as StaticRange` cast with explicit null checks |
+| 2026-02-25 | Gboard loses cursor position on single-word autocorrect even with `clip-path: inset(50%)` | `getTargetRanges()` returns empty and cursor is at 0,0 — data prepended at position 0 instead of replacing word | Added BAD_AUTOCORRECT detection in `handleInsert`: reverts when `currentValue === data + valueBefore` |
+| 2026-02-25 | xterm.js canvas blocks native text selection in long-press mode | `user-select: text` on `.xterm-screen` alone insufficient — canvas sits on top | Set `pointer-events: none` on all canvas elements during selection mode + programmatic `selectNodeContents` on `.xterm-rows` |
 
 ## Plan Drift
 
-_None yet — updated when tasks deviate from plan during execution._
+| Date | What planned | What happened | Impact |
+|------|-------------|---------------|--------|
+| 2026-02-25 | Event-intent pipeline would fix autocorrect via `getTargetRanges()` | Gboard returns empty `getTargetRanges()` for single-word autocorrect, sends garbled data at cursor 0 | Added defensive BAD_AUTOCORRECT revert in `handleInsert` — autocorrect silently suppressed when cursor tracking fails |
 
 ---
 

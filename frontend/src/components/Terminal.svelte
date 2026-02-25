@@ -256,10 +256,27 @@
     selectionMode = true;
     contentScrolling = false;
     if (navigator.vibrate) navigator.vibrate(50);
+
+    // Enable text selection on xterm screen
     const xtermScreen = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
     if (xtermScreen) {
       xtermScreen.style.userSelect = 'text';
       xtermScreen.style.webkitUserSelect = 'text';
+    }
+
+    // Make canvas layers pass-through so touches reach the text layer (.xterm-rows)
+    containerEl.querySelectorAll('canvas').forEach((canvas) => {
+      (canvas as HTMLElement).style.pointerEvents = 'none';
+    });
+
+    // Programmatically select all visible text so the user can adjust handles
+    const rows = containerEl.querySelector('.xterm-rows');
+    if (rows) {
+      const range = document.createRange();
+      range.selectNodeContents(rows);
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
     }
   }
 
@@ -270,11 +287,23 @@
       xtermScreen.style.userSelect = '';
       xtermScreen.style.webkitUserSelect = '';
     }
+
+    // Restore canvas pointer events
+    containerEl.querySelectorAll('canvas').forEach((canvas) => {
+      (canvas as HTMLElement).style.pointerEvents = '';
+    });
+
     window.getSelection()?.removeAllRanges();
   }
 
   function onTerminalTouchStart(e: TouchEvent) {
     if (selectionMode) {
+      // Any tap exits selection mode — copy selected text first
+      const selectedText = window.getSelection()?.toString() ?? '';
+      if (selectedText.trim().length > 0) {
+        navigator.clipboard.writeText(selectedText).catch(() => { /* ignore */ });
+        if (navigator.vibrate) navigator.vibrate(30);
+      }
       exitSelectionMode();
       return;
     }
@@ -550,19 +579,19 @@
       transform: translateY(-50%);
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 12px;
       z-index: 1;
-      opacity: 0.15;
+      opacity: 0.6;
       pointer-events: auto;
     }
     .scroll-fab {
-      width: 36px;
-      height: 36px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
       border: 1px solid var(--border);
       background: var(--surface);
       color: var(--text);
-      font-size: 14px;
+      font-size: 18px;
       display: flex;
       align-items: center;
       justify-content: center;

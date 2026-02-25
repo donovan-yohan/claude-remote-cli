@@ -12,6 +12,7 @@
     rangeStart: number | null;
     rangeEnd: number | null;
     valueBefore: string;
+    cursorBefore: number;
   }
 
   let capturedIntent: CapturedIntent | null = null;
@@ -133,6 +134,21 @@
       payload += data ?? '';
       if (payload) scheduleSend(payload);
     } else if (data) {
+      // Detect bad cursor-0 autocorrect: the keyboard lost cursor position
+      // and prepended data at position 0 instead of replacing a word.
+      // All three conditions must hold: cursor was at 0, data is multi-char
+      // (data.length uses UTF-16 units, so single emoji with length=2 could
+      // match — but combined with the prepend check this is safe), and the
+      // result is exactly data prepended to the old value.
+      if (data.length > 1 && intent.cursorBefore === 0 &&
+          intent.valueBefore.length > 0 &&
+          currentValue === data + intent.valueBefore) {
+        dbg('  → BAD_AUTOCORRECT: data prepended at pos 0, reverting');
+        inputEl.value = intent.valueBefore;
+        ensureCursorAtEnd();
+        // onInput's syncBuffer() and ensureCursorAtEnd() still run after return
+        return;
+      }
       // Collapsed range = normal character insertion
       dbg('  → INSERT: "' + data + '"');
       scheduleSend(data);
@@ -296,6 +312,7 @@
       rangeStart: firstRange !== null ? firstRange.startOffset : null,
       rangeEnd: firstRange !== null ? firstRange.endOffset : null,
       valueBefore: inputEl.value,
+      cursorBefore: inputEl.selectionStart ?? 0,
     };
 
     dbg('BEFORE type="' + e.inputType + '" data="' + (e.data ?? '') + '" ' + rangeInfo + ' val="' + inputEl.value + '" cursor=' + inputEl.selectionStart + ',' + inputEl.selectionEnd);
@@ -325,7 +342,7 @@
 
     if (!intent) {
       dbg('  WARN: no captured intent, using fallback diff');
-      handleFallbackDiff({ type: ie.inputType, data: ie.data, rangeStart: null, rangeEnd: null, valueBefore: '' }, currentValue);
+      handleFallbackDiff({ type: ie.inputType, data: ie.data, rangeStart: null, rangeEnd: null, valueBefore: '', cursorBefore: 0 }, currentValue);
       syncBuffer();
       return;
     }

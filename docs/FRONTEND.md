@@ -74,7 +74,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - Mobile font size: 12px (vs 14px desktop) for more terminal content visibility
 - Scroll FABs: page-up/page-down floating buttons shown when `isMobileDevice && thumbVisible`, using `term.scrollPages()`
 - ResizeObserver debounced 150ms on mobile (0ms desktop) to avoid xterm re-render flash during keyboard animation
-- Long-press text selection: 500ms hold triggers selection mode (haptic vibrate, `user-select: text` on `.xterm-screen`, accent outline indicator). Next tap exits selection mode and clears browser selection
+- Long-press text selection: 500ms hold triggers selection mode (haptic vibrate, `user-select: text` on `.xterm-screen`, canvas `pointer-events: none` to expose `.xterm-rows` text layer, programmatic `selectNodeContents` for immediate selection handles, accent outline indicator). Next tap copies selected text to clipboard (with short vibrate) and exits selection mode
 - All touch handlers guard against null `e.touches[0]` and missing DOM elements
 
 ## Mobile Keyboard Handling
@@ -86,7 +86,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - Tapping the terminal area focuses the hidden `MobileInput` via a `touchend` handler on `terminal-wrapper`
 - Toolbar buttons use `mousedown` with `preventDefault()` to prevent keyboard dismissal, then `onRefocusMobileInput()` to retain focus
 - `MobileInput` is a hidden `<form>` + `<input>` (on-screen via `clip-path: inset(50%)` for Gboard cursor tracking) that uses an event-intent pipeline to translate `InputEvent` types directly to terminal commands
-- Event-intent architecture: `beforeinput` captures intent (`inputType`, `data`, `getTargetRanges()`), `input` dispatches to typed handlers (insert, delete, replacement, paste, fallback). Buffer trimmed to last word when >20 chars. Debug panel logs all events with gap-finder signals (`FALLBACK_DIFF`, `WARN`)
+- Event-intent architecture: `beforeinput` captures intent (`inputType`, `data`, `getTargetRanges()`), `input` dispatches to typed handlers (insert, delete, replacement, paste, fallback). Buffer trimmed to last word when >20 chars. Debug panel logs all events with gap-finder signals (`FALLBACK_DIFF`, `WARN`). Bad cursor-0 autocorrect detection: when keyboard loses cursor tracking and prepends data at position 0 (`currentValue === data + valueBefore`), the insertion is reverted to prevent terminal corruption
 - xterm's internal `.xterm-helper-textarea` is disabled on mobile (`disabled` + `tabIndex=-1`) to prevent focus fights with `MobileInput`
 - `t.onData()` is only wired on desktop; on mobile, `MobileInput` sends directly via `sendPtyData()` to avoid double-sending
 
