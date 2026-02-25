@@ -4,3 +4,4 @@ config.json
 bun.lockb
 dist/
 .worktrees/
+.claude/worktrees/
