@@ -42,7 +42,6 @@
 
   <select
     value={ui.repoFilter}
-    class:highlight={ui.activeTab === 'prs' && !ui.repoFilter}
     onchange={(e) => { ui.repoFilter = (e.target as HTMLSelectElement).value; }}
   >
     <option value="">All repos</option>
@@ -107,16 +106,6 @@
 
   select:focus {
     border-color: var(--accent);
-  }
-
-  select.highlight {
-    border-color: var(--accent);
-    animation: pulse-border 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-border {
-    0%, 100% { border-color: var(--accent); box-shadow: 0 0 0 0 rgba(217, 119, 87, 0); }
-    50% { border-color: var(--accent); box-shadow: 0 0 6px 2px rgba(217, 119, 87, 0.3); }
   }
 
   input {

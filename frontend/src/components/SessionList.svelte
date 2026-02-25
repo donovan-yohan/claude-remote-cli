@@ -3,14 +3,14 @@
   import { getSessionState, getSessionStatus, clearAttention, refreshAll } from '../lib/state/sessions.svelte.js';
   import * as api from '../lib/api.js';
   import { ConflictError } from '../lib/api.js';
-  import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest, PullRequestsResponse } from '../lib/types.js';
-  import { createQuery } from '@tanstack/svelte-query';
+  import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest } from '../lib/types.js';
+  import { rootShortName } from '../lib/utils.js';
   import SessionItem from './SessionItem.svelte';
   import SessionFilters from './SessionFilters.svelte';
-  import PullRequestItem from './PullRequestItem.svelte';
+  import PrRepoGroup from './PrRepoGroup.svelte';
 
   const ui = getUi();
-  const state = getSessionState();
+  const sessionState = getSessionState();
 
   let {
     onSelectSession,
@@ -27,8 +27,8 @@
   let startingWorktreePath: string | null = null;
 
   // Split sessions by type
-  let repoSessions = $derived(state.sessions.filter(s => s.type === 'repo'));
-  let worktreeSessions = $derived(state.sessions.filter(s => s.type !== 'repo'));
+  let repoSessions = $derived(sessionState.sessions.filter(s => s.type === 'repo'));
+  let worktreeSessions = $derived(sessionState.sessions.filter(s => s.type !== 'repo'));
 
   // Repos that have an active session
   let activeRepoPaths = $derived(new Set(repoSessions.map(s => s.repoPath)));
@@ -53,79 +53,108 @@
     return true;
   }
 
+  // Compare by most recent activity (descending — newest first), falling back to 0 (epoch)
+  function compareRecent(a: string | undefined, b: string | undefined): number {
+    return new Date(b || 0).getTime() - new Date(a || 0).getTime();
+  }
+
   // Repos tab
   let filteredRepoSessions = $derived(
     repoSessions
       .filter(s => matchesFilters(s.root, s.repoName, s.displayName || s.repoName || s.id))
-      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareAlpha(a.displayName || a.repoName, b.displayName || b.repoName)),
+      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareRecent(a.lastActivity, b.lastActivity)),
   );
 
   let filteredIdleRepos = $derived(
-    state.repos
+    sessionState.repos
       .filter(r => !activeRepoPaths.has(r.path) && matchesFilters(r.root, r.name, r.name))
       .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.name, b.name)),
   );
 
-  // Worktrees tab
+  // Worktrees tab — filtered lists
   let filteredWorktreeSessions = $derived(
     worktreeSessions
       .filter(s => matchesFilters(s.root, s.repoName, s.displayName || s.repoName || s.worktreeName || s.id))
-      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareAlpha(a.worktreeName, b.worktreeName)),
+      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareRecent(a.lastActivity, b.lastActivity)),
   );
 
   let filteredWorktrees = $derived(
-    state.worktrees
+    sessionState.worktrees
       .filter(wt => !activeWorktreePaths.has(wt.path) && matchesFilters(wt.root, wt.repoName, wt.name))
-      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareAlpha(a.name, b.name)),
+      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareRecent(a.lastActivity, b.lastActivity)),
   );
 
-  // PR fetching via svelte-query
-  let prRepoPath = $derived((() => {
-    if (ui.activeTab !== 'prs' || !ui.repoFilter) return null;
-    const repo = state.repos.find(r => r.name === ui.repoFilter);
-    return repo?.path ?? null;
+  // Worktrees tab — grouped by repo (keyed on root:repoName to handle same name across roots)
+  let worktreeRepoGroups = $derived((() => {
+    const groups = new Map<string, { key: string; repoName: string; root: string; sessions: SessionSummary[]; worktrees: WorktreeInfo[] }>();
+
+    for (const s of filteredWorktreeSessions) {
+      const repoName = s.repoName || s.id;
+      const key = (s.root || '') + ':' + repoName;
+      if (!groups.has(key)) {
+        groups.set(key, { key, repoName, root: s.root, sessions: [], worktrees: [] });
+      }
+      groups.get(key)!.sessions.push(s);
+    }
+
+    for (const wt of filteredWorktrees) {
+      const repoName = wt.repoName || wt.name;
+      const key = (wt.root || '') + ':' + repoName;
+      if (!groups.has(key)) {
+        groups.set(key, { key, repoName, root: wt.root, sessions: [], worktrees: [] });
+      }
+      groups.get(key)!.worktrees.push(wt);
+    }
+
+    return [...groups.values()].sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName));
   })());
 
-  const prQuery = createQuery<PullRequestsResponse>(() => ({
-    queryKey: ['pull-requests', prRepoPath],
-    queryFn: () => prRepoPath ? api.fetchPullRequests(prRepoPath) : Promise.resolve({ prs: [] } as PullRequestsResponse),
-    enabled: !!prRepoPath,
-  }));
+  // Worktree repo collapse state (all expanded by default)
+  let collapsedWorktreeRepos = $state(new Set<string>());
 
-  let prData = $derived(prQuery.data);
-  let prError = $derived(prData?.error ?? null);
-  let prList = $derived(prData?.prs ?? []);
+  function toggleWorktreeRepo(key: string) {
+    const next = new Set(collapsedWorktreeRepos);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    collapsedWorktreeRepos = next;
+  }
 
-  let filteredPullRequests = $derived(
-    prList.filter((pr: PullRequest) => {
-      if (ui.prRoleFilter !== 'all' && pr.role !== ui.prRoleFilter) return false;
-      if (ui.searchFilter && pr.title.toLowerCase().indexOf(ui.searchFilter.toLowerCase()) === -1) return false;
-      return true;
-    })
+  // PRs tab — repos to show as collapsible groups
+  let prRepos = $derived(
+    sessionState.repos
+      .filter(r => {
+        if (ui.rootFilter && r.root !== ui.rootFilter) return false;
+        if (ui.repoFilter && r.name !== ui.repoFilter) return false;
+        return true;
+      })
+      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.name, b.name))
   );
 
   // Active session (for PR selected highlighting)
   let activeSession = $derived(
-    state.activeSessionId ? state.sessions.find(s => s.id === state.activeSessionId) : undefined,
+    sessionState.activeSessionId ? sessionState.sessions.find(s => s.id === sessionState.activeSessionId) : undefined,
   );
 
   // Tab counts
   let reposCount = $derived(filteredRepoSessions.length + filteredIdleRepos.length);
   let worktreesCount = $derived(filteredWorktreeSessions.length + filteredWorktrees.length);
-  let prsCount = $derived(filteredPullRequests.length);
+  let prsCount = $derived(prRepos.length);
 
   // PR click cascade helpers — match by git branch name
   function findSessionForBranch(branchName: string): SessionSummary | undefined {
-    return state.sessions.find(s =>
+    return sessionState.sessions.find(s =>
       s.type === 'worktree' && s.branchName === branchName
     );
   }
 
   function findWorktreeForBranch(branchName: string): WorktreeInfo | undefined {
-    return state.worktrees.find(wt => wt.branchName === branchName);
+    return sessionState.worktrees.find(wt => wt.branchName === branchName);
   }
 
-  async function handlePRClick(pr: PullRequest, yolo = false) {
+  async function handlePRClick(pr: PullRequest, repo: RepoInfo, yolo = false) {
     const claudeArgs = yolo ? ['--dangerously-skip-permissions'] : undefined;
 
     // Step 1: Active session for this branch? → route to it
@@ -155,9 +184,6 @@
     }
 
     // Step 3: No local worktree → create new worktree + session
-    const repo = state.repos.find(r => r.name === ui.repoFilter);
-    if (!repo) return;
-
     try {
       const session = await api.createSession({
         repoPath: repo.path,
@@ -175,8 +201,8 @@
   async function handleKillSession(session: SessionSummary) {
     await api.killSession(session.id);
     await refreshAll();
-    if (state.activeSessionId === session.id) {
-      state.activeSessionId = null;
+    if (sessionState.activeSessionId === session.id) {
+      sessionState.activeSessionId = null;
     }
   }
 
@@ -259,16 +285,19 @@
 
 <ul class="session-list">
   {#if ui.activeTab === 'repos'}
+    {#if filteredRepoSessions.length > 0}
+      <li class="session-divider">Active</li>
+    {/if}
     {#each filteredRepoSessions as session (session.id)}
       <SessionItem
-        variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: state.activeSessionId === session.id }}
-        gitStatus={state.gitStatuses[session.repoPath + ':' + session.worktreeName]}
+        variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: sessionState.activeSessionId === session.id }}
+        gitStatus={sessionState.gitStatuses[session.repoPath + ':' + session.worktreeName]}
         onclick={() => handleSelectSession(session)}
         onkill={() => handleKillSession(session)}
         onrename={() => handleRenameSession(session)}
       />
     {/each}
-    {#if filteredRepoSessions.length > 0 && filteredIdleRepos.length > 0}
+    {#if filteredIdleRepos.length > 0}
       <li class="session-divider">Available</li>
     {/if}
     {#each filteredIdleRepos as repo (repo.path)}
@@ -280,58 +309,52 @@
       />
     {/each}
   {:else if ui.activeTab === 'worktrees'}
-    {#each filteredWorktreeSessions as session (session.id)}
-      <SessionItem
-        variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: state.activeSessionId === session.id }}
-        gitStatus={state.gitStatuses[session.repoPath + ':' + session.worktreeName]}
-        onclick={() => handleSelectSession(session)}
-        onkill={() => handleKillSession(session)}
-        onrename={() => handleRenameSession(session)}
-      />
-    {/each}
-    {#if filteredWorktreeSessions.length > 0 && filteredWorktrees.length > 0}
-      <li class="session-divider">Available</li>
-    {/if}
-    {#each filteredWorktrees as wt (wt.path)}
-      <SessionItem
-        variant={{ kind: 'inactive-worktree', worktree: wt }}
-        gitStatus={state.gitStatuses[wt.repoPath + ':' + wt.name]}
-        onclick={() => handleStartWorktreeSession(wt)}
-        onresumeYolo={() => handleStartWorktreeSession(wt, true)}
-        ondelete={() => onDeleteWorktree(wt)}
-      />
+    {#each worktreeRepoGroups as group (group.key)}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <li class="repo-group-header" onclick={() => toggleWorktreeRepo(group.key)}>
+        <span class="chevron" class:expanded={!collapsedWorktreeRepos.has(group.key)}>&#9654;</span>
+        <span class="repo-group-name">{group.repoName}</span>
+        <span class="repo-group-root">{rootShortName(group.root)}</span>
+        <span class="repo-group-count">{group.sessions.length + group.worktrees.length}</span>
+      </li>
+      {#if !collapsedWorktreeRepos.has(group.key)}
+        {#if group.sessions.length > 0 && group.worktrees.length > 0}
+          <li class="session-divider session-divider--nested">Active</li>
+        {/if}
+        {#each group.sessions as session (session.id)}
+          <SessionItem
+            variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: sessionState.activeSessionId === session.id }}
+            gitStatus={sessionState.gitStatuses[session.repoPath + ':' + session.worktreeName]}
+            onclick={() => handleSelectSession(session)}
+            onkill={() => handleKillSession(session)}
+            onrename={() => handleRenameSession(session)}
+          />
+        {/each}
+        {#if group.sessions.length > 0 && group.worktrees.length > 0}
+          <li class="session-divider session-divider--nested">Available</li>
+        {/if}
+        {#each group.worktrees as wt (wt.path)}
+          <SessionItem
+            variant={{ kind: 'inactive-worktree', worktree: wt }}
+            gitStatus={sessionState.gitStatuses[wt.repoPath + ':' + wt.name]}
+            onclick={() => handleStartWorktreeSession(wt)}
+            onresumeYolo={() => handleStartWorktreeSession(wt, true)}
+            ondelete={() => onDeleteWorktree(wt)}
+          />
+        {/each}
+      {/if}
     {/each}
   {:else}
-    {#if ui.repoFilter}
-      <div class="pr-toolbar">
-        <button
-          class="refresh-btn"
-          onclick={() => prQuery.refetch()}
-          disabled={prQuery.isFetching}
-          aria-label="Refresh pull requests"
-        >
-          <span class:spinning={prQuery.isFetching}>↻</span>
-        </button>
-      </div>
-    {/if}
-    {#if !ui.repoFilter}
-      <li class="pr-hint">Select a repo to view pull requests</li>
-    {:else if prQuery.isLoading}
-      <li class="pr-hint">Loading pull requests...</li>
-    {:else if prError === 'gh_not_authenticated'}
-      <li class="pr-hint">GitHub CLI not authenticated<br /><span class="pr-hint-sub">Run <code>gh auth login</code> on the host</span></li>
-    {:else if prError}
-      <li class="pr-hint">Could not fetch pull requests</li>
-    {:else if filteredPullRequests.length === 0}
-      <li class="pr-hint">No open pull requests</li>
+    {#if prRepos.length === 0}
+      <li class="pr-hint">No repos found</li>
     {:else}
-      {#each filteredPullRequests as pr (pr.number)}
-        <PullRequestItem
-          {pr}
-          isActiveSession={!!findSessionForBranch(pr.headRefName)}
-          isSelected={activeSession?.type === 'worktree' && activeSession?.branchName === pr.headRefName && activeSession?.repoName === ui.repoFilter}
-          onclick={() => handlePRClick(pr)}
-          onYolo={() => handlePRClick(pr, true)}
+      {#each prRepos as repo (repo.path)}
+        <PrRepoGroup
+          {repo}
+          {findSessionForBranch}
+          {activeSession}
+          onPRClick={handlePRClick}
         />
       {/each}
     {/if}
@@ -389,41 +412,61 @@
     list-style: none;
   }
 
-  .pr-toolbar {
+  :global(.session-divider--nested) {
+    padding-left: 24px;
+  }
+
+  :global(.repo-group-header) {
     display: flex;
-    justify-content: flex-end;
-    padding: 4px 10px 0;
-  }
-
-  .refresh-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-muted);
-    font-size: 0.85rem;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
     cursor: pointer;
-    padding: 2px 6px;
-    transition: color 0.15s, border-color 0.15s;
+    list-style: none;
+    transition: background 0.15s;
+    border-radius: 4px;
+    margin: 2px 6px;
   }
 
-  .refresh-btn:hover {
-    color: var(--accent);
-    border-color: var(--accent);
+  :global(.repo-group-header:hover) {
+    background: var(--border);
   }
 
-  .refresh-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .spinning {
+  :global(.chevron) {
     display: inline-block;
-    animation: spin 1s linear infinite;
+    font-size: 0.55rem;
+    transition: transform 0.15s;
+    color: var(--text-muted);
+    flex-shrink: 0;
   }
 
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+  :global(.chevron.expanded) {
+    transform: rotate(90deg);
+  }
+
+  :global(.repo-group-name) {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  :global(.repo-group-root) {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    opacity: 0.6;
+    flex-shrink: 0;
+  }
+
+  :global(.repo-group-count) {
+    font-size: 0.6rem;
+    color: var(--text-muted);
+    opacity: 0.5;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   :global(.pr-hint) {
