@@ -1,6 +1,6 @@
 # Mobile Scroll & Touch UX Implementation Plan
 
-> **Status**: Active | **Created**: 2026-02-25 | **Last Updated**: 2026-02-25
+> **Status**: Complete | **Created**: 2026-02-25 | **Last Updated**: 2026-02-25
 > **Design Doc**: `docs/design-docs/2026-02-25-mobile-scroll-ux-design.md`
 > **For Claude:** Use /harness:orchestrate to execute this plan.
 
@@ -18,12 +18,12 @@
 
 ## Progress
 
-- [ ] Task 1: overscroll-behavior: none
-- [ ] Task 2: Mobile font size 12px
-- [ ] Task 3: Scroll FABs
-- [ ] Task 4: Debounce ResizeObserver fit() during keyboard
-- [ ] Task 5: Long-press text selection
-- [ ] Task 6: Build + test
+- [x] Task 1: overscroll-behavior: none _(completed 2026-02-25)_
+- [x] Task 2: Mobile font size 12px _(completed 2026-02-25)_
+- [x] Task 3: Scroll FABs _(completed 2026-02-25)_
+- [x] Task 4: Debounce ResizeObserver fit() during keyboard _(completed 2026-02-25)_
+- [x] Task 5: Long-press text selection _(completed 2026-02-25)_
+- [x] Task 6: Build + test _(completed 2026-02-25)_
 
 ## Surprises & Discoveries
 
