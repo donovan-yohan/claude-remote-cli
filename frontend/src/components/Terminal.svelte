@@ -322,7 +322,7 @@
     if (contentScrolling && term && !selectionMode) {
       if (longPressTimer) {
         const moveX = Math.abs(touch.clientX - longPressStartX);
-        const moveY = Math.abs(contentTouchStartY - touch.clientY);
+        const moveY = Math.abs(touch.clientY - longPressStartY);
         if (moveX > LONG_PRESS_MOVE_TOLERANCE || moveY > LONG_PRESS_MOVE_TOLERANCE) {
           clearTimeout(longPressTimer);
           longPressTimer = null;
