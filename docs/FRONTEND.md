@@ -64,6 +64,19 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - Cookie TTL uses human-readable format: `s` (seconds), `m` (minutes), `h` (hours), `d` (days). Default: `24h`
 - Root directory scanning: one level deep for git repos, hidden directories excluded
 
+## Mobile Touch & Scroll
+
+- xterm.js built-in touch scroll is disabled on mobile (`.xterm-viewport` gets `touch-action: none` + `overflow-y: hidden`) — it produces jerky one-line-at-a-time scrolling
+- Custom content-area touch scroll: `onTerminalTouchStart` → `onDocumentTouchMove` → `onDocumentTouchEnd` with pixel-based scroll-to-line conversion
+- Touch handlers registered via `addEventListener({ passive: false })` on `document` — Svelte 5's `ontouchmove` is passive by default, silently ignoring `preventDefault()`
+- `touchcancel` wired to the same handler as `touchend` to prevent stuck scroll state
+- `overscroll-behavior: none` on `html, body` prevents pull-to-refresh
+- Mobile font size: 12px (vs 14px desktop) for more terminal content visibility
+- Scroll FABs: page-up/page-down floating buttons shown when `isMobileDevice && thumbVisible`, using `term.scrollPages()`
+- ResizeObserver debounced 150ms on mobile (0ms desktop) to avoid xterm re-render flash during keyboard animation
+- Long-press text selection: 500ms hold triggers selection mode (haptic vibrate, `user-select: text` on `.xterm-screen`, accent outline indicator). Next tap exits selection mode and clears browser selection
+- All touch handlers guard against null `e.touches[0]` and missing DOM elements
+
 ## Mobile Keyboard Handling
 
 - `visualViewport` API tracks keyboard open/close: when `window.innerHeight - vv.height > 50`, keyboard is considered open

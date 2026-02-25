@@ -38,7 +38,7 @@
   onMount(() => {
     const t = new Terminal({
       cursorBlink: true,
-      fontSize: 14,
+      fontSize: isMobileDevice ? 12 : 14,
       fontFamily: 'Menlo, monospace',
       scrollback: 10000,
       theme: {
@@ -58,6 +58,16 @@
       if (xtermTextarea) {
         xtermTextarea.disabled = true;
         xtermTextarea.tabIndex = -1;
+      }
+      // Disable xterm's internal touch scroll — it scrolls one line at a time.
+      // We implement our own smooth content-area touch scroll instead.
+      // Relies on internal class name — re-verify after @xterm/xterm upgrades.
+      const xtermViewport = containerEl.querySelector('.xterm-viewport') as HTMLElement | null;
+      if (xtermViewport) {
+        xtermViewport.style.touchAction = 'none';
+        xtermViewport.style.overflowY = 'hidden';
+      } else {
+        console.warn('[Terminal] .xterm-viewport not found — xterm DOM may have changed. Touch scroll may conflict with xterm.');
       }
     }
     fitAddon.fit();
@@ -121,19 +131,41 @@
     t.onScroll(updateScrollbar);
     t.onWriteParsed(updateScrollbar);
 
+    let roTimer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver(() => {
-      fitAddon.fit();
-      sendPtyResize(t.cols, t.rows);
-      updateScrollbar();
+      if (roTimer) clearTimeout(roTimer);
+      roTimer = setTimeout(() => {
+        fitAddon.fit();
+        sendPtyResize(t.cols, t.rows);
+        updateScrollbar();
+      }, isMobileDevice ? 150 : 0);
     });
     ro.observe(containerEl);
+
+    // On mobile, register document-level touch handlers with { passive: false }
+    // so e.preventDefault() works. Svelte's <svelte:document ontouchmove> registers
+    // as passive by default on Chrome/Android, silently ignoring preventDefault.
+    if (isMobileDevice) {
+      document.addEventListener('touchmove', onDocumentTouchMove, { passive: false });
+      document.addEventListener('touchend', onDocumentTouchEnd);
+      document.addEventListener('touchcancel', onDocumentTouchEnd);
+    }
 
     term = t;
 
     return () => {
+      if (roTimer) clearTimeout(roTimer);
+      if (longPressTimer) clearTimeout(longPressTimer);
       ro.disconnect();
       t.dispose();
       term = null;
+      contentScrolling = false;
+      scrollbarDragging = false;
+      if (isMobileDevice) {
+        document.removeEventListener('touchmove', onDocumentTouchMove);
+        document.removeEventListener('touchend', onDocumentTouchEnd);
+        document.removeEventListener('touchcancel', onDocumentTouchEnd);
+      }
     };
   });
 
@@ -159,6 +191,20 @@
   let thumbHeight = $state(0);
   let thumbTop = $state(0);
   let thumbVisible = $state(false);
+
+  // ── Content-area touch scroll state (mobile) ───────────────────────────────
+  let contentScrolling = false;
+  let contentTouchStartY = 0;
+  let contentScrollStartLine = 0;
+  let contentTouchMoved = false;
+
+  // Long-press text selection state (mobile)
+  let selectionMode = $state(false);
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressStartX = 0;
+  let longPressStartY = 0;
+  const LONG_PRESS_MS = 500;
+  const LONG_PRESS_MOVE_TOLERANCE = 10;
 
   function updateScrollbar() {
     if (!term) return;
@@ -195,35 +241,128 @@
   }
 
   function onThumbTouchStart(e: TouchEvent) {
-    e.preventDefault();
+    const touch = e.touches[0];
+    if (!touch) return;
+    // Note: e.preventDefault() is not called here because Svelte 5 registers
+    // ontouchstart as passive. Browser default scroll is already prevented by
+    // touch-action: none on .terminal-container via CSS.
     scrollbarDragging = true;
-    scrollbarDragStartY = e.touches[0]!.clientY;
+    scrollbarDragStartY = touch.clientY;
     scrollbarDragStartTop = thumbTop;
   }
 
+  function enterSelectionMode() {
+    longPressTimer = null;
+    selectionMode = true;
+    contentScrolling = false;
+    if (navigator.vibrate) navigator.vibrate(50);
+    const xtermScreen = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
+    if (xtermScreen) {
+      xtermScreen.style.userSelect = 'text';
+      xtermScreen.style.webkitUserSelect = 'text';
+    }
+  }
+
+  function exitSelectionMode() {
+    selectionMode = false;
+    const xtermScreen = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
+    if (xtermScreen) {
+      xtermScreen.style.userSelect = '';
+      xtermScreen.style.webkitUserSelect = '';
+    }
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function onTerminalTouchStart(e: TouchEvent) {
+    if (selectionMode) {
+      exitSelectionMode();
+      return;
+    }
+    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
+    if ((e.target as HTMLElement).closest('.scroll-fabs')) return;
+    if (!term) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    contentTouchStartY = touch.clientY;
+    contentScrollStartLine = term.buffer.active.viewportY;
+    contentTouchMoved = false;
+    contentScrolling = true;
+    // Long-press detection
+    longPressStartX = touch.clientX;
+    longPressStartY = touch.clientY;
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      enterSelectionMode();
+    }, LONG_PRESS_MS);
+  }
+
   function onDocumentTouchMove(e: TouchEvent) {
-    if (!scrollbarDragging || !term || !scrollbarEl) return;
-    e.preventDefault();
-    const deltaY = e.touches[0]!.clientY - scrollbarDragStartY;
-    const buf = term.buffer.active;
-    const totalLines = buf.baseY + term.rows;
-    if (totalLines <= term.rows) return;
-    const trackHeight = scrollbarEl.clientHeight;
-    const th = Math.max(44, (term.rows / totalLines) * trackHeight);
-    const trackUsable = trackHeight - th;
-    const newTop = Math.max(0, Math.min(trackUsable, scrollbarDragStartTop + deltaY));
-    const ratio = newTop / trackUsable;
-    const targetLine = Math.round(ratio * (totalLines - term.rows));
-    term.scrollToLine(targetLine);
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    // Scrollbar thumb drag
+    if (scrollbarDragging) {
+      if (!term || !scrollbarEl) return;
+      e.preventDefault();
+      const deltaY = touch.clientY - scrollbarDragStartY;
+      const buf = term.buffer.active;
+      const totalLines = buf.baseY + term.rows;
+      if (totalLines <= term.rows) return;
+      const trackHeight = scrollbarEl.clientHeight;
+      const th = Math.max(44, (term.rows / totalLines) * trackHeight);
+      const trackUsable = trackHeight - th;
+      const newTop = Math.max(0, Math.min(trackUsable, scrollbarDragStartTop + deltaY));
+      const ratio = newTop / trackUsable;
+      const targetLine = Math.round(ratio * (totalLines - term.rows));
+      term.scrollToLine(targetLine);
+      return;
+    }
+
+    // Content-area touch scroll
+    if (contentScrolling && term && !selectionMode) {
+      if (longPressTimer) {
+        const moveX = Math.abs(touch.clientX - longPressStartX);
+        const moveY = Math.abs(touch.clientY - longPressStartY);
+        if (moveX > LONG_PRESS_MOVE_TOLERANCE || moveY > LONG_PRESS_MOVE_TOLERANCE) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
+      if (term.rows === 0 || containerEl.clientHeight === 0) return;
+      const deltaY = contentTouchStartY - touch.clientY;
+      if (Math.abs(deltaY) > 5) {
+        contentTouchMoved = true;
+        e.preventDefault();
+        const lineHeight = containerEl.clientHeight / term.rows;
+        const lineDelta = deltaY / lineHeight;
+        const maxScroll = term.buffer.active.baseY;
+        const targetLine = Math.max(0, Math.min(maxScroll, Math.round(contentScrollStartLine + lineDelta)));
+        term.scrollToLine(targetLine);
+      }
+    }
   }
 
   function onDocumentTouchEnd() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
     scrollbarDragging = false;
+    contentScrolling = false;
+    contentTouchMoved = false;
   }
 
   function onScrollbarClick(e: MouseEvent) {
     if (e.target === thumbEl) return;
     scrollbarScrollToY(e.clientY);
+  }
+
+  function scrollPageUp() {
+    term?.scrollPages(-1);
+  }
+
+  function scrollPageDown() {
+    term?.scrollPages(1);
   }
 
   let scrollbarEl: HTMLDivElement;
@@ -299,20 +438,19 @@
 
   function onTerminalTouchEnd(e: TouchEvent) {
     if (scrollbarDragging) return;
-    if ((e.target as HTMLElement).closest('.terminal-scrollbar-thumb')) return;
+    if (contentTouchMoved) return;
+    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
+    if (selectionMode) return;
     mobileInputRef?.focus();
   }
 </script>
-
-<svelte:document
-  ontouchmove={isMobileDevice ? onDocumentTouchMove : undefined}
-  ontouchend={isMobileDevice ? onDocumentTouchEnd : undefined}
-/>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="terminal-wrapper"
   class:drag-over={dragOver}
+  class:selection-mode={selectionMode}
+  ontouchstart={isMobileDevice ? onTerminalTouchStart : undefined}
   ontouchend={isMobileDevice ? onTerminalTouchEnd : undefined}
 >
   <div
@@ -342,6 +480,14 @@
       role="presentation"
     ></div>
   </div>
+  {#if isMobileDevice && thumbVisible}
+    <div class="scroll-fabs">
+      <!-- svelte-ignore a11y_consider_explicit_label -->
+      <button class="scroll-fab" onclick={scrollPageUp} aria-label="Page up">&#9650;</button>
+      <!-- svelte-ignore a11y_consider_explicit_label -->
+      <button class="scroll-fab" onclick={scrollPageDown} aria-label="Page down">&#9660;</button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -383,12 +529,51 @@
   }
 
   @media (hover: none) {
+    .terminal-wrapper.selection-mode .terminal-container {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
+    .terminal-container {
+      touch-action: none;
+    }
     .terminal-scrollbar {
       width: 12px;
     }
     .terminal-scrollbar-thumb {
       width: 8px;
       min-height: 44px;
+    }
+    .scroll-fabs {
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1;
+      opacity: 0.15;
+      pointer-events: auto;
+    }
+    .scroll-fab {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .scroll-fab:active {
+      opacity: 1;
+      background: var(--border);
     }
   }
 </style>
