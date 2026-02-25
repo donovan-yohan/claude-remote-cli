@@ -4,12 +4,14 @@ Execution plans for active and completed work.
 
 ## Current State
 
-- 0 active plans
+- 1 active plan
 - 17 completed plans (including design docs and implementation plans)
 
 ## Active Plans
 
-_None._
+| Plan | Created | Topic |
+|------|---------|-------|
+| `mobile-input-redesign` | 2026-02-25 | Event-intent architecture replacing value-diffing for mobile input |
 
 ## Completed Plans
 
