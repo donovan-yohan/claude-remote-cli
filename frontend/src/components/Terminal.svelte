@@ -155,6 +155,7 @@
 
     return () => {
       if (roTimer) clearTimeout(roTimer);
+      if (longPressTimer) clearTimeout(longPressTimer);
       ro.disconnect();
       t.dispose();
       term = null;
@@ -196,6 +197,14 @@
   let contentTouchStartY = 0;
   let contentScrollStartLine = 0;
   let contentTouchMoved = false;
+
+  // Long-press text selection state (mobile)
+  let selectionMode = $state(false);
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressStartX = 0;
+  let longPressStartY = 0;
+  const LONG_PRESS_MS = 500;
+  const LONG_PRESS_MOVE_TOLERANCE = 10;
 
   function updateScrollbar() {
     if (!term) return;
@@ -242,8 +251,35 @@
     scrollbarDragStartTop = thumbTop;
   }
 
+  function enterSelectionMode() {
+    longPressTimer = null;
+    selectionMode = true;
+    contentScrolling = false;
+    if (navigator.vibrate) navigator.vibrate(50);
+    const xtermScreen = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
+    if (xtermScreen) {
+      xtermScreen.style.userSelect = 'text';
+      xtermScreen.style.webkitUserSelect = 'text';
+    }
+  }
+
+  function exitSelectionMode() {
+    selectionMode = false;
+    const xtermScreen = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
+    if (xtermScreen) {
+      xtermScreen.style.userSelect = '';
+      xtermScreen.style.webkitUserSelect = '';
+    }
+    window.getSelection()?.removeAllRanges();
+  }
+
   function onTerminalTouchStart(e: TouchEvent) {
+    if (selectionMode) {
+      exitSelectionMode();
+      return;
+    }
     if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
+    if ((e.target as HTMLElement).closest('.scroll-fabs')) return;
     if (!term) return;
     const touch = e.touches[0];
     if (!touch) return;
@@ -251,6 +287,13 @@
     contentScrollStartLine = term.buffer.active.viewportY;
     contentTouchMoved = false;
     contentScrolling = true;
+    // Long-press detection
+    longPressStartX = touch.clientX;
+    longPressStartY = touch.clientY;
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      enterSelectionMode();
+    }, LONG_PRESS_MS);
   }
 
   function onDocumentTouchMove(e: TouchEvent) {
@@ -276,7 +319,15 @@
     }
 
     // Content-area touch scroll
-    if (contentScrolling && term) {
+    if (contentScrolling && term && !selectionMode) {
+      if (longPressTimer) {
+        const moveX = Math.abs(touch.clientX - longPressStartX);
+        const moveY = Math.abs(contentTouchStartY - touch.clientY);
+        if (moveX > LONG_PRESS_MOVE_TOLERANCE || moveY > LONG_PRESS_MOVE_TOLERANCE) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      }
       if (term.rows === 0 || containerEl.clientHeight === 0) return;
       const deltaY = contentTouchStartY - touch.clientY;
       if (Math.abs(deltaY) > 5) {
@@ -292,6 +343,10 @@
   }
 
   function onDocumentTouchEnd() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
     scrollbarDragging = false;
     contentScrolling = false;
     contentTouchMoved = false;
@@ -385,6 +440,7 @@
     if (scrollbarDragging) return;
     if (contentTouchMoved) return;
     if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
+    if (selectionMode) return;
     mobileInputRef?.focus();
   }
 </script>
@@ -393,6 +449,7 @@
 <div
   class="terminal-wrapper"
   class:drag-over={dragOver}
+  class:selection-mode={selectionMode}
   ontouchstart={isMobileDevice ? onTerminalTouchStart : undefined}
   ontouchend={isMobileDevice ? onTerminalTouchEnd : undefined}
 >
@@ -472,6 +529,10 @@
   }
 
   @media (hover: none) {
+    .terminal-wrapper.selection-mode .terminal-container {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+    }
     .terminal-container {
       touch-action: none;
     }
