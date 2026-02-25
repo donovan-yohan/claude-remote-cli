@@ -71,8 +71,9 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - `window.scrollTo(0, 0)` prevents iOS viewport scroll when keyboard opens
 - On mobile, `.main-app` uses `position: fixed; inset: 0` to prevent page-level scrolling
 - Tapping the terminal area focuses the hidden `MobileInput` via a `touchend` handler on `terminal-wrapper`
-- Toolbar buttons use `touchstart` with `preventDefault()` to prevent keyboard dismissal, then `onRefocusMobileInput()` to retain focus
-- `MobileInput` is a hidden `<form>` + `<input>` off-screen (`left: -9999px`) that captures text/composition events and diffs input to PTY
+- Toolbar buttons use `mousedown` with `preventDefault()` to prevent keyboard dismissal, then `onRefocusMobileInput()` to retain focus
+- `MobileInput` is a hidden `<form>` + `<input>` (on-screen via `clip-path: inset(50%)` for Gboard cursor tracking) that uses an event-intent pipeline to translate `InputEvent` types directly to terminal commands
+- Event-intent architecture: `beforeinput` captures intent (`inputType`, `data`, `getTargetRanges()`), `input` dispatches to typed handlers (insert, delete, replacement, paste, fallback). Buffer trimmed to last word when >20 chars. Debug panel logs all events with gap-finder signals (`FALLBACK_DIFF`, `WARN`)
 - xterm's internal `.xterm-helper-textarea` is disabled on mobile (`disabled` + `tabIndex=-1`) to prevent focus fights with `MobileInput`
 - `t.onData()` is only wired on desktop; on mobile, `MobileInput` sends directly via `sendPtyData()` to avoid double-sending
 
