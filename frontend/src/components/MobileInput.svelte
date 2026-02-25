@@ -67,7 +67,10 @@
   }
 
   export function clearInput() {
-    if (inputEl) inputEl.value = '';
+    if (inputEl) {
+      inputEl.value = '';
+      inputEl.setSelectionRange(0, 0);
+    }
     lastInputValue = '';
   }
 
@@ -142,6 +145,9 @@
       sendInputDiff(lastInputValue, currentValue);
       lastInputValue = currentValue;
     }
+    // Keep cursor at end after composition
+    const len = inputEl.value.length;
+    inputEl.selectionStart = inputEl.selectionEnd = len;
   }
 
   function onBlur() {
@@ -191,6 +197,8 @@
 
     sendInputDiff(baseline, currentValue);
     lastInputValue = currentValue;
+    // Keep cursor at end so Android IME doesn't prepend next character at position 0
+    inputEl.selectionStart = inputEl.selectionEnd = currentValue.length;
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -303,12 +311,18 @@
 
 <style>
   .mobile-input-form {
-    /* Hidden visually but accessible; keyboard opens on focus */
+    /* Hidden visually but kept in-viewport so Android IME tracks cursor.
+       Off-screen positioning (left:-9999px) causes Gboard to lose cursor
+       tracking, making characters prepend at position 0 instead of append. */
     position: fixed;
-    left: -9999px;
     top: 0;
+    left: 0;
     width: 1px;
     height: 1px;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
     opacity: 0;
     pointer-events: none;
   }

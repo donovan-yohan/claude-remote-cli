@@ -101,33 +101,56 @@ function create({ type, repoName, repoPath, cwd, root, worktreeName, branchName,
     }, IDLE_TIMEOUT_MS);
   }
 
-  ptyProcess.onData((data) => {
-    session.lastActivity = new Date().toISOString();
-    resetIdleTimer();
-    scrollback.push(data);
-    scrollbackBytes += data.length;
-    // Trim oldest entries if over limit
-    while (scrollbackBytes > MAX_SCROLLBACK && scrollback.length > 1) {
-      scrollbackBytes -= (scrollback.shift() as string).length;
-    }
-    if (configPath && worktreeName && !metaFlushTimer) {
-      metaFlushTimer = setTimeout(() => {
-        metaFlushTimer = null;
-        writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
-      }, 5000);
-    }
-  });
+  function attachHandlers(proc: pty.IPty, canRetry: boolean): void {
+    const spawnTime = Date.now();
 
-  ptyProcess.onExit(() => {
-    if (idleTimer) clearTimeout(idleTimer);
-    if (metaFlushTimer) clearTimeout(metaFlushTimer);
-    if (configPath && worktreeName) {
-      writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
-    }
-    sessions.delete(id);
-    const tmpDir = path.join(os.tmpdir(), 'claude-remote-cli', id);
-    fs.rm(tmpDir, { recursive: true, force: true }, () => {});
-  });
+    proc.onData((data) => {
+      session.lastActivity = new Date().toISOString();
+      resetIdleTimer();
+      scrollback.push(data);
+      scrollbackBytes += data.length;
+      // Trim oldest entries if over limit
+      while (scrollbackBytes > MAX_SCROLLBACK && scrollback.length > 1) {
+        scrollbackBytes -= (scrollback.shift() as string).length;
+      }
+      if (configPath && worktreeName && !metaFlushTimer) {
+        metaFlushTimer = setTimeout(() => {
+          metaFlushTimer = null;
+          writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
+        }, 5000);
+      }
+    });
+
+    proc.onExit(({ exitCode }) => {
+      // If --continue failed quickly, retry without it
+      if (canRetry && (Date.now() - spawnTime) < 3000 && exitCode !== 0) {
+        const retryArgs = args.filter(a => a !== '--continue');
+        scrollback.length = 0;
+        scrollbackBytes = 0;
+        const retryPty = pty.spawn(command, retryArgs, {
+          name: 'xterm-256color',
+          cols,
+          rows,
+          cwd: cwd || repoPath,
+          env,
+        });
+        session.pty = retryPty;
+        attachHandlers(retryPty, false);
+        return;
+      }
+
+      if (idleTimer) clearTimeout(idleTimer);
+      if (metaFlushTimer) clearTimeout(metaFlushTimer);
+      if (configPath && worktreeName) {
+        writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
+      }
+      sessions.delete(id);
+      const tmpDir = path.join(os.tmpdir(), 'claude-remote-cli', id);
+      fs.rm(tmpDir, { recursive: true, force: true }, () => {});
+    });
+  }
+
+  attachHandlers(ptyProcess, args.includes('--continue'));
 
   return { id, type: session.type, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
 }
