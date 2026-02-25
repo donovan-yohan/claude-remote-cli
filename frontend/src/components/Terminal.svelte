@@ -59,6 +59,16 @@
         xtermTextarea.disabled = true;
         xtermTextarea.tabIndex = -1;
       }
+      // Disable xterm's internal touch scroll — it scrolls one line at a time.
+      // We implement our own smooth content-area touch scroll instead.
+      // Relies on internal class name — re-verify after @xterm/xterm upgrades.
+      const xtermViewport = containerEl.querySelector('.xterm-viewport') as HTMLElement | null;
+      if (xtermViewport) {
+        xtermViewport.style.touchAction = 'none';
+        xtermViewport.style.overflowY = 'hidden';
+      } else {
+        console.warn('[Terminal] .xterm-viewport not found — xterm DOM may have changed. Touch scroll may conflict with xterm.');
+      }
     }
     fitAddon.fit();
 
@@ -128,12 +138,28 @@
     });
     ro.observe(containerEl);
 
+    // On mobile, register document-level touch handlers with { passive: false }
+    // so e.preventDefault() works. Svelte's <svelte:document ontouchmove> registers
+    // as passive by default on Chrome/Android, silently ignoring preventDefault.
+    if (isMobileDevice) {
+      document.addEventListener('touchmove', onDocumentTouchMove, { passive: false });
+      document.addEventListener('touchend', onDocumentTouchEnd);
+      document.addEventListener('touchcancel', onDocumentTouchEnd);
+    }
+
     term = t;
 
     return () => {
       ro.disconnect();
       t.dispose();
       term = null;
+      contentScrolling = false;
+      scrollbarDragging = false;
+      if (isMobileDevice) {
+        document.removeEventListener('touchmove', onDocumentTouchMove);
+        document.removeEventListener('touchend', onDocumentTouchEnd);
+        document.removeEventListener('touchcancel', onDocumentTouchEnd);
+      }
     };
   });
 
@@ -159,6 +185,12 @@
   let thumbHeight = $state(0);
   let thumbTop = $state(0);
   let thumbVisible = $state(false);
+
+  // ── Content-area touch scroll state (mobile) ───────────────────────────────
+  let contentScrolling = false;
+  let contentTouchStartY = 0;
+  let contentScrollStartLine = 0;
+  let contentTouchMoved = false;
 
   function updateScrollbar() {
     if (!term) return;
@@ -195,30 +227,69 @@
   }
 
   function onThumbTouchStart(e: TouchEvent) {
-    e.preventDefault();
+    const touch = e.touches[0];
+    if (!touch) return;
+    // Note: e.preventDefault() is not called here because Svelte 5 registers
+    // ontouchstart as passive. Browser default scroll is already prevented by
+    // touch-action: none on .terminal-container via CSS.
     scrollbarDragging = true;
-    scrollbarDragStartY = e.touches[0]!.clientY;
+    scrollbarDragStartY = touch.clientY;
     scrollbarDragStartTop = thumbTop;
   }
 
+  function onTerminalTouchStart(e: TouchEvent) {
+    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
+    if (!term) return;
+    const touch = e.touches[0];
+    if (!touch) return;
+    contentTouchStartY = touch.clientY;
+    contentScrollStartLine = term.buffer.active.viewportY;
+    contentTouchMoved = false;
+    contentScrolling = true;
+  }
+
   function onDocumentTouchMove(e: TouchEvent) {
-    if (!scrollbarDragging || !term || !scrollbarEl) return;
-    e.preventDefault();
-    const deltaY = e.touches[0]!.clientY - scrollbarDragStartY;
-    const buf = term.buffer.active;
-    const totalLines = buf.baseY + term.rows;
-    if (totalLines <= term.rows) return;
-    const trackHeight = scrollbarEl.clientHeight;
-    const th = Math.max(44, (term.rows / totalLines) * trackHeight);
-    const trackUsable = trackHeight - th;
-    const newTop = Math.max(0, Math.min(trackUsable, scrollbarDragStartTop + deltaY));
-    const ratio = newTop / trackUsable;
-    const targetLine = Math.round(ratio * (totalLines - term.rows));
-    term.scrollToLine(targetLine);
+    const touch = e.touches[0];
+    if (!touch) return;
+
+    // Scrollbar thumb drag
+    if (scrollbarDragging) {
+      if (!term || !scrollbarEl) return;
+      e.preventDefault();
+      const deltaY = touch.clientY - scrollbarDragStartY;
+      const buf = term.buffer.active;
+      const totalLines = buf.baseY + term.rows;
+      if (totalLines <= term.rows) return;
+      const trackHeight = scrollbarEl.clientHeight;
+      const th = Math.max(44, (term.rows / totalLines) * trackHeight);
+      const trackUsable = trackHeight - th;
+      const newTop = Math.max(0, Math.min(trackUsable, scrollbarDragStartTop + deltaY));
+      const ratio = newTop / trackUsable;
+      const targetLine = Math.round(ratio * (totalLines - term.rows));
+      term.scrollToLine(targetLine);
+      return;
+    }
+
+    // Content-area touch scroll
+    if (contentScrolling && term) {
+      if (term.rows === 0 || containerEl.clientHeight === 0) return;
+      const deltaY = contentTouchStartY - touch.clientY;
+      if (Math.abs(deltaY) > 5) {
+        contentTouchMoved = true;
+        e.preventDefault();
+        const lineHeight = containerEl.clientHeight / term.rows;
+        const lineDelta = deltaY / lineHeight;
+        const maxScroll = term.buffer.active.baseY;
+        const targetLine = Math.max(0, Math.min(maxScroll, Math.round(contentScrollStartLine + lineDelta)));
+        term.scrollToLine(targetLine);
+      }
+    }
   }
 
   function onDocumentTouchEnd() {
     scrollbarDragging = false;
+    contentScrolling = false;
+    contentTouchMoved = false;
   }
 
   function onScrollbarClick(e: MouseEvent) {
@@ -299,20 +370,17 @@
 
   function onTerminalTouchEnd(e: TouchEvent) {
     if (scrollbarDragging) return;
-    if ((e.target as HTMLElement).closest('.terminal-scrollbar-thumb')) return;
+    if (contentTouchMoved) return;
+    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
     mobileInputRef?.focus();
   }
 </script>
-
-<svelte:document
-  ontouchmove={isMobileDevice ? onDocumentTouchMove : undefined}
-  ontouchend={isMobileDevice ? onDocumentTouchEnd : undefined}
-/>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="terminal-wrapper"
   class:drag-over={dragOver}
+  ontouchstart={isMobileDevice ? onTerminalTouchStart : undefined}
   ontouchend={isMobileDevice ? onTerminalTouchEnd : undefined}
 >
   <div
@@ -383,6 +451,9 @@
   }
 
   @media (hover: none) {
+    .terminal-container {
+      touch-action: none;
+    }
     .terminal-scrollbar {
       width: 12px;
     }
