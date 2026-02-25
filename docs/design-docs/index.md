@@ -19,3 +19,4 @@
 | [2026-02-23-worktree-sync-design.md](2026-02-23-worktree-sync-design.md) | Worktree sync design | 2026-02-23 |
 | [2026-02-24-session-card-action-buttons-design.md](2026-02-24-session-card-action-buttons-design.md) | Inline pill buttons replacing context menu | 2026-02-24 |
 | [2026-02-25-mobile-input-redesign-design.md](2026-02-25-mobile-input-redesign-design.md) | Event-intent architecture replacing value-diffing for mobile input | 2026-02-25 |
+| [2026-02-25-mobile-scroll-ux-design.md](2026-02-25-mobile-scroll-ux-design.md) | Mobile scroll & touch UX improvements (6 patterns from claude-wormhole analysis) | 2026-02-25 |
