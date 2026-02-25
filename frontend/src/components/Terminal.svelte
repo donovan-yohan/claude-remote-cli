@@ -131,10 +131,14 @@
     t.onScroll(updateScrollbar);
     t.onWriteParsed(updateScrollbar);
 
+    let roTimer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver(() => {
-      fitAddon.fit();
-      sendPtyResize(t.cols, t.rows);
-      updateScrollbar();
+      if (roTimer) clearTimeout(roTimer);
+      roTimer = setTimeout(() => {
+        fitAddon.fit();
+        sendPtyResize(t.cols, t.rows);
+        updateScrollbar();
+      }, isMobileDevice ? 150 : 0);
     });
     ro.observe(containerEl);
 
@@ -150,6 +154,7 @@
     term = t;
 
     return () => {
+      if (roTimer) clearTimeout(roTimer);
       ro.disconnect();
       t.dispose();
       term = null;
