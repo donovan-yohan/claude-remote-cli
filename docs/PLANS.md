@@ -4,20 +4,20 @@ Execution plans for active and completed work.
 
 ## Current State
 
-- 2 active plans
-- 17 completed plans (including design docs and implementation plans)
+- 1 active plan
+- 18 completed plans (including design docs and implementation plans)
 
 ## Active Plans
 
 | Plan | Created | Topic |
 |------|---------|-------|
 | `mobile-input-redesign` | 2026-02-25 | Event-intent architecture replacing value-diffing for mobile input |
-| `mobile-scroll-ux` | 2026-02-25 | Mobile scroll & touch UX improvements (6 patterns) |
 
 ## Completed Plans
 
 | Plan | Created | Topic |
 |------|---------|-------|
+| `mobile-scroll-ux` | 2026-02-25 | Mobile scroll & touch UX improvements (6 patterns) |
 | `session-card-action-buttons` | 2026-02-24 | Replace context menu with inline pill buttons |
 | `pull-requests-tab` | 2026-02-24 | Pull requests sidebar tab |
 | `session-resilience-design.md` | 2026-02-22 | Session reconnection and resilience design |

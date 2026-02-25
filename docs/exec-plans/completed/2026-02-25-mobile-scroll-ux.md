@@ -1,6 +1,6 @@
 # Mobile Scroll & Touch UX Implementation Plan
 
-> **Status**: Complete | **Created**: 2026-02-25 | **Last Updated**: 2026-02-25
+> **Status**: Completed | **Created**: 2026-02-25 | **Completed**: 2026-02-25
 > **Design Doc**: `docs/design-docs/2026-02-25-mobile-scroll-ux-design.md`
 > **For Claude:** Use /harness:orchestrate to execute this plan.
 
@@ -15,6 +15,7 @@
 | 2026-02-25 | Plan | Safe area insets already done in Toolbar/UpdateToast | Only need overscroll-behavior on body |
 | 2026-02-25 | Plan | viewport-fit=cover already in index.html | No HTML change needed |
 | 2026-02-25 | Plan | App.svelte already debounces fitTerm 100ms | Gap is ResizeObserver in Terminal.svelte — needs keyboard guard |
+| 2026-02-25 | Retrospective | Plan completed | 6/6 tasks, 0 drift, 2 surprises (both positive — existing features reduced scope) |
 
 ## Progress
 
@@ -486,13 +487,16 @@ Verify only expected files changed.
 
 ## Outcomes & Retrospective
 
-_Filled by /harness:complete when work is done._
-
 **What worked:**
--
+- Trade-off analysis against claude-wormhole caught the CSS transform keyboard issue before implementation
+- Worker agents executed all 6 tasks cleanly with zero drift — each committed independently with verified builds
+- Discovering existing safe-area-inset and viewport-fit implementation early collapsed a full task to a no-op
 
 **What didn't:**
--
+- Worker-1 got stuck after completion and wouldn't shut down — required forced team cleanup
+- Transient API 500 errors during orchestration (did not affect code)
 
-**Learnings to codify:**
--
+**Learnings codified:**
+- Svelte 5 registers touch event handlers as passive by default — must use `addEventListener({ passive: false })` for `preventDefault()` to work (documented in FRONTEND.md)
+- xterm.js internal `.xterm-viewport` touch handling is one-line-at-a-time — always override on mobile (documented in FRONTEND.md)
+- `navigator.vibrate` needs no feature detection beyond truthy check
