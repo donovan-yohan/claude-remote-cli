@@ -38,7 +38,7 @@
   onMount(() => {
     const t = new Terminal({
       cursorBlink: true,
-      fontSize: 14,
+      fontSize: isMobileDevice ? 12 : 14,
       fontFamily: 'Menlo, monospace',
       scrollback: 10000,
       theme: {
