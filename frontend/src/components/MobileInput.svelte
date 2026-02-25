@@ -208,6 +208,19 @@
     if (payload) scheduleSend(payload);
   }
 
+  // ── Cursor fix ───────────────────────────────────────────────────────────────
+  // iOS Safari loses cursor tracking on hidden inputs (clip-path:inset),
+  // leaving the cursor stuck at position 0. This causes characters to prepend
+  // instead of append, and backspace at position 0 becomes a no-op.
+  function ensureCursorAtEnd() {
+    if (inputEl && !isComposing) {
+      const len = inputEl.value.length;
+      if (inputEl.selectionStart !== len || inputEl.selectionEnd !== len) {
+        inputEl.setSelectionRange(len, len);
+      }
+    }
+  }
+
   // ── Buffer management ─────────────────────────────────────────────────────────
 
   function syncBuffer() {
@@ -258,6 +271,19 @@
   }
 
   function onBeforeInput(e: InputEvent) {
+    // Safety net: if cursor is stuck at 0 despite ensureCursorAtEnd(),
+    // delete events won't change the value (nothing before cursor to delete).
+    // Send DEL directly so backspace still works.
+    if (e.inputType.startsWith('delete') &&
+        inputEl.selectionStart === 0 && inputEl.selectionEnd === 0 &&
+        inputEl.value.length > 0) {
+      dbg('CURSOR0_DEL type="' + e.inputType + '" val="' + inputEl.value + '" → sending DEL');
+      scheduleSend('\x7f');
+      e.preventDefault();
+      capturedIntent = null;
+      return;
+    }
+
     const ranges = e.getTargetRanges();
     const firstRange: StaticRange | null = ranges.length > 0 ? (ranges[0] as StaticRange) : null;
     const rangeInfo = firstRange !== null
@@ -288,6 +314,7 @@
     clearTimer = setTimeout(() => {
       dbg('TIMER_CLEAR val="' + inputEl.value + '"');
       inputEl.value = '';
+      ensureCursorAtEnd();
     }, 2000);
 
     if (!isPtyConnected()) return;
@@ -328,6 +355,7 @@
     }
 
     syncBuffer();
+    ensureCursorAtEnd();
   }
 
   function onKeydown(e: KeyboardEvent) {
