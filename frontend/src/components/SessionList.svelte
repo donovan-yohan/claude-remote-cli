@@ -36,6 +36,10 @@
   // Worktrees that have an active session
   let activeWorktreePaths = $derived(new Set(worktreeSessions.map(s => s.repoPath).filter(Boolean)));
 
+  function compareAlpha(a: string | undefined, b: string | undefined): number {
+    return (a || '').localeCompare(b || '');
+  }
+
   function matchesFilters(
     root: string | undefined,
     repoName: string | undefined,
@@ -51,28 +55,28 @@
 
   // Repos tab
   let filteredRepoSessions = $derived(
-    repoSessions.filter(s =>
-      matchesFilters(s.root, s.repoName, s.displayName || s.repoName || s.id),
-    ),
+    repoSessions
+      .filter(s => matchesFilters(s.root, s.repoName, s.displayName || s.repoName || s.id))
+      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareAlpha(a.displayName || a.repoName, b.displayName || b.repoName)),
   );
 
   let filteredIdleRepos = $derived(
     state.repos
       .filter(r => !activeRepoPaths.has(r.path) && matchesFilters(r.root, r.name, r.name))
-      .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.name, b.name)),
   );
 
   // Worktrees tab
   let filteredWorktreeSessions = $derived(
-    worktreeSessions.filter(s =>
-      matchesFilters(s.root, s.repoName, s.displayName || s.repoName || s.worktreeName || s.id),
-    ),
+    worktreeSessions
+      .filter(s => matchesFilters(s.root, s.repoName, s.displayName || s.repoName || s.worktreeName || s.id))
+      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareAlpha(a.worktreeName, b.worktreeName)),
   );
 
   let filteredWorktrees = $derived(
     state.worktrees
       .filter(wt => !activeWorktreePaths.has(wt.path) && matchesFilters(wt.root, wt.repoName, wt.name))
-      .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+      .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareAlpha(a.name, b.name)),
   );
 
   // PR fetching via svelte-query
