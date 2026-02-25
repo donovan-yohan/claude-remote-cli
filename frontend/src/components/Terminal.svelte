@@ -297,6 +297,14 @@
     scrollbarScrollToY(e.clientY);
   }
 
+  function scrollPageUp() {
+    term?.scrollPages(-1);
+  }
+
+  function scrollPageDown() {
+    term?.scrollPages(1);
+  }
+
   let scrollbarEl: HTMLDivElement;
   let thumbEl: HTMLDivElement;
 
@@ -410,6 +418,14 @@
       role="presentation"
     ></div>
   </div>
+  {#if isMobileDevice && thumbVisible}
+    <div class="scroll-fabs">
+      <!-- svelte-ignore a11y_consider_explicit_label -->
+      <button class="scroll-fab" onclick={scrollPageUp} aria-label="Page up">&#9650;</button>
+      <!-- svelte-ignore a11y_consider_explicit_label -->
+      <button class="scroll-fab" onclick={scrollPageDown} aria-label="Page down">&#9660;</button>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -460,6 +476,38 @@
     .terminal-scrollbar-thumb {
       width: 8px;
       min-height: 44px;
+    }
+    .scroll-fabs {
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 1;
+      opacity: 0.15;
+      pointer-events: auto;
+    }
+    .scroll-fab {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .scroll-fab:active {
+      opacity: 1;
+      background: var(--border);
     }
   }
 </style>
