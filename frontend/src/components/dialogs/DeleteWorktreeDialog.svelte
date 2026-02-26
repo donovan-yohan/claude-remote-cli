@@ -1,6 +1,6 @@
 <script lang="ts">
   import { deleteWorktree } from '../../lib/api.js';
-  import { refreshAll } from '../../lib/state/sessions.svelte.js';
+  import { refreshAll, setLoading, clearLoading } from '../../lib/state/sessions.svelte.js';
   import type { WorktreeInfo } from '../../lib/types.js';
 
   let dialogEl: HTMLDialogElement;
@@ -24,6 +24,7 @@
     if (!worktree || deleting) return;
     deleting = true;
     error = '';
+    setLoading(worktree.path);
     try {
       await deleteWorktree(worktree.path, worktree.repoPath);
       dialogEl.close();
@@ -31,6 +32,8 @@
     } catch (err: unknown) {
       error = err instanceof Error ? err.message : 'Failed to delete worktree.';
       deleting = false;
+    } finally {
+      if (worktree) clearLoading(worktree.path);
     }
   }
 
