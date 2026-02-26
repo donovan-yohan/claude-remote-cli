@@ -183,8 +183,7 @@
     }
 
     // Step 3: No local worktree → create new worktree + session
-    const key = repo.path + ':' + pr.headRefName;
-    setLoading(key);
+    // No shimmer here — no SessionItem exists for this key yet
     try {
       const session = await api.createSession({
         repoPath: repo.path,
@@ -196,9 +195,7 @@
       if (session?.id) {
         onSelectSession(session.id);
       }
-    } catch { /* user can retry */ } finally {
-      clearLoading(key);
-    }
+    } catch { /* user can retry */ }
   }
 
   async function handleKillSession(session: SessionSummary) {
@@ -250,6 +247,7 @@
 
   async function handleStartRepoSession(repo: RepoInfo, yolo = false) {
     const key = repo.path;
+    if (isItemLoading(key)) return;
     setLoading(key);
     try {
       const session = await api.createRepoSession({

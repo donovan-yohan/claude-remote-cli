@@ -239,7 +239,7 @@
 
   li.loading {
     pointer-events: none;
-    opacity: 0.7;
+    opacity: 0.5;
   }
 
   li.loading::after {
