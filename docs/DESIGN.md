@@ -57,6 +57,12 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 - macOS: launchd plist (`RunAtLoad` + `KeepAlive`); Linux: systemd user unit (`Restart=on-failure`)
 - To change port/host: `uninstall` then re-install with new flags
 
+## Slash Commands
+
+- Claude Code slash commands live in `.claude/commands/` and are tracked in git
+- `.gitignore` ignores `.claude/` subdirectories individually (not blanket) to allow `commands/` to be versioned
+- Commands are markdown prompt templates executed interactively by Claude
+
 ## Deep Docs
 
 | Document | Purpose |

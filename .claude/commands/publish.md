@@ -26,7 +26,7 @@ Run these checks in order. If any fail, report the failure and stop.
 
 2. **Save the branch name** for use in later steps. Refer to it as `<branch>` throughout.
 
-3. **Check working tree:** Run `git status --porcelain`. If there are uncommitted changes, tell the user what's dirty and ask: "Commit these changes now, stash them, or abort?" Act on their choice.
+3. **Check working tree:** Run `git status --porcelain`. If there are uncommitted changes, tell the user what's dirty and ask: "Commit these changes now, or abort?" Act on their choice.
 
 4. **Run tests:** Run `npm test`. If tests fail, show the output and stop. Do not proceed with a failing test suite.
 

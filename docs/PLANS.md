@@ -18,6 +18,7 @@ See `docs/exec-plans/completed/` for historical plans (17 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `publish-command` | 2026-02-26 | /publish slash command for full release lifecycle from feature branch |
 | `session-loading-shimmer` | 2026-02-26 | Loading shimmer overlay for session list items during async actions |
 
 ## See Also
