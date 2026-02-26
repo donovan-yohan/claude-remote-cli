@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getUi } from '../lib/state/ui.svelte.js';
-  import { getSessionState, getSessionStatus, clearAttention, refreshAll } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, getSessionStatus, clearAttention, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import * as api from '../lib/api.js';
   import { ConflictError } from '../lib/api.js';
   import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest } from '../lib/types.js';
@@ -23,8 +23,6 @@
     onNewWorktree: (repo: RepoInfo) => void;
     onDeleteWorktree: (wt: WorktreeInfo) => void;
   } = $props();
-
-  let startingWorktreePath: string | null = null;
 
   // Split sessions by type
   let repoSessions = $derived(sessionState.sessions.filter(s => s.type === 'repo'));
@@ -165,6 +163,8 @@
     // Step 2: Inactive worktree for this branch? → resume it
     const existingWorktree = findWorktreeForBranch(pr.headRefName);
     if (existingWorktree) {
+      const key = existingWorktree.path;
+      setLoading(key);
       try {
         const session = await api.createSession({
           repoPath: existingWorktree.repoPath,
@@ -176,11 +176,15 @@
         if (session?.id) {
           onSelectSession(session.id);
         }
-      } catch { /* user can retry */ }
+      } catch { /* user can retry */ } finally {
+        clearLoading(key);
+      }
       return;
     }
 
     // Step 3: No local worktree → create new worktree + session
+    const key = repo.path + ':' + pr.headRefName;
+    setLoading(key);
     try {
       const session = await api.createSession({
         repoPath: repo.path,
@@ -192,14 +196,22 @@
       if (session?.id) {
         onSelectSession(session.id);
       }
-    } catch { /* user can retry */ }
+    } catch { /* user can retry */ } finally {
+      clearLoading(key);
+    }
   }
 
   async function handleKillSession(session: SessionSummary) {
-    await api.killSession(session.id);
-    await refreshAll();
-    if (sessionState.activeSessionId === session.id) {
-      sessionState.activeSessionId = null;
+    const key = session.id;
+    setLoading(key);
+    try {
+      await api.killSession(session.id);
+      await refreshAll();
+      if (sessionState.activeSessionId === session.id) {
+        sessionState.activeSessionId = null;
+      }
+    } finally {
+      clearLoading(key);
     }
   }
 
@@ -217,8 +229,9 @@
   }
 
   async function handleStartWorktreeSession(wt: WorktreeInfo, yolo = false) {
-    if (startingWorktreePath) return;
-    startingWorktreePath = wt.path;
+    const key = wt.path;
+    if (isItemLoading(key)) return;
+    setLoading(key);
     try {
       const session = await api.createSession({
         repoPath: wt.repoPath,
@@ -231,11 +244,13 @@
     } catch {
       // Ignore — user can retry
     } finally {
-      startingWorktreePath = null;
+      clearLoading(key);
     }
   }
 
   async function handleStartRepoSession(repo: RepoInfo, yolo = false) {
+    const key = repo.path;
+    setLoading(key);
     try {
       const session = await api.createRepoSession({
         repoPath: repo.path,
@@ -250,6 +265,8 @@
         await refreshAll();
         onSelectSession(err.sessionId);
       }
+    } finally {
+      clearLoading(key);
     }
   }
 </script>
@@ -289,6 +306,7 @@
       <SessionItem
         variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: sessionState.activeSessionId === session.id }}
         gitStatus={sessionState.gitStatuses[session.repoPath + ':' + session.worktreeName]}
+        isLoading={isItemLoading(session.id)}
         onclick={() => handleSelectSession(session)}
         onkill={() => handleKillSession(session)}
         onrename={() => handleRenameSession(session)}
@@ -300,6 +318,7 @@
     {#each filteredIdleRepos as repo (repo.path)}
       <SessionItem
         variant={{ kind: 'idle-repo', repo }}
+        isLoading={isItemLoading(repo.path)}
         onclick={() => handleStartRepoSession(repo)}
         onresumeYolo={() => handleStartRepoSession(repo, true)}
         onNewWorktree={() => onNewWorktree(repo)}
@@ -312,6 +331,7 @@
         <SessionItem
           variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: sessionState.activeSessionId === session.id }}
           gitStatus={sessionState.gitStatuses[session.repoPath + ':' + session.worktreeName]}
+          isLoading={isItemLoading(session.id)}
           onclick={() => handleSelectSession(session)}
           onkill={() => handleKillSession(session)}
           onrename={() => handleRenameSession(session)}
@@ -340,6 +360,7 @@
           <SessionItem
             variant={{ kind: 'inactive-worktree', worktree: wt }}
             gitStatus={sessionState.gitStatuses[wt.repoPath + ':' + wt.name]}
+            isLoading={isItemLoading(wt.path)}
             onclick={() => handleStartWorktreeSession(wt)}
             onresumeYolo={() => handleStartWorktreeSession(wt, true)}
             ondelete={() => onDeleteWorktree(wt)}
