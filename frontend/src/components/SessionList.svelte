@@ -84,30 +84,27 @@
       .sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName) || compareRecent(a.lastActivity, b.lastActivity)),
   );
 
-  // Worktrees tab — grouped by repo (keyed on root:repoName to handle same name across roots)
+  // Worktrees tab — idle worktrees grouped by repo (keyed on root:repoName to handle same name across roots)
   let worktreeRepoGroups = $derived((() => {
-    const groups = new Map<string, { key: string; repoName: string; root: string; sessions: SessionSummary[]; worktrees: WorktreeInfo[] }>();
-
-    for (const s of filteredWorktreeSessions) {
-      const repoName = s.repoName || s.id;
-      const key = (s.root || '') + ':' + repoName;
-      if (!groups.has(key)) {
-        groups.set(key, { key, repoName, root: s.root, sessions: [], worktrees: [] });
-      }
-      groups.get(key)!.sessions.push(s);
-    }
+    const groups = new Map<string, { key: string; repoName: string; root: string; worktrees: WorktreeInfo[] }>();
 
     for (const wt of filteredWorktrees) {
       const repoName = wt.repoName || wt.name;
       const key = (wt.root || '') + ':' + repoName;
       if (!groups.has(key)) {
-        groups.set(key, { key, repoName, root: wt.root, sessions: [], worktrees: [] });
+        groups.set(key, { key, repoName, root: wt.root, worktrees: [] });
       }
       groups.get(key)!.worktrees.push(wt);
     }
 
     return [...groups.values()].sort((a, b) => compareAlpha(a.root, b.root) || compareAlpha(a.repoName, b.repoName));
   })());
+
+  // Derive a RepoInfo from a worktree group (for opening the New Worktree modal)
+  function repoForGroup(group: { repoName: string; root: string; worktrees: WorktreeInfo[] }): RepoInfo {
+    const repoPath = group.worktrees[0]?.repoPath || '';
+    return { name: group.repoName, path: repoPath, root: group.root };
+  }
 
   // Worktree repo collapse state (all expanded by default)
   let collapsedWorktreeRepos = $state(new Set<string>());
@@ -309,6 +306,21 @@
       />
     {/each}
   {:else if ui.activeTab === 'worktrees'}
+    {#if filteredWorktreeSessions.length > 0}
+      <li class="session-divider">Active</li>
+      {#each filteredWorktreeSessions as session (session.id)}
+        <SessionItem
+          variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: sessionState.activeSessionId === session.id }}
+          gitStatus={sessionState.gitStatuses[session.repoPath + ':' + session.worktreeName]}
+          onclick={() => handleSelectSession(session)}
+          onkill={() => handleKillSession(session)}
+          onrename={() => handleRenameSession(session)}
+        />
+      {/each}
+    {/if}
+    {#if worktreeRepoGroups.length > 0}
+      <li class="session-divider">Available</li>
+    {/if}
     {#each worktreeRepoGroups as group (group.key)}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -316,24 +328,14 @@
         <span class="chevron" class:expanded={!collapsedWorktreeRepos.has(group.key)}>&#9654;</span>
         <span class="repo-group-name">{group.repoName}</span>
         <span class="repo-group-root">{rootShortName(group.root)}</span>
-        <span class="repo-group-count">{group.sessions.length + group.worktrees.length}</span>
+        <span class="repo-group-count">{group.worktrees.length}</span>
+        <button
+          class="repo-group-add"
+          onclick={(e: MouseEvent) => { e.stopPropagation(); onNewWorktree(repoForGroup(group)); }}
+          aria-label="New worktree for {group.repoName}"
+        >+</button>
       </li>
       {#if !collapsedWorktreeRepos.has(group.key)}
-        {#if group.sessions.length > 0 && group.worktrees.length > 0}
-          <li class="session-divider session-divider--nested">Active</li>
-        {/if}
-        {#each group.sessions as session (session.id)}
-          <SessionItem
-            variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: sessionState.activeSessionId === session.id }}
-            gitStatus={sessionState.gitStatuses[session.repoPath + ':' + session.worktreeName]}
-            onclick={() => handleSelectSession(session)}
-            onkill={() => handleKillSession(session)}
-            onrename={() => handleRenameSession(session)}
-          />
-        {/each}
-        {#if group.sessions.length > 0 && group.worktrees.length > 0}
-          <li class="session-divider session-divider--nested">Available</li>
-        {/if}
         {#each group.worktrees as wt (wt.path)}
           <SessionItem
             variant={{ kind: 'inactive-worktree', worktree: wt }}
@@ -412,10 +414,6 @@
     list-style: none;
   }
 
-  :global(.session-divider--nested) {
-    padding-left: 24px;
-  }
-
   :global(.repo-group-header) {
     display: flex;
     align-items: center;
@@ -467,6 +465,30 @@
     opacity: 0.5;
     margin-left: auto;
     flex-shrink: 0;
+  }
+
+  :global(.repo-group-add) {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0 4px;
+    flex-shrink: 0;
+    line-height: 1;
+    transition: color 0.15s;
+    opacity: 0;
+  }
+
+  :global(.repo-group-header:hover .repo-group-add) {
+    opacity: 1;
+  }
+
+  :global(.repo-group-add:hover),
+  :global(.repo-group-add:focus-visible) {
+    color: var(--accent);
+    opacity: 1;
   }
 
   :global(.pr-hint) {

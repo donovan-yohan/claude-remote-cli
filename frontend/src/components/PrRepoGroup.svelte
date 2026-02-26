@@ -56,9 +56,7 @@
   <span class="chevron" class:expanded>▶</span>
   <span class="repo-group-name">{repo.name}</span>
   <span class="repo-group-root">{rootShortName(repo.root)}</span>
-  {#if expanded && filteredPRs.length > 0}
-    <span class="repo-group-count">{filteredPRs.length}</span>
-  {/if}
+  <span class="repo-group-count">{prData ? prList.length : '-'}</span>
   {#if expanded}
     <button
       class="repo-group-refresh"
