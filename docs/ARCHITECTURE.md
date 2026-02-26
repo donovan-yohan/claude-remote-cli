@@ -44,6 +44,7 @@ Svelte 5 SPA built by Vite, output to `dist/frontend/`. Express serves the compi
 | `frontend/src/lib/ws.ts` | WebSocket connection management (PTY relay + event channel) |
 | `frontend/src/lib/types.ts` | Frontend TypeScript interfaces |
 | `frontend/src/lib/actions.ts` | Shared Svelte actions (scroll-on-hover, longpress-click) |
+| `frontend/src/lib/utils.ts` | Shared utilities (path display, relative time formatting, device detection) |
 
 **Architecture Invariant:** The frontend does NOT vendor any libraries. xterm.js, xterm-addon-fit, and `@tanstack/svelte-query` are npm dependencies. State lives in `.svelte.ts` modules, not in component files (PR data is an exception — managed via svelte-query cache).
 
@@ -115,77 +116,18 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 ---
 
-## Architecture Rules (derived from ADRs)
+## Architecture Decision Records
 
-> Regenerate with `/adr:update`. These rules are the normative constraints from accepted ADRs.
+> Normative constraints are documented in `docs/adrs/`. Regenerate with `/adr:update`.
 
-### Server module structure
+| ADR | Topic |
+|-----|-------|
+| ADR-001 | Modular server architecture (nine modules, composition root, dependency flow) |
+| ADR-003 | PTY session management (in-memory state, scrollback, CLAUDECODE stripping) |
+| ADR-004 | PIN authentication (bcrypt, cookie tokens, rate limiting) |
+| ADR-005 | Built-in test runner (node:test, nine test files, no external framework) |
+| ADR-006 | Dual distribution (npm global + local dev, CLI flags via env vars) |
+| ADR-007 | WebSocket dual channels (PTY relay + event broadcast, debounced watcher) |
+| ADR-008 | TypeScript + ESM (strict mode, .js extensions, node: prefix, Node >= 24) |
 
-- [ADR-001] The server MUST be organized into nine TypeScript modules under `server/`: `index.ts`, `sessions.ts`, `ws.ts`, `watcher.ts`, `auth.ts`, `config.ts`, `service.ts`, `clipboard.ts`, and `types.ts`.
-- [ADR-001] Modules MUST communicate through ESM `import` statements; no dependency injection container or abstract interfaces.
-- [ADR-001] `index.ts` MUST serve as the composition root and SHOULD NOT be imported by other modules.
-- [ADR-001] Cross-module dependencies MUST flow downward: `index.ts` imports all others; `ws.ts` MAY import `sessions`; all other modules SHOULD be self-contained.
-- [ADR-001] Each module MUST own a single concern; npm-level dependencies MUST be confined to the module responsible for that concern.
-
-### TypeScript and ESM
-
-- [ADR-008] The project MUST use ESM (`"type": "module"` in `package.json`); all `require()` / `module.exports` MUST be replaced with `import` / `export`.
-- [ADR-008] All relative imports MUST use `.js` extensions (NodeNext module resolution convention).
-- [ADR-008] Node.js built-in modules MUST use the `node:` prefix.
-- [ADR-008] `__dirname` / `__filename` MUST be replaced with `fileURLToPath(import.meta.url)` + `path.dirname()`.
-- [ADR-008] TypeScript MUST compile via `tsc` to `dist/`; target `ES2024`, module `NodeNext`, strict mode enabled.
-- [ADR-008] Full strict mode MUST be enabled: `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`.
-- [ADR-008] Shared interfaces MUST live in `server/types.ts`; module-local types SHOULD stay in their own file.
-- [ADR-008] Minimum Node.js version MUST be `>=24.0.0`.
-
-### Frontend
-
-> ADR-002 (vanilla JS constraint) was superseded by the Svelte 5 migration.
-
-- The frontend MUST be a single-page application built with Svelte 5 (runes syntax) and TypeScript in `frontend/`.
-- Vite MUST be used as the build tool; compiled output goes to `dist/frontend/`.
-- Express MUST serve `dist/frontend/` via `express.static`; the static path resolves one level up from `dist/server/`.
-- xterm.js and xterm-addon-fit MUST be consumed as npm dependencies (no manual vendoring).
-
-### PTY session management
-
-- [ADR-003] Sessions MUST be managed using `node-pty`; each session represents one CLI process running in a PTY.
-- [ADR-003] Active sessions MUST be stored in an in-memory `Map` keyed by session ID; no database or persistent storage.
-- [ADR-003] Session IDs MUST be generated with `crypto.randomBytes(8).toString('hex')`.
-- [ADR-003] When a PTY process exits, its session MUST be automatically removed.
-- [ADR-003] Each session MUST maintain a scrollback buffer capped at 256KB; oldest chunks trimmed first (FIFO).
-- [ADR-003] On WebSocket connection, the full scrollback MUST be replayed before attaching live data.
-- [ADR-003] The `CLAUDECODE` environment variable MUST be stripped from the PTY environment.
-- [ADR-003] The sessions module MUST export: `create`, `get`, `list`, `kill`, `resize`, `updateDisplayName`, `write`, `onIdleChange`, `findRepoSession`.
-
-### Authentication
-
-- [ADR-004] PIN MUST be hashed with bcrypt (10 salt rounds) and stored in config.
-- [ADR-004] Session tokens MUST be `crypto.randomBytes(32).toString('hex')`, set as `httpOnly`, `sameSite: strict` cookies.
-- [ADR-004] Tokens stored in in-memory `Set` with `setTimeout` expiry based on `cookieTTL` (default 24h).
-- [ADR-004] 5 failed PIN attempts per IP = 15-minute lockout.
-- [ADR-004] WebSocket upgrades MUST be authenticated; unauthenticated connections rejected with 401.
-
-### Testing
-
-- [ADR-005] All unit tests MUST use `node:test` and `node:assert`; no external test framework.
-- [ADR-005] Test files MUST be TypeScript in `test/` with `*.test.ts` naming.
-- [ADR-005] Nine test files MUST exist: `auth`, `clipboard`, `config`, `sessions`, `service`, `paths`, `version`, `worktrees`, `pull-requests`.
-- [ADR-005] E2E tests (Playwright) SHOULD be separate from unit tests.
-
-### Distribution and CLI
-
-- [ADR-006] The `bin` entry MUST point to `dist/bin/claude-remote-cli.js`.
-- [ADR-006] CLI flags passed via environment variables to the server.
-- [ADR-006] Config precedence: CLI flags > env vars > config file > defaults.
-- [ADR-006] Config at `~/.config/claude-remote-cli/config.json` (global) or `./config.json` (dev).
-- [ADR-006] Published package limited to `dist/` and `config.example.json`.
-
-### WebSocket channels
-
-- [ADR-007] Two WebSocket channels via single `WebSocketServer` in `noServer` mode.
-- [ADR-007] PTY channel at `/ws/[a-f0-9]+`; raw text frames, no JSON wrapping (except resize).
-- [ADR-007] Event channel at `/ws/events`; server-to-client only, JSON with `type` field.
-- [ADR-007] `.worktrees/` changes debounced 500ms before broadcast.
-- [ADR-007] PTY reconnects with exponential backoff (1s–10s, max 30 attempts); code 1000 = no reconnect.
-- [ADR-007] Both channels require cookie auth on upgrade.
+> ADR-002 (vanilla JS frontend) was superseded by the Svelte 5 migration.

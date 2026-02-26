@@ -1,6 +1,6 @@
 # claude-remote-cli
 
-Remote web interface for interacting with Claude Code CLI sessions from any device.
+Control Claude Code from your phone or any browser — manage multiple terminal sessions across repos and worktrees with a mobile-friendly web UI.
 
 ## Prerequisites
 
@@ -50,24 +50,28 @@ claude-remote-cli --bg
 
 This installs a persistent service (launchd on macOS, systemd on Linux) that restarts on crash. See [Background Service](#background-service) for more options.
 
-### 5. Access from your phone with Tailscale
+### 5. Access from your phone
 
-claude-remote-cli binds to `0.0.0.0` by default, but you should **not** expose it to the public internet. Use [Tailscale](https://tailscale.com/) to create a private encrypted network between your devices.
+claude-remote-cli binds to `0.0.0.0` by default, but you should **not** expose it to the public internet. Use [Tailscale](https://tailscale.com/) for a private encrypted connection between your devices — see [Remote Access](#remote-access) below.
 
-1. **Install Tailscale** on your computer (the one running claude-remote-cli) and on your phone/tablet
+## Remote Access
+
+The recommended way to access claude-remote-cli from another device (phone, tablet, laptop) is [Tailscale](https://tailscale.com/), which creates a private encrypted network using WireGuard.
+
+1. **Install Tailscale** on your computer and on your phone/tablet
    - macOS: `brew install tailscale` or download from [tailscale.com/download](https://tailscale.com/download)
    - Linux: follow the [install guide](https://tailscale.com/download/linux)
    - iOS/Android: install the Tailscale app from your app store
 
 2. **Sign in** to the same Tailscale account on both devices
 
-3. **Find your computer's Tailscale IP** — run `tailscale ip` on your computer, or check the Tailscale admin console. It will look like `100.x.y.z`.
+3. **Find your computer's Tailscale IP** — run `tailscale ip` or check the admin console (looks like `100.x.y.z`)
 
 4. **Open the app** on your phone at `http://100.x.y.z:3456`
 
-That's it. Your traffic is encrypted end-to-end via WireGuard, no ports are exposed to the internet, and only devices on your Tailscale network can reach the server.
+Your traffic is encrypted end-to-end, no ports are exposed to the internet, and only devices on your Tailscale network can reach the server.
 
-> **Alternatives:** You can also use [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) (`cloudflared tunnel --url http://localhost:3456`) or [ngrok](https://ngrok.com/) (`ngrok http 3456`), but these expose your server to the public internet and rely on the PIN as your only layer of defense. Tailscale keeps everything private.
+> **Alternatives:** [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) or [ngrok](https://ngrok.com/) also work, but they expose your server to the public internet and rely on the PIN as your only defense.
 
 ## Platform Support
 
@@ -84,12 +88,17 @@ Commands:
   install            Install as a background service (survives reboot)
   uninstall          Stop and remove the background service
   status             Show whether the service is running
+  worktree           Manage git worktrees (wraps git worktree)
+    add [path] [-b branch] [--yolo]   Create worktree and launch Claude
+    remove <path>                      Forward to git worktree remove
+    list                               Forward to git worktree list
 
 Options:
   --bg               Shortcut: install and start as background service
   --port <port>      Override server port (default: 3456)
   --host <host>      Override bind address (default: 0.0.0.0)
   --config <path>    Path to config.json (default: ~/.config/claude-remote-cli/config.json)
+  --yolo             With 'worktree add': pass --dangerously-skip-permissions to Claude
   --version, -v      Show version
   --help, -h         Show this help
 ```
@@ -147,23 +156,30 @@ The PIN hash is stored in config under `pinHash`. To reset:
 
 ## Features
 
-- **PIN-protected access** with rate limiting
+### Session Management
 - **Repo sessions** — click any idle repo to instantly open Claude with `--continue` (no dialog), or start fresh from the new-session dialog
 - **Branch-aware worktrees** — create worktrees from new or existing branches with a type-to-search branch picker
-- **Tabbed sidebar** — switch between Repos, Worktrees, and PRs views with shared filters and item counts
 - **Worktree isolation** — each worktree session runs in its own git worktree under `.worktrees/`
 - **Resume sessions** — click inactive worktrees to reconnect with `--continue`
 - **Persistent session names** — display names, branch names, and timestamps survive server restarts
-- **Clipboard image paste** — paste screenshots directly into remote terminal sessions (macOS clipboard + xclip on Linux)
-- **Pull requests tab** — view your open PRs (authored and review-requested) per repo via `gh` CLI, with Author/Reviewer filter and one-click session creation from any PR branch
+- **Scrollback buffer** — reconnect to a session and see prior output
 - **Yolo mode** — skip permission prompts with `--dangerously-skip-permissions` (per-session pill button)
 - **Worktree cleanup** — delete inactive worktrees via the trash pill button (removes worktree, prunes refs, deletes branch)
+
+### Pull Requests
+- **Pull requests tab** — view your open PRs (authored and review-requested) via `gh` CLI, organized in collapsible per-repo groups with count badges, Author/Reviewer filter, and one-click session creation from any PR branch
+
+### UI
+- **Tabbed sidebar** — switch between Repos, Worktrees, and PRs views with shared filters and item counts
 - **Sidebar filters** — filter by root directory, repo, or text search
 - **Inline actions** — pill buttons on session cards for rename, YOLO, worktree creation, and delete (hover on desktop, long-press on mobile)
 - **Resizable sidebar** — drag the sidebar edge to resize; collapse/expand with a button (persisted to localStorage)
-- **Scrollback buffer** — reconnect to a session and see prior output
-- **Touch toolbar** — mobile-friendly buttons for special keys (hidden on desktop)
 - **Responsive layout** — works on desktop and mobile with slide-out sidebar
+- **Touch toolbar** — mobile-friendly buttons for special keys (hidden on desktop)
+- **Clipboard image paste** — paste screenshots directly into remote terminal sessions (macOS clipboard + xclip on Linux)
+
+### Operations
+- **PIN-protected access** with rate limiting
 - **Real-time updates** — worktree changes on disk are pushed to the browser instantly via WebSocket
 - **Update notifications** — toast notification when a new version is available, with one-click update
 - **CLI self-update** — `claude-remote-cli update` to update from npm
@@ -192,7 +208,9 @@ claude-remote-cli/
 │       ├── lib/state/   # Reactive state modules (.svelte.ts)
 │       ├── lib/api.ts   # REST API client
 │       ├── lib/ws.ts    # WebSocket connection management
-│       └── lib/types.ts # Frontend TypeScript interfaces
+│       ├── lib/types.ts # Frontend TypeScript interfaces
+│       ├── lib/utils.ts # Shared utilities (path display, time formatting, device detection)
+│       └── lib/actions.ts # Svelte actions (scroll-on-hover, longpress-click)
 ├── test/               # Unit tests (node:test)
 ├── dist/               # Compiled output (gitignored)
 ├── config.example.json

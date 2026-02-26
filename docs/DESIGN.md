@@ -2,14 +2,6 @@
 
 Backend patterns and conventions for claude-remote-cli. The server is a composition-root architecture where `index.ts` wires together single-concern modules communicating via ESM imports.
 
-## Current State
-
-- TypeScript + ESM throughout, compiled to `dist/` via `tsc`
-- Nine server modules, each owning one concern and its npm dependencies
-- In-memory session state (no database), scrollback capped at 256KB
-- PIN-based auth with bcrypt hashing, per-IP rate limiting, cookie tokens
-- Svelte 5 frontend (runes + Vite) — see `docs/FRONTEND.md` for frontend-specific patterns
-
 ## Key Decisions
 
 | Decision | Rationale | Source |
@@ -21,20 +13,12 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | Dual distribution (global + local) | npm global for production, local clone for dev | ADR-006 |
 | TypeScript + ESM migration | Type safety, modern module system, strict mode | ADR-008 |
 
-## Config Precedence
+## Config Precedence (canonical)
 
 1. CLI flags (`--port`, `--host`, `--config`)
 2. Environment variables (`CLAUDE_REMOTE_PORT`, `CLAUDE_REMOTE_HOST`, `CLAUDE_REMOTE_CONFIG`)
 3. Config file (`~/.config/claude-remote-cli/config.json` global, `./config.json` dev)
 4. Hardcoded defaults
-
-## Authentication Flow
-
-1. First run: CLI prompts for PIN, bcrypt-hashes it, saves to config
-2. Browser: user enters PIN at login screen
-3. Server verifies via bcrypt, issues `crypto.randomBytes(32)` cookie token
-4. Rate limiting: per-IP, 5 failures = 15-minute lockout
-5. PIN reset: delete `pinHash` from config and restart
 
 ## PTY Management
 
