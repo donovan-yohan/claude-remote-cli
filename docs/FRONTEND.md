@@ -16,7 +16,7 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `App.svelte` | Root layout: sidebar + terminal + mobile header |
 | `Sidebar.svelte` | Three-tab sidebar (Repos / Worktrees / PRs), session list, filters |
 | `SessionList.svelte` | Filtered session/worktree list with status grouping, recency sorting, and collapsible repo groups |
-| `SessionItem.svelte` | 3-row session card: status dot + name, git metadata, time + diff stats |
+| `SessionItem.svelte` | 3-row session card: status dot + name, git metadata, time + diff stats; shimmer overlay during loading |
 | `SessionFilters.svelte` | Filter controls (root, repo, search) + Author/Reviewer toggle for PRs tab |
 | `PrRepoGroup.svelte` | Collapsible per-repo PR group with svelte-query fetching and PR count badge |
 | `PullRequestItem.svelte` | 3-row PR card: state icon + title, author + role badge, time + diff stats |
@@ -39,6 +39,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - Scoped `<style>` blocks in each component; global CSS variables in `frontend/src/app.css`
 - Sidebar status dots: green (running), blue (idle), amber glow (needs attention), gray (inactive)
 - Attention state: tracked in `attentionSessions` reactive state; set when session becomes idle while not viewed; cleared when user opens session
+- Loading state: tracked in `loadingItems` reactive state; `setLoading`/`clearLoading` wrap async actions (start, kill, delete); SessionItem shows CSS shimmer overlay with `pointer-events: none`
 - Hover effects: fade mask on overflow text, scroll reveal animation, action button opacity reveal
 - Avoid naming local variables `state` in `.svelte` files — conflicts with `$state` rune
 - `bind:this` refs used in `$effect` must be declared with `$state()` — plain `let` refs won't trigger effect re-runs in Svelte 5

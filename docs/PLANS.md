@@ -14,7 +14,11 @@ No tech debt tracked yet.
 
 ## Completed Plans
 
-See `docs/exec-plans/completed/` for historical plans (18 completed).
+See `docs/exec-plans/completed/` for historical plans (17 completed).
+
+| Plan | Completed | Topic |
+|------|-----------|-------|
+| `session-loading-shimmer` | 2026-02-26 | Loading shimmer overlay for session list items during async actions |
 
 ## See Also
 
