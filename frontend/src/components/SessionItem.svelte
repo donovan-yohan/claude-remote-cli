@@ -253,6 +253,12 @@
     pointer-events: none;
   }
 
+  @media (prefers-reduced-motion: reduce) {
+    li.loading::after {
+      animation: none;
+    }
+  }
+
   @keyframes shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }

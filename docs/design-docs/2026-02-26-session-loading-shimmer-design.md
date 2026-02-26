@@ -18,7 +18,7 @@ A `loadingItems` reactive set keyed by item identifier (session ID, worktree pat
 
 - `setLoading(key: string)` — adds key to set
 - `clearLoading(key: string)` — removes key from set
-- `isLoading(key: string)` — returns boolean
+- `isItemLoading(key: string)` — returns boolean
 
 Exposed via `getSessionState()` as `get loadingItems()`, following the `attentionSessions` pattern.
 

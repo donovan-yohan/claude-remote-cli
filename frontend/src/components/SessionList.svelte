@@ -200,6 +200,7 @@
 
   async function handleKillSession(session: SessionSummary) {
     const key = session.id;
+    if (isItemLoading(key)) return;
     setLoading(key);
     try {
       await api.killSession(session.id);
@@ -207,7 +208,7 @@
       if (sessionState.activeSessionId === session.id) {
         sessionState.activeSessionId = null;
       }
-    } finally {
+    } catch { /* user can retry */ } finally {
       clearLoading(key);
     }
   }
