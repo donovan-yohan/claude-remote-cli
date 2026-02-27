@@ -16,6 +16,35 @@ export interface ParsedWorktree {
   branch: string;
 }
 
+export interface ParsedWorktreeEntry {
+  path: string;
+  branch: string;
+  isMain: boolean;
+}
+
+/**
+ * Parse `git worktree list --porcelain` output into ALL entries (including main worktree).
+ * Skips bare entries. Detached HEAD entries get empty branch string.
+ */
+export function parseAllWorktrees(stdout: string, repoPath: string): ParsedWorktreeEntry[] {
+  const results: ParsedWorktreeEntry[] = [];
+  const blocks = stdout.split('\n\n').filter(Boolean);
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    let wtPath = '';
+    let branch = '';
+    let bare = false;
+    for (const line of lines) {
+      if (line.startsWith('worktree ')) wtPath = line.slice(9);
+      if (line.startsWith('branch refs/heads/')) branch = line.slice(18);
+      if (line === 'bare') bare = true;
+    }
+    if (!wtPath || bare) continue;
+    results.push({ path: wtPath, branch, isMain: wtPath === repoPath });
+  }
+  return results;
+}
+
 /**
  * Parse `git worktree list --porcelain` output into structured entries.
  * Skips the main worktree (matching repoPath) and bare/detached entries.
