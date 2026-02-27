@@ -532,9 +532,21 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (!isValidWorktreePath(worktreePath)) {
-      res.status(400).json({ error: 'Path is not inside a worktree directory' });
-      return;
+    // Validate the path is a real git worktree (not the main worktree)
+    try {
+      const { stdout: wtListOut } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });
+      const allWorktrees = parseAllWorktrees(wtListOut, repoPath);
+      const isKnownWorktree = allWorktrees.some(wt => wt.path === path.resolve(worktreePath) && !wt.isMain);
+      if (!isKnownWorktree) {
+        res.status(400).json({ error: 'Path is not a recognized git worktree' });
+        return;
+      }
+    } catch {
+      // If git worktree list fails, fall back to the directory-name check
+      if (!isValidWorktreePath(worktreePath)) {
+        res.status(400).json({ error: 'Path is not inside a worktree directory' });
+        return;
+      }
     }
 
     // Check no active session is using this worktree
