@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain } from '../server/watcher.js';
+import { WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from '../server/watcher.js';
 
 describe('worktree directories constant', () => {
   it('should include both .worktrees and .claude/worktrees', () => {
@@ -167,6 +167,103 @@ describe('parseWorktreeListPorcelain', () => {
     const result = parseWorktreeListPorcelain(stdout, repoPath);
     assert.equal(result.length, 1);
     assert.equal(result[0]!.branch, 'dy/feat/deep/nesting/here');
+  });
+});
+
+describe('parseAllWorktrees', () => {
+  const repoPath = '/Users/me/code/my-repo';
+
+  it('should include the main worktree with isMain=true', () => {
+    const stdout = [
+      `worktree ${repoPath}`,
+      'HEAD abc123',
+      'branch refs/heads/main',
+      '',
+    ].join('\n');
+
+    const result = parseAllWorktrees(stdout, repoPath);
+    assert.equal(result.length, 1);
+    assert.equal(result[0]!.path, repoPath);
+    assert.equal(result[0]!.branch, 'main');
+    assert.equal(result[0]!.isMain, true);
+  });
+
+  it('should mark non-main worktrees with isMain=false', () => {
+    const stdout = [
+      `worktree ${repoPath}`,
+      'HEAD abc123',
+      'branch refs/heads/main',
+      '',
+      'worktree /Users/me/code/my-repo/.worktrees/feat-branch',
+      'HEAD def456',
+      'branch refs/heads/feat/branch',
+      '',
+    ].join('\n');
+
+    const result = parseAllWorktrees(stdout, repoPath);
+    assert.equal(result.length, 2);
+    assert.equal(result[0]!.isMain, true);
+    assert.equal(result[1]!.isMain, false);
+    assert.equal(result[1]!.path, '/Users/me/code/my-repo/.worktrees/feat-branch');
+    assert.equal(result[1]!.branch, 'feat/branch');
+  });
+
+  it('should still skip bare entries', () => {
+    const stdout = [
+      `worktree ${repoPath}`,
+      'HEAD abc123',
+      'branch refs/heads/main',
+      '',
+      'worktree /some/bare/repo',
+      'HEAD def456',
+      'bare',
+      '',
+    ].join('\n');
+
+    const result = parseAllWorktrees(stdout, repoPath);
+    assert.equal(result.length, 1);
+    assert.equal(result[0]!.isMain, true);
+  });
+
+  it('should include detached HEAD entries with empty branch', () => {
+    const stdout = [
+      `worktree ${repoPath}`,
+      'HEAD abc123',
+      'branch refs/heads/main',
+      '',
+      'worktree /Users/me/code/my-repo/.worktrees/detached',
+      'HEAD def456',
+      'detached',
+      '',
+    ].join('\n');
+
+    const result = parseAllWorktrees(stdout, repoPath);
+    assert.equal(result.length, 2);
+    assert.equal(result[1]!.branch, '');
+  });
+
+  it('should handle empty output', () => {
+    const result = parseAllWorktrees('', repoPath);
+    assert.equal(result.length, 0);
+  });
+
+  it('should find worktree by branch name', () => {
+    const stdout = [
+      `worktree ${repoPath}`,
+      'HEAD abc123',
+      'branch refs/heads/dy/feat/worktree-isolation',
+      '',
+      'worktree /Users/me/code/my-repo/.worktrees/feat-a',
+      'HEAD def456',
+      'branch refs/heads/feat/a',
+      '',
+    ].join('\n');
+
+    const result = parseAllWorktrees(stdout, repoPath);
+    const match = result.find(wt => wt.branch === 'dy/feat/worktree-isolation');
+    assert.ok(match);
+    assert.equal(match!.path, repoPath);
+    assert.equal(match!.isMain, true);
   });
 });
 

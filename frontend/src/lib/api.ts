@@ -68,13 +68,16 @@ export async function createSession(body: {
   branchName?: string | undefined;
   claudeArgs?: string[] | undefined;
 }): Promise<SessionSummary> {
-  return json<SessionSummary>(
-    await fetch('/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
-  );
+  const res = await fetch('/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409) {
+    const data = await res.json() as { sessionId?: string };
+    throw new ConflictError(data.sessionId ?? '');
+  }
+  return json<SessionSummary>(res);
 }
 
 export async function createRepoSession(body: {
