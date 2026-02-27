@@ -180,6 +180,11 @@
       dialogEl.close();
       await refreshAll();
       if (session?.id) {
+        // If backend redirected a worktree request to a repo session,
+        // switch to the repos tab so the user can see it
+        if (activeTab === 'worktrees' && session.type === 'repo') {
+          ui.activeTab = 'repos';
+        }
         onSessionCreated?.(session.id);
       }
     } catch (err: unknown) {
