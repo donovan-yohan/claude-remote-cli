@@ -14,7 +14,7 @@ import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensu
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { setupWebSocket } from './ws.js';
-import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain } from './watcher.js';
+import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import type { Config, PullRequest, PullRequestsResponse } from './types.js';
@@ -661,6 +661,69 @@ async function main(): Promise<void> {
         }
 
         if (branchName && branchExists) {
+          // Check if branch is already checked out in an existing worktree
+          const { stdout: wtListOut } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });
+          const allWorktrees = parseAllWorktrees(wtListOut, repoPath);
+          const existingWt = allWorktrees.find(wt => wt.branch === branchName);
+
+          if (existingWt) {
+            // Branch already checked out — redirect to the existing worktree
+            if (existingWt.isMain) {
+              // Main worktree → create a repo session
+              const existingRepoSession = sessions.findRepoSession(repoPath);
+              if (existingRepoSession) {
+                res.status(409).json({ error: 'A session already exists for this repo', sessionId: existingRepoSession.id });
+                return;
+              }
+
+              const repoSession = sessions.create({
+                type: 'repo',
+                repoName: name,
+                repoPath,
+                cwd: repoPath,
+                root,
+                displayName: name,
+                command: config.claudeCommand,
+                args: baseArgs,
+              });
+
+              res.status(201).json(repoSession);
+              return;
+            } else {
+              // Another worktree → create a worktree session with --continue
+              cwd = existingWt.path;
+              sessionRepoPath = existingWt.path;
+              worktreeName = existingWt.path.split('/').pop() || '';
+              args = ['--continue', ...baseArgs];
+
+              const displayNameVal = branchName || worktreeName;
+
+              const session = sessions.create({
+                type: 'worktree',
+                repoName: name,
+                repoPath: sessionRepoPath,
+                cwd,
+                root,
+                worktreeName,
+                branchName: branchName || worktreeName,
+                displayName: displayNameVal,
+                command: config.claudeCommand,
+                args,
+                configPath: CONFIG_PATH,
+              });
+
+              writeMeta(CONFIG_PATH, {
+                worktreePath: sessionRepoPath,
+                displayName: displayNameVal,
+                lastActivity: new Date().toISOString(),
+                branchName: branchName || worktreeName,
+              });
+
+              res.status(201).json(session);
+              return;
+            }
+          }
+
           await execFileAsync('git', ['worktree', 'add', targetDir, resolvedBranch], { cwd: repoPath });
         } else if (branchName) {
           await execFileAsync('git', ['worktree', 'add', '-b', branchName, targetDir, 'HEAD'], { cwd: repoPath });
