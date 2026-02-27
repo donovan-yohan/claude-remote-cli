@@ -32,7 +32,8 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 ## Session Types
 
 - **Repo sessions** (`POST /sessions/repo`) — Claude runs directly in repo root. One per repo path (409 on conflict). Supports `continue: true` for `--continue` mode.
-- **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/`. Multiple per repo allowed.
+- **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/`. Multiple per repo allowed. If branch is already checked out (main worktree or another worktree), auto-redirects to that location instead of failing.
+- **Worktree deletion** (`DELETE /worktrees`) — Validated via `git worktree list` (supports arbitrary paths, not just `.worktrees/`). Main worktree cannot be deleted.
 
 ## Idle Detection
 

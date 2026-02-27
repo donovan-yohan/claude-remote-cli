@@ -14,7 +14,7 @@ No tech debt tracked yet.
 
 ## Completed Plans
 
-See `docs/exec-plans/completed/` for historical plans (18 completed).
+See `docs/exec-plans/completed/` for historical plans (19 completed).
 
 ## See Also
 
