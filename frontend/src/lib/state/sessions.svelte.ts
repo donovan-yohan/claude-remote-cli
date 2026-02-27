@@ -7,6 +7,7 @@ let repos = $state<RepoInfo[]>([]);
 let activeSessionId = $state<string | null>(null);
 let attentionSessions = $state<Record<string, boolean>>({});
 let gitStatuses = $state<Record<string, GitStatus>>({});
+let loadingItems = $state<Record<string, boolean>>({});
 
 export function getSessionState() {
   return {
@@ -17,6 +18,7 @@ export function getSessionState() {
     set activeSessionId(id: string | null) { activeSessionId = id; },
     get attentionSessions() { return attentionSessions; },
     get gitStatuses() { return gitStatuses; },
+    get loadingItems() { return loadingItems; },
   };
 }
 
@@ -83,4 +85,16 @@ export function getSessionStatus(session: SessionSummary): 'attention' | 'idle' 
   if (attentionSessions[session.id]) return 'attention';
   if (session.idle) return 'idle';
   return 'running';
+}
+
+export function setLoading(key: string): void {
+  loadingItems[key] = true;
+}
+
+export function clearLoading(key: string): void {
+  delete loadingItems[key];
+}
+
+export function isItemLoading(key: string): boolean {
+  return !!loadingItems[key];
 }

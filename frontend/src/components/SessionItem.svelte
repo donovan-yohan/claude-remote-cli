@@ -16,6 +16,7 @@
   let {
     variant,
     gitStatus,
+    isLoading = false,
     onclick,
     onkill,
     onrename,
@@ -25,6 +26,7 @@
   }: {
     variant: ItemVariant;
     gitStatus?: GitStatus | undefined;
+    isLoading?: boolean;
     onclick: () => void;
     onkill?: () => void;
     onrename?: () => void;
@@ -129,6 +131,7 @@
   class:active-session={isActive}
   class:inactive-worktree={!isActive}
   class:selected={isSelected}
+  class:loading={isLoading}
   onclick={handleClick}
   use:longpressAction
 >
@@ -232,6 +235,33 @@
   li.inactive-worktree:global(.longpress) {
     opacity: 1;
     border-color: var(--accent);
+  }
+
+  li.loading {
+    pointer-events: none;
+    opacity: 0.5;
+  }
+
+  li.loading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.04) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    li.loading::after {
+      animation: none;
+    }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 
   .session-info {

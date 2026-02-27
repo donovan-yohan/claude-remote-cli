@@ -1,7 +1,9 @@
 node_modules/
 config.json
-.claude/
+.claude/settings.local.json
+.claude/worktrees/
+.claude/projects/
+.claude/todos/
 bun.lockb
 dist/
 .worktrees/
-.claude/worktrees/
