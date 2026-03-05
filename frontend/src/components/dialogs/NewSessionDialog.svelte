@@ -104,7 +104,7 @@
   export async function open(repo?: RepoInfo | null, options?: { yolo?: boolean; tab?: 'repos' | 'worktrees' }) {
     reset();
     if (options?.yolo) yoloMode = true;
-    activeTab = options?.tab ?? (ui.activeTab === 'prs' ? 'repos' : ui.activeTab);
+    activeTab = options?.tab ?? (ui.activeTab === 'prs' || ui.activeTab === 'pipelines' ? 'repos' : ui.activeTab);
 
     // Load repos fresh
     try {

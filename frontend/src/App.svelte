@@ -3,6 +3,7 @@
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
   import { getSessionState, refreshAll, setAttention, clearAttention } from './lib/state/sessions.svelte.js';
+  import { getPipelineState, refreshActivePipeline, refreshPipelines, handlePipelineEvent } from './lib/state/pipelines.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { isMobileDevice } from './lib/utils.js';
   import type { RepoInfo, WorktreeInfo } from './lib/types.js';
@@ -17,6 +18,8 @@
   import NewSessionDialog from './components/dialogs/NewSessionDialog.svelte';
   import SettingsDialog from './components/dialogs/SettingsDialog.svelte';
   import DeleteWorktreeDialog from './components/dialogs/DeleteWorktreeDialog.svelte';
+  import IntakeDialog from './components/dialogs/IntakeDialog.svelte';
+  import PipelineView from './components/PipelineView.svelte';
   import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 
   const queryClient = new QueryClient({
@@ -40,6 +43,7 @@
   let newSessionDialogRef = $state<NewSessionDialog | undefined>();
   let settingsDialogRef = $state<SettingsDialog | undefined>();
   let deleteWorktreeDialogRef = $state<DeleteWorktreeDialog | undefined>();
+  let intakeDialogRef = $state<IntakeDialog | undefined>();
   let mainAppEl = $state<HTMLDivElement | undefined>();
 
   // Mobile keyboard state
@@ -79,10 +83,11 @@
     }
   });
 
-  // Refresh sessions when authenticated
+  // Refresh sessions and pipelines when authenticated
   $effect(() => {
     if (auth.authenticated) {
       refreshAll();
+      refreshPipelines();
     }
   });
 
@@ -94,6 +99,8 @@
           refreshAll();
         } else if (msg.type === 'session-idle-changed' && msg.sessionId) {
           setAttention(msg.sessionId, msg.idle ?? false);
+        } else if (msg.type?.startsWith('pipeline-')) {
+          handlePipelineEvent(msg as { type: string; id?: string; state?: import('./lib/types.js').PipelineState });
         }
       });
     }
@@ -117,6 +124,10 @@
   }
 
   function handleOpenNewSession(repo?: RepoInfo) {
+    if (ui.activeTab === 'pipelines') {
+      intakeDialogRef?.open(repo);
+      return;
+    }
     newSessionDialogRef?.open(repo);
   }
 
@@ -130,6 +141,20 @@
 
   function handleDeleteWorktree(wt: WorktreeInfo) {
     deleteWorktreeDialogRef?.open(wt);
+  }
+
+  const pipelineState = getPipelineState();
+
+  function handleSelectPipeline(id: string) {
+    pipelineState.activePipelineId = id;
+    refreshActivePipeline();
+    closeSidebar();
+  }
+
+  function handlePipelineCreated(id: string) {
+    pipelineState.activePipelineId = id;
+    refreshActivePipeline();
+    closeSidebar();
   }
 
   function handleNewSessionCreated(sessionId: string) {
@@ -204,6 +229,7 @@
       onOpenSettings={handleOpenSettings}
       onNewWorktree={handleNewWorktree}
       onDeleteWorktree={handleDeleteWorktree}
+      onSelectPipeline={handleSelectPipeline}
     />
 
     <div class="terminal-area">
@@ -213,27 +239,31 @@
         hidden={keyboardOpen}
       />
 
-      <Terminal
-        bind:this={terminalRef}
-        sessionId={sessionState.activeSessionId}
-        onImageUpload={handleImageUpload}
-      />
+      {#if ui.activeTab === 'pipelines' && pipelineState.activePipelineId}
+        <PipelineView />
+      {:else}
+        <Terminal
+          bind:this={terminalRef}
+          sessionId={sessionState.activeSessionId}
+          onImageUpload={handleImageUpload}
+        />
 
-      <Toolbar
-        onSendKey={handleSendKey}
-        onFlushComposedText={handleFlushComposedText}
-        onClearInput={handleClearInput}
-        onUploadImage={handleUploadImage}
-        onRefocusMobileInput={handleRefocusMobileInput}
-      />
+        <Toolbar
+          onSendKey={handleSendKey}
+          onFlushComposedText={handleFlushComposedText}
+          onClearInput={handleClearInput}
+          onUploadImage={handleUploadImage}
+          onRefocusMobileInput={handleRefocusMobileInput}
+        />
 
-      <MobileInput bind:this={mobileInputRef} />
+        <MobileInput bind:this={mobileInputRef} />
 
-      <div class="no-session-msg">
-        {#if !sessionState.activeSessionId}
-          <p>Select or create a session</p>
-        {/if}
-      </div>
+        <div class="no-session-msg">
+          {#if !sessionState.activeSessionId}
+            <p>Select or create a session</p>
+          {/if}
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -244,6 +274,10 @@
   />
   <SettingsDialog bind:this={settingsDialogRef} />
   <DeleteWorktreeDialog bind:this={deleteWorktreeDialogRef} />
+  <IntakeDialog
+    bind:this={intakeDialogRef}
+    onPipelineCreated={handlePipelineCreated}
+  />
 
   <!-- Toasts -->
   <UpdateToast />

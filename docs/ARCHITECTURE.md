@@ -16,7 +16,7 @@ The system has two compilation targets: a TypeScript + ESM backend (Express + no
 
 ### `server/`
 
-Nine TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
+Nine core TypeScript modules + one feature module compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
 
 | Module | Role |
 |--------|------|
@@ -29,6 +29,7 @@ Nine TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicat
 | `clipboard.ts` | System clipboard detection and image-set operations (osascript/xclip) |
 | `service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
 | `types.ts` | Shared TypeScript interfaces |
+| `belayer/` | Autonomous task pipeline: intake → brainstorm → PRD → plan → execute → review → PR |
 
 **Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `sessions.ts` depends on node-pty).
 
@@ -98,11 +99,19 @@ Browser (Svelte)   <--WebSocket /ws/events-- ws.ts <-- watcher.ts (fs.watch on .
 | `GET` | `/version` | Check for npm updates |
 | `POST` | `/sessions/:id/image` | Upload clipboard image |
 | `POST` | `/update` | Self-update via npm |
+| `GET` | `/pipelines` | List all pipelines (summary) |
+| `GET` | `/pipelines/:id` | Full pipeline detail |
+| `POST` | `/pipelines` | Create pipeline from task input |
+| `POST` | `/pipelines/:id/approve-prd` | Approve PRD (with optional edits) |
+| `POST` | `/pipelines/:id/approve-plan` | Approve plan (with optional edits) |
+| `POST` | `/pipelines/:id/resume` | Resume from stuck/failed state |
+| `POST` | `/pipelines/:id/abort` | Cancel pipeline |
+| `DELETE` | `/pipelines/:id` | Delete pipeline and artifacts |
 
 ## WebSocket Channels
 
 - `/ws/:sessionId` — PTY relay (bidirectional: terminal I/O + resize). Close code 1000 = PTY exited.
-- `/ws/events` — Server-to-client broadcast (`worktrees-changed`, `session-idle-changed`).
+- `/ws/events` — Server-to-client broadcast (`worktrees-changed`, `session-idle-changed`, `pipeline-state-changed`, `pipeline-output`, `pipeline-verdict`, `pipeline-pr-created`).
 
 Both channels require authentication via `token` cookie verified during HTTP upgrade.
 
