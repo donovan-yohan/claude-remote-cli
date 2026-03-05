@@ -2,6 +2,7 @@
   import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from '../lib/types.js';
   import { formatRelativeTime, rootShortName } from '../lib/utils.js';
   import { scrollOnHover, createLongpressClick } from '../lib/actions.js';
+  import AgentBadge from './AgentBadge.svelte';
 
   type ActiveVariant = {
     kind: 'active';
@@ -73,6 +74,8 @@
       : 'status-dot status-dot--inactive',
   );
 
+  let agentType = $derived(variant.kind === 'active' ? variant.session.agent : undefined);
+
   let isSelected = $derived(variant.kind === 'active' && variant.isSelected);
   let isActive = $derived(variant.kind === 'active');
 
@@ -137,7 +140,12 @@
 >
   <div class="session-info">
     <div class="session-row-1">
-      <span class={statusDotClass}></span>
+      <div class="status-stack">
+        <span class={statusDotClass}></span>
+        {#if agentType}
+          <AgentBadge agent={agentType} />
+        {/if}
+      </div>
       <span class="session-name" use:scrollOnHover>
         <span class="session-name-text">{displayName}</span>
       </span>
@@ -279,13 +287,21 @@
     min-width: 0;
   }
 
+  .status-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    margin-right: 8px;
+  }
+
   .status-dot {
     display: inline-block;
     width: 8px;
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
-    margin-right: 8px;
   }
 
   .status-dot--running { background: #4ade80; }
