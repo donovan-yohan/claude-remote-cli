@@ -98,6 +98,8 @@ Browser (Svelte)   <--WebSocket /ws/events-- ws.ts <-- watcher.ts (fs.watch on .
 | `GET` | `/version` | Check for npm updates |
 | `POST` | `/sessions/:id/image` | Upload clipboard image |
 | `POST` | `/update` | Self-update via npm |
+| `GET` | `/config/defaultAgent` | Get default coding agent |
+| `PATCH` | `/config/defaultAgent` | Set default coding agent (`claude` or `codex`) |
 
 ## WebSocket Channels
 

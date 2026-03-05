@@ -7,7 +7,8 @@ Control Claude Code from your phone or any browser — manage multiple terminal 
 | Dependency | Why |
 |------------|-----|
 | **[Node.js 24+](https://nodejs.org/)** | Runtime for the server |
-| **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)** | The CLI that powers each terminal session — must be in your `PATH` |
+| **[Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)** | Default coding agent — must be in your `PATH` |
+| **[Codex CLI](https://github.com/openai/codex)** | *Optional* — alternative coding agent. Install if you want to use Codex sessions |
 | **[GitHub CLI (`gh`)](https://cli.github.com/)** | *Optional* — required for the **PRs tab**. Run `gh auth login` after installing. |
 
 ## Getting Started
@@ -142,7 +143,8 @@ When running from source, it uses `./config.json` in the project root instead.
 | `cookieTTL` | `24h` | Auth cookie lifetime (e.g. `30m`, `12h`, `7d`) |
 | `rootDirs` | `[]` | Directories containing your git repos (scanned one level deep) |
 | `claudeCommand` | `claude` | Path to the Claude Code CLI binary |
-| `claudeArgs` | `[]` | Extra arguments passed to every Claude session |
+| `claudeArgs` | `[]` | Extra arguments passed to every session |
+| `defaultAgent` | `claude` | Default coding agent CLI (`claude` or `codex`) |
 
 Root directories can also be managed from the **Settings** button in the app.
 
@@ -157,6 +159,7 @@ The PIN hash is stored in config under `pinHash`. To reset:
 ## Features
 
 ### Session Management
+- **Multi-agent support** — choose between Claude Code and Codex as the coding agent per session, with a configurable default in Settings
 - **Repo sessions** — click any idle repo to instantly open Claude with `--continue` (no dialog), or start fresh from the new-session dialog
 - **Branch-aware worktrees** — create worktrees from new or existing branches with a type-to-search branch picker
 - **Worktree isolation** — each worktree session runs in its own git worktree under `.worktrees/`
