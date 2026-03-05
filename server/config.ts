@@ -10,6 +10,7 @@ export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs'> = {
   repos: [],
   claudeCommand: 'claude',
   claudeArgs: [],
+  defaultAgent: 'claude',
 };
 
 export function loadConfig(configPath: string): Config {

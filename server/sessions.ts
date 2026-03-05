@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Session, SessionType } from './types.js';
+import type { AgentType, Session, SessionType } from './types.js';
 import { readMeta, writeMeta } from './config.js';
 
 type SessionSummary = Omit<Session, 'pty' | 'scrollback'>;
@@ -61,6 +61,7 @@ function create({ type, repoName, repoPath, cwd, root, worktreeName, branchName,
   const session: Session = {
     id,
     type: type || 'worktree',
+    agent: 'claude' as AgentType,
     root: root || '',
     repoName: repoName || '',
     repoPath,
@@ -152,7 +153,7 @@ function create({ type, repoName, repoPath, cwd, root, worktreeName, branchName,
 
   attachHandlers(ptyProcess, args.includes('--continue'));
 
-  return { id, type: session.type, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
+  return { id, type: session.type, agent: session.agent, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
 }
 
 function get(id: string): Session | undefined {
@@ -161,9 +162,10 @@ function get(id: string): Session | undefined {
 
 function list(): SessionSummary[] {
   return Array.from(sessions.values())
-    .map(({ id, type, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle }) => ({
+    .map(({ id, type, agent, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle }) => ({
       id,
       type,
+      agent,
       root,
       repoName,
       repoPath,

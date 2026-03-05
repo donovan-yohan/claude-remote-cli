@@ -1,10 +1,12 @@
 import type { IPty } from 'node-pty';
 
 export type SessionType = 'repo' | 'worktree';
+export type AgentType = 'claude' | 'codex';
 
 export interface Session {
   id: string;
   type: SessionType;
+  agent: AgentType;
   root: string;
   repoName: string;
   repoPath: string;
@@ -32,6 +34,7 @@ export interface Config {
   repos: string[];
   claudeCommand: string;
   claudeArgs: string[];
+  defaultAgent: AgentType;
   pinHash?: string | undefined;
   rootDirs?: string[] | undefined;
 }

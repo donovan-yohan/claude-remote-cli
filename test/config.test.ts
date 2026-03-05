@@ -47,6 +47,7 @@ test('loadConfig merges with defaults for missing fields', () => {
   assert.deepEqual(config.repos, DEFAULTS.repos);
   assert.equal(config.claudeCommand, DEFAULTS.claudeCommand);
   assert.deepEqual(config.claudeArgs, DEFAULTS.claudeArgs);
+  assert.equal(config.defaultAgent, DEFAULTS.defaultAgent);
 });
 
 test('loadConfig throws if config file not found', () => {
@@ -71,6 +72,7 @@ test('DEFAULTS has expected keys and values', () => {
   assert.deepEqual(DEFAULTS.repos, []);
   assert.equal(DEFAULTS.claudeCommand, 'claude');
   assert.deepEqual(DEFAULTS.claudeArgs, []);
+  assert.equal(DEFAULTS.defaultAgent, 'claude');
 });
 
 test('ensureMetaDir creates worktree-meta directory', () => {
