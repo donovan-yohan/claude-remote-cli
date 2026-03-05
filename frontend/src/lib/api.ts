@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse } from './types.js';
+import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse, PipelineSummary, PipelineDetail } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -162,4 +162,53 @@ export async function checkVersion(): Promise<{ current: string; latest: string 
 
 export async function triggerUpdate(): Promise<{ ok: boolean; restarting?: boolean; error?: string }> {
   return json<{ ok: boolean; restarting?: boolean; error?: string }>(await fetch('/update', { method: 'POST' }));
+}
+
+export async function fetchPipelines(): Promise<PipelineSummary[]> {
+  return json<PipelineSummary[]>(await fetch('/pipelines'));
+}
+
+export async function fetchPipeline(id: string): Promise<PipelineDetail> {
+  return json<PipelineDetail>(await fetch('/pipelines/' + id));
+}
+
+export async function createPipeline(body: {
+  input: string;
+  targetRepo: string;
+  baseBranch?: string | undefined;
+}): Promise<PipelineSummary> {
+  const res = await fetch('/pipelines', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return json<PipelineSummary>(res);
+}
+
+export async function approvePrd(id: string, content?: string): Promise<void> {
+  await fetch('/pipelines/' + id + '/approve-prd', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function approvePlan(id: string, content?: string): Promise<void> {
+  await fetch('/pipelines/' + id + '/approve-plan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function resumePipeline(id: string): Promise<void> {
+  await fetch('/pipelines/' + id + '/resume', { method: 'POST' });
+}
+
+export async function abortPipeline(id: string): Promise<void> {
+  await fetch('/pipelines/' + id + '/abort', { method: 'POST' });
+}
+
+export async function deletePipeline(id: string): Promise<void> {
+  await fetch('/pipelines/' + id, { method: 'DELETE' });
 }
