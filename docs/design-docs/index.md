@@ -23,3 +23,4 @@
 | [2026-02-26-handle-existing-worktrees-design.md](2026-02-26-handle-existing-worktrees-design.md) | Auto-redirect to existing worktrees on branch conflict + git-based delete validation | 2026-02-26 |
 | [2026-02-26-session-loading-shimmer-design.md](2026-02-26-session-loading-shimmer-design.md) | Loading shimmer overlay for session list items during async actions | 2026-02-26 |
 | [2026-02-26-publish-command-design.md](2026-02-26-publish-command-design.md) | /publish slash command for full release lifecycle from feature branch | 2026-02-26 |
+| [2026-03-05-belayer-automation-pipeline-design.md](2026-03-05-belayer-automation-pipeline-design.md) | Belayer: autonomous task pipeline (intake → brainstorm → plan → execute → review → PR) | 2026-03-05 |

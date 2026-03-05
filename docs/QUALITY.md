@@ -6,7 +6,7 @@ Testing patterns and quality standards for claude-remote-cli.
 
 - Node.js built-in `node:test` + `node:assert` — no external test framework
 - TypeScript test files in `test/`, compiled via `tsc -p tsconfig.test.json`
-- Nine test files covering all server modules
+- Fifteen test files covering all server modules including belayer pipeline
 - `svelte-check` runs in `build`, `test`, and standalone `check` — catches type errors in `.svelte` files
 - E2E tests (Playwright) planned but not yet implemented
 
@@ -45,6 +45,12 @@ Both `build` and `test` fail on type errors. CI runs both via `npm run build && 
 | `test/version.test.ts` | Semantic version comparison (`semverLessThan`) |
 | `test/worktrees.test.ts` | Path validation, branch-to-directory conversion, repo session paths |
 | `test/pull-requests.test.ts` | PR fetching, author/reviewer filtering, `gh` CLI integration |
+| `test/belayer-types.test.ts` | Pipeline state definitions, valid transitions, config defaults |
+| `test/belayer-pipeline.test.ts` | State machine transitions, disk persistence, pipeline CRUD |
+| `test/belayer-intake.test.ts` | TextSource adapter, task source resolution |
+| `test/belayer-prompts.test.ts` | Prompt template generation for brainstorm, plan, execute, review, stuck |
+| `test/belayer-executor.test.ts` | Claude arg building, verdict file parsing |
+| `test/belayer-pr-lifecycle.test.ts` | PR title/body generation |
 
 ## Test Isolation Patterns
 
@@ -53,6 +59,7 @@ Both `build` and `test` fail on type errors. CI runs both via `npm run build && 
 - `config.test.ts` uses temporary directories (`fs.mkdtempSync`) and cleans up between tests
 - `service.test.ts` `isInstalled` test is environment-dependent — may fail when launchd service is actually installed
 - `pull-requests.test.ts` tests type construction only — no `gh` CLI calls or runtime dependencies
+- `belayer-pipeline.test.ts` uses temp directories + `clearPipelines()` to reset in-memory state between tests
 
 ## E2E Testing
 

@@ -3176,13 +3176,19 @@ git commit -m "feat(belayer): complete integration wiring and build verification
 
 ## Outcomes & Retrospective
 
-_Filled by /harness:complete when work is done._
-
 **What worked:**
--
+- Parallel agent execution (up to 4 workers) dramatically sped up implementation
+- Living plan with micro-reflects kept docs current throughout
+- TDD approach caught real bugs early (e.g., double-transition in `startExecution`, test isolation via `clearPipelines`)
+- Code review agent caught 5 genuine bugs before PR (abort guard, output wiring, CI check field, progress bar state mapping, API error handling)
 
 **What didn't:**
--
+- `pipeline-output` → ExecutionMonitor wiring was missed in the plan — the imperative `appendOutput` export pattern didn't fit the reactive state model
+- `gh pr checks --json state` was wrong in the plan's code — should have been `bucket` field
+- Plan didn't account for the full prop chain required for Svelte component wiring (App → Sidebar → SessionList → PipelineList)
 
 **Learnings to codify:**
--
+- When adding a new sidebar tab, the prop chain must be threaded through App → Sidebar → SessionList — plan for this explicitly
+- WebSocket event handlers in state modules should handle ALL event types for their domain, not just state changes
+- Frontend API functions that modify server state must check `res.ok` — use a shared `ensureOk` helper
+- `gh pr checks` uses `bucket` field (values: `pass`, `fail`, `pending`), not `state`
