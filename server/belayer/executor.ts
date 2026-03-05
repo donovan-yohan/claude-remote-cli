@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as sessions from '../sessions.js';
-import type { Pipeline, Verdict } from './types.js';
+import type { Verdict } from './types.js';
 import { transitionPipeline, updatePipeline, getPipeline } from './pipeline.js';
 import { buildBrainstormPrompt, buildPlanPrompt, buildExecutionPrompt, buildReviewPrompt, buildStuckPrompt } from './prompts.js';
 
@@ -92,8 +92,10 @@ export async function startExecution(pipelineId: string): Promise<void> {
   const pipeline = getPipeline(pipelineId);
   if (!pipeline) throw new Error('Pipeline not found: ' + pipelineId);
 
-  transitionPipeline(pipelineId, 'executing');
-  emitEvent(pipelineId, 'pipeline-state-changed', { state: 'executing' });
+  if (pipeline.state !== 'executing') {
+    transitionPipeline(pipelineId, 'executing');
+    emitEvent(pipelineId, 'pipeline-state-changed', { state: 'executing' });
+  }
 
   const failedVerdicts = pipeline.verdicts.filter((v) => !v.pass);
   const prompt = buildExecutionPrompt(pipeline.task, pipeline.planContent || '', failedVerdicts.length > 0 ? failedVerdicts : undefined);
@@ -131,7 +133,7 @@ export async function startReview(pipelineId: string): Promise<void> {
       const updatedPipeline = getPipeline(pipelineId)!;
       const verdicts = [...updatedPipeline.verdicts, verdict];
       updatePipeline(pipelineId, { verdicts });
-      emitEvent(pipelineId, 'pipeline-verdict', { verdict });
+      emitEvent(pipelineId, 'pipeline-verdict', { verdict: verdict as unknown as Record<string, unknown> });
 
       if (verdict.pass) {
         transitionPipeline(pipelineId, 'pr_created');
