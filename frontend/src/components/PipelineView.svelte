@@ -102,13 +102,19 @@
         </details>
       {/if}
 
+      {#if detail.state === 'executing' || detail.state === 'reviewing'}
+        <ExecutionMonitor pipelineId={detail.id} />
+      {/if}
+
       {#if detail.error}
         <div class="error-block">
           <strong>Error:</strong> {detail.error}
         </div>
       {/if}
 
-      {#if detail.stuckReport}
+      {#if detail.state === 'stuck' && detail.stuckReport}
+        <StuckReport pipelineId={detail.id} report={detail.stuckReport} />
+      {:else if detail.stuckReport}
         <details class="artifact" open>
           <summary>Stuck Report</summary>
           <pre class="artifact-content">{detail.stuckReport}</pre>
