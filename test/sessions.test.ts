@@ -315,4 +315,42 @@ describe('sessions', () => {
     createdIds.push(result.id);
     assert.strictEqual(result.branchName, '');
   });
+
+  it('agent defaults to claude when not specified', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    assert.strictEqual(result.agent, 'claude');
+  });
+
+  it('agent is set when specified', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      agent: 'codex',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    assert.strictEqual(result.agent, 'codex');
+  });
+
+  it('list includes agent field', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      agent: 'codex',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    const list = sessions.list();
+    const session = list.find(s => s.id === result.id);
+    assert.ok(session);
+    assert.strictEqual(session.agent, 'codex');
+  });
 });

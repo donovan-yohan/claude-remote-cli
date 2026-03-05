@@ -8,8 +8,24 @@ import { readMeta, writeMeta } from './config.js';
 
 type SessionSummary = Omit<Session, 'pty' | 'scrollback'>;
 
+const AGENT_COMMANDS: Record<AgentType, string> = {
+  claude: 'claude',
+  codex: 'codex',
+};
+
+const AGENT_YOLO_ARGS: Record<AgentType, string[]> = {
+  claude: ['--dangerously-skip-permissions'],
+  codex: ['--full-auto'],
+};
+
+const AGENT_CONTINUE_ARGS: Record<AgentType, string[]> = {
+  claude: ['--continue'],
+  codex: ['resume', '--last'],
+};
+
 type CreateParams = {
   type?: SessionType;
+  agent?: AgentType;
   repoName?: string;
   repoPath: string;
   cwd?: string;
@@ -17,7 +33,7 @@ type CreateParams = {
   worktreeName?: string;
   branchName?: string;
   displayName?: string;
-  command: string;
+  command?: string;
   args?: string[];
   cols?: number;
   rows?: number;
@@ -37,15 +53,16 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallback = cb;
 }
 
-function create({ type, repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
+function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
   const id = crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
+  const resolvedCommand = command || AGENT_COMMANDS[agent];
 
   // Strip CLAUDECODE env var to allow spawning claude inside a claude-managed server
   const env = Object.assign({}, process.env) as Record<string, string>;
   delete env.CLAUDECODE;
 
-  const ptyProcess = pty.spawn(command, args, {
+  const ptyProcess = pty.spawn(resolvedCommand, args, {
     name: 'xterm-256color',
     cols,
     rows,
@@ -61,7 +78,7 @@ function create({ type, repoName, repoPath, cwd, root, worktreeName, branchName,
   const session: Session = {
     id,
     type: type || 'worktree',
-    agent: 'claude' as AgentType,
+    agent,
     root: root || '',
     repoName: repoName || '',
     repoPath,
@@ -102,6 +119,8 @@ function create({ type, repoName, repoPath, cwd, root, worktreeName, branchName,
     }, IDLE_TIMEOUT_MS);
   }
 
+  const continueArgs = AGENT_CONTINUE_ARGS[agent];
+
   function attachHandlers(proc: pty.IPty, canRetry: boolean): void {
     const spawnTime = Date.now();
 
@@ -123,12 +142,12 @@ function create({ type, repoName, repoPath, cwd, root, worktreeName, branchName,
     });
 
     proc.onExit(({ exitCode }) => {
-      // If --continue failed quickly, retry without it
+      // If continue args failed quickly, retry without them
       if (canRetry && (Date.now() - spawnTime) < 3000 && exitCode !== 0) {
-        const retryArgs = args.filter(a => a !== '--continue');
+        const retryArgs = args.filter(a => !continueArgs.includes(a));
         scrollback.length = 0;
         scrollbackBytes = 0;
-        const retryPty = pty.spawn(command, retryArgs, {
+        const retryPty = pty.spawn(resolvedCommand, retryArgs, {
           name: 'xterm-256color',
           cols,
           rows,
@@ -151,7 +170,7 @@ function create({ type, repoName, repoPath, cwd, root, worktreeName, branchName,
     });
   }
 
-  attachHandlers(ptyProcess, args.includes('--continue'));
+  attachHandlers(ptyProcess, continueArgs.some(a => args.includes(a)));
 
   return { id, type: session.type, agent: session.agent, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
 }
@@ -215,4 +234,4 @@ function findRepoSession(repoPath: string): SessionSummary | undefined {
   return list().find((s) => s.type === 'repo' && s.repoPath === repoPath);
 }
 
-export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange, findRepoSession };
+export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange, findRepoSession, AGENT_COMMANDS, AGENT_YOLO_ARGS, AGENT_CONTINUE_ARGS };
