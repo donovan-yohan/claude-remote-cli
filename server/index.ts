@@ -13,11 +13,12 @@ import cookieParser from 'cookie-parser';
 import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
+import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS } from './sessions.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
-import type { Config, PullRequest, PullRequestsResponse } from './types.js';
+import type { AgentType, Config, PullRequest, PullRequestsResponse } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -619,18 +620,20 @@ async function main(): Promise<void> {
 
   // POST /sessions
   app.post('/sessions', requireAuth, async (req, res) => {
-    const { repoPath, repoName, worktreePath, branchName, claudeArgs } = req.body as {
+    const { repoPath, repoName, worktreePath, branchName, claudeArgs, agent } = req.body as {
       repoPath?: string;
       repoName?: string;
       worktreePath?: string;
       branchName?: string;
       claudeArgs?: string[];
+      agent?: AgentType;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
       return;
     }
 
+    const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
     const baseArgs = [...(config.claudeArgs || []), ...(claudeArgs || [])];
 
@@ -646,7 +649,7 @@ async function main(): Promise<void> {
 
     if (worktreePath) {
       // Resume existing worktree
-      args = ['--continue', ...baseArgs];
+      args = [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs];
       cwd = worktreePath;
       sessionRepoPath = worktreePath;
       worktreeName = worktreePath.split('/').pop() || '';
@@ -707,12 +710,12 @@ async function main(): Promise<void> {
 
               const repoSession = sessions.create({
                 type: 'repo',
+                agent: resolvedAgent,
                 repoName: name,
                 repoPath,
                 cwd: repoPath,
                 root,
                 displayName: name,
-                command: config.claudeCommand,
                 args: baseArgs,
               });
 
@@ -723,12 +726,13 @@ async function main(): Promise<void> {
               cwd = existingWt.path;
               sessionRepoPath = existingWt.path;
               worktreeName = existingWt.path.split('/').pop() || '';
-              args = ['--continue', ...baseArgs];
+              args = [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs];
 
               const displayNameVal = branchName || worktreeName;
 
               const session = sessions.create({
                 type: 'worktree',
+                agent: resolvedAgent,
                 repoName: name,
                 repoPath: sessionRepoPath,
                 cwd,
@@ -736,7 +740,6 @@ async function main(): Promise<void> {
                 worktreeName,
                 branchName: branchName || worktreeName,
                 displayName: displayNameVal,
-                command: config.claudeCommand,
                 args,
                 configPath: CONFIG_PATH,
               });
@@ -774,6 +777,7 @@ async function main(): Promise<void> {
 
     const session = sessions.create({
       type: 'worktree',
+      agent: resolvedAgent,
       repoName: name,
       repoPath: sessionRepoPath,
       cwd,
@@ -781,7 +785,6 @@ async function main(): Promise<void> {
       worktreeName,
       branchName: branchName || worktreeName,
       displayName,
-      command: config.claudeCommand,
       args,
       configPath: CONFIG_PATH,
     });
@@ -800,16 +803,19 @@ async function main(): Promise<void> {
 
   // POST /sessions/repo — start a session in the repo root (no worktree)
   app.post('/sessions/repo', requireAuth, (req, res) => {
-    const { repoPath, repoName, continue: continueSession, claudeArgs } = req.body as {
+    const { repoPath, repoName, continue: continueSession, claudeArgs, agent } = req.body as {
       repoPath?: string;
       repoName?: string;
       continue?: boolean;
       claudeArgs?: string[];
+      agent?: AgentType;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
       return;
     }
+
+    const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
 
     // One repo session at a time
     const existing = sessions.findRepoSession(repoPath);
@@ -820,19 +826,19 @@ async function main(): Promise<void> {
 
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
     const baseArgs = [...(config.claudeArgs || []), ...(claudeArgs || [])];
-    const args = continueSession ? ['--continue', ...baseArgs] : [...baseArgs];
+    const args = continueSession ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs] : [...baseArgs];
 
     const roots = config.rootDirs || [];
     const root = roots.find(function (r) { return repoPath.startsWith(r); }) || '';
 
     const session = sessions.create({
       type: 'repo',
+      agent: resolvedAgent,
       repoName: name,
       repoPath,
       cwd: repoPath,
       root,
       displayName: name,
-      command: config.claudeCommand,
       args,
     });
 
