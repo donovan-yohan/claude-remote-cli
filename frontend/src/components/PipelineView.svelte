@@ -2,6 +2,10 @@
   import { getPipelineState, getPipelineStateLabel, getPipelineStatusColor, refreshActivePipeline } from '../lib/state/pipelines.svelte.js';
   import type { PipelineState } from '../lib/types.js';
   import { onMount } from 'svelte';
+  import PRDReview from './PRDReview.svelte';
+  import PlanReview from './PlanReview.svelte';
+  import ExecutionMonitor from './ExecutionMonitor.svelte';
+  import StuckReport from './StuckReport.svelte';
 
   const pipelineState = getPipelineState();
 
@@ -57,14 +61,18 @@
     </div>
 
     <div class="sections">
-      {#if detail.prdContent}
+      {#if detail.state === 'prd_review' && detail.prdContent}
+        <PRDReview pipelineId={detail.id} content={detail.prdContent} />
+      {:else if detail.prdContent}
         <details class="artifact">
           <summary>PRD</summary>
           <pre class="artifact-content">{detail.prdContent}</pre>
         </details>
       {/if}
 
-      {#if detail.planContent}
+      {#if detail.state === 'plan_review' && detail.planContent}
+        <PlanReview pipelineId={detail.id} content={detail.planContent} />
+      {:else if detail.planContent}
         <details class="artifact">
           <summary>Plan</summary>
           <pre class="artifact-content">{detail.planContent}</pre>
