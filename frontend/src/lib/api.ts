@@ -67,6 +67,7 @@ export async function createSession(body: {
   worktreePath?: string | undefined;
   branchName?: string | undefined;
   claudeArgs?: string[] | undefined;
+  agent?: string | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions', {
     method: 'POST',
@@ -85,6 +86,7 @@ export async function createRepoSession(body: {
   repoName?: string | undefined;
   continue?: boolean | undefined;
   claudeArgs?: string[] | undefined;
+  agent?: string | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions/repo', {
     method: 'POST',
@@ -162,4 +164,18 @@ export async function checkVersion(): Promise<{ current: string; latest: string 
 
 export async function triggerUpdate(): Promise<{ ok: boolean; restarting?: boolean; error?: string }> {
   return json<{ ok: boolean; restarting?: boolean; error?: string }>(await fetch('/update', { method: 'POST' }));
+}
+
+export async function fetchDefaultAgent(): Promise<string> {
+  const data = await json<{ defaultAgent: string }>(await fetch('/config/defaultAgent'));
+  return data.defaultAgent;
+}
+
+export async function setDefaultAgent(agent: string): Promise<void> {
+  const res = await fetch('/config/defaultAgent', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ defaultAgent: agent }),
+  });
+  if (!res.ok) throw new Error('Failed to update default agent');
 }
