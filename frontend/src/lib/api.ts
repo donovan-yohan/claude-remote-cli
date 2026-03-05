@@ -185,30 +185,42 @@ export async function createPipeline(body: {
   return json<PipelineSummary>(res);
 }
 
+async function ensureOk(res: Response): Promise<void> {
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(body || `Request failed: ${res.status}`);
+  }
+}
+
 export async function approvePrd(id: string, content?: string): Promise<void> {
-  await fetch('/pipelines/' + id + '/approve-prd', {
+  const res = await fetch('/pipelines/' + id + '/approve-prd', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   });
+  await ensureOk(res);
 }
 
 export async function approvePlan(id: string, content?: string): Promise<void> {
-  await fetch('/pipelines/' + id + '/approve-plan', {
+  const res = await fetch('/pipelines/' + id + '/approve-plan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   });
+  await ensureOk(res);
 }
 
 export async function resumePipeline(id: string): Promise<void> {
-  await fetch('/pipelines/' + id + '/resume', { method: 'POST' });
+  const res = await fetch('/pipelines/' + id + '/resume', { method: 'POST' });
+  await ensureOk(res);
 }
 
 export async function abortPipeline(id: string): Promise<void> {
-  await fetch('/pipelines/' + id + '/abort', { method: 'POST' });
+  const res = await fetch('/pipelines/' + id + '/abort', { method: 'POST' });
+  await ensureOk(res);
 }
 
 export async function deletePipeline(id: string): Promise<void> {
-  await fetch('/pipelines/' + id, { method: 'DELETE' });
+  const res = await fetch('/pipelines/' + id, { method: 'DELETE' });
+  await ensureOk(res);
 }

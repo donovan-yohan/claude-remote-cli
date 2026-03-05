@@ -4,6 +4,7 @@ import * as api from '../api.js';
 let pipelines = $state<PipelineSummary[]>([]);
 let activePipelineId = $state<string | null>(null);
 let activePipelineDetail = $state<PipelineDetail | null>(null);
+let pipelineOutput = $state('');
 
 export function getPipelineState() {
   return {
@@ -11,6 +12,7 @@ export function getPipelineState() {
     get activePipelineId() { return activePipelineId; },
     set activePipelineId(id: string | null) { activePipelineId = id; },
     get activePipelineDetail() { return activePipelineDetail; },
+    get pipelineOutput() { return pipelineOutput; },
   };
 }
 
@@ -32,15 +34,20 @@ export async function refreshActivePipeline(): Promise<void> {
   }
 }
 
-export function handlePipelineEvent(event: { type: string; id?: string; state?: PipelineState }): void {
+export function handlePipelineEvent(event: { type: string; id?: string; state?: PipelineState; chunk?: string }): void {
   if (event.type === 'pipeline-state-changed') {
     refreshPipelines();
     if (event.id === activePipelineId) {
+      pipelineOutput = '';
       refreshActivePipeline();
     }
   } else if (event.type === 'pipeline-verdict') {
     if (event.id === activePipelineId) {
       refreshActivePipeline();
+    }
+  } else if (event.type === 'pipeline-output') {
+    if (event.id === activePipelineId && event.chunk) {
+      pipelineOutput += event.chunk;
     }
   }
 }

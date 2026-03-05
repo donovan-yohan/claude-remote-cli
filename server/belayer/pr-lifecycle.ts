@@ -63,13 +63,13 @@ export async function checkCiStatus(pipelineId: string): Promise<'pending' | 'su
   try {
     const { stdout } = await execFileAsync('gh', [
       'pr', 'checks', String(pipeline.prNumber),
-      '--json', 'state',
+      '--json', 'name,bucket',
     ], { cwd });
 
-    const checks = JSON.parse(stdout) as Array<{ state: string }>;
+    const checks = JSON.parse(stdout) as Array<{ name: string; bucket: string }>;
     if (checks.length === 0) return 'success'; // No CI configured
-    if (checks.every((c) => c.state === 'SUCCESS' || c.state === 'SKIPPED')) return 'success';
-    if (checks.some((c) => c.state === 'FAILURE' || c.state === 'ERROR')) return 'failure';
+    if (checks.every((c) => c.bucket === 'pass')) return 'success';
+    if (checks.some((c) => c.bucket === 'fail')) return 'failure';
     return 'pending';
   } catch {
     return 'pending';

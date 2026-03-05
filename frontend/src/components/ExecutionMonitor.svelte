@@ -1,23 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { getPipelineState } from '../lib/state/pipelines.svelte.js';
 
   let { pipelineId }: { pipelineId: string } = $props();
 
+  const pipelineState = getPipelineState();
   let outputEl: HTMLPreElement | undefined = $state();
-  let outputText = $state('');
 
-  export function appendOutput(chunk: string): void {
-    outputText += chunk;
-    requestAnimationFrame(() => {
-      if (outputEl) {
-        outputEl.scrollTop = outputEl.scrollHeight;
-      }
-    });
-  }
-
-  onMount(() => {
-    if (outputEl) {
-      outputEl.scrollTop = outputEl.scrollHeight;
+  $effect(() => {
+    // Auto-scroll when output changes
+    if (pipelineState.pipelineOutput && outputEl) {
+      requestAnimationFrame(() => {
+        if (outputEl) outputEl.scrollTop = outputEl.scrollHeight;
+      });
     }
   });
 </script>
@@ -28,7 +22,7 @@
     <span class="monitor-title">Execution Output</span>
     <span class="pipeline-id">{pipelineId}</span>
   </div>
-  <pre class="monitor-output" bind:this={outputEl}>{outputText || 'Waiting for output...'}</pre>
+  <pre class="monitor-output" bind:this={outputEl}>{pipelineState.pipelineOutput || 'Waiting for output...'}</pre>
 </div>
 
 <style>

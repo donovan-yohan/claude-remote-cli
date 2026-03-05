@@ -25,9 +25,13 @@
   });
 
   function getStepClass(idx: number, currentState: PipelineState): string {
-    const currentIdx = STATE_ORDER.indexOf(currentState);
+    // Map non-linear states to their visual position in STATE_ORDER
+    let effectiveState = currentState;
+    if (currentState === 'retry') effectiveState = 'executing';
+    if (currentState === 'stuck') effectiveState = 'reviewing';
+    const currentIdx = STATE_ORDER.indexOf(effectiveState);
     if (currentState === 'failed' || currentState === 'stuck') {
-      if (idx <= currentIdx || currentIdx === -1) return 'step-error';
+      if (currentIdx === -1 || idx <= currentIdx) return 'step-error';
       return 'step-pending';
     }
     if (idx < currentIdx) return 'step-done';

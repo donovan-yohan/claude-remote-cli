@@ -173,6 +173,10 @@ export function abortPipeline(pipelineId: string): void {
   const pipeline = getPipeline(pipelineId);
   if (!pipeline) throw new Error('Pipeline not found: ' + pipelineId);
 
+  if (pipeline.state === 'done' || pipeline.state === 'failed') {
+    throw new Error('Pipeline is already ' + pipeline.state);
+  }
+
   // Kill active session if any
   if (pipeline.activeSessionId) {
     try {
