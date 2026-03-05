@@ -14,7 +14,7 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | Component | Role |
 |-----------|------|
 | `App.svelte` | Root layout: sidebar + terminal + mobile header |
-| `Sidebar.svelte` | Three-tab sidebar (Repos / Worktrees / PRs), session list, filters |
+| `Sidebar.svelte` | Four-tab sidebar (Repos / Worktrees / PRs / Pipelines), session list, filters |
 | `SessionList.svelte` | Filtered session/worktree list with status grouping, recency sorting, and collapsible repo groups |
 | `SessionItem.svelte` | 3-row session card: status dot + name, git metadata, time + diff stats; shimmer overlay during loading |
 | `SessionFilters.svelte` | Filter controls (root, repo, search) + Author/Reviewer toggle for PRs tab |
@@ -28,11 +28,17 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `PinGate.svelte` | PIN authentication screen |
 | `ImageToast.svelte` | Clipboard image paste feedback |
 | `UpdateToast.svelte` | Version update notification |
-| `dialogs/` | New session, settings, and other modal dialogs |
+| `PipelineList.svelte` | Pipeline list with state badges, attempt counts, relative time |
+| `PipelineView.svelte` | Pipeline detail: progress bar, collapsible PRD/Plan/Verdicts, error display |
+| `PRDReview.svelte` | PRD approval gate with inline editing |
+| `PlanReview.svelte` | Plan approval gate with inline editing |
+| `ExecutionMonitor.svelte` | Read-only live agent output stream |
+| `StuckReport.svelte` | Stuck state display with resume/abort actions |
+| `dialogs/` | New session, settings, intake, and other modal dialogs |
 
 ## State Management
 
-State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting reactive state and mutation functions. Components import state — they do not own it. PR data is managed via `@tanstack/svelte-query` v6 (cache + manual refresh), not in state modules.
+State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting reactive state and mutation functions. Components import state — they do not own it. PR data is managed via `@tanstack/svelte-query` v6 (cache + manual refresh), not in state modules. Pipeline state follows the same `$state` module pattern as sessions — `pipelines.svelte.ts` manages list + active detail with WebSocket event reactivity.
 
 ## Conventions
 
