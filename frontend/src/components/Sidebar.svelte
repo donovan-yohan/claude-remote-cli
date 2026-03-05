@@ -11,15 +11,17 @@
     onOpenSettings,
     onNewWorktree,
     onDeleteWorktree,
+    onSelectPipeline,
   }: {
     onSelectSession: (id: string) => void;
     onOpenNewSession: (repo?: RepoInfo) => void;
     onOpenSettings: () => void;
     onNewWorktree: (repo: RepoInfo) => void;
     onDeleteWorktree: (wt: WorktreeInfo) => void;
+    onSelectPipeline: (id: string) => void;
   } = $props();
 
-  let newSessionLabel = $derived(ui.activeTab === 'worktrees' ? '+ New Worktree' : '+ New Session');
+  let newSessionLabel = $derived(ui.activeTab === 'worktrees' ? '+ New Worktree' : ui.activeTab === 'pipelines' ? '+ New Pipeline' : '+ New Session');
   let effectiveWidth = $derived(ui.sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : ui.sidebarWidth);
 
   function startResize(e: MouseEvent) {
@@ -70,6 +72,7 @@
       {onOpenNewSession}
       {onNewWorktree}
       {onDeleteWorktree}
+      {onSelectPipeline}
     />
 
     <button class="new-session-btn" onclick={() => onOpenNewSession()}>

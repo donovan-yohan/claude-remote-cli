@@ -8,20 +8,25 @@
   import SessionItem from './SessionItem.svelte';
   import SessionFilters from './SessionFilters.svelte';
   import PrRepoGroup from './PrRepoGroup.svelte';
+  import PipelineList from './PipelineList.svelte';
+  import { getPipelineState } from '../lib/state/pipelines.svelte.js';
 
   const ui = getUi();
   const sessionState = getSessionState();
+  const pipelineState = getPipelineState();
 
   let {
     onSelectSession,
     onOpenNewSession,
     onNewWorktree,
     onDeleteWorktree,
+    onSelectPipeline,
   }: {
     onSelectSession: (id: string) => void;
     onOpenNewSession: (repo?: RepoInfo) => void;
     onNewWorktree: (repo: RepoInfo) => void;
     onDeleteWorktree: (wt: WorktreeInfo) => void;
+    onSelectPipeline: (id: string) => void;
   } = $props();
 
   // Split sessions by type
@@ -137,6 +142,7 @@
   let reposCount = $derived(filteredRepoSessions.length + filteredIdleRepos.length);
   let worktreesCount = $derived(filteredWorktreeSessions.length + filteredWorktrees.length);
   let prsCount = $derived(prRepos.length);
+  let pipelinesCount = $derived(pipelineState.pipelines.length);
 
   // PR click cascade helpers — match by git branch name
   function findSessionForBranch(branchName: string): SessionSummary | undefined {
@@ -292,6 +298,13 @@
   >
     PRs <span class="tab-count">{prsCount}</span>
   </button>
+  <button
+    class="sidebar-tab"
+    class:active={ui.activeTab === 'pipelines'}
+    onclick={() => { ui.activeTab = 'pipelines'; }}
+  >
+    Pipelines <span class="tab-count">{pipelinesCount}</span>
+  </button>
 </div>
 
 <SessionFilters />
@@ -367,7 +380,7 @@
         {/each}
       {/if}
     {/each}
-  {:else}
+  {:else if ui.activeTab === 'prs'}
     {#if prRepos.length === 0}
       <li class="pr-hint">No repos found</li>
     {:else}
@@ -380,6 +393,8 @@
         />
       {/each}
     {/if}
+  {:else if ui.activeTab === 'pipelines'}
+    <PipelineList {onSelectPipeline} />
   {/if}
 </ul>
 

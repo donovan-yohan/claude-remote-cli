@@ -3,6 +3,7 @@
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
   import { getSessionState, refreshAll, setAttention, clearAttention } from './lib/state/sessions.svelte.js';
+  import { getPipelineState, refreshActivePipeline } from './lib/state/pipelines.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { isMobileDevice } from './lib/utils.js';
   import type { RepoInfo, WorktreeInfo } from './lib/types.js';
@@ -132,6 +133,13 @@
     deleteWorktreeDialogRef?.open(wt);
   }
 
+  const pipelineState = getPipelineState();
+
+  function handleSelectPipeline(id: string) {
+    pipelineState.activePipelineId = id;
+    refreshActivePipeline();
+  }
+
   function handleNewSessionCreated(sessionId: string) {
     sessionState.activeSessionId = sessionId;
     closeSidebar();
@@ -204,6 +212,7 @@
       onOpenSettings={handleOpenSettings}
       onNewWorktree={handleNewWorktree}
       onDeleteWorktree={handleDeleteWorktree}
+      onSelectPipeline={handleSelectPipeline}
     />
 
     <div class="terminal-area">
