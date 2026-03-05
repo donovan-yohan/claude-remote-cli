@@ -18,6 +18,10 @@ import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListP
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import type { Config, PullRequest, PullRequestsResponse } from './types.js';
+import { createPipeline, getPipeline, listPipelines, deletePipeline, loadAllPipelines } from './belayer/pipeline.js';
+import { resolveTaskSource } from './belayer/intake.js';
+import { startPipeline, approvePrd, approvePlan, resumeFromStuck, abortPipeline, onPipelineEvent } from './belayer/executor.js';
+import { DEFAULT_PIPELINE_CONFIG } from './belayer/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -919,6 +923,124 @@ async function main(): Promise<void> {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Update failed';
       res.status(500).json({ ok: false, error: message });
+    }
+  });
+
+  // Load persisted pipelines on startup
+  loadAllPipelines();
+
+  // Wire pipeline events to WebSocket broadcast
+  onPipelineEvent((pipelineId, event, data) => {
+    broadcastEvent(event, { id: pipelineId, ...data });
+  });
+
+  // GET /pipelines — list all pipelines
+  app.get('/pipelines', requireAuth, (_req, res) => {
+    res.json(listPipelines());
+  });
+
+  // GET /pipelines/:id — get pipeline detail
+  app.get('/pipelines/:id', requireAuth, (req, res) => {
+    const pipeline = getPipeline(req.params['id'] as string);
+    if (!pipeline) {
+      res.status(404).json({ error: 'Pipeline not found' });
+      return;
+    }
+    res.json(pipeline);
+  });
+
+  // POST /pipelines — create pipeline from task input
+  app.post('/pipelines', requireAuth, async (req, res) => {
+    const { input, targetRepo, baseBranch } = req.body as {
+      input?: string;
+      targetRepo?: string;
+      baseBranch?: string;
+    };
+    if (!input) {
+      res.status(400).json({ error: 'input is required' });
+      return;
+    }
+    if (!targetRepo) {
+      res.status(400).json({ error: 'targetRepo is required' });
+      return;
+    }
+
+    try {
+      const source = resolveTaskSource(input);
+      const task = await source.fetch(input);
+      const pipelineConfig = {
+        ...DEFAULT_PIPELINE_CONFIG,
+        targetRepo,
+        baseBranch: baseBranch || 'main',
+      };
+      const pipeline = createPipeline(task, pipelineConfig);
+
+      // Start the pipeline asynchronously
+      startPipeline(pipeline.id).catch((err) => {
+        console.error('Pipeline start failed:', err);
+      });
+
+      res.status(201).json(pipeline);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create pipeline';
+      res.status(400).json({ error: message });
+    }
+  });
+
+  // POST /pipelines/:id/approve-prd
+  app.post('/pipelines/:id/approve-prd', requireAuth, async (req, res) => {
+    const { content } = req.body as { content?: string };
+    try {
+      await approvePrd(req.params['id'] as string, content);
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to approve PRD';
+      res.status(400).json({ error: message });
+    }
+  });
+
+  // POST /pipelines/:id/approve-plan
+  app.post('/pipelines/:id/approve-plan', requireAuth, async (req, res) => {
+    const { content } = req.body as { content?: string };
+    try {
+      await approvePlan(req.params['id'] as string, content);
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to approve plan';
+      res.status(400).json({ error: message });
+    }
+  });
+
+  // POST /pipelines/:id/resume — resume from stuck/failed
+  app.post('/pipelines/:id/resume', requireAuth, async (req, res) => {
+    try {
+      await resumeFromStuck(req.params['id'] as string);
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to resume pipeline';
+      res.status(400).json({ error: message });
+    }
+  });
+
+  // POST /pipelines/:id/abort — cancel pipeline
+  app.post('/pipelines/:id/abort', requireAuth, (req, res) => {
+    try {
+      abortPipeline(req.params['id'] as string);
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to abort pipeline';
+      res.status(400).json({ error: message });
+    }
+  });
+
+  // DELETE /pipelines/:id — delete pipeline
+  app.delete('/pipelines/:id', requireAuth, (req, res) => {
+    try {
+      deletePipeline(req.params['id'] as string);
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to delete pipeline';
+      res.status(400).json({ error: message });
     }
   });
 
