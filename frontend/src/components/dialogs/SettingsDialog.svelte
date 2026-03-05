@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchRoots, addRoot, removeRoot } from '../../lib/api.js';
+  import { fetchRoots, addRoot, removeRoot, fetchDefaultAgent, setDefaultAgent } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
 
   let dialogEl: HTMLDialogElement;
@@ -7,6 +7,7 @@
   let roots = $state<string[]>([]);
   let newRootPath = $state('');
   let devtoolsEnabled = $state(false);
+  let selectedAgent = $state('claude');
   let error = $state('');
 
   async function loadRoots() {
@@ -22,6 +23,11 @@
     newRootPath = '';
     devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
     await loadRoots();
+    try {
+      selectedAgent = await fetchDefaultAgent();
+    } catch {
+      selectedAgent = 'claude';
+    }
     dialogEl.showModal();
   }
 
@@ -49,6 +55,15 @@
       await refreshAll();
     } catch {
       error = 'Failed to remove root directory.';
+    }
+  }
+
+  async function handleAgentChange() {
+    error = '';
+    try {
+      await setDefaultAgent(selectedAgent);
+    } catch {
+      error = 'Failed to update default agent.';
     }
   }
 
@@ -123,6 +138,20 @@
         {#if error}
           <p class="error-msg">{error}</p>
         {/if}
+      </section>
+
+      <!-- Default coding agent section -->
+      <section class="settings-section">
+        <h3 class="section-title">Default Coding Agent</h3>
+        <p class="section-desc">CLI used when creating new sessions.</p>
+        <select
+          class="agent-select"
+          bind:value={selectedAgent}
+          onchange={handleAgentChange}
+        >
+          <option value="claude">Claude</option>
+          <option value="codex">Codex</option>
+        </select>
       </section>
 
       <!-- Developer tools section -->
@@ -301,6 +330,17 @@
     font-size: 0.82rem;
     color: #e74c3c;
     margin: 0;
+  }
+
+  .agent-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.9rem;
+    padding: 7px 10px;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .devtools-row {
