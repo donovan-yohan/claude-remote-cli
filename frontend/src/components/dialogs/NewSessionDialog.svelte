@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { fetchBranches, createSession, createRepoSession, fetchRepos } from '../../lib/api.js';
+  import { fetchBranches, createSession, createRepoSession, fetchRepos, fetchDefaultAgent } from '../../lib/api.js';
   import { getSessionState, refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getUi } from '../../lib/state/ui.svelte.js';
   import { rootShortName } from '../../lib/utils.js';
-  import type { RepoInfo } from '../../lib/types.js';
+  import type { RepoInfo, AgentType } from '../../lib/types.js';
 
   let {
     preselectedRepo = null,
@@ -28,6 +28,7 @@
   let selectedRepoPath = $state('');
   let branchInput = $state('');
   let claudeArgsInput = $state('');
+  let selectedAgent = $state<AgentType>('claude');
   let yoloMode = $state(false);
   let continueExisting = $state(false);
 
@@ -113,6 +114,13 @@
       allRepos = [];
     }
 
+    // Load default agent from server config
+    try {
+      selectedAgent = await fetchDefaultAgent() as AgentType;
+    } catch {
+      selectedAgent = 'claude';
+    }
+
     // Pre-select from explicit repo argument, prop, or sidebar filters
     const target = repo ?? preselectedRepo;
     if (target?.root) {
@@ -153,7 +161,13 @@
     if (!repoPath) return;
 
     const claudeArgs: string[] = [];
-    if (yoloMode) claudeArgs.push('--dangerously-skip-permissions');
+    if (yoloMode) {
+      const yoloArgs: Record<AgentType, string> = {
+        claude: '--dangerously-skip-permissions',
+        codex: '--full-auto',
+      };
+      claudeArgs.push(yoloArgs[selectedAgent]);
+    }
     if (claudeArgsInput.trim()) {
       claudeArgsInput.trim().split(/\s+/).forEach(arg => {
         if (arg) claudeArgs.push(arg);
@@ -168,6 +182,7 @@
           repoName: repoPath.split('/').filter(Boolean).pop(),
           continue: continueExisting,
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
+          agent: selectedAgent,
         });
       } else {
         session = await createSession({
@@ -175,6 +190,7 @@
           repoName: repoPath.split('/').filter(Boolean).pop(),
           branchName: branchInput.trim() || undefined,
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
+          agent: selectedAgent,
         });
       }
       dialogEl.close();
@@ -276,6 +292,19 @@
         </select>
       </div>
 
+      <!-- Coding agent select -->
+      <div class="dialog-field">
+        <label class="dialog-label" for="ns-agent">Coding agent</label>
+        <select
+          id="ns-agent"
+          class="dialog-select"
+          bind:value={selectedAgent}
+        >
+          <option value="claude">Claude</option>
+          <option value="codex">Codex</option>
+        </select>
+      </div>
+
       <!-- Branch input (worktrees only) -->
       {#if activeTab === 'worktrees'}
         <div class="dialog-field">
@@ -342,12 +371,12 @@
 
       <!-- Extra claude args -->
       <div class="dialog-field">
-        <label class="dialog-label" for="ns-args">Extra claude args (optional)</label>
+        <label class="dialog-label" for="ns-args">Extra args (optional)</label>
         <input
           id="ns-args"
           type="text"
           class="dialog-input"
-          placeholder="e.g. --model claude-3-5-sonnet"
+          placeholder="e.g. --verbose"
           bind:value={claudeArgsInput}
           autocomplete="off"
         />
