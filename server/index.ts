@@ -524,6 +524,23 @@ async function main(): Promise<void> {
     res.json(config.rootDirs);
   });
 
+  // GET /config/defaultAgent — get default coding agent
+  app.get('/config/defaultAgent', requireAuth, (_req, res) => {
+    res.json({ defaultAgent: config.defaultAgent || 'claude' });
+  });
+
+  // PATCH /config/defaultAgent — set default coding agent
+  app.patch('/config/defaultAgent', requireAuth, (req, res) => {
+    const { defaultAgent } = req.body as { defaultAgent?: string };
+    if (!defaultAgent || (defaultAgent !== 'claude' && defaultAgent !== 'codex')) {
+      res.status(400).json({ error: 'defaultAgent must be "claude" or "codex"' });
+      return;
+    }
+    config.defaultAgent = defaultAgent;
+    saveConfig(CONFIG_PATH, config);
+    res.json({ defaultAgent: config.defaultAgent });
+  });
+
   // DELETE /worktrees — remove a worktree, prune, and delete its branch
   app.delete('/worktrees', requireAuth, async (req, res) => {
     const { worktreePath, repoPath } = req.body as { worktreePath?: string; repoPath?: string };
