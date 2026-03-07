@@ -386,12 +386,13 @@
     scrollbarScrollToY(e.clientY);
   }
 
-  function scrollPageUp() {
-    term?.scrollPages(-1);
-  }
-
-  function scrollPageDown() {
-    term?.scrollPages(1);
+  function onScrollFabMouseDown(e: MouseEvent) {
+    e.preventDefault();
+    const btn = (e.target as HTMLElement).closest('button');
+    if (!btn) return;
+    const dir = btn.dataset['dir'];
+    if (dir === 'up') term?.scrollPages(-1);
+    else if (dir === 'down') term?.scrollPages(1);
   }
 
   let scrollbarEl: HTMLDivElement;
@@ -510,11 +511,10 @@
     ></div>
   </div>
   {#if isMobileDevice && thumbVisible}
-    <div class="scroll-fabs">
-      <!-- svelte-ignore a11y_consider_explicit_label -->
-      <button class="scroll-fab" onclick={scrollPageUp} aria-label="Page up">&#9650;</button>
-      <!-- svelte-ignore a11y_consider_explicit_label -->
-      <button class="scroll-fab" onclick={scrollPageDown} aria-label="Page down">&#9660;</button>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="scroll-fabs" onmousedown={onScrollFabMouseDown}>
+      <button class="scroll-fab" data-dir="up" aria-label="Page up">&#9650;</button>
+      <button class="scroll-fab" data-dir="down" aria-label="Page down">&#9660;</button>
     </div>
   {/if}
 </div>
