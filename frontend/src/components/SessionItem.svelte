@@ -140,17 +140,15 @@
 >
   <div class="session-info">
     <div class="session-row-1">
-      <div class="status-stack">
-        <span class={statusDotClass}></span>
-        {#if agentType}
-          <AgentBadge agent={agentType} />
-        {/if}
-      </div>
+      <span class={statusDotClass}></span>
       <span class="session-name" use:scrollOnHover>
         <span class="session-name-text">{displayName}</span>
       </span>
     </div>
-    <div class="session-row-2">
+    <div class="session-row-2" class:has-badge={!!agentType}>
+      {#if agentType}
+        <AgentBadge agent={agentType} />
+      {/if}
       {#if prIcon}
         <span class={prIconClass}>{prIcon}</span>
       {/if}
@@ -287,21 +285,13 @@
     min-width: 0;
   }
 
-  .status-stack {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
-    margin-right: 8px;
-  }
-
   .status-dot {
     display: inline-block;
     width: 8px;
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
+    margin-right: 8px;
   }
 
   .status-dot--running { background: #4ade80; }
@@ -430,13 +420,17 @@
     visibility: visible;
   }
 
-  /* Row 2: pr icon + root · repo */
+  /* Row 2: agent badge + pr icon + root · repo */
   .session-row-2 {
     display: flex;
     align-items: center;
     gap: 4px;
     min-width: 0;
     padding-left: 16px;
+  }
+
+  .session-row-2.has-badge {
+    padding-left: 2px;
   }
 
   .pr-icon {
