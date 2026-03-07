@@ -40,6 +40,8 @@
     return (a || '').localeCompare(b || '');
   }
 
+  let searchFilterLower = $derived(ui.searchFilter?.toLowerCase());
+
   function matchesFilters(
     root: string | undefined,
     repoName: string | undefined,
@@ -47,9 +49,7 @@
   ): boolean {
     if (ui.rootFilter && root !== ui.rootFilter) return false;
     if (ui.repoFilter && repoName !== ui.repoFilter) return false;
-    if (ui.searchFilter) {
-      if (name.toLowerCase().indexOf(ui.searchFilter.toLowerCase()) === -1) return false;
-    }
+    if (searchFilterLower && !name.toLowerCase().includes(searchFilterLower)) return false;
     return true;
   }
 
@@ -303,13 +303,6 @@
     ];
   }
 
-  function terminalSessionMenu(session: SessionSummary): MenuItem[] {
-    return [
-      { label: 'Rename', action: () => handleRenameSession(session) },
-      { label: 'Kill', action: () => handleKillSession(session), danger: true },
-    ];
-  }
-
   async function handleCreateTerminal() {
     try {
       const session = await api.createTerminalSession();
@@ -428,7 +421,7 @@
         variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: sessionState.activeSessionId === session.id }}
         isLoading={isItemLoading(session.id)}
         onclick={() => handleSelectSession(session)}
-        menuItems={terminalSessionMenu(session)}
+        menuItems={activeSessionMenu(session)}
       />
     {/each}
     {#if filteredTerminalSessions.length === 0}

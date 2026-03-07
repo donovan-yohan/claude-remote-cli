@@ -101,10 +101,7 @@ export async function createRepoSession(body: {
 }
 
 export async function createTerminalSession(): Promise<SessionSummary> {
-  const res = await fetch('/sessions/terminal', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const res = await fetch('/sessions/terminal', { method: 'POST' });
   return json<SessionSummary>(res);
 }
 

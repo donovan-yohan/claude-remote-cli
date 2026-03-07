@@ -61,10 +61,9 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && open) {
-      e.stopPropagation();
-      close();
-    }
+    if (!open || e.key !== 'Escape') return;
+    e.stopPropagation();
+    close();
   }
 
   function handleBackdropClick(e: MouseEvent) {

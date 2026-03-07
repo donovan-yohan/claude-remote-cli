@@ -114,7 +114,6 @@
       allRepos = [];
     }
 
-    // Load default agent from server config, then apply override
     try {
       selectedAgent = await fetchDefaultAgent() as AgentType;
     } catch {

@@ -13,11 +13,6 @@ const AGENT_COMMANDS: Record<AgentType, string> = {
   codex: 'codex',
 };
 
-const AGENT_YOLO_ARGS: Record<AgentType, string[]> = {
-  claude: ['--dangerously-skip-permissions'],
-  codex: ['--full-auto'],
-};
-
 const AGENT_CONTINUE_ARGS: Record<AgentType, string[]> = {
   claude: ['--continue'],
   codex: ['resume', '--last'],
@@ -239,4 +234,4 @@ function nextTerminalName(): string {
   return `Terminal ${++terminalCounter}`;
 }
 
-export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange, findRepoSession, nextTerminalName, AGENT_COMMANDS, AGENT_YOLO_ARGS, AGENT_CONTINUE_ARGS };
+export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange, findRepoSession, nextTerminalName, AGENT_COMMANDS, AGENT_CONTINUE_ARGS };

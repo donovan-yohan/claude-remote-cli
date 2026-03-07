@@ -33,13 +33,14 @@
   let prError = $derived(prData?.error ?? null);
   let prList = $derived(prData?.prs ?? []);
 
-  let filteredPRs = $derived(
-    prList.filter((pr: PullRequest) => {
+  let filteredPRs = $derived.by(() => {
+    const searchLower = ui.searchFilter?.toLowerCase();
+    return prList.filter((pr: PullRequest) => {
       if (ui.prRoleFilter !== 'all' && pr.role !== ui.prRoleFilter) return false;
-      if (ui.searchFilter && pr.title.toLowerCase().indexOf(ui.searchFilter.toLowerCase()) === -1) return false;
+      if (searchLower && !pr.title.toLowerCase().includes(searchLower)) return false;
       return true;
-    })
-  );
+    });
+  });
 
   function toggle() {
     expanded = !expanded;

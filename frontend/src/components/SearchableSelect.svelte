@@ -13,8 +13,8 @@
 
   let open = $state(false);
   let searchText = $state('');
-  let wrapperEl: HTMLDivElement;
-  let inputEl: HTMLInputElement;
+  let wrapperEl = $state<HTMLDivElement | null>(null);
+  let inputEl = $state<HTMLInputElement | null>(null);
 
   let selectedLabel = $derived(
     options.find(o => o.value === value)?.label ?? '',
@@ -26,18 +26,9 @@
     return options.filter(o => o.label.toLowerCase().includes(lower));
   });
 
-  function toggle() {
-    if (open) {
-      close();
-    } else {
-      openDropdown();
-    }
-  }
-
   function openDropdown() {
     open = true;
     searchText = '';
-    // Focus input after Svelte renders it
     requestAnimationFrame(() => inputEl?.focus());
   }
 
@@ -102,7 +93,7 @@
     <button
       type="button"
       class="ss-trigger"
-      onclick={toggle}
+      onclick={openDropdown}
     >
       <span class="ss-trigger-text" class:ss-placeholder={!value}>
         {selectedLabel || placeholder}
