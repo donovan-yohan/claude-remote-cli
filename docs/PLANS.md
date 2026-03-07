@@ -18,6 +18,7 @@ See `docs/exec-plans/completed/` for historical plans (20 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `mobile-scroll-fixes` | 2026-03-07 | Fix FAB keyboard flicker, scroll-to-top bug, add skip-to-bottom + swipe sidebar |
 | `multi-agent-cli` | 2026-03-05 | Choose between Claude and Codex as the underlying coding agent per session |
 | `handle-existing-worktrees` | 2026-02-26 | Auto-redirect to existing worktrees on branch conflict + git-based delete validation |
 | `publish-command` | 2026-02-26 | /publish slash command for full release lifecycle from feature branch |
