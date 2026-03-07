@@ -105,7 +105,9 @@
         if (!touch) return;
         const dx = touch.clientX - swipeStartX;
         const dy = Math.abs(touch.clientY - swipeStartY);
-        if (dy > dx) {
+        // Only apply axis test after meaningful movement to avoid
+        // cancelling on small hand tremor at gesture start
+        if (dy > dx && (dy > 8 || dx > 8)) {
           swipeTracking = false;
           return;
         }

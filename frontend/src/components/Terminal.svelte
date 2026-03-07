@@ -31,9 +31,15 @@
 
   export function fitTerm() {
     if (!term) return;
-    const savedViewportY = term.buffer.active.viewportY;
+    const buf = term.buffer.active;
+    const wasAtBottom = buf.viewportY >= buf.baseY;
+    const savedViewportY = buf.viewportY;
     fitAddon?.fit();
-    term.scrollToLine(savedViewportY);
+    if (wasAtBottom) {
+      term.scrollToBottom();
+    } else {
+      term.scrollToLine(savedViewportY);
+    }
     sendPtyResize(term.cols, term.rows);
     updateScrollbar();
   }
@@ -138,9 +144,15 @@
     const ro = new ResizeObserver(() => {
       if (roTimer) clearTimeout(roTimer);
       roTimer = setTimeout(() => {
-        const savedViewportY = t.buffer.active.viewportY;
+        const buf = t.buffer.active;
+        const wasAtBottom = buf.viewportY >= buf.baseY;
+        const savedViewportY = buf.viewportY;
         fitAddon.fit();
-        t.scrollToLine(savedViewportY);
+        if (wasAtBottom) {
+          t.scrollToBottom();
+        } else {
+          t.scrollToLine(savedViewportY);
+        }
         sendPtyResize(t.cols, t.rows);
         updateScrollbar();
       }, isMobileDevice ? 150 : 0);
