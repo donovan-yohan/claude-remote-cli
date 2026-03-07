@@ -30,8 +30,11 @@
   }
 
   export function fitTerm() {
+    if (!term) return;
+    const savedViewportY = term.buffer.active.viewportY;
     fitAddon?.fit();
-    if (term) sendPtyResize(term.cols, term.rows);
+    term.scrollToLine(savedViewportY);
+    sendPtyResize(term.cols, term.rows);
     updateScrollbar();
   }
 
@@ -135,7 +138,9 @@
     const ro = new ResizeObserver(() => {
       if (roTimer) clearTimeout(roTimer);
       roTimer = setTimeout(() => {
+        const savedViewportY = t.buffer.active.viewportY;
         fitAddon.fit();
+        t.scrollToLine(savedViewportY);
         sendPtyResize(t.cols, t.rows);
         updateScrollbar();
       }, isMobileDevice ? 150 : 0);
