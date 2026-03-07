@@ -32,6 +32,14 @@ export interface RepoInfo {
   root: string;
 }
 
+export interface OpenSessionOptions {
+  yolo?: boolean;
+  tab?: 'repos' | 'worktrees';
+  branchName?: string;
+  agent?: AgentType;
+  claudeArgs?: string;
+}
+
 export interface GitStatus {
   prState: 'open' | 'merged' | 'closed' | null;
   additions: number;

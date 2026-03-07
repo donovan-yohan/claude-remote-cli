@@ -1,6 +1,6 @@
 <script lang="ts">
   import { getUi, closeSidebar, saveSidebarWidth, toggleSidebarCollapsed, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH, COLLAPSED_SIDEBAR_WIDTH } from '../lib/state/ui.svelte.js';
-  import type { RepoInfo, WorktreeInfo } from '../lib/types.js';
+  import type { RepoInfo, WorktreeInfo, OpenSessionOptions } from '../lib/types.js';
   import SessionList from './SessionList.svelte';
 
   const ui = getUi();
@@ -13,7 +13,7 @@
     onDeleteWorktree,
   }: {
     onSelectSession: (id: string) => void;
-    onOpenNewSession: (repo?: RepoInfo) => void;
+    onOpenNewSession: (repo?: RepoInfo, options?: OpenSessionOptions) => void;
     onOpenSettings: () => void;
     onNewWorktree: (repo: RepoInfo) => void;
     onDeleteWorktree: (wt: WorktreeInfo) => void;

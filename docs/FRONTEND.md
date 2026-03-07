@@ -24,7 +24,7 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `Toolbar.svelte` | Mobile touch toolbar for terminal interaction |
 | `MobileHeader.svelte` | Mobile header with session info |
 | `MobileInput.svelte` | Mobile text input for terminal commands |
-| `ContextMenu.svelte` | Right-click/long-press context menu |
+| `ContextMenu.svelte` | Universal "..." dropdown menu for session/item actions |
 | `PinGate.svelte` | PIN authentication screen |
 | `ImageToast.svelte` | Clipboard image paste feedback |
 | `UpdateToast.svelte` | Version update notification |
@@ -40,7 +40,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - Sidebar status dots: green (running), blue (idle), amber glow (needs attention), gray (inactive)
 - Attention state: tracked in `attentionSessions` reactive state; set when session becomes idle while not viewed; cleared when user opens session
 - Loading state: tracked in `loadingItems` reactive state; `setLoading`/`clearLoading` wrap async actions (start, kill, delete); SessionItem shows CSS shimmer overlay with `pointer-events: none`
-- Hover effects: fade mask on overflow text, scroll reveal animation, action button opacity reveal
+- Hover effects: fade mask on overflow text, scroll reveal animation
 - Avoid naming local variables `state` in `.svelte` files — conflicts with `$state` rune
 - `bind:this` refs used in `$effect` must be declared with `$state()` — plain `let` refs won't trigger effect re-runs in Svelte 5
 
@@ -55,9 +55,9 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 
 ## Key Patterns
 
-- The new-session dialog is tab-aware: repo mode hides branch input and shows "Continue previous conversation" checkbox; worktree mode shows branch input; PRs tab falls back to repo mode. The `open()` method accepts an optional `tab` option to force a specific tab (e.g., `{ tab: 'worktrees' }`)
-- Idle repo items skip the dialog: clicking the card body creates a repo session directly with `continue: true`; the YOLO pill creates a repo session with `continue: true` + `--dangerously-skip-permissions`; the `+ worktree` pill opens the new session dialog defaulted to the worktrees tab
-- Inactive worktree YOLO buttons also skip the dialog, creating a worktree session directly with `--dangerously-skip-permissions`
+- The new-session dialog is tab-aware: repo mode hides branch input and shows "Continue previous conversation" checkbox; worktree mode shows branch input; PRs tab falls back to repo mode. The `open()` method accepts `OpenSessionOptions` with `tab`, `branchName`, `agent`, and `claudeArgs` for pre-filling (used by the "Customize" context menu action)
+- All session/item actions are accessed via a "..." context menu button (ContextMenu component). Menu items vary by state: Active → Rename, Kill; Inactive worktree → Customize, Resume, Resume (YOLO), Delete; Idle repo → Customize, New Worktree
+- "Customize" opens NewSessionDialog pre-filled with the item's root, repo, and branch (for worktrees). Idle repo items also support direct click to create a repo session with `continue: true`
 - PRs tab uses `PrRepoGroup` components — each repo group independently fetches PRs via `@tanstack/svelte-query` `createQuery` with `Accessor` pattern: `createQuery<T>(() => ({...}))` — the options must be wrapped in a function for Svelte 5 runes reactivity
 - Filters (root, repo, search) live below the tab bar
 - PR click cascade: active session → inactive worktree → create new worktree + session

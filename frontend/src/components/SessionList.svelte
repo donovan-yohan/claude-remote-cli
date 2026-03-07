@@ -3,7 +3,7 @@
   import { getSessionState, getSessionStatus, clearAttention, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import * as api from '../lib/api.js';
   import { ConflictError } from '../lib/api.js';
-  import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest } from '../lib/types.js';
+  import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest, OpenSessionOptions } from '../lib/types.js';
   import type { MenuItem } from './ContextMenu.svelte';
   import { rootShortName } from '../lib/utils.js';
   import SessionItem from './SessionItem.svelte';
@@ -20,7 +20,7 @@
     onDeleteWorktree,
   }: {
     onSelectSession: (id: string) => void;
-    onOpenNewSession: (repo?: RepoInfo) => void;
+    onOpenNewSession: (repo?: RepoInfo, options?: OpenSessionOptions) => void;
     onNewWorktree: (repo: RepoInfo) => void;
     onDeleteWorktree: (wt: WorktreeInfo) => void;
   } = $props();
@@ -280,7 +280,7 @@
   function inactiveWorktreeMenu(wt: WorktreeInfo): MenuItem[] {
     const repo: RepoInfo = { name: wt.repoName, path: wt.repoPath, root: wt.root };
     return [
-      { label: 'Customize', action: () => onOpenNewSession(repo) },
+      { label: 'Customize', action: () => onOpenNewSession(repo, { tab: 'worktrees', branchName: wt.branchName }) },
       { label: 'Resume', action: () => handleStartWorktreeSession(wt) },
       { label: 'Resume (YOLO)', action: () => handleStartWorktreeSession(wt, true) },
       { label: 'Delete', action: () => onDeleteWorktree(wt), danger: true },

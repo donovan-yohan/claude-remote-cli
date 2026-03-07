@@ -5,7 +5,7 @@
   import { getSessionState, refreshAll, setAttention, clearAttention } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { isMobileDevice } from './lib/utils.js';
-  import type { RepoInfo, WorktreeInfo } from './lib/types.js';
+  import type { RepoInfo, WorktreeInfo, OpenSessionOptions } from './lib/types.js';
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Terminal from './components/Terminal.svelte';
@@ -116,8 +116,8 @@
     mobileInputRef?.onSessionChange?.();
   }
 
-  function handleOpenNewSession(repo?: RepoInfo) {
-    newSessionDialogRef?.open(repo);
+  function handleOpenNewSession(repo?: RepoInfo, options?: OpenSessionOptions) {
+    newSessionDialogRef?.open(repo, options);
   }
 
   function handleOpenSettings() {

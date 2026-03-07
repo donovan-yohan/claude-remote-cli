@@ -8,7 +8,7 @@ Audit and streamline the claude-remote-cli frontend UX by replacing hover-depend
 | # | Goal | Status | Attempts | Design Doc | Plan |
 |---|------|--------|----------|------------|------|
 | 1 | Context menu refactor | complete | 1 | [design](../design-docs/2026-03-06-context-menu-refactor-design.md) | [plan](../exec-plans/completed/2026-03-06-context-menu-refactor-plan.md) |
-| 2 | Customize session flow | pending | 0 | - | - |
+| 2 | Customize session flow | complete | 1 | [design](../design-docs/2026-03-06-customize-session-flow-design.md) | [plan](../exec-plans/completed/2026-03-06-customize-session-flow-plan.md) |
 | 3 | Arbitrary terminal sessions | pending | 0 | - | - |
 | 4 | Searchable filter dropdowns | pending | 0 | - | - |
 
@@ -39,3 +39,9 @@ Audit and streamline the claude-remote-cli frontend UX by replacing hover-depend
 - The `scrollOnHover` action stays intact but no longer listens for custom `longpressstart`/`longpressend` events — text scroll is now purely a hover enhancement.
 - Svelte's type-checked `onkeydown` handler requires `Event` (not `MouseEvent`) when shared with `onclick`. Using `Event` as the parameter type avoids the type error.
 - "Customize" menu items were added in Goal 1 (calling `onOpenNewSession`) so the menu structure matches the acceptance criteria. Goal 2 will make the pre-fill behavior work.
+
+### Goal 2: Customize Session Flow
+- Minimal change: defined `OpenSessionOptions` in `types.ts` and extended `open()` to accept pre-fill overrides. Only 5 files touched, no backend changes.
+- `WorktreeInfo` and `RepoInfo` don't carry agent/args history, so those fields default to server config. Branch is pre-filled for worktrees from `wt.branchName`.
+- Threading callback options through Sidebar/App was clean — just added optional second parameter to the existing `onOpenNewSession` callback chain.
+- Goal 1 had already wired the "Customize" menu items, so Goal 2 was purely about making `open()` accept and apply pre-fill data.

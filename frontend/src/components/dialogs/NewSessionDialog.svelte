@@ -3,7 +3,7 @@
   import { getSessionState, refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getUi } from '../../lib/state/ui.svelte.js';
   import { rootShortName } from '../../lib/utils.js';
-  import type { RepoInfo, AgentType } from '../../lib/types.js';
+  import type { RepoInfo, AgentType, OpenSessionOptions } from '../../lib/types.js';
 
   let {
     preselectedRepo = null,
@@ -102,7 +102,7 @@
     branchDropdownVisible = false;
   }
 
-  export async function open(repo?: RepoInfo | null, options?: { yolo?: boolean; tab?: 'repos' | 'worktrees' }) {
+  export async function open(repo?: RepoInfo | null, options?: OpenSessionOptions) {
     reset();
     if (options?.yolo) yoloMode = true;
     activeTab = options?.tab ?? (ui.activeTab === 'prs' ? 'repos' : ui.activeTab);
@@ -114,12 +114,13 @@
       allRepos = [];
     }
 
-    // Load default agent from server config
+    // Load default agent from server config, then apply override
     try {
       selectedAgent = await fetchDefaultAgent() as AgentType;
     } catch {
       selectedAgent = 'claude';
     }
+    if (options?.agent) selectedAgent = options.agent;
 
     // Pre-select from explicit repo argument, prop, or sidebar filters
     const target = repo ?? preselectedRepo;
@@ -148,6 +149,10 @@
         selectedRoot = ui.rootFilter;
       }
     }
+
+    // Apply pre-fill overrides for customize flow
+    if (options?.branchName) branchInput = options.branchName;
+    if (options?.claudeArgs) claudeArgsInput = options.claudeArgs;
 
     dialogEl.showModal();
   }
