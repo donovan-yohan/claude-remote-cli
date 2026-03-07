@@ -30,25 +30,27 @@
 </script>
 
 <div class="sidebar-filters">
-  <select
-    value={ui.rootFilter}
-    onchange={(e) => { ui.rootFilter = (e.target as HTMLSelectElement).value; ui.repoFilter = ''; }}
-  >
-    <option value="">All roots</option>
-    {#each availableRoots as root}
-      <option value={root}>{rootShortName(root)}</option>
-    {/each}
-  </select>
+  {#if ui.activeTab !== 'terminals'}
+    <select
+      value={ui.rootFilter}
+      onchange={(e) => { ui.rootFilter = (e.target as HTMLSelectElement).value; ui.repoFilter = ''; }}
+    >
+      <option value="">All roots</option>
+      {#each availableRoots as root}
+        <option value={root}>{rootShortName(root)}</option>
+      {/each}
+    </select>
 
-  <select
-    value={ui.repoFilter}
-    onchange={(e) => { ui.repoFilter = (e.target as HTMLSelectElement).value; }}
-  >
-    <option value="">All repos</option>
-    {#each availableRepos as repo}
-      <option value={repo}>{repo}</option>
-    {/each}
-  </select>
+    <select
+      value={ui.repoFilter}
+      onchange={(e) => { ui.repoFilter = (e.target as HTMLSelectElement).value; }}
+    >
+      <option value="">All repos</option>
+      {#each availableRepos as repo}
+        <option value={repo}>{repo}</option>
+      {/each}
+    </select>
+  {/if}
 
   <input
     type="text"

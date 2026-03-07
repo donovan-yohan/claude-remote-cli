@@ -26,3 +26,4 @@
 | [2026-03-05-multi-agent-cli-design.md](2026-03-05-multi-agent-cli-design.md) | Choose between Claude and Codex as the underlying coding agent per session | 2026-03-05 |
 | [2026-03-06-context-menu-refactor-design.md](2026-03-06-context-menu-refactor-design.md) | Replace hover/longpress action pills with universal "..." context menu | 2026-03-06 |
 | [2026-03-06-customize-session-flow-design.md](2026-03-06-customize-session-flow-design.md) | Pre-fill NewSessionDialog from context menu "Customize" action | 2026-03-06 |
+| [2026-03-06-arbitrary-terminal-sessions-design.md](2026-03-06-arbitrary-terminal-sessions-design.md) | Bare shell terminal sessions without agent wrappers | 2026-03-06 |

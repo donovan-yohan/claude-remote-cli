@@ -9,7 +9,7 @@ Audit and streamline the claude-remote-cli frontend UX by replacing hover-depend
 |---|------|--------|----------|------------|------|
 | 1 | Context menu refactor | complete | 1 | [design](../design-docs/2026-03-06-context-menu-refactor-design.md) | [plan](../exec-plans/completed/2026-03-06-context-menu-refactor-plan.md) |
 | 2 | Customize session flow | complete | 1 | [design](../design-docs/2026-03-06-customize-session-flow-design.md) | [plan](../exec-plans/completed/2026-03-06-customize-session-flow-plan.md) |
-| 3 | Arbitrary terminal sessions | pending | 0 | - | - |
+| 3 | Arbitrary terminal sessions | complete | 1 | [design](../design-docs/2026-03-06-arbitrary-terminal-sessions-design.md) | [plan](../exec-plans/completed/2026-03-06-arbitrary-terminal-sessions-plan.md) |
 | 4 | Searchable filter dropdowns | pending | 0 | - | - |
 
 ## Acceptance Criteria
@@ -45,3 +45,11 @@ Audit and streamline the claude-remote-cli frontend UX by replacing hover-depend
 - `WorktreeInfo` and `RepoInfo` don't carry agent/args history, so those fields default to server config. Branch is pre-filled for worktrees from `wt.branchName`.
 - Threading callback options through Sidebar/App was clean — just added optional second parameter to the existing `onOpenNewSession` callback chain.
 - Goal 1 had already wired the "Customize" menu items, so Goal 2 was purely about making `open()` accept and apply pre-fill data.
+
+### Goal 3: Arbitrary Terminal Sessions
+- The existing `sessions.create()` already supported a `command` parameter override, so no changes to the core session creation logic were needed — just passed `$SHELL` instead of agent command.
+- Adding `'terminal'` to `SessionType` required fixing a type narrowing issue in `NewSessionDialog.svelte` where `ui.activeTab` (now including `'terminals'`) was assigned to a `'repos' | 'worktrees'` variable. Fixed with explicit narrowing.
+- The `worktreeSessions` filter in `SessionList.svelte` previously used `s.type !== 'repo'` which would have included terminals. Changed to explicit `s.type === 'worktree'`.
+- Terminal sessions don't need idle attention tracking (orange dot) — filtered in `setAttention()` by checking `session.type !== 'terminal'`.
+- The `agent` field on terminal sessions is set to `'claude'` as a placeholder since `Session` requires it. The field is ignored in the UI (shell badge shown instead of agent badge).
+- Terminal counter (`nextTerminalName()`) is a simple incrementing counter in `sessions.ts` — not persisted, resets on server restart. Fine since terminals are ephemeral.

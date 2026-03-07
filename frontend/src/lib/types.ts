@@ -2,7 +2,7 @@ export type AgentType = 'claude' | 'codex';
 
 export interface SessionSummary {
   id: string;
-  type: 'repo' | 'worktree';
+  type: 'repo' | 'worktree' | 'terminal';
   agent: AgentType;
   root: string;
   repoName: string;

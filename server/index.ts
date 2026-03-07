@@ -845,6 +845,24 @@ async function main(): Promise<void> {
     res.status(201).json(session);
   });
 
+  // POST /sessions/terminal — start a bare shell session (no agent)
+  app.post('/sessions/terminal', requireAuth, (_req, res) => {
+    const shell = process.env.SHELL || '/bin/sh';
+    const displayName = sessions.nextTerminalName();
+
+    const session = sessions.create({
+      type: 'terminal',
+      agent: 'claude', // placeholder — not used for terminal sessions
+      repoPath: os.homedir(),
+      cwd: os.homedir(),
+      displayName,
+      command: shell,
+      args: [],
+    });
+
+    res.status(201).json(session);
+  });
+
   // DELETE /sessions/:id
   app.delete('/sessions/:id', requireAuth, (req, res) => {
     try {

@@ -68,7 +68,8 @@
       : 'status-dot status-dot--inactive',
   );
 
-  let agentType = $derived(variant.kind === 'active' ? variant.session.agent : undefined);
+  let isTerminal = $derived(variant.kind === 'active' && variant.session.type === 'terminal');
+  let agentType = $derived(variant.kind === 'active' && !isTerminal ? variant.session.agent : undefined);
 
   let isSelected = $derived(variant.kind === 'active' && variant.isSelected);
   let isActive = $derived(variant.kind === 'active');
@@ -110,14 +111,20 @@
         <span class="session-name-text">{displayName}</span>
       </span>
     </div>
-    <div class="session-row-2" class:has-badge={!!agentType}>
-      {#if agentType}
+    <div class="session-row-2" class:has-badge={!!agentType || isTerminal}>
+      {#if isTerminal}
+        <span class="shell-badge">&gt;_</span>
+      {:else if agentType}
         <AgentBadge agent={agentType} />
       {/if}
       {#if prIcon}
         <span class={prIconClass}>{prIcon}</span>
       {/if}
-      <span class="session-sub">{rootName}{repoName ? ' · ' + repoName : ''}</span>
+      {#if !isTerminal}
+        <span class="session-sub">{rootName}{repoName ? ' · ' + repoName : ''}</span>
+      {:else}
+        <span class="session-sub">Shell</span>
+      {/if}
     </div>
     {#if lastActivity || (gitStatus && (gitStatus.additions || gitStatus.deletions))}
       <div class="session-row-3">
@@ -303,6 +310,19 @@
 
   .session-row-2.has-badge {
     padding-left: 2px;
+  }
+
+  .shell-badge {
+    font-size: 0.55rem;
+    font-family: monospace;
+    font-weight: 700;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  li.active-session.selected .shell-badge {
+    color: rgba(255, 255, 255, 0.7);
   }
 
   .pr-icon {

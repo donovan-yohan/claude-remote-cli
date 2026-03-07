@@ -1,6 +1,6 @@
 import type { IPty } from 'node-pty';
 
-export type SessionType = 'repo' | 'worktree';
+export type SessionType = 'repo' | 'worktree' | 'terminal';
 export type AgentType = 'claude' | 'codex';
 
 export interface Session {

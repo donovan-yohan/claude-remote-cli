@@ -1,4 +1,4 @@
-export type TabId = 'repos' | 'worktrees' | 'prs';
+export type TabId = 'repos' | 'worktrees' | 'terminals' | 'prs';
 
 const SIDEBAR_WIDTH_KEY = 'claude-remote-sidebar-width';
 const SIDEBAR_COLLAPSED_KEY = 'claude-remote-sidebar-collapsed';

@@ -66,7 +66,7 @@ export function setAttention(sessionId: string, idle: boolean): void {
   const session = sessions.find(s => s.id === sessionId);
   if (session) session.idle = idle;
 
-  if (idle && sessionId !== activeSessionId) {
+  if (idle && sessionId !== activeSessionId && session?.type !== 'terminal') {
     attentionSessions[sessionId] = true;
   } else {
     delete attentionSessions[sessionId];

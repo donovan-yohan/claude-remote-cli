@@ -46,6 +46,7 @@ type CreateResult = SessionSummary & { pid: number | undefined };
 const sessions = new Map<string, Session>();
 
 const IDLE_TIMEOUT_MS = 5000;
+let terminalCounter = 0;
 type IdleChangeCallback = (sessionId: string, idle: boolean) => void;
 let idleChangeCallback: IdleChangeCallback | null = null;
 
@@ -234,4 +235,8 @@ function findRepoSession(repoPath: string): SessionSummary | undefined {
   return list().find((s) => s.type === 'repo' && s.repoPath === repoPath);
 }
 
-export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange, findRepoSession, AGENT_COMMANDS, AGENT_YOLO_ARGS, AGENT_CONTINUE_ARGS };
+function nextTerminalName(): string {
+  return `Terminal ${++terminalCounter}`;
+}
+
+export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange, findRepoSession, nextTerminalName, AGENT_COMMANDS, AGENT_YOLO_ARGS, AGENT_CONTINUE_ARGS };

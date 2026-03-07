@@ -27,7 +27,8 @@
 
   // Split sessions by type
   let repoSessions = $derived(sessionState.sessions.filter(s => s.type === 'repo'));
-  let worktreeSessions = $derived(sessionState.sessions.filter(s => s.type !== 'repo'));
+  let worktreeSessions = $derived(sessionState.sessions.filter(s => s.type === 'worktree'));
+  let terminalSessions = $derived(sessionState.sessions.filter(s => s.type === 'terminal'));
 
   // Repos that have an active session
   let activeRepoPaths = $derived(new Set(repoSessions.map(s => s.repoPath)));
@@ -134,9 +135,17 @@
     sessionState.activeSessionId ? sessionState.sessions.find(s => s.id === sessionState.activeSessionId) : undefined,
   );
 
+  // Terminals tab — filtered by search only (no root/repo filters)
+  let filteredTerminalSessions = $derived(
+    terminalSessions
+      .filter(s => !ui.searchFilter || (s.displayName || s.id).toLowerCase().includes(ui.searchFilter.toLowerCase()))
+      .sort((a, b) => compareRecent(a.lastActivity, b.lastActivity)),
+  );
+
   // Tab counts
   let reposCount = $derived(filteredRepoSessions.length + filteredIdleRepos.length);
   let worktreesCount = $derived(filteredWorktreeSessions.length + filteredWorktrees.length);
+  let terminalsCount = $derived(filteredTerminalSessions.length);
   let prsCount = $derived(prRepos.length);
 
   // PR click cascade helpers — match by git branch name
@@ -293,6 +302,21 @@
       { label: 'New Worktree', action: () => onNewWorktree(repo) },
     ];
   }
+
+  function terminalSessionMenu(session: SessionSummary): MenuItem[] {
+    return [
+      { label: 'Rename', action: () => handleRenameSession(session) },
+      { label: 'Kill', action: () => handleKillSession(session), danger: true },
+    ];
+  }
+
+  async function handleCreateTerminal() {
+    try {
+      const session = await api.createTerminalSession();
+      await refreshAll();
+      if (session?.id) onSelectSession(session.id);
+    } catch { /* user can retry */ }
+  }
 </script>
 
 <div class="session-list-tabs">
@@ -309,6 +333,13 @@
     onclick={() => { ui.activeTab = 'worktrees'; }}
   >
     Worktrees <span class="tab-count">{worktreesCount}</span>
+  </button>
+  <button
+    class="sidebar-tab"
+    class:active={ui.activeTab === 'terminals'}
+    onclick={() => { ui.activeTab = 'terminals'; }}
+  >
+    Terminals <span class="tab-count">{terminalsCount}</span>
   </button>
   <button
     class="sidebar-tab"
@@ -388,6 +419,21 @@
         {/each}
       {/if}
     {/each}
+  {:else if ui.activeTab === 'terminals'}
+    <li class="terminal-header">
+      <button class="terminal-add-btn" onclick={handleCreateTerminal} aria-label="New terminal">+ New Terminal</button>
+    </li>
+    {#each filteredTerminalSessions as session (session.id)}
+      <SessionItem
+        variant={{ kind: 'active', session, status: getSessionStatus(session), isSelected: sessionState.activeSessionId === session.id }}
+        isLoading={isItemLoading(session.id)}
+        onclick={() => handleSelectSession(session)}
+        menuItems={terminalSessionMenu(session)}
+      />
+    {/each}
+    {#if filteredTerminalSessions.length === 0}
+      <li class="pr-hint">No active terminals</li>
+    {/if}
   {:else}
     {#if prRepos.length === 0}
       <li class="pr-hint">No repos found</li>
@@ -530,6 +576,29 @@
   :global(.repo-group-add:focus-visible) {
     color: var(--accent);
     opacity: 1;
+  }
+
+  :global(.terminal-header) {
+    display: flex;
+    padding: 8px 12px 4px;
+    list-style: none;
+  }
+
+  :global(.terminal-add-btn) {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    width: 100%;
+  }
+
+  :global(.terminal-add-btn:hover) {
+    color: var(--accent);
+    border-color: var(--accent);
   }
 
   :global(.pr-hint) {

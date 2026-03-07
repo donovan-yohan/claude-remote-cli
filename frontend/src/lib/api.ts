@@ -100,6 +100,14 @@ export async function createRepoSession(body: {
   return json<SessionSummary>(res);
 }
 
+export async function createTerminalSession(): Promise<SessionSummary> {
+  const res = await fetch('/sessions/terminal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return json<SessionSummary>(res);
+}
+
 export async function killSession(id: string): Promise<void> {
   await fetch('/sessions/' + id, { method: 'DELETE' });
 }
