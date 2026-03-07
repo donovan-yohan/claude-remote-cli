@@ -2,6 +2,7 @@
   import { getUi } from '../lib/state/ui.svelte.js';
   import { getSessionState } from '../lib/state/sessions.svelte.js';
   import { rootShortName } from '../lib/utils.js';
+  import SearchableSelect from './SearchableSelect.svelte';
 
   const ui = getUi();
   const state = getSessionState();
@@ -27,29 +28,31 @@
     }
     return [...repos].sort();
   })());
+
+  let rootOptions = $derived(
+    availableRoots.map(r => ({ value: r, label: rootShortName(r) })),
+  );
+
+  let repoOptions = $derived(
+    availableRepos.map(r => ({ value: r, label: r })),
+  );
 </script>
 
 <div class="sidebar-filters">
   {#if ui.activeTab !== 'terminals'}
-    <select
+    <SearchableSelect
+      options={rootOptions}
       value={ui.rootFilter}
-      onchange={(e) => { ui.rootFilter = (e.target as HTMLSelectElement).value; ui.repoFilter = ''; }}
-    >
-      <option value="">All roots</option>
-      {#each availableRoots as root}
-        <option value={root}>{rootShortName(root)}</option>
-      {/each}
-    </select>
+      placeholder="All roots"
+      onchange={(v) => { ui.rootFilter = v; ui.repoFilter = ''; }}
+    />
 
-    <select
+    <SearchableSelect
+      options={repoOptions}
       value={ui.repoFilter}
-      onchange={(e) => { ui.repoFilter = (e.target as HTMLSelectElement).value; }}
-    >
-      <option value="">All repos</option>
-      {#each availableRepos as repo}
-        <option value={repo}>{repo}</option>
-      {/each}
-    </select>
+      placeholder="All repos"
+      onchange={(v) => { ui.repoFilter = v; }}
+    />
   {/if}
 
   <input
@@ -87,27 +90,6 @@
     gap: 4px;
     padding: 6px 8px;
     flex-shrink: 0;
-  }
-
-  select {
-    padding: 6px 8px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    font-size: 0.75rem;
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23aaa' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 8px center;
-    cursor: pointer;
-    transition: border-color 0.15s, box-shadow 0.3s;
-  }
-
-  select:focus {
-    border-color: var(--accent);
   }
 
   input {

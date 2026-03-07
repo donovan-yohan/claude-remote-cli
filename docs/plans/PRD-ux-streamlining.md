@@ -10,7 +10,7 @@ Audit and streamline the claude-remote-cli frontend UX by replacing hover-depend
 | 1 | Context menu refactor | complete | 1 | [design](../design-docs/2026-03-06-context-menu-refactor-design.md) | [plan](../exec-plans/completed/2026-03-06-context-menu-refactor-plan.md) |
 | 2 | Customize session flow | complete | 1 | [design](../design-docs/2026-03-06-customize-session-flow-design.md) | [plan](../exec-plans/completed/2026-03-06-customize-session-flow-plan.md) |
 | 3 | Arbitrary terminal sessions | complete | 1 | [design](../design-docs/2026-03-06-arbitrary-terminal-sessions-design.md) | [plan](../exec-plans/completed/2026-03-06-arbitrary-terminal-sessions-plan.md) |
-| 4 | Searchable filter dropdowns | pending | 0 | - | - |
+| 4 | Searchable filter dropdowns | complete | 1 | [design](../design-docs/2026-03-06-searchable-filter-dropdowns-design.md) | [plan](../exec-plans/completed/2026-03-06-searchable-filter-dropdowns-plan.md) |
 
 ## Acceptance Criteria
 
@@ -53,3 +53,10 @@ Audit and streamline the claude-remote-cli frontend UX by replacing hover-depend
 - Terminal sessions don't need idle attention tracking (orange dot) — filtered in `setAttention()` by checking `session.type !== 'terminal'`.
 - The `agent` field on terminal sessions is set to `'claude'` as a placeholder since `Session` requires it. The field is ignored in the UI (shell badge shown instead of agent badge).
 - Terminal counter (`nextTerminalName()`) is a simple incrementing counter in `sessions.ts` — not persisted, resets on server restart. Fine since terminals are ephemeral.
+
+### Goal 4: Searchable Filter Dropdowns
+- Extracted the branch autocomplete pattern into a reusable `SearchableSelect.svelte` component rather than inlining the logic in `SessionFilters`. This keeps SessionFilters clean and the component reusable.
+- Key difference from the branch autocomplete: empty search text shows all options (branch autocomplete hides dropdown when empty). This is intentional — filter dropdowns need to show all available options by default.
+- Used `onmousedown` instead of `onclick` on dropdown items (same pattern as branch autocomplete) to prevent the input blur from closing the dropdown before the click registers.
+- The `<svelte:window onclick>` handler for click-outside detection is clean but means the component adds a global listener. Fine for 2 instances; would need a different approach if used heavily.
+- No "Create new" option needed — these are pure selection filters, not creation flows. The reset option at the top (showing the placeholder text like "All roots") serves as the clear action.

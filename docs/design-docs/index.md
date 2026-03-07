@@ -27,3 +27,4 @@
 | [2026-03-06-context-menu-refactor-design.md](2026-03-06-context-menu-refactor-design.md) | Replace hover/longpress action pills with universal "..." context menu | 2026-03-06 |
 | [2026-03-06-customize-session-flow-design.md](2026-03-06-customize-session-flow-design.md) | Pre-fill NewSessionDialog from context menu "Customize" action | 2026-03-06 |
 | [2026-03-06-arbitrary-terminal-sessions-design.md](2026-03-06-arbitrary-terminal-sessions-design.md) | Bare shell terminal sessions without agent wrappers | 2026-03-06 |
+| [2026-03-06-searchable-filter-dropdowns-design.md](2026-03-06-searchable-filter-dropdowns-design.md) | Replace native selects with searchable dropdown filters | 2026-03-06 |
