@@ -4,6 +4,7 @@
   import * as api from '../lib/api.js';
   import { ConflictError } from '../lib/api.js';
   import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest } from '../lib/types.js';
+  import type { MenuItem } from './ContextMenu.svelte';
   import { rootShortName } from '../lib/utils.js';
   import SessionItem from './SessionItem.svelte';
   import SessionFilters from './SessionFilters.svelte';
@@ -183,7 +184,6 @@
     }
 
     // Step 3: No local worktree → create new worktree + session
-    // No shimmer here — no SessionItem exists for this key yet
     try {
       const session = await api.createSession({
         repoPath: repo.path,
@@ -268,6 +268,31 @@
       clearLoading(key);
     }
   }
+
+  // Menu item builders
+  function activeSessionMenu(session: SessionSummary): MenuItem[] {
+    return [
+      { label: 'Rename', action: () => handleRenameSession(session) },
+      { label: 'Kill', action: () => handleKillSession(session), danger: true },
+    ];
+  }
+
+  function inactiveWorktreeMenu(wt: WorktreeInfo): MenuItem[] {
+    const repo: RepoInfo = { name: wt.repoName, path: wt.repoPath, root: wt.root };
+    return [
+      { label: 'Customize', action: () => onOpenNewSession(repo) },
+      { label: 'Resume', action: () => handleStartWorktreeSession(wt) },
+      { label: 'Resume (YOLO)', action: () => handleStartWorktreeSession(wt, true) },
+      { label: 'Delete', action: () => onDeleteWorktree(wt), danger: true },
+    ];
+  }
+
+  function idleRepoMenu(repo: RepoInfo): MenuItem[] {
+    return [
+      { label: 'Customize', action: () => onOpenNewSession(repo) },
+      { label: 'New Worktree', action: () => onNewWorktree(repo) },
+    ];
+  }
 </script>
 
 <div class="session-list-tabs">
@@ -307,8 +332,7 @@
         gitStatus={sessionState.gitStatuses[session.repoPath + ':' + session.worktreeName]}
         isLoading={isItemLoading(session.id)}
         onclick={() => handleSelectSession(session)}
-        onkill={() => handleKillSession(session)}
-        onrename={() => handleRenameSession(session)}
+        menuItems={activeSessionMenu(session)}
       />
     {/each}
     {#if filteredIdleRepos.length > 0}
@@ -319,8 +343,7 @@
         variant={{ kind: 'idle-repo', repo }}
         isLoading={isItemLoading(repo.path)}
         onclick={() => handleStartRepoSession(repo)}
-        onresumeYolo={() => handleStartRepoSession(repo, true)}
-        onNewWorktree={() => onNewWorktree(repo)}
+        menuItems={idleRepoMenu(repo)}
       />
     {/each}
   {:else if ui.activeTab === 'worktrees'}
@@ -332,8 +355,7 @@
           gitStatus={sessionState.gitStatuses[session.repoPath + ':' + session.worktreeName]}
           isLoading={isItemLoading(session.id)}
           onclick={() => handleSelectSession(session)}
-          onkill={() => handleKillSession(session)}
-          onrename={() => handleRenameSession(session)}
+          menuItems={activeSessionMenu(session)}
         />
       {/each}
     {/if}
@@ -361,8 +383,7 @@
             gitStatus={sessionState.gitStatuses[wt.repoPath + ':' + wt.name]}
             isLoading={isItemLoading(wt.path)}
             onclick={() => handleStartWorktreeSession(wt)}
-            onresumeYolo={() => handleStartWorktreeSession(wt, true)}
-            ondelete={() => onDeleteWorktree(wt)}
+            menuItems={inactiveWorktreeMenu(wt)}
           />
         {/each}
       {/if}

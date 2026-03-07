@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { RepoInfo, PullRequest, PullRequestsResponse, SessionSummary } from '../lib/types.js';
+  import type { MenuItem } from './ContextMenu.svelte';
   import { createQuery } from '@tanstack/svelte-query';
   import * as api from '../lib/api.js';
   import { getUi } from '../lib/state/ui.svelte.js';
@@ -48,6 +49,13 @@
     e.stopPropagation();
     prQuery.refetch();
   }
+
+  function prMenuItems(pr: PullRequest): MenuItem[] {
+    return [
+      { label: 'Open in GitHub', action: () => window.open(pr.url, '_blank', 'noopener') },
+      { label: 'Start (YOLO)', action: () => onPRClick(pr, repo, true) },
+    ];
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -84,7 +92,7 @@
         isActiveSession={!!findSessionForBranch(pr.headRefName)}
         isSelected={activeSession?.type === 'worktree' && activeSession?.branchName === pr.headRefName && activeSession?.repoName === repo.name}
         onclick={() => onPRClick(pr, repo)}
-        onYolo={() => onPRClick(pr, repo, true)}
+        menuItems={prMenuItems(pr)}
       />
     {/each}
   {/if}

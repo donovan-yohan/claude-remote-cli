@@ -1,8 +1,10 @@
 <script lang="ts">
   import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from '../lib/types.js';
+  import type { MenuItem } from './ContextMenu.svelte';
   import { formatRelativeTime, rootShortName } from '../lib/utils.js';
-  import { scrollOnHover, createLongpressClick } from '../lib/actions.js';
+  import { scrollOnHover } from '../lib/actions.js';
   import AgentBadge from './AgentBadge.svelte';
+  import ContextMenu from './ContextMenu.svelte';
 
   type ActiveVariant = {
     kind: 'active';
@@ -19,21 +21,13 @@
     gitStatus,
     isLoading = false,
     onclick,
-    onkill,
-    onrename,
-    onresumeYolo,
-    ondelete,
-    onNewWorktree,
+    menuItems = [],
   }: {
     variant: ItemVariant;
     gitStatus?: GitStatus | undefined;
     isLoading?: boolean;
     onclick: () => void;
-    onkill?: () => void;
-    onrename?: () => void;
-    onresumeYolo?: () => void;
-    ondelete?: () => void;
-    onNewWorktree?: () => void;
+    menuItems?: MenuItem[];
   } = $props();
 
   let displayName = $derived.by(() => {
@@ -98,34 +92,6 @@
       default: return '';
     }
   });
-
-  const { action: longpressAction, handleClick } = createLongpressClick(() => onclick());
-
-  function handleKill(e: MouseEvent) {
-    e.stopPropagation();
-    onkill?.();
-  }
-
-  function handleRename(e: MouseEvent) {
-    e.stopPropagation();
-    onrename?.();
-  }
-
-  function handleResumeYolo(e: MouseEvent) {
-    e.stopPropagation();
-    onresumeYolo?.();
-  }
-
-  function handleDelete(e: MouseEvent) {
-    e.stopPropagation();
-    ondelete?.();
-  }
-
-  function handleNewWorktree(e: MouseEvent) {
-    e.stopPropagation();
-    onNewWorktree?.();
-  }
-
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -135,8 +101,7 @@
   class:inactive-worktree={!isActive}
   class:selected={isSelected}
   class:loading={isLoading}
-  onclick={handleClick}
-  use:longpressAction
+  onclick={onclick}
 >
   <div class="session-info">
     <div class="session-row-1">
@@ -166,30 +131,9 @@
       </div>
     {/if}
   </div>
-  <div class="session-actions">
-    {#if variant.kind === 'active'}
-      {#if onrename}
-        <button class="action-pill" aria-label="Rename session" onclick={handleRename}>✎</button>
-      {/if}
-      {#if onkill}
-        <button class="action-pill action-pill--danger" aria-label="Kill session" onclick={handleKill}>×</button>
-      {/if}
-    {:else if variant.kind === 'inactive-worktree'}
-      {#if onresumeYolo}
-        <button class="action-pill action-pill--mono" aria-label="Resume in yolo mode" onclick={handleResumeYolo}>YOLO</button>
-      {/if}
-      {#if ondelete}
-        <button class="action-pill action-pill--danger" aria-label="Delete worktree" onclick={handleDelete}>🗑</button>
-      {/if}
-    {:else if variant.kind === 'idle-repo'}
-      {#if onresumeYolo}
-        <button class="action-pill action-pill--mono" aria-label="Start in yolo mode" onclick={handleResumeYolo}>YOLO</button>
-      {/if}
-      {#if onNewWorktree}
-        <button class="action-pill action-pill--mono" aria-label="New worktree" onclick={handleNewWorktree}>+ worktree</button>
-      {/if}
-    {/if}
-  </div>
+  {#if menuItems.length > 0}
+    <ContextMenu items={menuItems} />
+  {/if}
 </li>
 
 <style>
@@ -211,8 +155,7 @@
     background: var(--bg);
   }
 
-  li.active-session:hover,
-  li.active-session:global(.longpress) {
+  li.active-session:hover {
     background: var(--border);
   }
 
@@ -237,8 +180,7 @@
     opacity: 0.7;
   }
 
-  li.inactive-worktree:hover,
-  li.inactive-worktree:global(.longpress) {
+  li.inactive-worktree:hover {
     opacity: 1;
     border-color: var(--accent);
   }
@@ -329,9 +271,8 @@
     -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
   }
 
-  /* On hover/longpress: remove mask — JS handles the scroll */
-  li:hover .session-name.has-overflow,
-  li:global(.longpress) .session-name.has-overflow {
+  /* On hover: remove mask — JS handles the scroll */
+  li:hover .session-name.has-overflow {
     mask-image: none;
     -webkit-mask-image: none;
   }
@@ -346,81 +287,12 @@
     -webkit-mask-image: linear-gradient(to right, white calc(100% - 32px), transparent);
   }
 
-  li.active-session.selected:hover .session-name.has-overflow,
-  li.active-session.selected:global(.longpress) .session-name.has-overflow {
+  li.active-session.selected:hover .session-name.has-overflow {
     mask-image: none;
     -webkit-mask-image: none;
   }
 
-  /* Pill action buttons */
-  .action-pill {
-    background: var(--border);
-    border: none;
-    color: var(--text);
-    font-size: 0.75rem;
-    cursor: pointer;
-    padding: 2px 8px;
-    border-radius: 12px;
-    touch-action: manipulation;
-    flex-shrink: 0;
-    min-height: 24px;
-    display: inline-flex;
-    align-items: center;
-    transition: background 0.15s, color 0.15s;
-    line-height: 1;
-  }
-
-  .action-pill:hover {
-    background: #505050;
-  }
-
-  .action-pill--mono {
-    font-family: monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.02em;
-  }
-
-  .action-pill--danger:hover {
-    background: #4a2020;
-    color: #e74c3c;
-  }
-
-  /* Selected card overrides */
-  li.active-session.selected .action-pill {
-    background: #b35a3a;
-    color: #fff;
-  }
-
-  li.active-session.selected .action-pill:hover {
-    background: #9a4d32;
-  }
-
-  li.active-session.selected .action-pill--danger:hover {
-    background: #8b2020;
-    color: #fca5a5;
-  }
-
-  .session-actions {
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.15s 0.1s, visibility 0.15s 0.1s;
-  }
-
-  li:hover .session-actions,
-  li:focus-within .session-actions,
-  li:global(.longpress) .session-actions {
-    opacity: 1;
-    visibility: visible;
-  }
-
-  /* Row 2: agent badge + pr icon + root · repo */
+  /* Row 2: agent badge + pr icon + root + repo */
   .session-row-2 {
     display: flex;
     align-items: center;
@@ -475,4 +347,14 @@
 
   .diff-add { color: #4ade80; }
   .diff-del { color: #f87171; }
+
+  /* Context menu trigger styling when selected */
+  li.active-session.selected :global(.context-menu-trigger) {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  li.active-session.selected :global(.context-menu-trigger:hover) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.15);
+  }
 </style>

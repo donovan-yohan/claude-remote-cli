@@ -1,20 +1,22 @@
 <script lang="ts">
   import type { PullRequest } from '../lib/types.js';
+  import type { MenuItem } from './ContextMenu.svelte';
   import { formatRelativeTime } from '../lib/utils.js';
-  import { scrollOnHover, createLongpressClick } from '../lib/actions.js';
+  import { scrollOnHover } from '../lib/actions.js';
+  import ContextMenu from './ContextMenu.svelte';
 
   let {
     pr,
     isActiveSession,
     isSelected = false,
     onclick,
-    onYolo,
+    menuItems = [],
   }: {
     pr: PullRequest;
     isActiveSession: boolean;
     isSelected?: boolean;
     onclick: () => void;
-    onYolo?: () => void;
+    menuItems?: MenuItem[];
   } = $props();
 
   let stateIcon = $derived.by(() => {
@@ -53,18 +55,6 @@
   });
 
   let relativeTime = $derived(formatRelativeTime(pr.updatedAt));
-
-  const { action: longpressAction, handleClick } = createLongpressClick(() => onclick());
-
-  function handleExternalClick(e: MouseEvent) {
-    e.stopPropagation();
-    window.open(pr.url, '_blank', 'noopener');
-  }
-
-  function handleYolo(e: MouseEvent) {
-    e.stopPropagation();
-    onYolo?.();
-  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -73,8 +63,7 @@
   class="pr-item"
   class:active-session={isActiveSession}
   class:selected={isSelected}
-  onclick={handleClick}
-  use:longpressAction
+  {onclick}
 >
   <div class="pr-info">
     <div class="pr-row-1">
@@ -86,6 +75,9 @@
     <div class="pr-row-2">
       <span class="pr-meta">#{pr.number} · {pr.author}</span>
       <span class="role-badge role-{pr.role}">{roleBadge}</span>
+      {#if reviewIcon}
+        <span class="review-badge {reviewClass}" title={pr.reviewDecision ?? ''}>{reviewIcon}</span>
+      {/if}
     </div>
     {#if relativeTime || pr.additions || pr.deletions}
       <div class="pr-row-3">
@@ -99,17 +91,9 @@
       </div>
     {/if}
   </div>
-  <div class="pr-actions">
-    {#if reviewIcon}
-      <span class="review-badge {reviewClass}" title={pr.reviewDecision ?? ''}>{reviewIcon}</span>
-    {/if}
-    {#if onYolo}
-      <button class="action-pill action-pill--mono" aria-label="Start in yolo mode" onclick={handleYolo}>YOLO</button>
-    {/if}
-    <button class="external-link-btn" aria-label="Open in GitHub" onclick={handleExternalClick}>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-    </button>
-  </div>
+  {#if menuItems.length > 0}
+    <ContextMenu items={menuItems} />
+  {/if}
 </li>
 
 <style>
@@ -130,8 +114,7 @@
     opacity: 0.8;
   }
 
-  li.pr-item:hover,
-  li.pr-item:global(.longpress) {
+  li.pr-item:hover {
     opacity: 1;
     border-color: var(--accent);
   }
@@ -209,99 +192,16 @@
     -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
   }
 
-  /* On hover/longpress: remove mask — JS handles the scroll */
-  li:hover .pr-title.has-overflow,
-  li:global(.longpress) .pr-title.has-overflow {
+  /* On hover: remove mask — JS handles the scroll */
+  li:hover .pr-title.has-overflow {
     mask-image: none;
     -webkit-mask-image: none;
-  }
-
-  .pr-actions {
-    position: absolute;
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.15s 0.1s, visibility 0.15s 0.1s;
-  }
-
-  li:hover .pr-actions,
-  li:focus-within .pr-actions,
-  li:global(.longpress) .pr-actions {
-    opacity: 1;
-    visibility: visible;
-  }
-
-  .action-pill {
-    background: var(--border);
-    border: none;
-    color: var(--text);
-    font-size: 0.75rem;
-    cursor: pointer;
-    padding: 2px 8px;
-    border-radius: 12px;
-    touch-action: manipulation;
-    flex-shrink: 0;
-    min-height: 24px;
-    display: inline-flex;
-    align-items: center;
-    transition: background 0.15s, color 0.15s;
-    line-height: 1;
-  }
-
-  .action-pill:hover {
-    background: #505050;
-  }
-
-  .action-pill--mono {
-    font-family: monospace;
-    font-size: 0.65rem;
-    letter-spacing: 0.02em;
-  }
-
-  li.pr-item.selected .action-pill {
-    background: #b35a3a;
-    color: #fff;
-  }
-
-  li.pr-item.selected .action-pill:hover {
-    background: #9a4d32;
-  }
-
-  .external-link-btn {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 4px;
-    touch-action: manipulation;
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    transition: color 0.15s, transform 0.15s;
-  }
-
-  .external-link-btn:hover {
-    color: var(--accent);
-    transform: scale(1.1);
-  }
-
-  li.pr-item.selected .external-link-btn {
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  li.pr-item.selected .external-link-btn:hover {
-    color: #fff;
   }
 
   .review-badge {
     font-size: 0.7rem;
     padding: 0 3px;
+    flex-shrink: 0;
   }
 
   .review-approved { color: #4ade80; }
@@ -368,4 +268,14 @@
 
   .diff-add { color: #4ade80; }
   .diff-del { color: #f87171; }
+
+  /* Context menu trigger styling when selected */
+  li.pr-item.selected :global(.context-menu-trigger) {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  li.pr-item.selected :global(.context-menu-trigger:hover) {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.15);
+  }
 </style>
