@@ -393,6 +393,7 @@
     const dir = btn.dataset['dir'];
     if (dir === 'up') term?.scrollPages(-1);
     else if (dir === 'down') term?.scrollPages(1);
+    else if (dir === 'bottom') term?.scrollToBottom();
   }
 
   let scrollbarEl: HTMLDivElement;
@@ -515,6 +516,7 @@
     <div class="scroll-fabs" onmousedown={onScrollFabMouseDown}>
       <button class="scroll-fab" data-dir="up" aria-label="Page up">&#9650;</button>
       <button class="scroll-fab" data-dir="down" aria-label="Page down">&#9660;</button>
+      <button class="scroll-fab scroll-fab-bottom" data-dir="bottom" aria-label="Skip to bottom">&#8615;</button>
     </div>
   {/if}
 </div>
@@ -603,6 +605,9 @@
     .scroll-fab:active {
       opacity: 1;
       background: var(--border);
+    }
+    .scroll-fab-bottom {
+      margin-top: 4px;
     }
   }
 </style>
