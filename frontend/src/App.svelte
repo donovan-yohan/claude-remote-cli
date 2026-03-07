@@ -48,6 +48,9 @@
   onMount(() => {
     checkExistingAuth();
 
+    let cleanupViewport: (() => void) | undefined;
+    let cleanupSwipe: (() => void) | undefined;
+
     // Mobile: track virtual keyboard via visualViewport API
     if (isMobileDevice && window.visualViewport) {
       const vv = window.visualViewport;
@@ -71,12 +74,65 @@
       };
       vv.addEventListener('resize', onViewportResize);
       vv.addEventListener('scroll', onViewportResize);
-      return () => {
+      cleanupViewport = () => {
         vv.removeEventListener('resize', onViewportResize);
         vv.removeEventListener('scroll', onViewportResize);
         if (fitTimer) clearTimeout(fitTimer);
       };
     }
+
+    // Mobile: swipe from left edge to open sidebar
+    if (isMobileDevice) {
+      const EDGE_ZONE = 30;
+      const SWIPE_THRESHOLD = 50;
+      let swipeStartX = 0;
+      let swipeStartY = 0;
+      let swipeTracking = false;
+
+      const onSwipeTouchStart = (e: TouchEvent) => {
+        const touch = e.touches[0];
+        if (!touch) return;
+        if (touch.clientX <= EDGE_ZONE && !ui.sidebarOpen) {
+          swipeStartX = touch.clientX;
+          swipeStartY = touch.clientY;
+          swipeTracking = true;
+        }
+      };
+
+      const onSwipeTouchMove = (e: TouchEvent) => {
+        if (!swipeTracking) return;
+        const touch = e.touches[0];
+        if (!touch) return;
+        const dx = touch.clientX - swipeStartX;
+        const dy = Math.abs(touch.clientY - swipeStartY);
+        if (dy > dx) {
+          swipeTracking = false;
+          return;
+        }
+        if (dx >= SWIPE_THRESHOLD) {
+          swipeTracking = false;
+          openSidebar();
+        }
+      };
+
+      const onSwipeTouchEnd = () => {
+        swipeTracking = false;
+      };
+
+      document.addEventListener('touchstart', onSwipeTouchStart, { passive: true });
+      document.addEventListener('touchmove', onSwipeTouchMove, { passive: true });
+      document.addEventListener('touchend', onSwipeTouchEnd);
+      cleanupSwipe = () => {
+        document.removeEventListener('touchstart', onSwipeTouchStart);
+        document.removeEventListener('touchmove', onSwipeTouchMove);
+        document.removeEventListener('touchend', onSwipeTouchEnd);
+      };
+    }
+
+    return () => {
+      cleanupViewport?.();
+      cleanupSwipe?.();
+    };
   });
 
   // Refresh sessions when authenticated
