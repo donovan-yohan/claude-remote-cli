@@ -318,28 +318,28 @@
     class:active={ui.activeTab === 'repos'}
     onclick={() => { ui.activeTab = 'repos'; }}
   >
-    Repos <span class="tab-count">{reposCount}</span>
+    Repos<span class="tab-count">{reposCount}</span>
   </button>
   <button
     class="sidebar-tab"
     class:active={ui.activeTab === 'worktrees'}
     onclick={() => { ui.activeTab = 'worktrees'; }}
   >
-    Worktrees <span class="tab-count">{worktreesCount}</span>
+    Worktrees<span class="tab-count">{worktreesCount}</span>
   </button>
   <button
     class="sidebar-tab"
     class:active={ui.activeTab === 'terminals'}
     onclick={() => { ui.activeTab = 'terminals'; }}
   >
-    Terminals <span class="tab-count">{terminalsCount}</span>
+    Terminals<span class="tab-count">{terminalsCount}</span>
   </button>
   <button
     class="sidebar-tab"
     class:active={ui.activeTab === 'prs'}
     onclick={() => { ui.activeTab = 'prs'; }}
   >
-    PRs <span class="tab-count">{prsCount}</span>
+    PRs<span class="tab-count">{prsCount}</span>
   </button>
 </div>
 
@@ -473,6 +473,7 @@
   }
 
   .tab-count {
+    display: block;
     opacity: 0.7;
   }
 
