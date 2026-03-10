@@ -223,7 +223,16 @@
   const LONG_PRESS_MS = 500;
   const LONG_PRESS_MOVE_TOLERANCE = 10;
 
+  let scrollbarRafPending = false;
+
   function updateScrollbar() {
+    if (scrollbarRafPending) return;
+    scrollbarRafPending = true;
+    requestAnimationFrame(updateScrollbarNow);
+  }
+
+  function updateScrollbarNow() {
+    scrollbarRafPending = false;
     if (!term) return;
     const buf = term.buffer.active;
     const totalLines = buf.baseY + term.rows;
