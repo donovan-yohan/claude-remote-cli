@@ -160,8 +160,6 @@
   }
 
   async function handlePRClick(pr: PullRequest, repo: RepoInfo, yolo = false) {
-    const claudeArgs = yolo ? ['--dangerously-skip-permissions'] : undefined;
-
     // Step 1: Active session for this branch? → route to it
     const existingSession = findSessionForBranch(pr.headRefName);
     if (existingSession) {
@@ -180,7 +178,7 @@
           repoPath: existingWorktree.repoPath,
           repoName: existingWorktree.repoName,
           worktreePath: existingWorktree.path,
-          claudeArgs,
+          yolo,
         });
         await refreshAll();
         if (session?.id) {
@@ -198,7 +196,7 @@
         repoPath: repo.path,
         repoName: repo.name,
         branchName: pr.headRefName,
-        claudeArgs,
+        yolo,
       });
       await refreshAll();
       if (session?.id) {
@@ -244,7 +242,7 @@
         repoPath: wt.repoPath,
         repoName: wt.repoName,
         worktreePath: wt.path,
-        ...(yolo && { claudeArgs: ['--dangerously-skip-permissions'] }),
+        ...(yolo && { yolo: true }),
       });
       await refreshAll();
       if (session?.id) onSelectSession(session.id);
@@ -264,7 +262,7 @@
         repoPath: repo.path,
         repoName: repo.name,
         continue: true,
-        ...(yolo && { claudeArgs: ['--dangerously-skip-permissions'] }),
+        ...(yolo && { yolo: true }),
       });
       await refreshAll();
       if (session?.id) onSelectSession(session.id);

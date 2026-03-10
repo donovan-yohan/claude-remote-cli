@@ -13,11 +13,12 @@ import cookieParser from 'cookie-parser';
 import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
-import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS } from './sessions.js';
+import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './sessions.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
+import { listBranches } from './git.js';
 import type { AgentType, Config, PullRequest, PullRequestsResponse } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -265,24 +266,13 @@ async function main(): Promise<void> {
   // GET /branches?repo=<path> — list local and remote branches for a repo
   app.get('/branches', requireAuth, async (req, res) => {
     const repoPath = typeof req.query.repo === 'string' ? req.query.repo : undefined;
+    const refresh = req.query.refresh === '1';
     if (!repoPath) {
       res.status(400).json({ error: 'repo query parameter is required' });
       return;
     }
 
-    try {
-      const { stdout } = await execFileAsync('git', ['branch', '-a', '--format=%(refname:short)'], { cwd: repoPath });
-      const branches = stdout
-        .split('\n')
-        .map((b) => b.trim())
-        .filter((b) => b && !b.includes('HEAD'))
-        .map((b) => b.replace(/^origin\//, ''));
-
-      const unique = [...new Set(branches)];
-      res.json(unique.sort());
-    } catch (_) {
-      res.json([]);
-    }
+    res.json(await listBranches(repoPath, { refresh }));
   });
 
   // GET /git-status?repo=<path>&branch=<name>
@@ -620,12 +610,13 @@ async function main(): Promise<void> {
 
   // POST /sessions
   app.post('/sessions', requireAuth, async (req, res) => {
-    const { repoPath, repoName, worktreePath, branchName, claudeArgs, agent } = req.body as {
+    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent } = req.body as {
       repoPath?: string;
       repoName?: string;
       worktreePath?: string;
       branchName?: string;
       claudeArgs?: string[];
+      yolo?: boolean;
       agent?: AgentType;
     };
     if (!repoPath) {
@@ -635,7 +626,11 @@ async function main(): Promise<void> {
 
     const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
-    const baseArgs = [...(config.claudeArgs || []), ...(claudeArgs || [])];
+    const baseArgs = [
+      ...(config.claudeArgs || []),
+      ...(yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
+      ...(claudeArgs || []),
+    ];
 
     // Compute root by matching repoPath against configured rootDirs
     const roots = config.rootDirs || [];
@@ -803,11 +798,12 @@ async function main(): Promise<void> {
 
   // POST /sessions/repo — start a session in the repo root (no worktree)
   app.post('/sessions/repo', requireAuth, (req, res) => {
-    const { repoPath, repoName, continue: continueSession, claudeArgs, agent } = req.body as {
+    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent } = req.body as {
       repoPath?: string;
       repoName?: string;
       continue?: boolean;
       claudeArgs?: string[];
+      yolo?: boolean;
       agent?: AgentType;
     };
     if (!repoPath) {
@@ -825,7 +821,11 @@ async function main(): Promise<void> {
     }
 
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
-    const baseArgs = [...(config.claudeArgs || []), ...(claudeArgs || [])];
+    const baseArgs = [
+      ...(config.claudeArgs || []),
+      ...(yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
+      ...(claudeArgs || []),
+    ];
     const args = continueSession ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs] : [...baseArgs];
 
     const roots = config.rootDirs || [];

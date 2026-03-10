@@ -47,8 +47,10 @@ export async function fetchRoots(): Promise<string[]> {
   return json<string[]>(await fetch('/roots'));
 }
 
-export async function fetchBranches(repoPath: string): Promise<string[]> {
-  return json<string[]>(await fetch('/branches?repo=' + encodeURIComponent(repoPath)));
+export async function fetchBranches(repoPath: string, options: { refresh?: boolean } = {}): Promise<string[]> {
+  const params = new URLSearchParams({ repo: repoPath });
+  if (options.refresh) params.set('refresh', '1');
+  return json<string[]>(await fetch('/branches?' + params.toString()));
 }
 
 export async function fetchGitStatus(repoPath: string, branch: string): Promise<GitStatus> {
@@ -67,6 +69,7 @@ export async function createSession(body: {
   worktreePath?: string | undefined;
   branchName?: string | undefined;
   claudeArgs?: string[] | undefined;
+  yolo?: boolean | undefined;
   agent?: string | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions', {
@@ -86,6 +89,7 @@ export async function createRepoSession(body: {
   repoName?: string | undefined;
   continue?: boolean | undefined;
   claudeArgs?: string[] | undefined;
+  yolo?: boolean | undefined;
   agent?: string | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions/repo', {

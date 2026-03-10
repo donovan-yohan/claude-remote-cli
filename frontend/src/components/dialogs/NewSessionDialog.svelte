@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fetchBranches, createSession, createRepoSession, fetchRepos, fetchDefaultAgent } from '../../lib/api.js';
-  import { getSessionState, refreshAll } from '../../lib/state/sessions.svelte.js';
+  import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getUi } from '../../lib/state/ui.svelte.js';
   import { rootShortName } from '../../lib/utils.js';
   import type { RepoInfo, AgentType, OpenSessionOptions } from '../../lib/types.js';
@@ -35,6 +35,9 @@
   // Branch autocomplete
   let allBranches = $state<string[]>([]);
   let branchDropdownVisible = $state(false);
+  let branchesLoading = $state(false);
+  let branchesRefreshing = $state(false);
+  let branchRequestId = 0;
 
   // Derived
   let roots = $derived.by(() => {
@@ -58,25 +61,58 @@
     allBranches.some(b => b === branchInput),
   );
 
-  async function loadBranchesForRepo(repoPath: string) {
-    allBranches = [];
+  async function loadBranchesForRepo(repoPath: string, options: { refresh?: boolean; preserveExisting?: boolean } = {}) {
+    const requestId = ++branchRequestId;
     if (!repoPath) return;
-    try {
-      allBranches = await fetchBranches(repoPath);
-    } catch {
+    if (!options.preserveExisting) {
       allBranches = [];
     }
+    if (options.refresh) {
+      branchesRefreshing = true;
+    } else {
+      branchesLoading = true;
+    }
+    try {
+      const branches = await fetchBranches(repoPath, options.refresh ? { refresh: true } : {});
+      if (requestId !== branchRequestId || repoPath !== selectedRepoPath) return;
+      allBranches = branches;
+      if (branchInput.trim()) {
+        branchDropdownVisible = true;
+      }
+    } catch {
+      if (requestId !== branchRequestId || repoPath !== selectedRepoPath) return;
+      if (!options.preserveExisting) {
+        allBranches = [];
+      }
+    } finally {
+      if (requestId === branchRequestId) {
+        branchesLoading = false;
+        branchesRefreshing = false;
+      }
+    }
+  }
+
+  async function refreshBranches() {
+    if (!selectedRepoPath || branchesRefreshing) return;
+    await loadBranchesForRepo(selectedRepoPath, { refresh: true, preserveExisting: true });
+  }
+
+  function resetBranchState() {
+    branchRequestId += 1;
+    branchInput = '';
+    allBranches = [];
+    branchDropdownVisible = false;
+    branchesLoading = false;
+    branchesRefreshing = false;
   }
 
   function onRootChange() {
     selectedRepoPath = '';
-    branchInput = '';
-    allBranches = [];
+    resetBranchState();
   }
 
   function onRepoChange() {
-    branchInput = '';
-    allBranches = [];
+    resetBranchState();
     if (selectedRepoPath) {
       loadBranchesForRepo(selectedRepoPath);
     }
@@ -94,12 +130,10 @@
   function reset() {
     selectedRoot = '';
     selectedRepoPath = '';
-    branchInput = '';
     claudeArgsInput = '';
     yoloMode = false;
     continueExisting = false;
-    allBranches = [];
-    branchDropdownVisible = false;
+    resetBranchState();
   }
 
   export async function open(repo?: RepoInfo | null, options?: OpenSessionOptions) {
@@ -165,13 +199,6 @@
     if (!repoPath) return;
 
     const claudeArgs: string[] = [];
-    if (yoloMode) {
-      const yoloArgs: Record<AgentType, string> = {
-        claude: '--dangerously-skip-permissions',
-        codex: '--full-auto',
-      };
-      claudeArgs.push(yoloArgs[selectedAgent]);
-    }
     if (claudeArgsInput.trim()) {
       claudeArgsInput.trim().split(/\s+/).forEach(arg => {
         if (arg) claudeArgs.push(arg);
@@ -185,6 +212,7 @@
           repoPath,
           repoName: repoPath.split('/').filter(Boolean).pop(),
           continue: continueExisting,
+          yolo: yoloMode,
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
           agent: selectedAgent,
         });
@@ -193,6 +221,7 @@
           repoPath,
           repoName: repoPath.split('/').filter(Boolean).pop(),
           branchName: branchInput.trim() || undefined,
+          yolo: yoloMode,
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
           agent: selectedAgent,
         });
@@ -312,7 +341,32 @@
       <!-- Branch input (worktrees only) -->
       {#if activeTab === 'worktrees'}
         <div class="dialog-field">
-          <label class="dialog-label" for="ns-branch">Branch name</label>
+          <div class="dialog-label-row">
+            <label class="dialog-label" for="ns-branch">Branch name</label>
+            <button
+              type="button"
+              class="branch-refresh"
+              onclick={refreshBranches}
+              disabled={!selectedRepoPath || branchesLoading || branchesRefreshing}
+              aria-label="Fetch latest remote branches"
+              title="Fetch latest remote branches"
+            >
+              <svg
+                class:spinning={branchesLoading || branchesRefreshing}
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  d="M20 12a8 8 0 0 1-13.66 5.66M4 12a8 8 0 0 1 13.66-5.66M17 3.5v4h-4M7 20.5v-4h4"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                />
+              </svg>
+            </button>
+          </div>
           <div class="branch-input-wrap">
             <input
               id="ns-branch"
@@ -485,6 +539,13 @@
     color: var(--text-muted);
   }
 
+  .dialog-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
   .dialog-label-inline {
     font-size: 0.9rem;
     cursor: pointer;
@@ -517,6 +578,36 @@
 
   .branch-input-wrap {
     position: relative;
+  }
+
+  .branch-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+  }
+
+  .branch-refresh:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .branch-refresh:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .branch-refresh svg {
+    width: 15px;
+    height: 15px;
   }
 
   .branch-dropdown {
@@ -592,5 +683,15 @@
   .btn-ghost:hover {
     background: var(--border);
     color: var(--text);
+  }
+
+  .spinning {
+    animation: spin 1s linear infinite;
+    transform-origin: center;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 </style>
