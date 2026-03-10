@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchRoots, addRoot, removeRoot, fetchDefaultAgent, setDefaultAgent } from '../../lib/api.js';
+  import { fetchRoots, addRoot, removeRoot, fetchDefaultAgent, setDefaultAgent, fetchDefaultContinue, setDefaultContinue, fetchDefaultYolo, setDefaultYolo, fetchLaunchInTmux, setLaunchInTmux } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
 
   let dialogEl: HTMLDialogElement;
@@ -8,6 +8,9 @@
   let newRootPath = $state('');
   let devtoolsEnabled = $state(false);
   let selectedAgent = $state('claude');
+  let defaultContinue = $state(true);
+  let defaultYolo = $state(false);
+  let launchInTmux = $state(false);
   let error = $state('');
 
   async function loadRoots() {
@@ -28,6 +31,9 @@
     } catch {
       selectedAgent = 'claude';
     }
+    try { defaultContinue = await fetchDefaultContinue(); } catch { defaultContinue = true; }
+    try { defaultYolo = await fetchDefaultYolo(); } catch { defaultYolo = false; }
+    try { launchInTmux = await fetchLaunchInTmux(); } catch { launchInTmux = false; }
     dialogEl.showModal();
   }
 
@@ -64,6 +70,26 @@
       await setDefaultAgent(selectedAgent);
     } catch {
       error = 'Failed to update default agent.';
+    }
+  }
+
+  async function handleContinueChange() {
+    error = '';
+    try { await setDefaultContinue(defaultContinue); } catch { error = 'Failed to update continue default.'; }
+  }
+
+  async function handleYoloChange() {
+    error = '';
+    try { await setDefaultYolo(defaultYolo); } catch { error = 'Failed to update yolo default.'; }
+  }
+
+  async function handleTmuxChange() {
+    error = '';
+    try {
+      await setLaunchInTmux(launchInTmux);
+    } catch (err) {
+      launchInTmux = false;
+      error = err instanceof Error ? err.message : 'Failed to update tmux setting.';
     }
   }
 
@@ -152,6 +178,24 @@
           <option value="claude">Claude</option>
           <option value="codex">Codex</option>
         </select>
+      </section>
+
+      <!-- Session defaults section -->
+      <section class="settings-section">
+        <h3 class="section-title">Session Defaults</h3>
+        <p class="section-desc">Default options for new sessions. Override per-session via Customize.</p>
+        <div class="devtools-row">
+          <input id="default-continue" type="checkbox" class="dialog-checkbox" bind:checked={defaultContinue} onchange={handleContinueChange} />
+          <label for="default-continue" class="devtools-label">Continue existing session</label>
+        </div>
+        <div class="devtools-row">
+          <input id="default-yolo" type="checkbox" class="dialog-checkbox" bind:checked={defaultYolo} onchange={handleYoloChange} />
+          <label for="default-yolo" class="devtools-label">YOLO mode (skip permission checks)</label>
+        </div>
+        <div class="devtools-row">
+          <input id="default-tmux" type="checkbox" class="dialog-checkbox" bind:checked={launchInTmux} onchange={handleTmuxChange} />
+          <label for="default-tmux" class="devtools-label">Launch in tmux</label>
+        </div>
       </section>
 
       <!-- Developer tools section -->

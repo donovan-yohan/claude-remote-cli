@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchBranches, createSession, createRepoSession, fetchRepos, fetchDefaultAgent } from '../../lib/api.js';
+  import { fetchBranches, createSession, createRepoSession, fetchRepos, fetchDefaultAgent, fetchDefaultContinue, fetchDefaultYolo, fetchLaunchInTmux } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getUi } from '../../lib/state/ui.svelte.js';
   import { rootShortName } from '../../lib/utils.js';
@@ -31,6 +31,7 @@
   let selectedAgent = $state<AgentType>('claude');
   let yoloMode = $state(false);
   let continueExisting = $state(false);
+  let useTmux = $state(false);
 
   // Branch autocomplete
   let allBranches = $state<string[]>([]);
@@ -133,12 +134,12 @@
     claudeArgsInput = '';
     yoloMode = false;
     continueExisting = false;
+    useTmux = false;
     resetBranchState();
   }
 
   export async function open(repo?: RepoInfo | null, options?: OpenSessionOptions) {
     reset();
-    if (options?.yolo) yoloMode = true;
     activeTab = options?.tab ?? (ui.activeTab === 'repos' || ui.activeTab === 'worktrees' ? ui.activeTab : 'repos');
 
     // Load repos fresh
@@ -154,6 +155,13 @@
       selectedAgent = 'claude';
     }
     if (options?.agent) selectedAgent = options.agent;
+
+    try { yoloMode = await fetchDefaultYolo(); } catch { yoloMode = false; }
+    try { continueExisting = await fetchDefaultContinue(); } catch { continueExisting = false; }
+    try { useTmux = await fetchLaunchInTmux(); } catch { useTmux = false; }
+
+    if (options?.yolo !== undefined) yoloMode = options.yolo;
+    if (options?.useTmux !== undefined) useTmux = options.useTmux;
 
     // Pre-select from explicit repo argument, prop, or sidebar filters
     const target = repo ?? preselectedRepo;
@@ -215,6 +223,7 @@
           yolo: yoloMode,
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
           agent: selectedAgent,
+          useTmux,
         });
       } else {
         session = await createSession({
@@ -224,6 +233,7 @@
           yolo: yoloMode,
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
           agent: selectedAgent,
+          useTmux,
         });
       }
       dialogEl.close();
@@ -425,6 +435,17 @@
           bind:checked={yoloMode}
         />
         <label for="ns-yolo" class="dialog-label-inline">Yolo mode (skip permission checks)</label>
+      </div>
+
+      <!-- Launch in tmux -->
+      <div class="dialog-field dialog-field--inline">
+        <input
+          id="ns-tmux"
+          type="checkbox"
+          class="dialog-checkbox"
+          bind:checked={useTmux}
+        />
+        <label for="ns-tmux" class="dialog-label-inline">Launch in tmux</label>
       </div>
 
       <!-- Extra claude args -->

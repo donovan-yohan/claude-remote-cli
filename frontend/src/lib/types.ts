@@ -38,6 +38,7 @@ export interface OpenSessionOptions {
   branchName?: string;
   agent?: AgentType;
   claudeArgs?: string;
+  useTmux?: boolean;
 }
 
 export interface GitStatus {

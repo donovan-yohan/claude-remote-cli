@@ -71,6 +71,7 @@ export async function createSession(body: {
   claudeArgs?: string[] | undefined;
   yolo?: boolean | undefined;
   agent?: string | undefined;
+  useTmux?: boolean | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions', {
     method: 'POST',
@@ -91,6 +92,7 @@ export async function createRepoSession(body: {
   claudeArgs?: string[] | undefined;
   yolo?: boolean | undefined;
   agent?: string | undefined;
+  useTmux?: boolean | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions/repo', {
     method: 'POST',
@@ -187,4 +189,49 @@ export async function setDefaultAgent(agent: string): Promise<void> {
     body: JSON.stringify({ defaultAgent: agent }),
   });
   if (!res.ok) throw new Error('Failed to update default agent');
+}
+
+export async function fetchDefaultContinue(): Promise<boolean> {
+  const data = await json<{ defaultContinue: boolean }>(await fetch('/config/defaultContinue'));
+  return data.defaultContinue;
+}
+
+export async function setDefaultContinue(value: boolean): Promise<void> {
+  const res = await fetch('/config/defaultContinue', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ defaultContinue: value }),
+  });
+  if (!res.ok) throw new Error('Failed to update defaultContinue');
+}
+
+export async function fetchDefaultYolo(): Promise<boolean> {
+  const data = await json<{ defaultYolo: boolean }>(await fetch('/config/defaultYolo'));
+  return data.defaultYolo;
+}
+
+export async function setDefaultYolo(value: boolean): Promise<void> {
+  const res = await fetch('/config/defaultYolo', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ defaultYolo: value }),
+  });
+  if (!res.ok) throw new Error('Failed to update defaultYolo');
+}
+
+export async function fetchLaunchInTmux(): Promise<boolean> {
+  const data = await json<{ launchInTmux: boolean }>(await fetch('/config/launchInTmux'));
+  return data.launchInTmux;
+}
+
+export async function setLaunchInTmux(value: boolean): Promise<void> {
+  const res = await fetch('/config/launchInTmux', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ launchInTmux: value }),
+  });
+  if (!res.ok) {
+    const data = await res.json() as { error?: string };
+    throw new Error(data.error || 'Failed to update launchInTmux');
+  }
 }
