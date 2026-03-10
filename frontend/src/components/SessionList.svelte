@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { getUi } from '../lib/state/ui.svelte.js';
   import { getSessionState, getSessionStatus, clearAttention, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import * as api from '../lib/api.js';
@@ -27,7 +28,7 @@
 
   let configDefaults = $state({ defaultContinue: true, defaultYolo: false, launchInTmux: false });
 
-  $effect(() => {
+  onMount(() => {
     (async () => {
       try {
         const [cont, yolo, tmux] = await Promise.all([

@@ -31,9 +31,18 @@
     } catch {
       selectedAgent = 'claude';
     }
-    try { defaultContinue = await fetchDefaultContinue(); } catch { defaultContinue = true; }
-    try { defaultYolo = await fetchDefaultYolo(); } catch { defaultYolo = false; }
-    try { launchInTmux = await fetchLaunchInTmux(); } catch { launchInTmux = false; }
+    try {
+      const [cont, yolo, tmux] = await Promise.all([
+        fetchDefaultContinue().catch(() => true),
+        fetchDefaultYolo().catch(() => false),
+        fetchLaunchInTmux().catch(() => false),
+      ]);
+      defaultContinue = cont;
+      defaultYolo = yolo;
+      launchInTmux = tmux;
+    } catch {
+      // use defaults (already set above)
+    }
     dialogEl.showModal();
   }
 

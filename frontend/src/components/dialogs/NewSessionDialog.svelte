@@ -156,9 +156,18 @@
     }
     if (options?.agent) selectedAgent = options.agent;
 
-    try { yoloMode = await fetchDefaultYolo(); } catch { yoloMode = false; }
-    try { continueExisting = await fetchDefaultContinue(); } catch { continueExisting = false; }
-    try { useTmux = await fetchLaunchInTmux(); } catch { useTmux = false; }
+    try {
+      const [yolo, cont, tmux] = await Promise.all([
+        fetchDefaultYolo().catch(() => false),
+        fetchDefaultContinue().catch(() => false),
+        fetchLaunchInTmux().catch(() => false),
+      ]);
+      yoloMode = yolo;
+      continueExisting = cont;
+      useTmux = tmux;
+    } catch {
+      // use defaults (already set by reset())
+    }
 
     if (options?.yolo !== undefined) yoloMode = options.yolo;
     if (options?.useTmux !== undefined) useTmux = options.useTmux;
