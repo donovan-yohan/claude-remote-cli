@@ -391,4 +391,45 @@ describe('sessions', () => {
     assert.ok(session);
     assert.strictEqual(session.agent, 'codex');
   });
+
+  it('useTmux defaults to false when not specified', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    assert.strictEqual(result.useTmux, false);
+    assert.strictEqual(result.tmuxSessionName, '');
+  });
+
+  it('useTmux is disabled when custom command is provided even if useTmux is true', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/echo',
+      args: ['hello'],
+      useTmux: true,
+    });
+    createdIds.push(result.id);
+    // Custom command sessions should never use tmux
+    assert.strictEqual(result.useTmux, false);
+    assert.strictEqual(result.tmuxSessionName, '');
+  });
+
+  it('list includes useTmux and tmuxSessionName fields', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    const list = sessions.list();
+    const session = list.find(s => s.id === result.id);
+    assert.ok(session);
+    assert.strictEqual(session.useTmux, false);
+    assert.strictEqual(session.tmuxSessionName, '');
+  });
 });

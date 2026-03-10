@@ -73,6 +73,9 @@ test('DEFAULTS has expected keys and values', () => {
   assert.equal(DEFAULTS.claudeCommand, 'claude');
   assert.deepEqual(DEFAULTS.claudeArgs, []);
   assert.equal(DEFAULTS.defaultAgent, 'claude');
+  assert.equal(DEFAULTS.defaultContinue, true);
+  assert.equal(DEFAULTS.defaultYolo, false);
+  assert.equal(DEFAULTS.launchInTmux, false);
 });
 
 test('loadConfig returns correct defaults for defaultContinue, defaultYolo, and launchInTmux', () => {

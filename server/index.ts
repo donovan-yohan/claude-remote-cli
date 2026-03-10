@@ -201,6 +201,28 @@ async function main(): Promise<void> {
     next();
   };
 
+  function boolConfigEndpoints(name: string, defaultValue: boolean, onEnable?: () => Promise<void>) {
+    app.get(`/config/${name}`, requireAuth, (_req: express.Request, res: express.Response) => {
+      res.json({ [name]: (config as unknown as Record<string, unknown>)[name] ?? defaultValue });
+    });
+    app.patch(`/config/${name}`, requireAuth, async (req: express.Request, res: express.Response) => {
+      const value = (req.body as Record<string, unknown>)[name];
+      if (typeof value !== 'boolean') {
+        res.status(400).json({ error: `${name} must be a boolean` });
+        return;
+      }
+      if (value && onEnable) {
+        try { await onEnable(); } catch {
+          res.status(400).json({ error: `Validation failed for ${name}` });
+          return;
+        }
+      }
+      (config as unknown as Record<string, unknown>)[name] = value;
+      saveConfig(CONFIG_PATH, config);
+      res.json({ [name]: value });
+    });
+  }
+
   const watcher = new WorktreeWatcher();
   watcher.rebuild(config.rootDirs || []);
 
@@ -532,63 +554,10 @@ async function main(): Promise<void> {
     res.json({ defaultAgent: config.defaultAgent });
   });
 
-  // GET /config/defaultContinue — get default continue setting
-  app.get('/config/defaultContinue', requireAuth, (_req, res) => {
-    res.json({ defaultContinue: config.defaultContinue ?? true });
-  });
-
-  // PATCH /config/defaultContinue — set default continue setting
-  app.patch('/config/defaultContinue', requireAuth, (req, res) => {
-    const { defaultContinue } = req.body as { defaultContinue?: boolean };
-    if (typeof defaultContinue !== 'boolean') {
-      res.status(400).json({ error: 'defaultContinue must be a boolean' });
-      return;
-    }
-    config.defaultContinue = defaultContinue;
-    saveConfig(CONFIG_PATH, config);
-    res.json({ defaultContinue: config.defaultContinue });
-  });
-
-  // GET /config/defaultYolo — get default yolo setting
-  app.get('/config/defaultYolo', requireAuth, (_req, res) => {
-    res.json({ defaultYolo: config.defaultYolo ?? false });
-  });
-
-  // PATCH /config/defaultYolo — set default yolo setting
-  app.patch('/config/defaultYolo', requireAuth, (req, res) => {
-    const { defaultYolo } = req.body as { defaultYolo?: boolean };
-    if (typeof defaultYolo !== 'boolean') {
-      res.status(400).json({ error: 'defaultYolo must be a boolean' });
-      return;
-    }
-    config.defaultYolo = defaultYolo;
-    saveConfig(CONFIG_PATH, config);
-    res.json({ defaultYolo: config.defaultYolo });
-  });
-
-  // GET /config/launchInTmux — get launch in tmux setting
-  app.get('/config/launchInTmux', requireAuth, (_req, res) => {
-    res.json({ launchInTmux: config.launchInTmux ?? false });
-  });
-
-  // PATCH /config/launchInTmux — set launch in tmux setting
-  app.patch('/config/launchInTmux', requireAuth, async (req, res) => {
-    const { launchInTmux } = req.body as { launchInTmux?: boolean };
-    if (typeof launchInTmux !== 'boolean') {
-      res.status(400).json({ error: 'launchInTmux must be a boolean' });
-      return;
-    }
-    if (launchInTmux) {
-      try {
-        await execFileAsync('tmux', ['-V']);
-      } catch {
-        res.status(400).json({ error: 'tmux is not installed or not in PATH' });
-        return;
-      }
-    }
-    config.launchInTmux = launchInTmux;
-    saveConfig(CONFIG_PATH, config);
-    res.json({ launchInTmux: config.launchInTmux });
+  boolConfigEndpoints('defaultContinue', true);
+  boolConfigEndpoints('defaultYolo', false);
+  boolConfigEndpoints('launchInTmux', false, async () => {
+    await execFileAsync('tmux', ['-V']);
   });
 
   // DELETE /worktrees — remove a worktree, prune, and delete its branch
@@ -1043,8 +1012,13 @@ async function main(): Promise<void> {
   }
 
   function gracefulShutdown() {
-    killAllTmuxSessions();
-    process.exit(0);
+    server.close();
+    // Kill all active sessions (PTY + tmux)
+    for (const s of sessions.list()) {
+      try { sessions.kill(s.id); } catch { /* already exiting */ }
+    }
+    // Brief delay to let async tmux kill-session calls fire
+    setTimeout(() => process.exit(0), 200);
   }
   process.on('SIGTERM', gracefulShutdown);
   process.on('SIGINT', gracefulShutdown);

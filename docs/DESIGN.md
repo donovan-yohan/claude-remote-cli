@@ -13,6 +13,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | Dual distribution (global + local) | npm global for production, local clone for dev | ADR-006 |
 | TypeScript + ESM migration | Type safety, modern module system, strict mode | ADR-008 |
 | Multi-agent CLI support | Abstract UI concepts (yolo, continue) map to agent-specific flags via `AGENT_COMMANDS`/`AGENT_YOLO_ARGS`/`AGENT_CONTINUE_ARGS` records in sessions.ts | Design doc |
+| Global session defaults | `defaultContinue`, `defaultYolo`, `launchInTmux` extend the `defaultAgent` pattern; quick-start uses defaults, dialogs pre-fill and allow override | Design doc |
 
 ## Config Precedence (canonical)
 
@@ -28,12 +29,12 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 - PTY sessions survive browser disconnects — server keeps them alive
 - Session auto-deleted when PTY exits; WebSocket closed with code 1000
 - `claudeArgs` from POST body merged with `config.claudeArgs` (config args first)
-- Resuming a worktree passes `--continue` to Claude CLI
+- Re-attaching to a previous agent conversation uses agent-specific continue args (`--continue` for Claude, `resume --last` for Codex); reconnecting to a live PTY session requires no special args
 
 ## Session Types
 
-- **Repo sessions** (`POST /sessions/repo`) — Claude runs directly in repo root. One per repo path (409 on conflict). Supports `continue: true` for `--continue` mode.
-- **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/`. Multiple per repo allowed. If branch is already checked out (main worktree or another worktree), auto-redirects to that location instead of failing.
+- **Repo sessions** (`POST /sessions/repo`) — The selected coding agent runs directly in the repo root. One per repo path (409 on conflict). Supports `continue: true`, which maps to agent-specific continue args.
+- **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/` and launches the selected coding agent there. Multiple per repo allowed. If a branch is already checked out (main worktree or another worktree), auto-redirects to that location instead of failing.
 - **Worktree deletion** (`DELETE /worktrees`) — Validated via `git worktree list` (supports arbitrary paths, not just `.worktrees/`). Main worktree cannot be deleted.
 
 ## Idle Detection
