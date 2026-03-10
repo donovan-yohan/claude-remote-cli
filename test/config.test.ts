@@ -75,6 +75,16 @@ test('DEFAULTS has expected keys and values', () => {
   assert.equal(DEFAULTS.defaultAgent, 'claude');
 });
 
+test('loadConfig returns correct defaults for defaultContinue, defaultYolo, and launchInTmux', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({ port: 3456 }), 'utf8');
+
+  const config = loadConfig(configPath);
+  assert.equal(config.defaultContinue, true);
+  assert.equal(config.defaultYolo, false);
+  assert.equal(config.launchInTmux, false);
+});
+
 test('ensureMetaDir creates worktree-meta directory', () => {
   const configPath = path.join(tmpDir, 'config.json');
   ensureMetaDir(configPath);
