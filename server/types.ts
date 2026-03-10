@@ -18,6 +18,8 @@ export interface Session {
   lastActivity: string;
   scrollback: string[];
   idle: boolean;
+  useTmux: boolean;
+  tmuxSessionName: string;
 }
 
 export interface WorktreeMetadata {
@@ -35,6 +37,9 @@ export interface Config {
   claudeCommand: string;
   claudeArgs: string[];
   defaultAgent: AgentType;
+  defaultContinue: boolean;
+  defaultYolo: boolean;
+  launchInTmux: boolean;
   pinHash?: string | undefined;
   rootDirs?: string[] | undefined;
 }

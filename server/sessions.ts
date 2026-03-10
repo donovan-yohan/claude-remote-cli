@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
 import type { AgentType, Session, SessionType } from './types.js';
 import { readMeta, writeMeta } from './config.js';
 
@@ -38,9 +39,26 @@ type CreateParams = {
   cols?: number;
   rows?: number;
   configPath?: string;
+  useTmux?: boolean;
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
+
+function generateTmuxSessionName(displayName: string, id: string): string {
+  const sanitized = displayName.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 30);
+  return `crc-${sanitized}-${id.slice(0, 8)}`;
+}
+
+function resolveTmuxSpawn(
+  command: string,
+  args: string[],
+  tmuxSessionName: string,
+): { command: string; args: string[] } {
+  return {
+    command: 'tmux',
+    args: ['new-session', '-s', tmuxSessionName, '--', command, ...args],
+  };
+}
 
 // In-memory registry: id -> Session
 const sessions = new Map<string, Session>();
@@ -54,7 +72,7 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallback = cb;
 }
 
-function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath }: CreateParams): CreateResult {
+function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux }: CreateParams): CreateResult {
   const id = crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
   const resolvedCommand = command || AGENT_COMMANDS[agent];
@@ -63,7 +81,18 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
   const env = Object.assign({}, process.env) as Record<string, string>;
   delete env.CLAUDECODE;
 
-  const ptyProcess = pty.spawn(resolvedCommand, args, {
+  const useTmux = !command && !!paramUseTmux;
+  let spawnCommand = resolvedCommand;
+  let spawnArgs = args;
+  const tmuxSessionName = useTmux ? generateTmuxSessionName(displayName || repoName || 'session', id) : '';
+
+  if (useTmux) {
+    const tmux = resolveTmuxSpawn(resolvedCommand, args, tmuxSessionName);
+    spawnCommand = tmux.command;
+    spawnArgs = tmux.args;
+  }
+
+  const ptyProcess = pty.spawn(spawnCommand, spawnArgs, {
     name: 'xterm-256color',
     cols,
     rows,
@@ -91,6 +120,8 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
     lastActivity: createdAt,
     scrollback,
     idle: false,
+    useTmux,
+    tmuxSessionName,
   };
   sessions.set(id, session);
 
@@ -148,7 +179,14 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
         const retryArgs = args.filter(a => !continueArgs.includes(a));
         scrollback.length = 0;
         scrollbackBytes = 0;
-        const retryPty = pty.spawn(resolvedCommand, retryArgs, {
+        let retryCommand = resolvedCommand;
+        let retrySpawnArgs = retryArgs;
+        if (useTmux && tmuxSessionName) {
+          const tmux = resolveTmuxSpawn(resolvedCommand, retryArgs, tmuxSessionName);
+          retryCommand = tmux.command;
+          retrySpawnArgs = tmux.args;
+        }
+        const retryPty = pty.spawn(retryCommand, retrySpawnArgs, {
           name: 'xterm-256color',
           cols,
           rows,
@@ -173,7 +211,7 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
 
   attachHandlers(ptyProcess, continueArgs.some(a => args.includes(a)));
 
-  return { id, type: session.type, agent: session.agent, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false };
+  return { id, type: session.type, agent: session.agent, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false, useTmux, tmuxSessionName };
 }
 
 function get(id: string): Session | undefined {
@@ -182,7 +220,7 @@ function get(id: string): Session | undefined {
 
 function list(): SessionSummary[] {
   return Array.from(sessions.values())
-    .map(({ id, type, agent, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle }) => ({
+    .map(({ id, type, agent, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle, useTmux, tmuxSessionName }) => ({
       id,
       type,
       agent,
@@ -195,6 +233,8 @@ function list(): SessionSummary[] {
       createdAt,
       lastActivity,
       idle,
+      useTmux,
+      tmuxSessionName,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
@@ -212,7 +252,18 @@ function kill(id: string): void {
     throw new Error(`Session not found: ${id}`);
   }
   session.pty.kill('SIGTERM');
+  if (session.tmuxSessionName) {
+    execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
+  }
   sessions.delete(id);
+}
+
+function killAllTmuxSessions(): void {
+  for (const session of sessions.values()) {
+    if (session.tmuxSessionName) {
+      execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
+    }
+  }
 }
 
 function resize(id: string, cols: number, rows: number): void {
@@ -239,4 +290,4 @@ function nextTerminalName(): string {
   return `Terminal ${++terminalCounter}`;
 }
 
-export { create, get, list, kill, resize, updateDisplayName, write, onIdleChange, findRepoSession, nextTerminalName, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, findRepoSession, nextTerminalName, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, resolveTmuxSpawn, generateTmuxSessionName };

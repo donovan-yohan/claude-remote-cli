@@ -13,7 +13,7 @@ import cookieParser from 'cookie-parser';
 import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
-import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './sessions.js';
+import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions } from './sessions.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
@@ -532,6 +532,65 @@ async function main(): Promise<void> {
     res.json({ defaultAgent: config.defaultAgent });
   });
 
+  // GET /config/defaultContinue — get default continue setting
+  app.get('/config/defaultContinue', requireAuth, (_req, res) => {
+    res.json({ defaultContinue: config.defaultContinue ?? true });
+  });
+
+  // PATCH /config/defaultContinue — set default continue setting
+  app.patch('/config/defaultContinue', requireAuth, (req, res) => {
+    const { defaultContinue } = req.body as { defaultContinue?: boolean };
+    if (typeof defaultContinue !== 'boolean') {
+      res.status(400).json({ error: 'defaultContinue must be a boolean' });
+      return;
+    }
+    config.defaultContinue = defaultContinue;
+    saveConfig(CONFIG_PATH, config);
+    res.json({ defaultContinue: config.defaultContinue });
+  });
+
+  // GET /config/defaultYolo — get default yolo setting
+  app.get('/config/defaultYolo', requireAuth, (_req, res) => {
+    res.json({ defaultYolo: config.defaultYolo ?? false });
+  });
+
+  // PATCH /config/defaultYolo — set default yolo setting
+  app.patch('/config/defaultYolo', requireAuth, (req, res) => {
+    const { defaultYolo } = req.body as { defaultYolo?: boolean };
+    if (typeof defaultYolo !== 'boolean') {
+      res.status(400).json({ error: 'defaultYolo must be a boolean' });
+      return;
+    }
+    config.defaultYolo = defaultYolo;
+    saveConfig(CONFIG_PATH, config);
+    res.json({ defaultYolo: config.defaultYolo });
+  });
+
+  // GET /config/launchInTmux — get launch in tmux setting
+  app.get('/config/launchInTmux', requireAuth, (_req, res) => {
+    res.json({ launchInTmux: config.launchInTmux ?? false });
+  });
+
+  // PATCH /config/launchInTmux — set launch in tmux setting
+  app.patch('/config/launchInTmux', requireAuth, async (req, res) => {
+    const { launchInTmux } = req.body as { launchInTmux?: boolean };
+    if (typeof launchInTmux !== 'boolean') {
+      res.status(400).json({ error: 'launchInTmux must be a boolean' });
+      return;
+    }
+    if (launchInTmux) {
+      try {
+        await execFileAsync('tmux', ['-V']);
+      } catch {
+        res.status(400).json({ error: 'tmux is not installed or not in PATH' });
+        return;
+      }
+    }
+    config.launchInTmux = launchInTmux;
+    saveConfig(CONFIG_PATH, config);
+    res.json({ launchInTmux: config.launchInTmux });
+  });
+
   // DELETE /worktrees — remove a worktree, prune, and delete its branch
   app.delete('/worktrees', requireAuth, async (req, res) => {
     const { worktreePath, repoPath } = req.body as { worktreePath?: string; repoPath?: string };
@@ -610,7 +669,7 @@ async function main(): Promise<void> {
 
   // POST /sessions
   app.post('/sessions', requireAuth, async (req, res) => {
-    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent } = req.body as {
+    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux } = req.body as {
       repoPath?: string;
       repoName?: string;
       worktreePath?: string;
@@ -618,6 +677,7 @@ async function main(): Promise<void> {
       claudeArgs?: string[];
       yolo?: boolean;
       agent?: AgentType;
+      useTmux?: boolean;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -712,6 +772,7 @@ async function main(): Promise<void> {
                 root,
                 displayName: name,
                 args: baseArgs,
+                useTmux: useTmux ?? config.launchInTmux,
               });
 
               res.status(201).json(repoSession);
@@ -737,6 +798,7 @@ async function main(): Promise<void> {
                 displayName: displayNameVal,
                 args,
                 configPath: CONFIG_PATH,
+                useTmux: useTmux ?? config.launchInTmux,
               });
 
               writeMeta(CONFIG_PATH, {
@@ -782,6 +844,7 @@ async function main(): Promise<void> {
       displayName,
       args,
       configPath: CONFIG_PATH,
+      useTmux: useTmux ?? config.launchInTmux,
     });
 
     if (!worktreePath) {
@@ -798,13 +861,14 @@ async function main(): Promise<void> {
 
   // POST /sessions/repo — start a session in the repo root (no worktree)
   app.post('/sessions/repo', requireAuth, (req, res) => {
-    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent } = req.body as {
+    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux } = req.body as {
       repoPath?: string;
       repoName?: string;
       continue?: boolean;
       claudeArgs?: string[];
       yolo?: boolean;
       agent?: AgentType;
+      useTmux?: boolean;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -840,6 +904,7 @@ async function main(): Promise<void> {
       root,
       displayName: name,
       args,
+      useTmux: useTmux ?? config.launchInTmux,
     });
 
     res.status(201).json(session);
@@ -962,6 +1027,27 @@ async function main(): Promise<void> {
       res.status(500).json({ ok: false, error: message });
     }
   });
+
+  // Clean up orphaned tmux sessions from previous runs
+  try {
+    const { stdout } = await execFileAsync('tmux', ['list-sessions', '-F', '#{session_name}']);
+    const crcSessions = stdout.trim().split('\n').filter(name => name.startsWith('crc-'));
+    for (const name of crcSessions) {
+      execFileAsync('tmux', ['kill-session', '-t', name]).catch(() => {});
+    }
+    if (crcSessions.length > 0) {
+      console.log(`Cleaned up ${crcSessions.length} orphaned tmux session(s).`);
+    }
+  } catch {
+    // tmux not installed or no sessions — ignore
+  }
+
+  function gracefulShutdown() {
+    killAllTmuxSessions();
+    process.exit(0);
+  }
+  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', gracefulShutdown);
 
   server.listen(config.port, config.host, () => {
     console.log(`claude-remote-cli listening on ${config.host}:${config.port}`);

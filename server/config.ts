@@ -11,6 +11,9 @@ export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs'> = {
   claudeCommand: 'claude',
   claudeArgs: [],
   defaultAgent: 'claude',
+  defaultContinue: true,
+  defaultYolo: false,
+  launchInTmux: false,
 };
 
 export function loadConfig(configPath: string): Config {
