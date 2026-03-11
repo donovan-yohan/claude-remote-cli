@@ -56,30 +56,45 @@
   }
 
   async function handleAgentChange() {
+    const prev = config.defaultAgent;
     error = '';
     try {
       await setDefaultAgent(config.defaultAgent);
     } catch {
+      config.defaultAgent = prev;
       error = 'Failed to update default agent.';
     }
   }
 
   async function handleContinueChange() {
+    const prev = config.defaultContinue;
     error = '';
-    try { await setDefaultContinue(config.defaultContinue); } catch { error = 'Failed to update continue default.'; }
+    try {
+      await setDefaultContinue(config.defaultContinue);
+    } catch {
+      config.defaultContinue = prev;
+      error = 'Failed to update continue default.';
+    }
   }
 
   async function handleYoloChange() {
+    const prev = config.defaultYolo;
     error = '';
-    try { await setDefaultYolo(config.defaultYolo); } catch { error = 'Failed to update yolo default.'; }
+    try {
+      await setDefaultYolo(config.defaultYolo);
+    } catch {
+      config.defaultYolo = prev;
+      error = 'Failed to update yolo default.';
+    }
   }
 
   async function handleTmuxChange() {
+    const prev = config.launchInTmux;
     error = '';
     try {
       await setLaunchInTmux(config.launchInTmux);
     } catch (err) {
-      config.launchInTmux = false;
+      config.launchInTmux = prev;
       error = err instanceof Error ? err.message : 'Failed to update tmux setting.';
     }
   }

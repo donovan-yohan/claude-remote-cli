@@ -205,12 +205,7 @@
     const repoPath = selectedRepoPath;
     if (!repoPath) return;
 
-    const claudeArgs: string[] = [];
-    if (claudeArgsInput.trim()) {
-      claudeArgsInput.trim().split(/\s+/).forEach(arg => {
-        if (arg) claudeArgs.push(arg);
-      });
-    }
+    const claudeArgs = claudeArgsInput.trim().split(/\s+/).filter(Boolean);
 
     try {
       let session;
