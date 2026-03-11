@@ -29,7 +29,7 @@
 
   const config = getConfigState();
 
-  onMount(() => { refreshConfig(); });
+  onMount(() => { refreshConfig().catch(() => {}); });
 
   // Split sessions by type
   let repoSessions = $derived(sessionState.sessions.filter(s => s.type === 'repo'));
