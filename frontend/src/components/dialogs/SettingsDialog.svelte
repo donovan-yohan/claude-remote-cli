@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchRoots, addRoot, removeRoot, setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux } from '../../lib/api.js';
+  import { fetchRoots, addRoot, removeRoot, setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, checkVersion, triggerUpdate } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
 
@@ -10,6 +10,14 @@
   let devtoolsEnabled = $state(false);
   const config = getConfigState();
   let error = $state('');
+
+  let currentVersion = $state('');
+  let latestVersion = $state<string | null>(null);
+  let updateAvailable = $state(false);
+  let versionChecked = $state(false);
+  let versionChecking = $state(false);
+  let updating = $state(false);
+  let updateStatus = $state('');
 
   async function loadRoots() {
     try {
@@ -22,10 +30,14 @@
   export async function open() {
     error = '';
     newRootPath = '';
+    updateStatus = '';
+    versionChecked = false;
+    updating = false;
     devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
     await loadRoots();
     await refreshConfig();
     dialogEl.showModal();
+    handleCheckVersion();
   }
 
   export function close() {
@@ -96,6 +108,40 @@
     } catch (err) {
       config.launchInTmux = prev;
       error = err instanceof Error ? err.message : 'Failed to update tmux setting.';
+    }
+  }
+
+  async function handleCheckVersion() {
+    versionChecking = true;
+    updateStatus = '';
+    try {
+      const data = await checkVersion();
+      currentVersion = data.current;
+      latestVersion = data.latest;
+      updateAvailable = data.updateAvailable;
+      versionChecked = true;
+    } catch {
+      updateStatus = 'Failed to check for updates.';
+    } finally {
+      versionChecking = false;
+    }
+  }
+
+  async function handleUpdate() {
+    updating = true;
+    updateStatus = '';
+    try {
+      const result = await triggerUpdate();
+      if (result.restarting) {
+        updateStatus = 'Updated! Restarting server\u2026';
+        setTimeout(() => { location.reload(); }, 5000);
+      } else {
+        updateStatus = 'Updated! Please restart the server manually.';
+      }
+      updateAvailable = false;
+    } catch {
+      updateStatus = 'Update failed. Please try again.';
+      updating = false;
     }
   }
 
@@ -217,6 +263,38 @@
           />
           <label for="devtools-toggle" class="devtools-label">Enable mobile debug panel</label>
         </div>
+      </section>
+
+      <!-- Version & Updates section -->
+      <section class="settings-section">
+        <h3 class="section-title">Version</h3>
+        <div class="version-row">
+          <span class="version-current">
+            {#if currentVersion}v{currentVersion}{:else}...{/if}
+          </span>
+          {#if versionChecked && !updateAvailable && !updating}
+            <span class="version-status">Up to date</span>
+          {/if}
+        </div>
+        {#if updateAvailable}
+          <div class="version-update-row">
+            <span class="version-update-text">v{currentVersion} &rarr; v{latestVersion}</span>
+            <button class="btn btn-primary btn-sm" onclick={handleUpdate} disabled={updating}>
+              {updating ? 'Updating\u2026' : 'Update Now'}
+            </button>
+          </div>
+        {:else if !versionChecked}
+          <button
+            class="btn btn-ghost btn-sm"
+            onclick={handleCheckVersion}
+            disabled={versionChecking}
+          >
+            {versionChecking ? 'Checking\u2026' : 'Check for updates'}
+          </button>
+        {/if}
+        {#if updateStatus}
+          <p class="version-status-msg">{updateStatus}</p>
+        {/if}
       </section>
     </div>
 
@@ -449,5 +527,49 @@
   .btn-ghost:hover {
     background: var(--border);
     color: var(--text);
+  }
+
+  .btn-sm {
+    padding: 5px 12px;
+    font-size: 0.8rem;
+  }
+
+  .version-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .version-current {
+    font-size: 0.9rem;
+    font-family: monospace;
+    color: var(--text);
+  }
+
+  .version-status {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .version-update-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+
+  .version-update-text {
+    font-size: 0.85rem;
+    color: var(--accent);
+  }
+
+  .version-status-msg {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin: 0;
   }
 </style>
