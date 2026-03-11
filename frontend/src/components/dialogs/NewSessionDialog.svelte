@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { fetchBranches, createSession, createRepoSession, fetchRepos, fetchDefaultAgent, fetchDefaultContinue, fetchDefaultYolo, fetchLaunchInTmux } from '../../lib/api.js';
+  import { fetchBranches, createSession, createRepoSession, fetchRepos } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getUi } from '../../lib/state/ui.svelte.js';
+  import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
   import { rootShortName } from '../../lib/utils.js';
   import type { RepoInfo, AgentType, OpenSessionOptions } from '../../lib/types.js';
 
@@ -14,6 +15,7 @@
   } = $props();
 
   const ui = getUi();
+  const config = getConfigState();
 
   let dialogEl: HTMLDialogElement;
 
@@ -149,25 +151,13 @@
       allRepos = [];
     }
 
-    try {
-      selectedAgent = await fetchDefaultAgent() as AgentType;
-    } catch {
-      selectedAgent = 'claude';
-    }
+    await refreshConfig();
+    selectedAgent = config.defaultAgent as AgentType;
     if (options?.agent) selectedAgent = options.agent;
 
-    try {
-      const [yolo, cont, tmux] = await Promise.all([
-        fetchDefaultYolo().catch(() => false),
-        fetchDefaultContinue().catch(() => false),
-        fetchLaunchInTmux().catch(() => false),
-      ]);
-      yoloMode = yolo;
-      continueExisting = cont;
-      useTmux = tmux;
-    } catch {
-      // use defaults (already set by reset())
-    }
+    yoloMode = config.defaultYolo;
+    continueExisting = config.defaultContinue;
+    useTmux = config.launchInTmux;
 
     if (options?.yolo !== undefined) yoloMode = options.yolo;
     if (options?.useTmux !== undefined) useTmux = options.useTmux;
