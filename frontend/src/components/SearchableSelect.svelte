@@ -43,7 +43,7 @@
   }
 
   function onWindowClick(e: MouseEvent) {
-    if (open && wrapperEl && !wrapperEl.contains(e.target as Node)) {
+    if (open && wrapperEl && document.contains(e.target as Node) && !wrapperEl.contains(e.target as Node)) {
       close();
     }
   }
