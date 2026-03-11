@@ -56,7 +56,7 @@ function resolveTmuxSpawn(
 ): { command: string; args: string[] } {
   return {
     command: 'tmux',
-    args: ['new-session', '-s', tmuxSessionName, '--', command, ...args],
+    args: ['-u', 'new-session', '-s', tmuxSessionName, '--', command, ...args],
   };
 }
 

@@ -321,7 +321,7 @@ describe('sessions', () => {
     const result = resolveTmuxSpawn('claude', ['--continue'], 'test-session');
     assert.deepStrictEqual(result, {
       command: 'tmux',
-      args: ['new-session', '-s', 'test-session', '--', 'claude', '--continue'],
+      args: ['-u', 'new-session', '-s', 'test-session', '--', 'claude', '--continue'],
     });
   });
 
