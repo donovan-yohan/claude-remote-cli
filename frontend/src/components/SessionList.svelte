@@ -3,7 +3,8 @@
   import { getUi } from '../lib/state/ui.svelte.js';
   import { getSessionState, getSessionStatus, clearAttention, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import * as api from '../lib/api.js';
-  import { ConflictError, fetchDefaultContinue, fetchDefaultYolo, fetchLaunchInTmux } from '../lib/api.js';
+  import { ConflictError } from '../lib/api.js';
+  import { getConfigState, refreshConfig } from '../lib/state/config.svelte.js';
   import type { SessionSummary, WorktreeInfo, RepoInfo, PullRequest, OpenSessionOptions } from '../lib/types.js';
   import type { MenuItem } from './ContextMenu.svelte';
   import { rootShortName } from '../lib/utils.js';
@@ -26,20 +27,9 @@
     onDeleteWorktree: (wt: WorktreeInfo) => void;
   } = $props();
 
-  let configDefaults = $state({ defaultContinue: true, defaultYolo: false, launchInTmux: false });
+  const config = getConfigState();
 
-  onMount(() => {
-    (async () => {
-      try {
-        const [cont, yolo, tmux] = await Promise.all([
-          fetchDefaultContinue(),
-          fetchDefaultYolo(),
-          fetchLaunchInTmux(),
-        ]);
-        configDefaults = { defaultContinue: cont, defaultYolo: yolo, launchInTmux: tmux };
-      } catch { /* use defaults */ }
-    })();
-  });
+  onMount(() => { refreshConfig(); });
 
   // Split sessions by type
   let repoSessions = $derived(sessionState.sessions.filter(s => s.type === 'repo'));
@@ -194,8 +184,8 @@
           repoPath: existingWorktree.repoPath,
           repoName: existingWorktree.repoName,
           worktreePath: existingWorktree.path,
-          yolo: yolo || configDefaults.defaultYolo,
-          useTmux: configDefaults.launchInTmux,
+          yolo: yolo || config.defaultYolo,
+          useTmux: config.launchInTmux,
         });
         await refreshAll();
         if (session?.id) {
@@ -213,8 +203,8 @@
         repoPath: repo.path,
         repoName: repo.name,
         branchName: pr.headRefName,
-        yolo: yolo || configDefaults.defaultYolo,
-        useTmux: configDefaults.launchInTmux,
+        yolo: yolo || config.defaultYolo,
+        useTmux: config.launchInTmux,
       });
       await refreshAll();
       if (session?.id) {
@@ -260,8 +250,8 @@
         repoPath: wt.repoPath,
         repoName: wt.repoName,
         worktreePath: wt.path,
-        yolo: yolo || configDefaults.defaultYolo,
-        useTmux: configDefaults.launchInTmux,
+        yolo: yolo || config.defaultYolo,
+        useTmux: config.launchInTmux,
       });
       await refreshAll();
       if (session?.id) onSelectSession(session.id);
@@ -280,9 +270,9 @@
       const session = await api.createRepoSession({
         repoPath: repo.path,
         repoName: repo.name,
-        continue: configDefaults.defaultContinue,
-        yolo: yolo || configDefaults.defaultYolo,
-        useTmux: configDefaults.launchInTmux,
+        continue: config.defaultContinue,
+        yolo: yolo || config.defaultYolo,
+        useTmux: config.launchInTmux,
       });
       await refreshAll();
       if (session?.id) onSelectSession(session.id);
