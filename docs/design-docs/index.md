@@ -29,3 +29,4 @@
 | [2026-03-06-arbitrary-terminal-sessions-design.md](2026-03-06-arbitrary-terminal-sessions-design.md) | Bare shell terminal sessions without agent wrappers | 2026-03-06 |
 | [2026-03-06-searchable-filter-dropdowns-design.md](2026-03-06-searchable-filter-dropdowns-design.md) | Replace native selects with searchable dropdown filters | 2026-03-06 |
 | [2026-03-10-tmux-launch-setting-design.md](2026-03-10-tmux-launch-setting-design.md) | Settings-backed tmux wrapper for Claude/Codex launches | 2026-03-10 |
+| [2026-03-11-tmux-clipboard-support-design.md](2026-03-11-tmux-clipboard-support-design.md) | OSC 52 clipboard passthrough + Shift+click selection bypass for tmux sessions | 2026-03-11 |

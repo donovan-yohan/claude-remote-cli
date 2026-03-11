@@ -14,6 +14,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | TypeScript + ESM migration | Type safety, modern module system, strict mode | ADR-008 |
 | Multi-agent CLI support | Abstract UI concepts (yolo, continue) map to agent-specific flags via `AGENT_COMMANDS`/`AGENT_YOLO_ARGS`/`AGENT_CONTINUE_ARGS` records in sessions.ts | Design doc |
 | Global session defaults | `defaultContinue`, `defaultYolo`, `launchInTmux` extend the `defaultAgent` pattern; shared reactive store (`config.svelte.ts`) ensures all components see fresh values after settings changes | Design doc |
+| Tmux clipboard passthrough | OSC 52 sequences from tmux flow through PTY→WebSocket to xterm.js; frontend handler decodes and writes to browser Clipboard API. Shift+click bypasses tmux mouse capture for native selection | Design doc |
 
 ## Config Precedence (canonical)
 

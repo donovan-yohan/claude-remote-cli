@@ -56,7 +56,13 @@ function resolveTmuxSpawn(
 ): { command: string; args: string[] } {
   return {
     command: 'tmux',
-    args: ['-u', 'new-session', '-s', tmuxSessionName, '--', command, ...args],
+    args: [
+      '-u', 'new-session', '-s', tmuxSessionName, '--', command, ...args,
+      // ';' tokens are tmux command separators — parsed at the top level before
+      // dispatching to new-session, not passed as argv to `command`.
+      ';', 'set', 'set-clipboard', 'on',
+      ';', 'set', 'allow-passthrough', 'on',
+    ],
   };
 }
 

@@ -136,6 +136,20 @@
       });
     }
 
+    // OSC 52 clipboard handler — intercepts tmux clipboard sequences and writes to browser clipboard
+    t.parser.registerOscHandler(52, (data) => {
+      // OSC 52 format: Pc;Pd where Pc is clipboard selection (c/p/s) and Pd is base64-encoded text
+      const semicolonIdx = data.indexOf(';');
+      if (semicolonIdx === -1) return true;
+      const payload = data.slice(semicolonIdx + 1);
+      if (!payload || payload === '?') return true;
+      try {
+        const text = atob(payload);
+        navigator.clipboard?.writeText(text).catch(() => { /* ignore — clipboard API may be blocked */ });
+      } catch { /* ignore invalid base64 */ }
+      return true;
+    });
+
     // Scrollbar updates
     t.onScroll(updateScrollbar);
     t.onWriteParsed(updateScrollbar);
