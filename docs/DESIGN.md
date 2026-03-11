@@ -13,7 +13,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | Dual distribution (global + local) | npm global for production, local clone for dev | ADR-006 |
 | TypeScript + ESM migration | Type safety, modern module system, strict mode | ADR-008 |
 | Multi-agent CLI support | Abstract UI concepts (yolo, continue) map to agent-specific flags via `AGENT_COMMANDS`/`AGENT_YOLO_ARGS`/`AGENT_CONTINUE_ARGS` records in sessions.ts | Design doc |
-| Global session defaults | `defaultContinue`, `defaultYolo`, `launchInTmux` extend the `defaultAgent` pattern; quick-start uses defaults, dialogs pre-fill and allow override | Design doc |
+| Global session defaults | `defaultContinue`, `defaultYolo`, `launchInTmux` extend the `defaultAgent` pattern; shared reactive store (`config.svelte.ts`) ensures all components see fresh values after settings changes | Design doc |
 
 ## Config Precedence (canonical)
 
