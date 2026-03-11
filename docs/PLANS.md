@@ -18,6 +18,7 @@ See `docs/exec-plans/completed/` for historical plans (21 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `fix-global-defaults-and-tmux-utf8` | 2026-03-11 | Fix stale config defaults on quick-start + tmux UTF-8 rendering |
 | `global-session-defaults-tmux` | 2026-03-10 | Global session defaults (continue, yolo, tmux) + tmux launch wrapping |
 | `mobile-scroll-fixes` | 2026-03-07 | Fix FAB keyboard flicker, scroll-to-top bug, add skip-to-bottom + swipe sidebar |
 | `multi-agent-cli` | 2026-03-05 | Choose between Claude and Codex as the underlying coding agent per session |
