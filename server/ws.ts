@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'node:http';
+import type { IPty } from 'node-pty';
 import * as sessions from './sessions.js';
 import { WorktreeWatcher } from './watcher.js';
 import type { Session } from './types.js';
@@ -82,17 +83,33 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
   wss.on('connection', (ws: WebSocket, _request: http.IncomingMessage) => {
     const session = sessionMap.get(ws);
     if (!session) return;
-    const ptyProcess = session.pty;
 
-    for (const chunk of session.scrollback) {
-      ws.send(chunk);
+    let dataDisposable: { dispose(): void } | null = null;
+    let exitDisposable: { dispose(): void } | null = null;
+
+    function attachToPty(ptyProcess: IPty): void {
+      // Dispose previous handlers
+      dataDisposable?.dispose();
+      exitDisposable?.dispose();
+
+      // Replay scrollback
+      for (const chunk of session!.scrollback) {
+        if (ws.readyState === ws.OPEN) ws.send(chunk);
+      }
+
+      dataDisposable = ptyProcess.onData((data) => {
+        if (ws.readyState === ws.OPEN) ws.send(data);
+      });
+
+      exitDisposable = ptyProcess.onExit(() => {
+        if (ws.readyState === ws.OPEN) ws.close(1000);
+      });
     }
 
-    const dataHandler = ptyProcess.onData((data) => {
-      if (ws.readyState === ws.OPEN) {
-        ws.send(data);
-      }
-    });
+    attachToPty(session.pty);
+
+    const ptyReplacedHandler = (newPty: IPty) => attachToPty(newPty);
+    session.onPtyReplacedCallbacks.push(ptyReplacedHandler);
 
     ws.on('message', (msg) => {
       const str = msg.toString();
@@ -103,17 +120,15 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
           return;
         }
       } catch (_) {}
-      ptyProcess.write(str);
+      // Use session.pty dynamically so writes go to current PTY
+      session.pty.write(str);
     });
 
     ws.on('close', () => {
-      dataHandler.dispose();
-    });
-
-    ptyProcess.onExit(() => {
-      if (ws.readyState === ws.OPEN) {
-        ws.close(1000);
-      }
+      dataDisposable?.dispose();
+      exitDisposable?.dispose();
+      const idx = session.onPtyReplacedCallbacks.indexOf(ptyReplacedHandler);
+      if (idx !== -1) session.onPtyReplacedCallbacks.splice(idx, 1);
     });
   });
 

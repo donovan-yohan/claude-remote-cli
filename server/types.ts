@@ -20,6 +20,7 @@ export interface Session {
   idle: boolean;
   useTmux: boolean;
   tmuxSessionName: string;
+  onPtyReplacedCallbacks: Array<(newPty: IPty) => void>;
 }
 
 export interface WorktreeMetadata {

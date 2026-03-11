@@ -436,4 +436,42 @@ describe('sessions', () => {
     assert.strictEqual(session.useTmux, false);
     assert.strictEqual(session.tmuxSessionName, '');
   });
+
+  it('calls onPtyReplaced when continue-arg process fails quickly', (_, done) => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/false',
+      args: [...sessions.AGENT_CONTINUE_ARGS.claude],
+    });
+    createdIds.push(result.id);
+
+    const session = sessions.get(result.id);
+    assert.ok(session);
+
+    session.onPtyReplacedCallbacks.push((newPty) => {
+      assert.ok(newPty, 'should receive new PTY');
+      assert.strictEqual(session.pty, newPty, 'session.pty should be updated to new PTY');
+      done();
+    });
+  });
+
+  it('session survives after continue-arg retry', (_, done) => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/false',
+      args: [...sessions.AGENT_CONTINUE_ARGS.claude],
+    });
+    createdIds.push(result.id);
+
+    const session = sessions.get(result.id);
+    assert.ok(session);
+
+    session.onPtyReplacedCallbacks.push(() => {
+      const stillExists = sessions.get(result.id);
+      assert.ok(stillExists, 'session should still exist after retry');
+      done();
+    });
+  });
 });

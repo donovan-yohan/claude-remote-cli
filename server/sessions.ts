@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process';
 import type { AgentType, Session, SessionType } from './types.js';
 import { readMeta, writeMeta } from './config.js';
 
-type SessionSummary = Omit<Session, 'pty' | 'scrollback'>;
+type SessionSummary = Omit<Session, 'pty' | 'scrollback' | 'onPtyReplacedCallbacks'>;
 
 const AGENT_COMMANDS: Record<AgentType, string> = {
   claude: 'claude',
@@ -128,6 +128,7 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
     idle: false,
     useTmux,
     tmuxSessionName,
+    onPtyReplacedCallbacks: [],
   };
   sessions.set(id, session);
 
@@ -183,23 +184,38 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
       // If continue args failed quickly, retry without them
       if (canRetry && (Date.now() - spawnTime) < 3000 && exitCode !== 0) {
         const retryArgs = args.filter(a => !continueArgs.includes(a));
+        const retryNotice = '\r\n[claude-remote-cli] --continue not available; starting new session...\r\n';
         scrollback.length = 0;
         scrollbackBytes = 0;
+        scrollback.push(retryNotice);
+        scrollbackBytes = retryNotice.length;
         let retryCommand = resolvedCommand;
         let retrySpawnArgs = retryArgs;
         if (useTmux && tmuxSessionName) {
-          const tmux = resolveTmuxSpawn(resolvedCommand, retryArgs, tmuxSessionName);
+          const retryTmuxName = tmuxSessionName + '-retry';
+          session.tmuxSessionName = retryTmuxName;
+          const tmux = resolveTmuxSpawn(resolvedCommand, retryArgs, retryTmuxName);
           retryCommand = tmux.command;
           retrySpawnArgs = tmux.args;
         }
-        const retryPty = pty.spawn(retryCommand, retrySpawnArgs, {
-          name: 'xterm-256color',
-          cols,
-          rows,
-          cwd: cwd || repoPath,
-          env,
-        });
+        let retryPty: pty.IPty;
+        try {
+          retryPty = pty.spawn(retryCommand, retrySpawnArgs, {
+            name: 'xterm-256color',
+            cols,
+            rows,
+            cwd: cwd || repoPath,
+            env,
+          });
+        } catch {
+          // Retry spawn failed — fall through to normal exit cleanup
+          if (idleTimer) clearTimeout(idleTimer);
+          if (metaFlushTimer) clearTimeout(metaFlushTimer);
+          sessions.delete(id);
+          return;
+        }
         session.pty = retryPty;
+        for (const cb of session.onPtyReplacedCallbacks) cb(retryPty);
         attachHandlers(retryPty, false);
         return;
       }

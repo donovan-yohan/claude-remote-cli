@@ -14,10 +14,11 @@ No tech debt tracked yet.
 
 ## Completed Plans
 
-See `docs/exec-plans/completed/` for historical plans (21 completed).
+See `docs/exec-plans/completed/` for historical plans (22 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `continue-flag-pty-replacement` | 2026-03-11 | Fix --continue retry: WebSocket PTY reattachment + tmux name collision |
 | `tmux-clipboard-support` | 2026-03-11 | OSC 52 clipboard passthrough + Shift+click selection bypass for tmux sessions |
 | `fix-global-defaults-and-tmux-utf8` | 2026-03-11 | Fix stale config defaults on quick-start + tmux UTF-8 rendering |
 | `global-session-defaults-tmux` | 2026-03-10 | Global session defaults (continue, yolo, tmux) + tmux launch wrapping |
