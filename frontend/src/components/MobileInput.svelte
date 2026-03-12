@@ -143,10 +143,14 @@
       if (data.length > 1 && intent.cursorBefore === 0 &&
           intent.valueBefore.length > 0 &&
           currentValue === data + intent.valueBefore) {
-        dbg('  → BAD_AUTOCORRECT: data prepended at pos 0, reverting');
-        inputEl.value = intent.valueBefore;
+        dbg('  → AUTOCORRECT_RECOVER: replacing "' + intent.valueBefore + '" with "' + data + '"');
+        const charsToDelete = codepointCount(intent.valueBefore);
+        let payload = '';
+        for (let i = 0; i < charsToDelete; i++) payload += '\x7f';
+        payload += data;
+        scheduleSend(payload);
+        inputEl.value = data;
         ensureCursorAtEnd();
-        // onInput's syncBuffer() and ensureCursorAtEnd() still run after return
         return;
       }
       // Collapsed range = normal character insertion

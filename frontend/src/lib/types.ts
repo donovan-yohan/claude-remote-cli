@@ -13,6 +13,7 @@ export interface SessionSummary {
   createdAt: string;
   lastActivity: string;
   idle: boolean;
+  useTmux?: boolean;
 }
 
 export interface WorktreeInfo {

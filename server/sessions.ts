@@ -62,6 +62,7 @@ function resolveTmuxSpawn(
       // dispatching to new-session, not passed as argv to `command`.
       ';', 'set', 'set-clipboard', 'on',
       ';', 'set', 'allow-passthrough', 'on',
+      ';', 'set', 'mode-keys', 'vi',
     ],
   };
 }

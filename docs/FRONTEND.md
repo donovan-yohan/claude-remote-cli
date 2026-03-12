@@ -76,8 +76,8 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 ## Mobile Touch & Input
 
 - Custom touch scroll replaces xterm.js built-in (smoother UX); handlers use `addEventListener({ passive: false })` on `document`
-- Long-press (500ms) triggers text selection mode with copy-on-tap
-- `MobileInput` uses event-intent architecture: `beforeinput` captures intent, `input` dispatches to typed handlers (insert, delete, replacement, paste)
+- Long-press (500ms) triggers text selection: tmux sessions enter copy-mode (vi bindings, toolbar buttons for navigation); non-tmux sessions use browser-native selection with copy-on-tap
+- `MobileInput` uses event-intent architecture: `beforeinput` captures intent, `input` dispatches to typed handlers (insert, delete, replacement, paste). Autocorrect at cursor-0 (iOS Safari bug) is recovered by sending backspaces + corrected text instead of reverting
 - `visualViewport` API tracks keyboard state; layout adjusts dynamically (header hidden, terminal re-fit)
 - xterm's internal `.xterm-helper-textarea` disabled on mobile to prevent focus fights with `MobileInput`
 - Toolbar buttons use `mousedown` + `preventDefault()` to avoid keyboard dismissal

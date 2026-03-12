@@ -10,9 +10,13 @@
   let {
     sessionId,
     onImageUpload,
+    useTmux = false,
+    onCopyModeChange,
   }: {
     sessionId: string | null;
     onImageUpload?: (text: string, showInsert: boolean, path?: string) => void;
+    useTmux?: boolean;
+    onCopyModeChange?: ((active: boolean) => void) | undefined;
   } = $props();
 
   let containerEl: HTMLDivElement;
@@ -232,6 +236,7 @@
 
   // Long-press text selection state (mobile)
   let selectionMode = $state(false);
+  let inCopyMode = $state(false);
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let longPressStartX = 0;
   let longPressStartY = 0;
@@ -292,11 +297,29 @@
     scrollbarDragStartTop = thumbTop;
   }
 
+  export function exitCopyMode() {
+    if (inCopyMode) {
+      inCopyMode = false;
+      onCopyModeChange?.(false);
+    }
+  }
+
   function enterSelectionMode() {
     longPressTimer = null;
-    selectionMode = true;
     contentScrolling = false;
     if (navigator.vibrate) navigator.vibrate(50);
+
+    // tmux sessions: enter tmux copy-mode instead of browser-native selection
+    if (useTmux) {
+      inCopyMode = true;
+      onCopyModeChange?.(true);
+      // Ctrl-b [ enters tmux copy-mode
+      sendPtyData('\x02[');
+      return;
+    }
+
+    // Non-tmux fallback: browser-native selection
+    selectionMode = true;
 
     // Enable text selection on xterm screen
     const xtermScreen = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
@@ -348,6 +371,8 @@
       exitSelectionMode();
       return;
     }
+    // In tmux copy-mode, don't start long-press timer — let normal scroll work
+    if (inCopyMode) return;
     if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
     if ((e.target as HTMLElement).closest('.scroll-fabs')) return;
     if (!term) return;

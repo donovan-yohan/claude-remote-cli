@@ -7,12 +7,18 @@
     onClearInput,
     onUploadImage,
     onRefocusMobileInput,
+    useTmux = false,
+    inCopyMode = false,
+    onExitCopyMode,
   }: {
     onSendKey: (key: string) => void;
     onFlushComposedText: () => void;
     onClearInput: () => void;
     onUploadImage: () => void;
     onRefocusMobileInput: () => void;
+    useTmux?: boolean;
+    inCopyMode?: boolean;
+    onExitCopyMode?: (() => void) | undefined;
   } = $props();
 
   const buttons: Array<{
@@ -34,6 +40,27 @@
     { html: '&#8594;', key: '\x1b[C', label: 'Right arrow', extraClass: 'tb-arrow' },
     { html: '&#8679;&#9166;', key: '\x1b[13;2u', label: 'Shift+Enter (newline)', extraClass: 'tb-newline' },
     { html: '&#9166;', key: '\x0d', label: 'Enter', extraClass: 'tb-enter' },
+  ];
+
+  const copyModeButtons: Array<{
+    label: string;
+    key: string;
+    html: string;
+    extraClass?: string;
+    exitsCopyMode?: boolean;
+  }> = [
+    { html: 'Sel', key: ' ', label: 'Start selection' },
+    { html: 'w', key: 'w', label: 'Word forward' },
+    { html: 'b', key: 'b', label: 'Word backward' },
+    { html: '&#8592;', key: 'h', label: 'Left', extraClass: 'tb-arrow' },
+    { html: '&#8595;', key: 'j', label: 'Down', extraClass: 'tb-arrow' },
+    { html: '&#8593;', key: 'k', label: 'Up', extraClass: 'tb-arrow' },
+    { html: '&#8594;', key: 'l', label: 'Right', extraClass: 'tb-arrow' },
+    { html: '$', key: '$', label: 'End of line' },
+    { html: '0', key: '0', label: 'Start of line' },
+    { html: 'PgUp', key: '\x1b[5~', label: 'Page up' },
+    { html: 'Copy', key: '\r', label: 'Copy and exit', extraClass: 'tb-enter', exitsCopyMode: true },
+    { html: 'Exit', key: 'q', label: 'Cancel', exitsCopyMode: true },
   ];
 
   function handleButton(btn: typeof buttons[number]) {
@@ -60,6 +87,14 @@
     if (isMobileDevice) onRefocusMobileInput();
   }
 
+  function handleCopyModeButton(btn: typeof copyModeButtons[number]) {
+    onSendKey(btn.key);
+    if (btn.exitsCopyMode) {
+      onExitCopyMode?.();
+    }
+    if (isMobileDevice) onRefocusMobileInput();
+  }
+
   function onToolbarMouseDown(e: MouseEvent) {
     // preventDefault on mousedown blocks the browser's focus-transfer default,
     // keeping the hidden MobileInput focused so the keyboard stays open.
@@ -68,6 +103,15 @@
     e.preventDefault();
     const btn = (e.target as HTMLElement).closest('button');
     if (!btn) return;
+
+    if (inCopyMode) {
+      const match = copyModeButtons.find(
+        (b) => btn.dataset['key'] === b.key,
+      );
+      if (match) handleCopyModeButton(match);
+      return;
+    }
+
     const match = buttons.find(
       (b) => b.id === btn.id || (b.key && btn.dataset['key'] === b.key),
     );
@@ -83,17 +127,30 @@
   onmousedown={onToolbarMouseDown}
 >
   <div class="toolbar-grid">
-    {#each buttons as btn (btn.label)}
-      <button
-        class="tb-btn {btn.extraClass ?? ''}"
-        id={btn.id}
-        data-key={btn.key}
-        aria-label={btn.label}
-      >
-        <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-        {@html btn.html}
-      </button>
-    {/each}
+    {#if inCopyMode}
+      {#each copyModeButtons as btn (btn.label)}
+        <button
+          class="tb-btn {btn.extraClass ?? ''}"
+          data-key={btn.key}
+          aria-label={btn.label}
+        >
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+          {@html btn.html}
+        </button>
+      {/each}
+    {:else}
+      {#each buttons as btn (btn.label)}
+        <button
+          class="tb-btn {btn.extraClass ?? ''}"
+          id={btn.id}
+          data-key={btn.key}
+          aria-label={btn.label}
+        >
+          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+          {@html btn.html}
+        </button>
+      {/each}
+    {/if}
   </div>
 </div>
 {/if}

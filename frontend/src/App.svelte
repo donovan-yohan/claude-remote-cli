@@ -240,6 +240,17 @@
       ? (sessionState.sessions.find(s => s.id === sessionState.activeSessionId)?.displayName || 'Session')
       : 'Claude Remote CLI'
   );
+
+  let activeSessionUseTmux = $derived(sessionState.sessions.find(s => s.id === sessionState.activeSessionId)?.useTmux ?? false);
+  let copyModeActive = $state(false);
+
+  function handleCopyModeChange(active: boolean) {
+    copyModeActive = active;
+  }
+
+  function handleExitCopyMode() {
+    terminalRef?.exitCopyMode();
+  }
 </script>
 
 {#if auth.checking}
@@ -275,6 +286,8 @@
         bind:this={terminalRef}
         sessionId={sessionState.activeSessionId}
         onImageUpload={handleImageUpload}
+        useTmux={activeSessionUseTmux}
+        onCopyModeChange={handleCopyModeChange}
       />
 
       <Toolbar
@@ -283,6 +296,9 @@
         onClearInput={handleClearInput}
         onUploadImage={handleUploadImage}
         onRefocusMobileInput={handleRefocusMobileInput}
+        useTmux={activeSessionUseTmux}
+        inCopyMode={copyModeActive}
+        onExitCopyMode={handleExitCopyMode}
       />
 
       <MobileInput bind:this={mobileInputRef} />

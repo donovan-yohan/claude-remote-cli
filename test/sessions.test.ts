@@ -325,6 +325,7 @@ describe('sessions', () => {
         '-u', 'new-session', '-s', 'test-session', '--', 'claude', '--continue',
         ';', 'set', 'set-clipboard', 'on',
         ';', 'set', 'allow-passthrough', 'on',
+        ';', 'set', 'mode-keys', 'vi',
       ],
     });
   });
