@@ -18,6 +18,7 @@ See `docs/exec-plans/completed/` for historical plans (22 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `mobile-touch-scroll-tmux` | 2026-03-12 | Fix mobile touch scroll in tmux/alternate screen via SGR mouse wheel sequences |
 | `continue-flag-pty-replacement` | 2026-03-11 | Fix --continue retry: WebSocket PTY reattachment + tmux name collision |
 | `tmux-clipboard-support` | 2026-03-11 | OSC 52 clipboard passthrough + Shift+click selection bypass for tmux sessions |
 | `fix-global-defaults-and-tmux-utf8` | 2026-03-11 | Fix stale config defaults on quick-start + tmux UTF-8 rendering |

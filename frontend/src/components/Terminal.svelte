@@ -228,6 +228,7 @@
   let contentTouchStartY = 0;
   let contentScrollStartLine = 0;
   let contentTouchMoved = false;
+  let contentScrollAccumulator = 0;
 
   // Long-press text selection state (mobile)
   let selectionMode = $state(false);
@@ -355,6 +356,7 @@
     contentTouchStartY = touch.clientY;
     contentScrollStartLine = term.buffer.active.viewportY;
     contentTouchMoved = false;
+    contentScrollAccumulator = 0;
     contentScrolling = true;
     // Long-press detection
     longPressStartX = touch.clientX;
@@ -403,10 +405,30 @@
         contentTouchMoved = true;
         e.preventDefault();
         const lineHeight = containerEl.clientHeight / term.rows;
-        const lineDelta = deltaY / lineHeight;
-        const maxScroll = term.buffer.active.baseY;
-        const targetLine = Math.max(0, Math.min(maxScroll, Math.round(contentScrollStartLine + lineDelta)));
-        term.scrollToLine(targetLine);
+
+        if (term.buffer.active.type === 'alternate') {
+          // Alternate screen (tmux, vim, less): send mouse wheel escape sequences
+          const lineDelta = deltaY / lineHeight;
+          contentScrollAccumulator += lineDelta;
+          const rawLines = Math.trunc(contentScrollAccumulator);
+          if (rawLines !== 0) {
+            contentScrollAccumulator -= rawLines;
+            // SGR mouse wheel: button 64 = wheel up (scroll toward top), 65 = wheel down (scroll toward bottom)
+            // rawLines > 0 means finger swiped up (deltaY > 0) → scroll down → button 65
+            const button = rawLines > 0 ? 65 : 64;
+            const col = Math.max(1, Math.round(term.cols / 2));
+            const row = Math.max(1, Math.round(term.rows / 2));
+            const seq = `\x1b[<${button};${col};${row}M`;
+            const count = Math.min(Math.abs(rawLines), 5);
+            for (let i = 0; i < count; i++) sendPtyData(seq);
+          }
+        } else {
+          // Normal screen: scroll xterm.js scrollback buffer
+          const lineDelta = deltaY / lineHeight;
+          const maxScroll = term.buffer.active.baseY;
+          const targetLine = Math.max(0, Math.min(maxScroll, Math.round(contentScrollStartLine + lineDelta)));
+          term.scrollToLine(targetLine);
+        }
       }
     }
   }
@@ -419,6 +441,7 @@
     scrollbarDragging = false;
     contentScrolling = false;
     contentTouchMoved = false;
+    contentScrollAccumulator = 0;
   }
 
   function onScrollbarClick(e: MouseEvent) {
