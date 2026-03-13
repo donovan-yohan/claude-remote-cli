@@ -148,7 +148,8 @@
       const payload = data.slice(semicolonIdx + 1);
       if (!payload || payload === '?') return true;
       try {
-        const text = atob(payload);
+        const bytes = Uint8Array.from(atob(payload), c => c.charCodeAt(0));
+        const text = new TextDecoder('utf-8').decode(bytes);
         navigator.clipboard?.writeText(text).catch(() => { /* ignore — clipboard API may be blocked */ });
       } catch { /* ignore invalid base64 */ }
       return true;

@@ -18,6 +18,7 @@ See `docs/exec-plans/completed/` for historical plans (23 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `osc52-clipboard-utf8-fix` | 2026-03-13 | Fix OSC 52 clipboard handler to properly decode UTF-8 from base64 |
 | `push-notifications` | 2026-03-13 | Push notifications (Browser Notification + Web Push PWA) when sessions need input |
 | `status-indicator-oscillation-fix` | 2026-03-13 | Fix attention status oscillation with cooldown-based suppression |
 | `mobile-autocorrect-and-selection` | 2026-03-12 | Fix mobile autocorrect recovery + tmux copy-mode for text selection |
