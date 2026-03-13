@@ -73,10 +73,10 @@ const sessions = new Map<string, Session>();
 const IDLE_TIMEOUT_MS = 5000;
 let terminalCounter = 0;
 type IdleChangeCallback = (sessionId: string, idle: boolean) => void;
-let idleChangeCallback: IdleChangeCallback | null = null;
+const idleChangeCallbacks: IdleChangeCallback[] = [];
 
 function onIdleChange(cb: IdleChangeCallback): void {
-  idleChangeCallback = cb;
+  idleChangeCallbacks.push(cb);
 }
 
 function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux }: CreateParams): CreateResult {
@@ -148,13 +148,13 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
   function resetIdleTimer(): void {
     if (session.idle) {
       session.idle = false;
-      if (idleChangeCallback) idleChangeCallback(session.id, false);
+      for (const cb of idleChangeCallbacks) cb(session.id, false);
     }
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       if (!session.idle) {
         session.idle = true;
-        if (idleChangeCallback) idleChangeCallback(session.id, true);
+        for (const cb of idleChangeCallbacks) cb(session.id, true);
       }
     }, IDLE_TIMEOUT_MS);
   }

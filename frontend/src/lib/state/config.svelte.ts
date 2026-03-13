@@ -5,6 +5,7 @@ export const configState = $state({
   defaultYolo: false,
   launchInTmux: false,
   defaultAgent: 'claude',
+  defaultNotifications: true,
 });
 
 export function getConfigState() {
@@ -12,14 +13,16 @@ export function getConfigState() {
 }
 
 export async function refreshConfig(): Promise<void> {
-  const [cont, yolo, tmux, agent] = await Promise.all([
+  const [cont, yolo, tmux, agent, notif] = await Promise.all([
     api.fetchDefaultContinue().catch(() => configState.defaultContinue),
     api.fetchDefaultYolo().catch(() => configState.defaultYolo),
     api.fetchLaunchInTmux().catch(() => configState.launchInTmux),
     api.fetchDefaultAgent().catch(() => configState.defaultAgent),
+    api.fetchDefaultNotifications().catch(() => configState.defaultNotifications),
   ]);
   configState.defaultContinue = cont;
   configState.defaultYolo = yolo;
   configState.launchInTmux = tmux;
   configState.defaultAgent = agent;
+  configState.defaultNotifications = notif;
 }

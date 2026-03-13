@@ -214,3 +214,29 @@ export const fetchDefaultYolo = () => fetchConfigBool('defaultYolo');
 export const setDefaultYolo = (v: boolean) => setConfigBool('defaultYolo', v);
 export const fetchLaunchInTmux = () => fetchConfigBool('launchInTmux');
 export const setLaunchInTmux = (v: boolean) => setConfigBool('launchInTmux', v);
+export const fetchDefaultNotifications = () => fetchConfigBool('defaultNotifications');
+export const setDefaultNotifications = (v: boolean) => setConfigBool('defaultNotifications', v);
+
+export async function fetchVapidKey(): Promise<string | null> {
+  try {
+    const data = await json<{ vapidPublicKey: string }>(await fetch('/push/vapid-key'));
+    return data.vapidPublicKey;
+  } catch { return null; }
+}
+
+export async function pushSubscribe(subscription: PushSubscriptionJSON, sessionIds: string[]): Promise<void> {
+  const res = await fetch('/push/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription, sessionIds }),
+  });
+  if (!res.ok) throw new Error('Push subscribe failed');
+}
+
+export async function pushUnsubscribe(endpoint: string): Promise<void> {
+  await fetch('/push/unsubscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ endpoint }),
+  });
+}

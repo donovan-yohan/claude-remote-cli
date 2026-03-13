@@ -41,8 +41,11 @@ export interface Config {
   defaultContinue: boolean;
   defaultYolo: boolean;
   launchInTmux: boolean;
+  defaultNotifications: boolean;
   pinHash?: string | undefined;
   rootDirs?: string[] | undefined;
+  vapidPublicKey?: string | undefined;
+  vapidPrivateKey?: string | undefined;
 }
 
 export interface ServicePaths {

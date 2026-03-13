@@ -2,8 +2,10 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll, setAttention, clearAttention } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, setAttention, clearAttention, initSessionNotification, getNotificationSessionIds } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
+  import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
+  import { getConfigState } from './lib/state/config.svelte.js';
   import { isMobileDevice } from './lib/utils.js';
   import type { RepoInfo, WorktreeInfo, OpenSessionOptions } from './lib/types.js';
   import PinGate from './components/PinGate.svelte';
@@ -32,6 +34,21 @@
   const auth = getAuth();
   const ui = getUi();
   const sessionState = getSessionState();
+  const configState = getConfigState();
+
+  function navigateToSession(sessionId: string, sessionType: string) {
+    const tabMap: Record<string, typeof ui.activeTab> = {
+      repo: 'repos',
+      worktree: 'worktrees',
+    };
+    ui.activeTab = tabMap[sessionType] || 'repos';
+    sessionState.activeSessionId = sessionId;
+    clearAttention(sessionId);
+    closeSidebar();
+  }
+
+  // Initialize notification click handler
+  initNotifications(navigateToSession);
 
   // Component refs — must be $state() so $effect can track bind:this assignments
   let terminalRef = $state<Terminal | undefined>();
@@ -140,7 +157,26 @@
   // Refresh sessions when authenticated
   $effect(() => {
     if (auth.authenticated) {
-      refreshAll();
+      refreshAll().then(() => {
+        // Handle notification click URL params
+        const params = new URLSearchParams(window.location.search);
+        const sessionParam = params.get('session');
+        const tabParam = params.get('tab');
+        if (sessionParam) {
+          window.history.replaceState({}, '', '/');
+          navigateToSession(sessionParam, tabParam || 'repo');
+        }
+
+        // Initialize notifications for existing sessions
+        for (const s of sessionState.sessions) {
+          initSessionNotification(s.id, configState.defaultNotifications);
+        }
+
+        // Initialize push and re-subscribe
+        initPushNotifications().then(() => {
+          resubscribeIfNeeded(getNotificationSessionIds());
+        });
+      });
     }
   });
 
@@ -192,6 +228,7 @@
 
   function handleNewSessionCreated(sessionId: string) {
     sessionState.activeSessionId = sessionId;
+    initSessionNotification(sessionId, configState.defaultNotifications);
     closeSidebar();
     terminalRef?.focusTerm();
   }

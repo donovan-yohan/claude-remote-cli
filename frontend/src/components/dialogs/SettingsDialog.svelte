@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchRoots, addRoot, removeRoot, setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, checkVersion, triggerUpdate } from '../../lib/api.js';
+  import { fetchRoots, addRoot, removeRoot, setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
 
@@ -108,6 +108,17 @@
     } catch (err) {
       config.launchInTmux = prev;
       error = err instanceof Error ? err.message : 'Failed to update tmux setting.';
+    }
+  }
+
+  async function handleNotificationsChange() {
+    const prev = config.defaultNotifications;
+    error = '';
+    try {
+      await setDefaultNotifications(config.defaultNotifications);
+    } catch {
+      config.defaultNotifications = prev;
+      error = 'Failed to update notifications default.';
     }
   }
 
@@ -247,6 +258,10 @@
         <div class="devtools-row">
           <input id="default-tmux" type="checkbox" class="dialog-checkbox" bind:checked={config.launchInTmux} onchange={handleTmuxChange} />
           <label for="default-tmux" class="devtools-label">Launch in tmux</label>
+        </div>
+        <div class="devtools-row">
+          <input id="default-notifications" type="checkbox" class="dialog-checkbox" bind:checked={config.defaultNotifications} onchange={handleNotificationsChange} />
+          <label for="default-notifications" class="devtools-label">Enable notifications for new sessions</label>
         </div>
       </section>
 

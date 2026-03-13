@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { getUi } from '../lib/state/ui.svelte.js';
-  import { getSessionState, getSessionStatus, clearAttention, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, getSessionStatus, clearAttention, refreshAll, setLoading, clearLoading, isItemLoading, setNotificationEnabled } from '../lib/state/sessions.svelte.js';
+  import { requestPermission, getPermissionState } from '../lib/notifications.js';
   import * as api from '../lib/api.js';
   import { ConflictError } from '../lib/api.js';
   import { getConfigState, refreshConfig } from '../lib/state/config.svelte.js';
@@ -287,9 +288,25 @@
   }
 
   // Menu item builders
+  async function toggleNotification(session: SessionSummary) {
+    const current = sessionState.notificationSessions[session.id] ?? false;
+    if (!current && getPermissionState() !== 'granted') {
+      const result = await requestPermission();
+      if (result !== 'granted') return;
+    }
+    setNotificationEnabled(session.id, !current);
+  }
+
   function activeSessionMenu(session: SessionSummary): MenuItem[] {
+    const notifEnabled = sessionState.notificationSessions[session.id] ?? false;
+    const permBlocked = getPermissionState() === 'denied';
     return [
       { label: 'Rename', action: () => handleRenameSession(session) },
+      {
+        label: notifEnabled ? 'Notifications \u2713' : permBlocked ? 'Notifications (blocked)' : 'Notifications',
+        action: () => toggleNotification(session),
+        disabled: permBlocked,
+      },
       { label: 'Kill', action: () => handleKillSession(session), danger: true },
     ];
   }

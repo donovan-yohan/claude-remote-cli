@@ -19,6 +19,7 @@ import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListP
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import { listBranches } from './git.js';
+import * as push from './push.js';
 import type { AgentType, Config, PullRequest, PullRequestsResponse } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -160,6 +161,8 @@ async function main(): Promise<void> {
   if (process.env.CLAUDE_REMOTE_PORT) config.port = parseInt(process.env.CLAUDE_REMOTE_PORT, 10);
   if (process.env.CLAUDE_REMOTE_HOST) config.host = process.env.CLAUDE_REMOTE_HOST;
 
+  push.ensureVapidKeys(config, CONFIG_PATH, saveConfig);
+
   if (!config.pinHash) {
     const pin = await promptPin('Set up a PIN for claude-remote-cli:');
     config.pinHash = await auth.hashPin(pin);
@@ -228,6 +231,16 @@ async function main(): Promise<void> {
 
   const server = http.createServer(app);
   const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher);
+
+  // Push notifications on session idle
+  sessions.onIdleChange((sessionId, idle) => {
+    if (idle) {
+      const session = sessions.get(sessionId);
+      if (session && session.type !== 'terminal') {
+        push.notifySessionIdle(sessionId, session);
+      }
+    }
+  });
 
   // POST /auth
   app.post('/auth', async (req, res) => {
@@ -558,6 +571,39 @@ async function main(): Promise<void> {
   boolConfigEndpoints('defaultYolo', false);
   boolConfigEndpoints('launchInTmux', false, async () => {
     await execFileAsync('tmux', ['-V']);
+  });
+  boolConfigEndpoints('defaultNotifications', true);
+
+  // GET /push/vapid-key
+  app.get('/push/vapid-key', requireAuth, (_req, res) => {
+    const key = push.getVapidPublicKey();
+    if (!key) {
+      res.status(501).json({ error: 'Push not available' });
+      return;
+    }
+    res.json({ vapidPublicKey: key });
+  });
+
+  // POST /push/subscribe
+  app.post('/push/subscribe', requireAuth, (req, res) => {
+    const { subscription, sessionIds } = req.body as { subscription?: { endpoint: string; keys: { p256dh: string; auth: string } }; sessionIds?: string[] };
+    if (!subscription?.endpoint) {
+      res.status(400).json({ error: 'subscription required' });
+      return;
+    }
+    push.subscribe(subscription, sessionIds || []);
+    res.json({ ok: true });
+  });
+
+  // POST /push/unsubscribe
+  app.post('/push/unsubscribe', requireAuth, (req, res) => {
+    const { endpoint } = req.body as { endpoint?: string };
+    if (!endpoint) {
+      res.status(400).json({ error: 'endpoint required' });
+      return;
+    }
+    push.unsubscribe(endpoint);
+    res.json({ ok: true });
   });
 
   // DELETE /worktrees — remove a worktree, prune, and delete its branch
@@ -899,8 +945,10 @@ async function main(): Promise<void> {
 
   // DELETE /sessions/:id
   app.delete('/sessions/:id', requireAuth, (req, res) => {
+    const id = req.params['id'] as string;
     try {
-      sessions.kill(req.params['id'] as string);
+      sessions.kill(id);
+      push.removeSession(id);
       res.json({ ok: true });
     } catch (_) {
       res.status(404).json({ error: 'Session not found' });

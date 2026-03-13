@@ -50,6 +50,7 @@
     "express": "^4.21.0",
     "node-pty": "^1.0.0",
     "svelte": "^5.53.3",
+    "web-push": "^3.6.7",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -59,6 +60,7 @@
     "@types/cookie-parser": "^1.4.7",
     "@types/express": "^4.17.21",
     "@types/node": "^22.0.0",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.5.13",
     "playwright": "^1.58.2",
     "svelte-check": "^4.4.3",

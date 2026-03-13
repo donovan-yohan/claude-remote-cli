@@ -16,7 +16,7 @@ The system has two compilation targets: a TypeScript + ESM backend (Express + no
 
 ### `server/`
 
-Nine TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
+Ten TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
 
 | Module | Role |
 |--------|------|
@@ -28,9 +28,10 @@ Nine TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicat
 | `config.ts` | Config loading/saving with defaults, worktree metadata persistence |
 | `clipboard.ts` | System clipboard detection and image-set operations (osascript/xclip) |
 | `service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
+| `push.ts` | Web Push notification management (VAPID keys, subscription registry, `web-push`) |
 | `types.ts` | Shared TypeScript interfaces |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `sessions.ts` depends on node-pty).
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `sessions.ts` depends on node-pty, only `push.ts` depends on web-push).
 
 ### `frontend/`
 
@@ -44,6 +45,7 @@ Svelte 5 SPA built by Vite, output to `dist/frontend/`. Express serves the compi
 | `frontend/src/lib/ws.ts` | WebSocket connection management (PTY relay + event channel) |
 | `frontend/src/lib/types.ts` | Frontend TypeScript interfaces |
 | `frontend/src/lib/actions.ts` | Shared Svelte actions (scroll-on-hover, longpress-click) |
+| `frontend/src/lib/notifications.ts` | Browser Notification API wrapper, service worker registration, Web Push subscription |
 | `frontend/src/lib/utils.ts` | Shared utilities (path display, relative time formatting, device detection) |
 
 **Architecture Invariant:** The frontend does NOT vendor any libraries. xterm.js, xterm-addon-fit, and `@tanstack/svelte-query` are npm dependencies. State lives in `.svelte.ts` modules, not in component files (PR data is an exception — managed via svelte-query cache).

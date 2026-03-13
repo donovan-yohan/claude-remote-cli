@@ -36,8 +36,8 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 
 | Module | Role |
 |--------|------|
-| `sessions.svelte.ts` | Session list, worktrees, repos, attention flags, git statuses, loading state |
-| `config.svelte.ts` | Global session defaults (continue, yolo, tmux, agent); shared by SettingsDialog, SessionList, NewSessionDialog |
+| `sessions.svelte.ts` | Session list, worktrees, repos, attention flags, notification preferences, git statuses, loading state |
+| `config.svelte.ts` | Global session defaults (continue, yolo, tmux, agent, notifications); shared by SettingsDialog, SessionList, NewSessionDialog |
 | `auth.svelte.ts` | Authentication state (PIN check, cookie token) |
 | `ui.svelte.ts` | UI state (active tab, sidebar, filters) |
 

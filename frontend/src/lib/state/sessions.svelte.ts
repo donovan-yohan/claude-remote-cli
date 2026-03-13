@@ -1,4 +1,5 @@
 import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from '../types.js';
+import { fireNotification, shouldFireNotification } from '../notifications.js';
 import * as api from '../api.js';
 
 let sessions = $state<SessionSummary[]>([]);
@@ -9,6 +10,21 @@ let attentionSessions = $state<Record<string, boolean>>({});
 let dismissedSessions = $state<Record<string, number>>({});
 let gitStatuses = $state<Record<string, GitStatus>>({});
 let loadingItems = $state<Record<string, boolean>>({});
+let notificationSessions = $state<Record<string, boolean>>({});
+
+const NOTIFICATIONS_STORAGE_KEY = 'claude-remote-notifications';
+
+// Load notification preferences from localStorage
+try {
+  const stored = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
+  if (stored) notificationSessions = JSON.parse(stored);
+} catch { /* localStorage unavailable */ }
+
+function saveNotificationPrefs(): void {
+  try {
+    localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notificationSessions));
+  } catch { /* localStorage unavailable */ }
+}
 
 export function getSessionState() {
   return {
@@ -20,6 +36,7 @@ export function getSessionState() {
     get attentionSessions() { return attentionSessions; },
     get gitStatuses() { return gitStatuses; },
     get loadingItems() { return loadingItems; },
+    get notificationSessions() { return notificationSessions; },
   };
 }
 
@@ -34,14 +51,22 @@ export async function refreshAll(): Promise<void> {
     worktrees = w;
     repos = r;
 
-    // Prune stale attention flags and dismissed cooldowns
+    // Prune stale attention flags, dismissed cooldowns, and notification prefs
     const activeIds = new Set(sessions.map(sess => sess.id));
+    let notifPruned = false;
     for (const id of Object.keys(attentionSessions)) {
       if (!activeIds.has(id)) delete attentionSessions[id];
     }
     for (const id of Object.keys(dismissedSessions)) {
       if (!activeIds.has(id)) delete dismissedSessions[id];
     }
+    for (const id of Object.keys(notificationSessions)) {
+      if (!activeIds.has(id)) {
+        delete notificationSessions[id];
+        notifPruned = true;
+      }
+    }
+    if (notifPruned) saveNotificationPrefs();
 
     refreshGitStatuses();
   } catch { /* silent */ }
@@ -80,6 +105,11 @@ export function setAttention(sessionId: string, idle: boolean): void {
     }
     delete dismissedSessions[sessionId];
     attentionSessions[sessionId] = true;
+
+    // Fire browser notification if enabled and tab not focused
+    if (session && notificationSessions[sessionId] && shouldFireNotification()) {
+      fireNotification(session);
+    }
   } else {
     delete attentionSessions[sessionId];
   }
@@ -88,6 +118,24 @@ export function setAttention(sessionId: string, idle: boolean): void {
 export function clearAttention(sessionId: string): void {
   delete attentionSessions[sessionId];
   dismissedSessions[sessionId] = Date.now();
+}
+
+export function setNotificationEnabled(sessionId: string, enabled: boolean): void {
+  notificationSessions[sessionId] = enabled;
+  saveNotificationPrefs();
+}
+
+export function initSessionNotification(sessionId: string, defaultEnabled: boolean): void {
+  if (!(sessionId in notificationSessions)) {
+    notificationSessions[sessionId] = defaultEnabled;
+    saveNotificationPrefs();
+  }
+}
+
+export function getNotificationSessionIds(): string[] {
+  return Object.entries(notificationSessions)
+    .filter(([, enabled]) => enabled)
+    .map(([id]) => id);
 }
 
 export function setGitStatus(key: string, status: GitStatus): void {

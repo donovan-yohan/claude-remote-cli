@@ -14,6 +14,7 @@ export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs'> = {
   defaultContinue: true,
   defaultYolo: false,
   launchInTmux: false,
+  defaultNotifications: true,
 };
 
 export function loadConfig(configPath: string): Config {

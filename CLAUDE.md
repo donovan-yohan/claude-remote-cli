@@ -27,7 +27,7 @@ Remote web interface for interacting with Claude Code CLI sessions from any devi
 
 ## Key Patterns
 
-- Nine server modules under `server/`, each owning one concern — update ADRs when adding modules
+- Ten server modules under `server/`, each owning one concern — update ADRs when adding modules
 - `node-pty` requires native compilation; `postinstall` script fixes prebuilt binaries on macOS
 - `CLAUDECODE` env var must be stripped from PTY env to allow nesting Claude sessions
 - Scrollback buffer capped at 256KB per session; oldest chunks trimmed first (FIFO)
