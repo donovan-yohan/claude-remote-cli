@@ -6,6 +6,7 @@ let worktrees = $state<WorktreeInfo[]>([]);
 let repos = $state<RepoInfo[]>([]);
 let activeSessionId = $state<string | null>(null);
 let attentionSessions = $state<Record<string, boolean>>({});
+let dismissedSessions = $state<Record<string, number>>({});
 let gitStatuses = $state<Record<string, GitStatus>>({});
 let loadingItems = $state<Record<string, boolean>>({});
 
@@ -33,10 +34,13 @@ export async function refreshAll(): Promise<void> {
     worktrees = w;
     repos = r;
 
-    // Prune stale attention flags
+    // Prune stale attention flags and dismissed cooldowns
     const activeIds = new Set(sessions.map(sess => sess.id));
     for (const id of Object.keys(attentionSessions)) {
       if (!activeIds.has(id)) delete attentionSessions[id];
+    }
+    for (const id of Object.keys(dismissedSessions)) {
+      if (!activeIds.has(id)) delete dismissedSessions[id];
     }
 
     refreshGitStatuses();
@@ -60,6 +64,8 @@ export async function refreshGitStatuses(): Promise<void> {
   }, 500);
 }
 
+const ATTENTION_COOLDOWN_MS = 30_000;
+
 export function setAttention(sessionId: string, idle: boolean): void {
   // Update the idle flag on the session object so getSessionStatus() reflects
   // the real-time state without waiting for a full refreshAll() round-trip.
@@ -67,6 +73,12 @@ export function setAttention(sessionId: string, idle: boolean): void {
   if (session) session.idle = idle;
 
   if (idle && sessionId !== activeSessionId && session?.type !== 'terminal') {
+    const dismissedAt = dismissedSessions[sessionId];
+    if (dismissedAt && Date.now() - dismissedAt < ATTENTION_COOLDOWN_MS) {
+      // Within cooldown window — don't re-trigger attention
+      return;
+    }
+    delete dismissedSessions[sessionId];
     attentionSessions[sessionId] = true;
   } else {
     delete attentionSessions[sessionId];
@@ -75,6 +87,7 @@ export function setAttention(sessionId: string, idle: boolean): void {
 
 export function clearAttention(sessionId: string): void {
   delete attentionSessions[sessionId];
+  dismissedSessions[sessionId] = Date.now();
 }
 
 export function setGitStatus(key: string, status: GitStatus): void {
