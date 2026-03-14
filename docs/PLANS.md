@@ -18,6 +18,7 @@ See `docs/exec-plans/completed/` for historical plans (23 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `continue-retry-exit-code-fix` | 2026-03-14 | Fix --continue retry to fire regardless of exit code (tmux masks to 0) |
 | `osc52-clipboard-utf8-fix` | 2026-03-13 | Fix OSC 52 clipboard handler to properly decode UTF-8 from base64 |
 | `push-notifications` | 2026-03-13 | Push notifications (Browser Notification + Web Push PWA) when sessions need input |
 | `status-indicator-oscillation-fix` | 2026-03-13 | Fix attention status oscillation with cooldown-based suppression |

@@ -9,3 +9,4 @@
 | [mobile-autocorrect-and-selection-bug-analysis.md](2026-03-12-mobile-autocorrect-and-selection-bug-analysis.md) | Mobile autocorrect lost due to cursor-0 desync in hidden input; text selection selects all instead of specific text | 2026-03-12 |
 | [status-indicator-oscillation-bug-analysis.md](2026-03-13-status-indicator-oscillation-bug-analysis.md) | Status indicator oscillates between attention/running due to PTY noise + no dismissed-state tracking | 2026-03-13 |
 | [osc52-clipboard-utf8-bug-analysis.md](2026-03-13-osc52-clipboard-utf8-bug-analysis.md) | OSC 52 clipboard handler uses atob() which mangles UTF-8 multi-byte characters to Latin-1 | 2026-03-13 |
+| [continue-retry-tmux-exit-code-bug-analysis.md](2026-03-14-continue-retry-tmux-exit-code-bug-analysis.md) | --continue retry never fires because tmux masks inner exit code to 0 | 2026-03-14 |

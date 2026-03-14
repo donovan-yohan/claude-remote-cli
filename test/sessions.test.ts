@@ -475,4 +475,25 @@ describe('sessions', () => {
       done();
     });
   });
+
+  it('retries when continue-arg process exits quickly with code 0 (tmux behavior)', (_, done) => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/sh',
+      args: ['-c', 'exit 0', ...sessions.AGENT_CONTINUE_ARGS.claude],
+    });
+    createdIds.push(result.id);
+
+    const session = sessions.get(result.id);
+    assert.ok(session);
+
+    session.onPtyReplacedCallbacks.push((newPty) => {
+      assert.ok(newPty, 'should receive new PTY even with exit code 0');
+      assert.strictEqual(session.pty, newPty, 'session.pty should be updated');
+      const stillExists = sessions.get(result.id);
+      assert.ok(stillExists, 'session should still exist after retry');
+      done();
+    });
+  });
 });

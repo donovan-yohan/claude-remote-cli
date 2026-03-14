@@ -33,7 +33,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 - Session auto-deleted when PTY exits; WebSocket closed with code 1000
 - `claudeArgs` from POST body merged with `config.claudeArgs` (config args first)
 - Re-attaching to a previous agent conversation uses agent-specific continue args (`--continue` for Claude, `resume --last` for Codex); reconnecting to a live PTY session requires no special args
-- **PTY retry on `--continue` failure:** If a session spawned with continue args exits non-zero within 3 seconds, the retry mechanism strips continue args and respawns. WebSocket clients are reattached via `onPtyReplacedCallbacks` (supports multiple concurrent connections). Tmux retries use a `-retry` suffix on the session name to avoid collision.
+- **PTY retry on `--continue` failure:** If a session spawned with continue args exits within 3 seconds (regardless of exit code), the retry mechanism strips continue args and respawns. Exit code is intentionally not checked because tmux wrapping masks inner exit codes to 0. WebSocket clients are reattached via `onPtyReplacedCallbacks` (supports multiple concurrent connections). Tmux retries use a `-retry` suffix on the session name to avoid collision.
 
 ## Session Types
 

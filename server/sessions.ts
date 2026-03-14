@@ -181,9 +181,13 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
       }
     });
 
-    proc.onExit(({ exitCode }) => {
-      // If continue args failed quickly, retry without them
-      if (canRetry && (Date.now() - spawnTime) < 3000 && exitCode !== 0) {
+    proc.onExit(() => {
+      // If continue args failed quickly, retry without them.
+      // Exit code is intentionally not checked: tmux wrapping exits 0 even
+      // when the inner command (e.g. claude --continue) fails, because the
+      // tmux client doesn't propagate inner exit codes. The 3-second window
+      // is the primary heuristic — no user quits a session that fast.
+      if (canRetry && (Date.now() - spawnTime) < 3000) {
         const retryArgs = args.filter(a => !continueArgs.includes(a));
         const retryNotice = '\r\n[claude-remote-cli] --continue not available; starting new session...\r\n';
         scrollback.length = 0;
