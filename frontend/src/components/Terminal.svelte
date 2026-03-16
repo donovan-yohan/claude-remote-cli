@@ -82,14 +82,25 @@
       } else {
         console.warn('[Terminal] .xterm-viewport not found — xterm DOM may have changed. Touch scroll may conflict with xterm.');
       }
-      // Prevent xterm.js from converting synthetic mouse/wheel events into escape
-      // sequences when mouse tracking is left enabled by a previous application.
-      // Our custom touch handler already handles all mobile scroll interactions.
+      // Prevent xterm.js from converting events into escape sequences when
+      // mouse tracking is left enabled by a previous application (stale state).
+      // Wheel events are always suppressed (our touch handler handles scroll).
+      // Mouse events are conditionally suppressed only when mouse tracking is
+      // active — they must propagate when tracking is off so iOS trusted user
+      // gesture chain allows input.focus() to open the keyboard.
       const xtermScreen = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
       if (xtermScreen) {
-        const suppressMouseEvent = (e: Event) => { e.stopImmediatePropagation(); };
-        for (const evt of ['wheel', 'mousedown', 'mouseup', 'mousemove'] as const) {
-          xtermScreen.addEventListener(evt, suppressMouseEvent, { capture: true });
+        xtermScreen.addEventListener('wheel', (e) => {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+        }, { capture: true, passive: false });
+        const suppressIfTracking = (e: Event) => {
+          if (t.modes.mouseTrackingMode !== 'none') {
+            e.stopImmediatePropagation();
+          }
+        };
+        for (const evt of ['mousedown', 'mouseup', 'mousemove'] as const) {
+          xtermScreen.addEventListener(evt, suppressIfTracking, { capture: true });
         }
       }
     }

@@ -45,4 +45,4 @@ On mobile, touch events generate synthetic `mousedown`/`mouseup`/`mousemove` eve
 
 1. **Added `mouseTrackingMode` check**: SGR sequences are now only sent when BOTH alternate screen is active AND mouse tracking is enabled (`term.modes.mouseTrackingMode !== 'none'`)
 2. **Arrow key fallback for pagers**: When alternate screen is active but mouse tracking is OFF (e.g., `less`, `man`), the handler sends arrow Up/Down keys instead — works with most pagers
-3. **Suppressed synthetic mouse events**: Added capture-phase listeners on `.xterm-screen` to stop `wheel`, `mousedown`, `mouseup`, `mousemove` events from reaching xterm.js's mouse handler on mobile, preventing stale mouse tracking from generating sequences
+3. **Suppressed synthetic events on `.xterm-screen`**: `wheel` events are always blocked (our touch handler handles scroll). `mousedown`/`mouseup`/`mousemove` are conditionally blocked only when `mouseTrackingMode !== 'none'` — they must propagate when tracking is off so iOS trusted user gesture chain allows `input.focus()` to open the keyboard
