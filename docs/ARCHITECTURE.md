@@ -116,7 +116,7 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 **Auth:** Every HTTP request (except `/auth` POST) and every WebSocket upgrade requires a valid session cookie. Rate limiting is per-IP.
 
-**Session lifecycle:** Sessions are in-memory only. PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction.
+**Session lifecycle:** Sessions are in-memory during normal operation. PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction. During auto-updates, sessions are serialized to disk (`pending-sessions.json` + scrollback files) and restored on restart.
 
 ---
 

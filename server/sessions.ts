@@ -4,8 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { AgentType, Session, SessionType } from './types.js';
 import { readMeta, writeMeta } from './config.js';
+
+const execFileAsync = promisify(execFile);
 
 type SessionSummary = Omit<Session, 'pty' | 'scrollback' | 'onPtyReplacedCallbacks'>;
 
@@ -24,7 +27,34 @@ const AGENT_YOLO_ARGS: Record<AgentType, string[]> = {
   codex: ['--full-auto'],
 };
 
+interface SerializedSession {
+  id: string;
+  type: SessionType;
+  agent: AgentType;
+  root: string;
+  repoName: string;
+  repoPath: string;
+  worktreeName: string;
+  branchName: string;
+  displayName: string;
+  createdAt: string;
+  lastActivity: string;
+  useTmux: boolean;
+  tmuxSessionName: string;
+  customCommand: string | null;
+  cwd: string;
+}
+
+interface PendingSessionsFile {
+  version: number;
+  timestamp: string;
+  sessions: SerializedSession[];
+}
+
+const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
 type CreateParams = {
+  id?: string;
   type?: SessionType;
   agent?: AgentType;
   repoName?: string;
@@ -40,6 +70,8 @@ type CreateParams = {
   rows?: number;
   configPath?: string;
   useTmux?: boolean;
+  /** Pre-loaded scrollback for restored sessions */
+  initialScrollback?: string[];
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
@@ -79,8 +111,8 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallbacks.push(cb);
 }
 
-function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux }: CreateParams): CreateResult {
-  const id = crypto.randomBytes(8).toString('hex');
+function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, initialScrollback }: CreateParams): CreateResult {
+  const id = providedId || crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
   const resolvedCommand = command || AGENT_COMMANDS[agent];
 
@@ -108,10 +140,11 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
   });
 
   // Scrollback buffer: stores all PTY output so we can replay on WebSocket (re)connect
-  const scrollback: string[] = [];
-  let scrollbackBytes = 0;
+  const scrollback: string[] = initialScrollback ? [...initialScrollback] : [];
+  let scrollbackBytes = initialScrollback ? initialScrollback.reduce((sum, s) => sum + s.length, 0) : 0;
   const MAX_SCROLLBACK = 256 * 1024; // 256KB max
 
+  const resolvedCwd = cwd || repoPath;
   const session: Session = {
     id,
     type: type || 'worktree',
@@ -127,6 +160,8 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
     lastActivity: createdAt,
     scrollback,
     idle: false,
+    cwd: resolvedCwd,
+    customCommand: command || null,
     useTmux,
     tmuxSessionName,
     onPtyReplacedCallbacks: [],
@@ -238,7 +273,7 @@ function create({ type, agent = 'claude', repoName, repoPath, cwd, root, worktre
 
   attachHandlers(ptyProcess, continueArgs.some(a => args.includes(a)));
 
-  return { id, type: session.type, agent: session.agent, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false, useTmux, tmuxSessionName };
+  return { id, type: session.type, agent: session.agent, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false, cwd: resolvedCwd, customCommand: command || null, useTmux, tmuxSessionName };
 }
 
 function get(id: string): Session | undefined {
@@ -247,7 +282,7 @@ function get(id: string): Session | undefined {
 
 function list(): SessionSummary[] {
   return Array.from(sessions.values())
-    .map(({ id, type, agent, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle, useTmux, tmuxSessionName }) => ({
+    .map(({ id, type, agent, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle, cwd, customCommand, useTmux, tmuxSessionName }) => ({
       id,
       type,
       agent,
@@ -260,6 +295,8 @@ function list(): SessionSummary[] {
       createdAt,
       lastActivity,
       idle,
+      cwd,
+      customCommand,
       useTmux,
       tmuxSessionName,
     }))
@@ -317,4 +354,147 @@ function nextTerminalName(): string {
   return `Terminal ${++terminalCounter}`;
 }
 
-export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, findRepoSession, nextTerminalName, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, resolveTmuxSpawn, generateTmuxSessionName };
+function serializeAll(configDir: string): void {
+  const scrollbackDirPath = path.join(configDir, 'scrollback');
+  fs.mkdirSync(scrollbackDirPath, { recursive: true });
+
+  const serialized: SerializedSession[] = [];
+  for (const session of sessions.values()) {
+    // Write scrollback to disk
+    const scrollbackPath = path.join(scrollbackDirPath, session.id + '.buf');
+    fs.writeFileSync(scrollbackPath, session.scrollback.join(''), 'utf-8');
+
+    serialized.push({
+      id: session.id,
+      type: session.type,
+      agent: session.agent,
+      root: session.root,
+      repoName: session.repoName,
+      repoPath: session.repoPath,
+      worktreeName: session.worktreeName,
+      branchName: session.branchName,
+      displayName: session.displayName,
+      createdAt: session.createdAt,
+      lastActivity: session.lastActivity,
+      useTmux: session.useTmux,
+      tmuxSessionName: session.tmuxSessionName,
+      customCommand: session.customCommand,
+      cwd: session.cwd,
+    });
+  }
+
+  const pending: PendingSessionsFile = {
+    version: 1,
+    timestamp: new Date().toISOString(),
+    sessions: serialized,
+  };
+
+  fs.writeFileSync(path.join(configDir, 'pending-sessions.json'), JSON.stringify(pending, null, 2), 'utf-8');
+}
+
+async function restoreFromDisk(configDir: string): Promise<number> {
+  const pendingPath = path.join(configDir, 'pending-sessions.json');
+  if (!fs.existsSync(pendingPath)) return 0;
+
+  let pending: PendingSessionsFile;
+  try {
+    pending = JSON.parse(fs.readFileSync(pendingPath, 'utf-8')) as PendingSessionsFile;
+  } catch {
+    fs.unlinkSync(pendingPath);
+    return 0;
+  }
+
+  // Ignore stale files (>5 minutes old)
+  if (Date.now() - new Date(pending.timestamp).getTime() > STALE_THRESHOLD_MS) {
+    fs.unlinkSync(pendingPath);
+    return 0;
+  }
+
+  const scrollbackDirPath = path.join(configDir, 'scrollback');
+  let restored = 0;
+
+  for (const s of pending.sessions) {
+    // Load scrollback from disk
+    let initialScrollback: string[] | undefined;
+    const scrollbackPath = path.join(scrollbackDirPath, s.id + '.buf');
+    try {
+      const data = fs.readFileSync(scrollbackPath, 'utf-8');
+      if (data.length > 0) initialScrollback = [data];
+    } catch {
+      // Missing scrollback is non-fatal
+    }
+
+    // Determine spawn command and args
+    let command: string | undefined;
+    let args: string[] = [];
+
+    if (s.customCommand) {
+      // Terminal session — respawn the shell
+      command = s.customCommand;
+    } else if (s.useTmux && s.tmuxSessionName) {
+      // Tmux session — check if tmux session is still alive
+      let tmuxAlive = false;
+      try {
+        await execFileAsync('tmux', ['has-session', '-t', s.tmuxSessionName]);
+        tmuxAlive = true;
+      } catch {
+        // tmux session is gone
+      }
+
+      if (tmuxAlive) {
+        // Attach to surviving tmux session
+        command = 'tmux';
+        args = ['attach-session', '-t', s.tmuxSessionName];
+      } else {
+        // Tmux session died — fall back to agent with continue args
+        args = [...AGENT_CONTINUE_ARGS[s.agent]];
+      }
+    } else {
+      // Non-tmux agent session — respawn with continue args
+      args = [...AGENT_CONTINUE_ARGS[s.agent]];
+    }
+
+    try {
+      const createParams: CreateParams = {
+        id: s.id,
+        type: s.type,
+        agent: s.agent,
+        repoName: s.repoName,
+        repoPath: s.repoPath,
+        cwd: s.cwd,
+        root: s.root,
+        worktreeName: s.worktreeName,
+        branchName: s.branchName,
+        displayName: s.displayName,
+        args,
+        useTmux: false, // Don't re-wrap in tmux — either attaching to existing or using plain agent
+      };
+      if (command) createParams.command = command;
+      if (initialScrollback) createParams.initialScrollback = initialScrollback;
+      create(createParams);
+      restored++;
+    } catch {
+      console.error(`Failed to restore session ${s.id} (${s.displayName})`);
+    }
+
+    // Clean up scrollback file
+    try { fs.unlinkSync(scrollbackPath); } catch { /* ignore */ }
+  }
+
+  // Clean up
+  try { fs.unlinkSync(pendingPath); } catch { /* ignore */ }
+  try { fs.rmdirSync(path.join(configDir, 'scrollback')); } catch { /* ignore — may not be empty */ }
+
+  return restored;
+}
+
+/** Returns the set of tmux session names currently owned by restored sessions */
+function activeTmuxSessionNames(): Set<string> {
+  const names = new Set<string>();
+  for (const session of sessions.values()) {
+    if (session.tmuxSessionName) names.add(session.tmuxSessionName);
+  }
+  return names;
+}
+
+export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, resolveTmuxSpawn, generateTmuxSessionName };

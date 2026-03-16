@@ -19,6 +19,8 @@ export interface Session {
   scrollback: string[];
   idle: boolean;
   useTmux: boolean;
+  cwd: string;
+  customCommand: string | null;
   tmuxSessionName: string;
   onPtyReplacedCallbacks: Array<(newPty: IPty) => void>;
 }

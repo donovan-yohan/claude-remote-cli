@@ -1,7 +1,10 @@
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import * as sessions from '../server/sessions.js';
-import { resolveTmuxSpawn, generateTmuxSessionName } from '../server/sessions.js';
+import { resolveTmuxSpawn, generateTmuxSessionName, serializeAll, restoreFromDisk } from '../server/sessions.js';
 
 // Track created session IDs so we can clean up after each test
 const createdIds: string[] = [];
@@ -495,5 +498,173 @@ describe('sessions', () => {
       assert.ok(stillExists, 'session should still exist after retry');
       done();
     });
+  });
+
+  it('create accepts a predetermined id', () => {
+    const result = sessions.create({
+      id: 'custom-id-12345678',
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/echo',
+      args: ['hello'],
+    });
+    createdIds.push(result.id);
+    assert.strictEqual(result.id, 'custom-id-12345678');
+    const session = sessions.get('custom-id-12345678');
+    assert.ok(session);
+  });
+
+  it('create accepts initialScrollback', () => {
+    const result = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/echo',
+      args: ['hello'],
+      initialScrollback: ['prior output\r\n'],
+    });
+    createdIds.push(result.id);
+    const session = sessions.get(result.id);
+    assert.ok(session);
+    assert.ok(session.scrollback.length >= 1);
+    assert.strictEqual(session.scrollback[0], 'prior output\r\n');
+  });
+});
+
+describe('session persistence', () => {
+  let tmpDir: string;
+
+  afterEach(() => {
+    // Clean up any sessions created during tests
+    for (const s of sessions.list()) {
+      try { sessions.kill(s.id); } catch { /* ignore */ }
+    }
+    // Clean up temp directory
+    if (tmpDir) {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  function createTmpDir(): string {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crc-test-'));
+    return tmpDir;
+  }
+
+  it('serializeAll writes pending-sessions.json and scrollback files', () => {
+    const configDir = createTmpDir();
+
+    const s = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+    });
+
+    // Manually push some scrollback
+    const session = sessions.get(s.id);
+    assert.ok(session);
+    session.scrollback.push('hello world');
+
+    serializeAll(configDir);
+
+    // Check pending-sessions.json
+    const pendingPath = path.join(configDir, 'pending-sessions.json');
+    assert.ok(fs.existsSync(pendingPath), 'pending-sessions.json should exist');
+    const pending = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+    assert.strictEqual(pending.version, 1);
+    assert.ok(pending.timestamp);
+    assert.strictEqual(pending.sessions.length, 1);
+    assert.strictEqual(pending.sessions[0].id, s.id);
+    assert.strictEqual(pending.sessions[0].repoPath, '/tmp');
+
+    // Check scrollback file
+    const scrollbackPath = path.join(configDir, 'scrollback', s.id + '.buf');
+    assert.ok(fs.existsSync(scrollbackPath), 'scrollback file should exist');
+    const scrollbackData = fs.readFileSync(scrollbackPath, 'utf-8');
+    assert.ok(scrollbackData.includes('hello world'));
+  });
+
+  it('restoreFromDisk restores sessions with original IDs', async () => {
+    const configDir = createTmpDir();
+
+    // Create and serialize a session
+    const s = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+      displayName: 'my-session',
+    });
+    const originalId = s.id;
+
+    const session = sessions.get(originalId);
+    assert.ok(session);
+    session.scrollback.push('saved output');
+
+    serializeAll(configDir);
+
+    // Kill the original session
+    sessions.kill(originalId);
+    assert.strictEqual(sessions.get(originalId), undefined);
+
+    // Restore
+    const restored = await restoreFromDisk(configDir);
+    assert.strictEqual(restored, 1);
+
+    // Verify session exists with original ID
+    const restoredSession = sessions.get(originalId);
+    assert.ok(restoredSession, 'restored session should exist');
+    assert.strictEqual(restoredSession.repoPath, '/tmp');
+    assert.strictEqual(restoredSession.displayName, 'my-session');
+
+    // Scrollback should be restored
+    assert.ok(restoredSession.scrollback.length >= 1);
+    assert.strictEqual(restoredSession.scrollback[0], 'saved output');
+
+    // pending-sessions.json should be cleaned up
+    assert.ok(!fs.existsSync(path.join(configDir, 'pending-sessions.json')));
+  });
+
+  it('restoreFromDisk ignores stale files (>5 min old)', async () => {
+    const configDir = createTmpDir();
+
+    // Write a stale pending file
+    const staleTime = new Date(Date.now() - 6 * 60 * 1000).toISOString();
+    const pending = {
+      version: 1,
+      timestamp: staleTime,
+      sessions: [{ id: 'stale-id', type: 'repo', agent: 'claude', root: '', repoName: 'test', repoPath: '/tmp', worktreeName: '', branchName: '', displayName: 'test', createdAt: staleTime, lastActivity: staleTime, useTmux: false, tmuxSessionName: '', customCommand: null, cwd: '/tmp' }],
+    };
+    fs.writeFileSync(path.join(configDir, 'pending-sessions.json'), JSON.stringify(pending));
+
+    const restored = await restoreFromDisk(configDir);
+    assert.strictEqual(restored, 0, 'should not restore stale sessions');
+    assert.ok(!fs.existsSync(path.join(configDir, 'pending-sessions.json')), 'stale file should be deleted');
+  });
+
+  it('restoreFromDisk handles missing scrollback gracefully', async () => {
+    const configDir = createTmpDir();
+
+    // Create a session, serialize, then delete scrollback file
+    const s = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+    });
+    serializeAll(configDir);
+    sessions.kill(s.id);
+
+    // Delete scrollback file
+    const scrollbackPath = path.join(configDir, 'scrollback', s.id + '.buf');
+    try { fs.unlinkSync(scrollbackPath); } catch { /* ignore */ }
+
+    const restored = await restoreFromDisk(configDir);
+    assert.strictEqual(restored, 1, 'should still restore without scrollback');
+  });
+
+  it('restoreFromDisk returns 0 when no pending file exists', async () => {
+    const configDir = createTmpDir();
+    const restored = await restoreFromDisk(configDir);
+    assert.strictEqual(restored, 0);
   });
 });

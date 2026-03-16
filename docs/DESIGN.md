@@ -7,7 +7,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | Decision | Rationale | Source |
 |----------|-----------|--------|
 | No dependency injection | Direct ESM imports are simpler for a small module count | ADR-001 |
-| In-memory sessions only | No persistence needed — sessions are ephemeral PTY processes | ADR-003 |
+| In-memory sessions with update persistence | Sessions are ephemeral PTY processes, but serialized to disk before auto-updates and restored on restart | ADR-003, Design doc |
 | bcrypt + cookie tokens | Simple, secure auth without external dependencies | ADR-004 |
 | node:test, no Jest/Vitest | Fewer dependencies, built-in to Node.js | ADR-005 |
 | Dual distribution (global + local) | npm global for production, local clone for dev | ADR-006 |
@@ -34,6 +34,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 - Session auto-deleted when PTY exits; WebSocket closed with code 1000
 - `claudeArgs` from POST body merged with `config.claudeArgs` (config args first)
 - Re-attaching to a previous agent conversation uses agent-specific continue args (`--continue` for Claude, `resume --last` for Codex); reconnecting to a live PTY session requires no special args
+- **Session persistence across updates:** When `POST /update` triggers a restart, `serializeAll()` writes session metadata to `pending-sessions.json` and scrollback buffers to `scrollback/<id>.buf` in the config directory. On startup, `restoreFromDisk()` reads them back: tmux sessions re-attach to surviving tmux server processes; non-tmux agent sessions re-spawn with `--continue` args; terminal sessions re-spawn the shell. Original session IDs are preserved for seamless frontend reconnection. Stale files (>5 min) are ignored.
 - **PTY retry on `--continue` failure:** If a session spawned with continue args exits within 3 seconds (regardless of exit code), the retry mechanism strips continue args and respawns. Exit code is intentionally not checked because tmux wrapping masks inner exit codes to 0. WebSocket clients are reattached via `onPtyReplacedCallbacks` (supports multiple concurrent connections). Tmux retries use a `-retry` suffix on the session name to avoid collision.
 
 ## Session Types

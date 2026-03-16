@@ -13,7 +13,7 @@ import cookieParser from 'cookie-parser';
 import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
-import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions } from './sessions.js';
+import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions, serializeAll, restoreFromDisk, activeTmuxSessionNames } from './sessions.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
@@ -231,6 +231,13 @@ async function main(): Promise<void> {
 
   const server = http.createServer(app);
   const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher);
+
+  // Restore sessions from a previous update restart
+  const configDir = path.dirname(CONFIG_PATH);
+  const restoredCount = await restoreFromDisk(configDir);
+  if (restoredCount > 0) {
+    console.log(`Restored ${restoredCount} session(s) from previous update.`);
+  }
 
   // Push notifications on session idle
   sessions.onIdleChange((sessionId, idle) => {
@@ -1035,6 +1042,11 @@ async function main(): Promise<void> {
     try {
       await execFileAsync('npm', ['install', '-g', 'claude-remote-cli@latest']);
       const restarting = serviceIsInstalled();
+      if (restarting) {
+        // Persist sessions so they can be restored after restart
+        const configDir = path.dirname(CONFIG_PATH);
+        serializeAll(configDir);
+      }
       res.json({ ok: true, restarting });
       if (restarting) {
         setTimeout(() => process.exit(0), 1000);
@@ -1045,15 +1057,16 @@ async function main(): Promise<void> {
     }
   });
 
-  // Clean up orphaned tmux sessions from previous runs
+  // Clean up orphaned tmux sessions from previous runs (skip any adopted by restore)
   try {
+    const adoptedNames = activeTmuxSessionNames();
     const { stdout } = await execFileAsync('tmux', ['list-sessions', '-F', '#{session_name}']);
-    const crcSessions = stdout.trim().split('\n').filter(name => name.startsWith('crc-'));
-    for (const name of crcSessions) {
+    const orphanedSessions = stdout.trim().split('\n').filter(name => name.startsWith('crc-') && !adoptedNames.has(name));
+    for (const name of orphanedSessions) {
       execFileAsync('tmux', ['kill-session', '-t', name]).catch(() => {});
     }
-    if (crcSessions.length > 0) {
-      console.log(`Cleaned up ${crcSessions.length} orphaned tmux session(s).`);
+    if (orphanedSessions.length > 0) {
+      console.log(`Cleaned up ${orphanedSessions.length} orphaned tmux session(s).`);
     }
   } catch {
     // tmux not installed or no sessions — ignore
