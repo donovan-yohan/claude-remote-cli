@@ -17,6 +17,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | Tmux clipboard passthrough | OSC 52 sequences from tmux flow through PTY→WebSocket to xterm.js; frontend handler decodes and writes to browser Clipboard API. Shift+click bypasses tmux mouse capture for native selection | Design doc |
 | Tmux copy-mode for mobile selection | Long-press on mobile enters tmux copy-mode (vi bindings) instead of browser-native selection. Toolbar swaps to copy-mode buttons (hjkl, w/b, Space, Copy, Exit). `mode-keys vi` set in session config. | Design doc |
 | Push notifications | Browser Notification API (desktop/open tab) + Web Push via service worker (mobile PWA). Per-session toggle in context menu, global default in settings. Server-side `push.ts` module owns `web-push` dependency and VAPID keys. | Design doc |
+| Fixture-based mobile input testing | Event-intent pipeline extracted to `server/mobile-input-pipeline.ts` for unit testing; JSON fixtures in `test/fixtures/mobile-input/` | Design doc |
 
 ## Config Precedence (canonical)
 

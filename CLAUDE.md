@@ -11,6 +11,7 @@ Remote web interface for interacting with Claude Code CLI sessions from any devi
 | Start | `npm start` |
 | Run (global) | `claude-remote-cli` |
 | Version bump | `npm version patch\|minor\|major` |
+| Mobile input tests | Add fixture to `test/fixtures/mobile-input/` before fixing keyboard bugs |
 
 ## Documentation Map
 

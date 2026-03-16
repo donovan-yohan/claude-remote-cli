@@ -58,6 +58,38 @@ Both `build` and `test` fail on type errors. CI runs both via `npm run build && 
 
 Playwright is a dev dependency but no E2E test files exist yet. E2E tests are separate from unit tests and not run by `npm test`.
 
+## Mobile Input Testing
+
+The mobile input event-intent pipeline is extracted into `server/mobile-input-pipeline.ts` and tested via JSON event fixtures.
+
+**Test file:** `test/mobile-input.test.ts`
+**Fixtures:** `test/fixtures/mobile-input/*.json`
+
+**Workflow for mobile keyboard bug fixes:**
+1. Create a fixture JSON in `test/fixtures/mobile-input/` reproducing the event sequence that triggers the bug
+2. Run `npm test` — the new fixture should fail (TDD red)
+3. Fix the pipeline logic in `server/mobile-input-pipeline.ts`
+4. Run `npm test` — all fixtures should pass (TDD green)
+
+**Fixture format:**
+```json
+{
+  "name": "descriptive-name",
+  "description": "What this tests",
+  "device": "android-chrome-gboard",
+  "events": [{
+    "inputType": "insertText",
+    "data": "the",
+    "rangeStart": 0, "rangeEnd": 3,
+    "valueBefore": "teh", "cursorBefore": 3,
+    "valueAfter": "the"
+  }],
+  "expectedPayload": "\u007f\u007f\u007fthe"
+}
+```
+
+**Critical invariant:** When an autocorrect event carries replacement text (`data` is non-null), the payload must always include that text — never only backspaces.
+
 ## See Also
 
 - [Architecture](ARCHITECTURE.md) — module structure and invariants

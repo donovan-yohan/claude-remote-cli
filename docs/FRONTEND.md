@@ -81,6 +81,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - `visualViewport` API tracks keyboard state; layout adjusts dynamically (header hidden, terminal re-fit)
 - xterm's internal `.xterm-helper-textarea` disabled on mobile to prevent focus fights with `MobileInput`
 - Toolbar buttons use `mousedown` + `preventDefault()` to avoid keyboard dismissal
+- Event-intent pipeline logic extracted to `server/mobile-input-pipeline.ts` (pure functions, no DOM); tested via JSON fixtures in `test/fixtures/mobile-input/`. When fixing mobile keyboard bugs, add a fixture first (see `docs/QUALITY.md` Mobile Input Testing section)
 
 ## See Also
 
