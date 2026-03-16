@@ -31,3 +31,4 @@
 | [2026-03-10-tmux-launch-setting-design.md](2026-03-10-tmux-launch-setting-design.md) | Settings-backed tmux wrapper for Claude/Codex launches | 2026-03-10 |
 | [2026-03-11-tmux-clipboard-support-design.md](2026-03-11-tmux-clipboard-support-design.md) | OSC 52 clipboard passthrough + Shift+click selection bypass for tmux sessions | 2026-03-11 |
 | [2026-03-13-push-notifications-design.md](2026-03-13-push-notifications-design.md) | Push notifications when sessions need user input (Browser Notification + Web Push PWA) | 2026-03-13 |
+| [2026-03-16-mobile-keyboard-testing-design.md](2026-03-16-mobile-keyboard-testing-design.md) | Fixture-based testing for mobile virtual keyboard event-intent pipeline | 2026-03-16 |
