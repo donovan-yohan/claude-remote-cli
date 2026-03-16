@@ -2,18 +2,11 @@
   import { onMount } from 'svelte';
   import { isMobileDevice } from '../lib/utils.js';
   import { sendPtyData, isPtyConnected } from '../lib/ws.js';
+  import { processIntent } from '../../../server/mobile-input-pipeline.js';
+  import type { CapturedIntent } from '../../../server/mobile-input-pipeline.js';
 
   let inputEl: HTMLInputElement;
   let formEl: HTMLFormElement;
-
-  interface CapturedIntent {
-    type: string;
-    data: string | null;
-    rangeStart: number | null;
-    rangeEnd: number | null;
-    valueBefore: string;
-    cursorBefore: number;
-  }
 
   let capturedIntent: CapturedIntent | null = null;
   let isComposing = false;
@@ -100,132 +93,6 @@
       sendPtyData(sendBuffer);
     }
     sendBuffer = '';
-  }
-
-  // ── Utilities ─────────────────────────────────────────────────────────────────
-
-  function codepointCount(str: string): number {
-    let count = 0;
-    for (let i = 0; i < str.length; i++) {
-      count++;
-      if (str.charCodeAt(i) >= 0xd800 && str.charCodeAt(i) <= 0xdbff) i++;
-    }
-    return count;
-  }
-
-  function commonPrefixLength(a: string, b: string): number {
-    let len = 0;
-    while (len < a.length && len < b.length && a[len] === b[len]) len++;
-    return len;
-  }
-
-  // ── Intent handlers ───────────────────────────────────────────────────────────
-
-  function handleInsert(intent: CapturedIntent, currentValue: string) {
-    const { rangeStart, rangeEnd, data } = intent;
-
-    if (rangeStart !== null && rangeEnd !== null && rangeStart !== rangeEnd) {
-      // Non-collapsed range = autocorrect replacement
-      const replaced = intent.valueBefore.slice(rangeStart, rangeEnd);
-      const charsToDelete = codepointCount(replaced);
-      dbg('  → AUTOCORRECT: range=[' + rangeStart + ',' + rangeEnd + '] replaced "' + replaced + '" with "' + (data ?? '') + '" → del=' + charsToDelete + ' add="' + (data ?? '') + '"');
-      let payload = '';
-      for (let i = 0; i < charsToDelete; i++) payload += '\x7f';
-      payload += data ?? '';
-      if (payload) scheduleSend(payload);
-    } else if (data) {
-      // Detect bad cursor-0 autocorrect: the keyboard lost cursor position
-      // and prepended data at position 0 instead of replacing a word.
-      // All three conditions must hold: cursor was at 0, data is multi-char
-      // (data.length uses UTF-16 units, so single emoji with length=2 could
-      // match — but combined with the prepend check this is safe), and the
-      // result is exactly data prepended to the old value.
-      if (data.length > 1 && intent.cursorBefore === 0 &&
-          intent.valueBefore.length > 0 &&
-          currentValue === data + intent.valueBefore) {
-        dbg('  → AUTOCORRECT_RECOVER: replacing "' + intent.valueBefore + '" with "' + data + '"');
-        const charsToDelete = codepointCount(intent.valueBefore);
-        let payload = '';
-        for (let i = 0; i < charsToDelete; i++) payload += '\x7f';
-        payload += data;
-        scheduleSend(payload);
-        inputEl.value = data;
-        ensureCursorAtEnd();
-        return;
-      }
-      // Collapsed range = normal character insertion
-      dbg('  → INSERT: "' + data + '"');
-      scheduleSend(data);
-    } else {
-      // No data and no range — fall back to diff
-      dbg('  → INSERT_NO_DATA: falling back to diff');
-      handleFallbackDiff(intent, currentValue);
-    }
-  }
-
-  function handleDelete(intent: CapturedIntent, currentValue: string) {
-    const { rangeStart, rangeEnd, valueBefore } = intent;
-
-    if (rangeStart !== null && rangeEnd !== null) {
-      const deleted = valueBefore.slice(rangeStart, rangeEnd);
-      const charsToDelete = codepointCount(deleted);
-      dbg('  → DELETE_RANGE: range=[' + rangeStart + ',' + rangeEnd + '] "' + deleted + '" → del=' + charsToDelete);
-      let payload = '';
-      for (let i = 0; i < charsToDelete; i++) payload += '\x7f';
-      if (payload) scheduleSend(payload);
-    } else {
-      // No range info — diff to figure out how many chars were deleted
-      const deleted = valueBefore.length - currentValue.length;
-      const charsToDelete = Math.max(1, deleted);
-      dbg('  → WARN: no targetRanges for type="' + intent.type + '" — diffed del=' + charsToDelete);
-      let payload = '';
-      for (let i = 0; i < charsToDelete; i++) payload += '\x7f';
-      if (payload) scheduleSend(payload);
-    }
-  }
-
-  function handleReplacement(intent: CapturedIntent, currentValue: string) {
-    const { rangeStart, rangeEnd, data, valueBefore } = intent;
-
-    if (rangeStart !== null && rangeEnd !== null) {
-      const replaced = valueBefore.slice(rangeStart, rangeEnd);
-      const charsToDelete = codepointCount(replaced);
-      dbg('  → REPLACEMENT: range=[' + rangeStart + ',' + rangeEnd + '] replaced "' + replaced + '" with "' + (data ?? '') + '" → del=' + charsToDelete + ' add="' + (data ?? '') + '"');
-      let payload = '';
-      for (let i = 0; i < charsToDelete; i++) payload += '\x7f';
-      payload += data ?? '';
-      if (payload) scheduleSend(payload);
-    } else {
-      dbg('  → REPLACEMENT_NO_RANGE: falling back to diff');
-      handleFallbackDiff(intent, currentValue);
-    }
-  }
-
-  function handlePaste(intent: CapturedIntent, currentValue: string) {
-    // Paste events don't provide data — diff to extract pasted text
-    const commonLen = commonPrefixLength(intent.valueBefore, currentValue);
-    const pasted = currentValue.slice(commonLen);
-    dbg('  → PASTE: "' + pasted.slice(0, 50) + (pasted.length > 50 ? '...' : '') + '" (' + pasted.length + ' chars)');
-    if (pasted) scheduleSend(pasted);
-  }
-
-  function handleFallbackDiff(intent: CapturedIntent, currentValue: string) {
-    const valueBefore = intent.valueBefore || '';
-    if (currentValue === valueBefore) {
-      dbg('  → FALLBACK_DIFF: NO-OP (same)');
-      return;
-    }
-    const commonLen = commonPrefixLength(valueBefore, currentValue);
-    const deletedSlice = valueBefore.slice(commonLen);
-    const charsToDelete = codepointCount(deletedSlice);
-    const newChars = currentValue.slice(commonLen);
-
-    dbg('  → FALLBACK_DIFF: type="' + intent.type + '" del=' + charsToDelete + ' "' + deletedSlice + '" add="' + newChars + '"');
-
-    let payload = '';
-    for (let i = 0; i < charsToDelete; i++) payload += '\x7f';
-    payload += newChars;
-    if (payload) scheduleSend(payload);
   }
 
   // ── Cursor fix ───────────────────────────────────────────────────────────────
@@ -346,33 +213,28 @@
 
     if (!intent) {
       dbg('  WARN: no captured intent, using fallback diff');
-      handleFallbackDiff({ type: ie.inputType, data: ie.data, rangeStart: null, rangeEnd: null, valueBefore: '', cursorBefore: 0 }, currentValue);
+      const result = processIntent(
+        { type: ie.inputType, data: ie.data, rangeStart: null, rangeEnd: null, valueBefore: '', cursorBefore: 0 },
+        currentValue
+      );
+      if (result.payload) scheduleSend(result.payload);
       syncBuffer();
       return;
     }
 
-    switch (intent.type) {
-      case 'insertText':
-        handleInsert(intent, currentValue);
-        break;
-      case 'deleteContentBackward':
-      case 'deleteContentForward':
-      case 'deleteWordBackward':
-      case 'deleteWordForward':
-      case 'deleteSoftLineBackward':
-      case 'deleteSoftLineForward':
-      case 'deleteBySoftwareKeyboard':
-        handleDelete(intent, currentValue);
-        break;
-      case 'insertReplacementText':
-        handleReplacement(intent, currentValue);
-        break;
-      case 'insertFromPaste':
-      case 'insertFromDrop':
-        handlePaste(intent, currentValue);
-        break;
-      default:
-        handleFallbackDiff(intent, currentValue);
+    const result = processIntent(intent, currentValue);
+
+    dbg('  → PIPELINE: payload="' + result.payload.replace(/\x7f/g, '\u232b') + '"' + (result.newInputValue !== undefined ? ' newVal="' + result.newInputValue + '"' : ''));
+
+    if (result.payload) {
+      scheduleSend(result.payload);
+    }
+
+    if (result.newInputValue !== undefined) {
+      inputEl.value = result.newInputValue;
+      ensureCursorAtEnd();
+      syncBuffer();
+      return;
     }
 
     syncBuffer();

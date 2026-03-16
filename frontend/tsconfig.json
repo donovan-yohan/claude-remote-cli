@@ -13,5 +13,5 @@
     "noEmit": true,
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts", "../server/mobile-input-pipeline.ts"]
 }
