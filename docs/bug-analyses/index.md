@@ -10,3 +10,4 @@
 | [status-indicator-oscillation-bug-analysis.md](2026-03-13-status-indicator-oscillation-bug-analysis.md) | Status indicator oscillates between attention/running due to PTY noise + no dismissed-state tracking | 2026-03-13 |
 | [osc52-clipboard-utf8-bug-analysis.md](2026-03-13-osc52-clipboard-utf8-bug-analysis.md) | OSC 52 clipboard handler uses atob() which mangles UTF-8 multi-byte characters to Latin-1 | 2026-03-13 |
 | [continue-retry-tmux-exit-code-bug-analysis.md](2026-03-14-continue-retry-tmux-exit-code-bug-analysis.md) | --continue retry never fires because tmux masks inner exit code to 0 | 2026-03-14 |
+| [mobile-scroll-escape-sequences-bug-analysis.md](2026-03-16-mobile-scroll-escape-sequences-bug-analysis.md) | Mobile scroll sends SGR escape sequences to shell when mouse tracking not enabled | 2026-03-16 |

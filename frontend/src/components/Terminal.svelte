@@ -82,6 +82,16 @@
       } else {
         console.warn('[Terminal] .xterm-viewport not found — xterm DOM may have changed. Touch scroll may conflict with xterm.');
       }
+      // Prevent xterm.js from converting synthetic mouse/wheel events into escape
+      // sequences when mouse tracking is left enabled by a previous application.
+      // Our custom touch handler already handles all mobile scroll interactions.
+      const xtermScreen = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
+      if (xtermScreen) {
+        const suppressMouseEvent = (e: Event) => { e.stopImmediatePropagation(); };
+        for (const evt of ['wheel', 'mousedown', 'mouseup', 'mousemove'] as const) {
+          xtermScreen.addEventListener(evt, suppressMouseEvent, { capture: true });
+        }
+      }
     }
     fitAddon.fit();
 
@@ -432,8 +442,8 @@
         e.preventDefault();
         const lineHeight = containerEl.clientHeight / term.rows;
 
-        if (term.buffer.active.type === 'alternate') {
-          // Alternate screen (tmux, vim, less): send mouse wheel escape sequences
+        if (term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none') {
+          // Alternate screen with mouse tracking (tmux, vim): send mouse wheel escape sequences
           const lineDelta = deltaY / lineHeight;
           contentScrollAccumulator += lineDelta;
           const rawLines = Math.trunc(contentScrollAccumulator);
@@ -447,6 +457,18 @@
             const seq = `\x1b[<${button};${col};${row}M`;
             const count = Math.min(Math.abs(rawLines), 5);
             for (let i = 0; i < count; i++) sendPtyData(seq);
+          }
+        } else if (term.buffer.active.type === 'alternate') {
+          // Alternate screen without mouse tracking (less, man, or stale alternate mode):
+          // send arrow keys as fallback for pagers
+          const lineDelta = deltaY / lineHeight;
+          contentScrollAccumulator += lineDelta;
+          const rawLines = Math.trunc(contentScrollAccumulator);
+          if (rawLines !== 0) {
+            contentScrollAccumulator -= rawLines;
+            const key = rawLines > 0 ? '\x1b[B' : '\x1b[A'; // Down / Up arrow
+            const count = Math.min(Math.abs(rawLines), 5);
+            for (let i = 0; i < count; i++) sendPtyData(key);
           }
         } else {
           // Normal screen: scroll xterm.js scrollback buffer
