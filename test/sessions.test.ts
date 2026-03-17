@@ -741,6 +741,84 @@ describe('session persistence', () => {
     assert.strictEqual(found.status, 'disconnected');
   });
 
+  it('full serialize-restore round trip preserves all session fields including tmuxSessionName', async () => {
+    const configDir = createTmpDir();
+
+    // Create sessions of different types
+    const repo = sessions.create({
+      type: 'repo',
+      repoName: 'my-repo',
+      repoPath: '/tmp/repo',
+      command: '/bin/cat',
+      args: [],
+      displayName: 'My Repo',
+    });
+
+    const terminal = sessions.create({
+      type: 'terminal',
+      repoPath: '/tmp',
+      command: '/bin/sh',
+      args: [],
+      displayName: 'Terminal 1',
+    });
+
+    // Serialize all
+    serializeAll(configDir);
+
+    // Kill originals
+    sessions.kill(repo.id);
+    sessions.kill(terminal.id);
+    assert.strictEqual(sessions.list().length, 0);
+
+    // Also inject a tmux-style session into the pending file to test tmuxSessionName round-trip.
+    // Use customCommand so restore spawns that instead of claude --continue (which would exit instantly).
+    const pendingPath = path.join(configDir, 'pending-sessions.json');
+    const pending = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+    pending.sessions.push({
+      id: 'tmux-roundtrip-id',
+      type: 'worktree',
+      agent: 'claude',
+      root: '',
+      repoName: 'tmux-repo',
+      repoPath: '/tmp',
+      worktreeName: 'tmux-wt',
+      branchName: 'feat/tmux',
+      displayName: 'Tmux Session',
+      createdAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+      useTmux: true,
+      tmuxSessionName: 'crc-tmux-session-tmux-rou',
+      customCommand: '/bin/cat',
+      cwd: '/tmp',
+    });
+    fs.writeFileSync(pendingPath, JSON.stringify(pending));
+
+    // Restore
+    const restored = await restoreFromDisk(configDir);
+    assert.strictEqual(restored, 3);
+
+    // Verify all sessions exist
+    const list = sessions.list();
+    assert.strictEqual(list.length, 3);
+
+    const restoredRepo = list.find(s => s.id === repo.id);
+    assert.ok(restoredRepo);
+    assert.strictEqual(restoredRepo.type, 'repo');
+    assert.strictEqual(restoredRepo.displayName, 'My Repo');
+    assert.strictEqual(restoredRepo.status, 'active');
+
+    const restoredTerminal = list.find(s => s.id === terminal.id);
+    assert.ok(restoredTerminal);
+    assert.strictEqual(restoredTerminal.type, 'terminal');
+    assert.strictEqual(restoredTerminal.displayName, 'Terminal 1');
+
+    // Verify tmux session name survived the round trip
+    const restoredTmux = sessions.get('tmux-roundtrip-id');
+    assert.ok(restoredTmux);
+    assert.strictEqual(restoredTmux.tmuxSessionName, 'crc-tmux-session-tmux-rou');
+    assert.strictEqual(restoredTmux.displayName, 'Tmux Session');
+  });
+
   it('serializeAll captures session state before kill', () => {
     const configDir = createTmpDir();
 
