@@ -30,7 +30,7 @@
   }
 
   export function focusTerm() {
-    if (!isMobileDevice) term?.focus();
+    term?.focus();
   }
 
   export function fitTerm() {
@@ -65,29 +65,15 @@
     t.loadAddon(fitAddon);
     t.open(containerEl);
     if (isMobileDevice) {
-      // Disable xterm's internal textarea to prevent focus fights with MobileInput.
-      // Relies on internal class name — re-verify after @xterm/xterm upgrades.
-      const xtermTextarea = containerEl.querySelector('.xterm-helper-textarea') as HTMLTextAreaElement | null;
-      if (xtermTextarea) {
-        xtermTextarea.disabled = true;
-        xtermTextarea.tabIndex = -1;
-      }
       // Disable xterm's internal touch scroll — it scrolls one line at a time.
       // We implement our own smooth content-area touch scroll instead.
-      // Relies on internal class name — re-verify after @xterm/xterm upgrades.
       const xtermViewport = containerEl.querySelector('.xterm-viewport') as HTMLElement | null;
       if (xtermViewport) {
         xtermViewport.style.touchAction = 'none';
         xtermViewport.style.overflowY = 'hidden';
-      } else {
-        console.warn('[Terminal] .xterm-viewport not found — xterm DOM may have changed. Touch scroll may conflict with xterm.');
       }
-      // Prevent xterm.js from converting events into escape sequences when
-      // mouse tracking is left enabled by a previous application (stale state).
-      // Wheel events are always suppressed (our touch handler handles scroll).
-      // Mouse events are conditionally suppressed only when mouse tracking is
-      // active — they must propagate when tracking is off so iOS trusted user
-      // gesture chain allows input.focus() to open the keyboard.
+      // Suppress xterm.js mouse event conversion when mouse tracking is active
+      // (tmux, vim). Wheel events always suppressed (our touch handler handles scroll).
       const xtermScreen = containerEl.querySelector('.xterm-screen') as HTMLElement | null;
       if (xtermScreen) {
         xtermScreen.addEventListener('wheel', (e) => {
@@ -106,10 +92,10 @@
     }
     fitAddon.fit();
 
-    // Desktop-only: wire xterm's own input handlers.
-    // On mobile, MobileInput sends directly via sendPtyData() — skip to avoid double-sends.
-    if (!isMobileDevice) {
-      t.onData((data) => sendPtyData(data));
+    // Wire xterm's input to PTY — xterm handles keyboard/IME/composition natively
+    t.onData((data) => sendPtyData(data));
+
+    {
 
       // Ctrl+V on non-Mac for clipboard/image paste
       const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
@@ -159,7 +145,7 @@
         }
         return true;
       });
-    }
+    }  // end Ctrl+V handler block
 
     // OSC 52 clipboard handler — intercepts tmux clipboard sequences and writes to browser clipboard
     t.parser.registerOscHandler(52, (data) => {
@@ -384,8 +370,6 @@
   }
 
   function onTerminalTouchStart(e: TouchEvent) {
-    const tag = (e.target as HTMLElement).tagName + '.' + (e.target as HTMLElement).className?.split?.(' ')?.[0];
-    termDbg('TOUCH_START target=' + tag + ' activeEl=' + document.activeElement?.tagName);
     if (selectionMode) {
       // Any tap exits selection mode — copy selected text first
       const selectedText = window.getSelection()?.toString() ?? '';
@@ -457,10 +441,12 @@
         e.preventDefault();
         const lineHeight = containerEl.clientHeight / term.rows;
 
-        if (term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none') {
-          // Alternate screen with mouse tracking (tmux, vim): send mouse wheel escape sequences.
+        if (term.buffer.active.type === 'alternate') {
+          // Alternate screen (tmux, Claude Code, vim, less): send SGR mouse wheel sequences.
           // Use INCREMENTAL delta (since last touchmove), not total delta from touchstart,
           // because we send relative wheel events — total delta would grow quadratically.
+          // Wheel events work regardless of whether mouse tracking is enabled — TUI apps
+          // that use alternate screen (Claude Code, vim) handle wheel events for scrolling.
           const incrementalDelta = contentLastTouchY - touch.clientY;
           contentLastTouchY = touch.clientY;
           const lineDelta = incrementalDelta / lineHeight;
@@ -468,28 +454,13 @@
           const rawLines = Math.trunc(contentScrollAccumulator);
           if (rawLines !== 0) {
             contentScrollAccumulator -= rawLines;
-            // SGR mouse wheel: button 64 = wheel up (scroll toward top), 65 = wheel down (scroll toward bottom)
-            // rawLines > 0 means finger swiped up (deltaY > 0) → scroll down → button 65
+            // SGR mouse wheel: button 64 = wheel up, 65 = wheel down
             const button = rawLines > 0 ? 65 : 64;
             const col = Math.max(1, Math.round(term.cols / 2));
             const row = Math.max(1, Math.round(term.rows / 2));
             const seq = `\x1b[<${button};${col};${row}M`;
             const count = Math.min(Math.abs(rawLines), 5);
             for (let i = 0; i < count; i++) sendPtyData(seq);
-          }
-        } else if (term.buffer.active.type === 'alternate') {
-          // Alternate screen without mouse tracking (less, man, or stale alternate mode):
-          // send arrow keys as fallback for pagers. Same incremental delta logic.
-          const incrementalDelta = contentLastTouchY - touch.clientY;
-          contentLastTouchY = touch.clientY;
-          const lineDelta = incrementalDelta / lineHeight;
-          contentScrollAccumulator += lineDelta;
-          const rawLines = Math.trunc(contentScrollAccumulator);
-          if (rawLines !== 0) {
-            contentScrollAccumulator -= rawLines;
-            const key = rawLines > 0 ? '\x1b[B' : '\x1b[A'; // Down / Up arrow
-            const count = Math.min(Math.abs(rawLines), 5);
-            for (let i = 0; i < count; i++) sendPtyData(key);
           }
         } else {
           // Normal screen: scroll xterm.js scrollback buffer
@@ -592,30 +563,17 @@
     if (file.type.startsWith('image/')) handleImageUpload(file, file.type);
   }
 
-  // Touch: tap on terminal area to focus mobile input
-  let mobileInputRef: HTMLInputElement | null = null;
-
-  export function setMobileInputRef(el: HTMLInputElement | null) {
-    mobileInputRef = el;
-  }
+  // Touch: tap on terminal area to open keyboard (focuses xterm's native textarea)
 
   function onTerminalTouchEnd(e: TouchEvent) {
-    const tag = (e.target as HTMLElement).tagName + '.' + (e.target as HTMLElement).className?.split?.(' ')?.[0];
-    if (scrollbarDragging) { termDbg('TOUCH_END blocked=scrollbarDragging target=' + tag); return; }
-    if (contentTouchMoved) { termDbg('TOUCH_END blocked=contentTouchMoved target=' + tag); return; }
-    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) { termDbg('TOUCH_END blocked=scrollbar target=' + tag); return; }
-    if (selectionMode) { termDbg('TOUCH_END blocked=selectionMode target=' + tag); return; }
-    termDbg('TOUCH_END → focus() ref=' + (mobileInputRef ? 'SET' : 'NULL') + ' target=' + tag);
-    mobileInputRef?.focus();
+    if (scrollbarDragging) return;
+    if (contentTouchMoved) return;
+    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
+    if (selectionMode) return;
+    term?.focus();
     // Suppress synthetic mousedown/click that Android fires after touchend —
-    // without this, the browser defocuses the hidden input immediately after
-    // we focus it, causing the keyboard to open then instantly close.
+    // without this, the browser defocuses the input immediately.
     e.preventDefault();
-  }
-
-  // Debug logging — dispatches to MobileInput's dbg panel via custom event
-  function termDbg(msg: string) {
-    window.dispatchEvent(new CustomEvent('term-debug', { detail: msg }));
   }
 </script>
 

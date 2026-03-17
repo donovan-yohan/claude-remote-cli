@@ -1,6 +1,6 @@
 {
   "name": "claude-remote-cli",
-  "version": "2.15.14",
+  "version": "2.15.16",
   "description": "Remote web interface for Claude Code CLI sessions",
   "type": "module",
   "main": "dist/server/index.js",
