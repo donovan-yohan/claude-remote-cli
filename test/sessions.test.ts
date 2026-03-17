@@ -667,4 +667,67 @@ describe('session persistence', () => {
     const restored = await restoreFromDisk(configDir);
     assert.strictEqual(restored, 0);
   });
+
+  it('restoreFromDisk preserves tmuxSessionName for tmux sessions', async () => {
+    const configDir = createTmpDir();
+
+    // Write a pending file with a tmux session
+    const pending = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      sessions: [{
+        id: 'tmux-test-id',
+        type: 'worktree' as const,
+        agent: 'claude' as const,
+        root: '',
+        repoName: 'test-repo',
+        repoPath: '/tmp',
+        worktreeName: 'my-wt',
+        branchName: 'my-branch',
+        displayName: 'my-session',
+        createdAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        useTmux: true,
+        tmuxSessionName: 'crc-my-session-tmux-tes',
+        customCommand: null,
+        cwd: '/tmp',
+      }],
+    };
+    fs.writeFileSync(path.join(configDir, 'pending-sessions.json'), JSON.stringify(pending));
+
+    const restored = await restoreFromDisk(configDir);
+    assert.strictEqual(restored, 1);
+
+    const session = sessions.get('tmux-test-id');
+    assert.ok(session, 'restored session should exist');
+    assert.strictEqual(session.tmuxSessionName, 'crc-my-session-tmux-tes', 'tmuxSessionName should be preserved from serialized data');
+  });
+
+  it('serializeAll captures session state before kill', () => {
+    const configDir = createTmpDir();
+
+    const s = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+      displayName: 'before-kill',
+    });
+
+    const session = sessions.get(s.id);
+    assert.ok(session);
+    session.scrollback.push('important output');
+
+    serializeAll(configDir);
+
+    // Kill after serialize (mimics gracefulShutdown sequence)
+    sessions.kill(s.id);
+
+    // Verify data is on disk
+    const pendingPath = path.join(configDir, 'pending-sessions.json');
+    assert.ok(fs.existsSync(pendingPath));
+    const pending = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+    assert.strictEqual(pending.sessions.length, 1);
+    assert.strictEqual(pending.sessions[0].displayName, 'before-kill');
+  });
 });

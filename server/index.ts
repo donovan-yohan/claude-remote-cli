@@ -1074,6 +1074,9 @@ async function main(): Promise<void> {
 
   function gracefulShutdown() {
     server.close();
+    // Serialize sessions to disk BEFORE killing them
+    const configDir = path.dirname(CONFIG_PATH);
+    serializeAll(configDir);
     // Kill all active sessions (PTY + tmux)
     for (const s of sessions.list()) {
       try { sessions.kill(s.id); } catch { /* already exiting */ }
