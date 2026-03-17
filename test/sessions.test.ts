@@ -667,4 +667,183 @@ describe('session persistence', () => {
     const restored = await restoreFromDisk(configDir);
     assert.strictEqual(restored, 0);
   });
+
+  it('restoreFromDisk preserves tmuxSessionName for tmux sessions', async () => {
+    const configDir = createTmpDir();
+
+    // Write a pending file with a tmux session
+    const pending = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      sessions: [{
+        id: 'tmux-test-id',
+        type: 'worktree' as const,
+        agent: 'claude' as const,
+        root: '',
+        repoName: 'test-repo',
+        repoPath: '/tmp',
+        worktreeName: 'my-wt',
+        branchName: 'my-branch',
+        displayName: 'my-session',
+        createdAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        useTmux: true,
+        tmuxSessionName: 'crc-my-session-tmux-tes',
+        customCommand: null,
+        cwd: '/tmp',
+      }],
+    };
+    fs.writeFileSync(path.join(configDir, 'pending-sessions.json'), JSON.stringify(pending));
+
+    const restored = await restoreFromDisk(configDir);
+    assert.strictEqual(restored, 1);
+
+    const session = sessions.get('tmux-test-id');
+    assert.ok(session, 'restored session should exist');
+    assert.strictEqual(session.tmuxSessionName, 'crc-my-session-tmux-tes', 'tmuxSessionName should be preserved from serialized data');
+  });
+
+  it('restored session remains in list after PTY exits (disconnected status)', async () => {
+    const configDir = createTmpDir();
+
+    const pending = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      sessions: [{
+        id: 'restore-exit-test',
+        type: 'worktree' as const,
+        agent: 'claude' as const,
+        root: '',
+        repoName: 'test-repo',
+        repoPath: '/tmp',
+        worktreeName: 'my-wt',
+        branchName: 'my-branch',
+        displayName: 'restored-session',
+        createdAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        useTmux: false,
+        tmuxSessionName: '',
+        customCommand: '/bin/false',
+        cwd: '/tmp',
+      }],
+    };
+    fs.writeFileSync(path.join(configDir, 'pending-sessions.json'), JSON.stringify(pending));
+
+    await restoreFromDisk(configDir);
+
+    // Wait for PTY to exit
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Session should still be in the list with disconnected status
+    const list = sessions.list();
+    const found = list.find(s => s.id === 'restore-exit-test');
+    assert.ok(found, 'restored session should remain in list after PTY exit');
+    assert.strictEqual(found.status, 'disconnected');
+  });
+
+  it('full serialize-restore round trip preserves all session fields including tmuxSessionName', async () => {
+    const configDir = createTmpDir();
+
+    // Create sessions of different types
+    const repo = sessions.create({
+      type: 'repo',
+      repoName: 'my-repo',
+      repoPath: '/tmp/repo',
+      command: '/bin/cat',
+      args: [],
+      displayName: 'My Repo',
+    });
+
+    const terminal = sessions.create({
+      type: 'terminal',
+      repoPath: '/tmp',
+      command: '/bin/sh',
+      args: [],
+      displayName: 'Terminal 1',
+    });
+
+    // Serialize all
+    serializeAll(configDir);
+
+    // Kill originals
+    sessions.kill(repo.id);
+    sessions.kill(terminal.id);
+    assert.strictEqual(sessions.list().length, 0);
+
+    // Also inject a tmux-style session into the pending file to test tmuxSessionName round-trip.
+    // Use customCommand so restore spawns that instead of claude --continue (which would exit instantly).
+    const pendingPath = path.join(configDir, 'pending-sessions.json');
+    const pending = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+    pending.sessions.push({
+      id: 'tmux-roundtrip-id',
+      type: 'worktree',
+      agent: 'claude',
+      root: '',
+      repoName: 'tmux-repo',
+      repoPath: '/tmp',
+      worktreeName: 'tmux-wt',
+      branchName: 'feat/tmux',
+      displayName: 'Tmux Session',
+      createdAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString(),
+      useTmux: true,
+      tmuxSessionName: 'crc-tmux-session-tmux-rou',
+      customCommand: '/bin/cat',
+      cwd: '/tmp',
+    });
+    fs.writeFileSync(pendingPath, JSON.stringify(pending));
+
+    // Restore
+    const restored = await restoreFromDisk(configDir);
+    assert.strictEqual(restored, 3);
+
+    // Verify all sessions exist
+    const list = sessions.list();
+    assert.strictEqual(list.length, 3);
+
+    const restoredRepo = list.find(s => s.id === repo.id);
+    assert.ok(restoredRepo);
+    assert.strictEqual(restoredRepo.type, 'repo');
+    assert.strictEqual(restoredRepo.displayName, 'My Repo');
+    assert.strictEqual(restoredRepo.status, 'active');
+
+    const restoredTerminal = list.find(s => s.id === terminal.id);
+    assert.ok(restoredTerminal);
+    assert.strictEqual(restoredTerminal.type, 'terminal');
+    assert.strictEqual(restoredTerminal.displayName, 'Terminal 1');
+
+    // Verify tmux session name survived the round trip
+    const restoredTmux = sessions.get('tmux-roundtrip-id');
+    assert.ok(restoredTmux);
+    assert.strictEqual(restoredTmux.tmuxSessionName, 'crc-tmux-session-tmux-rou');
+    assert.strictEqual(restoredTmux.displayName, 'Tmux Session');
+  });
+
+  it('serializeAll captures session state before kill', () => {
+    const configDir = createTmpDir();
+
+    const s = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+      displayName: 'before-kill',
+    });
+
+    const session = sessions.get(s.id);
+    assert.ok(session);
+    session.scrollback.push('important output');
+
+    serializeAll(configDir);
+
+    // Kill after serialize (mimics gracefulShutdown sequence)
+    sessions.kill(s.id);
+
+    // Verify data is on disk
+    const pendingPath = path.join(configDir, 'pending-sessions.json');
+    assert.ok(fs.existsSync(pendingPath));
+    const pending = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
+    assert.strictEqual(pending.sessions.length, 1);
+    assert.strictEqual(pending.sessions[0].displayName, 'before-kill');
+  });
 });

@@ -12,3 +12,4 @@
 | [continue-retry-tmux-exit-code-bug-analysis.md](2026-03-14-continue-retry-tmux-exit-code-bug-analysis.md) | --continue retry never fires because tmux masks inner exit code to 0 | 2026-03-14 |
 | [mobile-scroll-escape-sequences-bug-analysis.md](2026-03-16-mobile-scroll-escape-sequences-bug-analysis.md) | Mobile scroll sends SGR escape sequences to shell when mouse tracking not enabled | 2026-03-16 |
 | [non-tmux-scroll-bug-analysis.md](2026-03-17-non-tmux-scroll-bug-analysis.md) | Touch scroll sends arrow keys instead of wheel events in non-tmux alternate screen sessions | 2026-03-17 |
+| [session-persistence-across-updates-bug-analysis.md](2026-03-17-session-persistence-across-updates-bug-analysis.md) | Sessions lost after auto-update: tmux orphan cleanup race, no graceful shutdown serialization, PTY-coupled lifecycle | 2026-03-17 |
