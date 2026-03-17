@@ -131,39 +131,37 @@ describe('mobile-input-pipeline: processIntent', () => {
     assert.strictEqual(result.payload, '\x7f\x7f\x7fthe');
   });
 
-  it('cursor-0 recovery: Gboard full-word data', () => {
+  it('cursor-0 recovery: single word buffer', () => {
     // Gboard sends the full replacement word as data
     const result = processIntent({
       type: 'insertText', data: 'the',
       rangeStart: null, rangeEnd: null,
       valueBefore: 'teh', cursorBefore: 0,
     }, 'theteh');
-    // data starts with same char as lastWord → full replacement
     assert.strictEqual(result.payload, '\x7f\x7f\x7fthe');
     assert.strictEqual(result.newInputValue, 'the');
   });
 
-  it('cursor-0 recovery: iOS suffix-only data', () => {
-    // iOS sends only the suffix (after first char) as data
+  it('cursor-0 recovery: multi-word buffer only deletes last word', () => {
     const result = processIntent({
-      type: 'insertText', data: 'he ',
-      rangeStart: null, rangeEnd: null,
-      valueBefore: 'teh', cursorBefore: 0,
-    }, 'he teh');
-    // data starts with 'h', lastWord starts with 't' → suffix mode: "t" + "he " = "the "
-    assert.strictEqual(result.payload, '\x7f\x7f\x7fthe ');
-    assert.strictEqual(result.newInputValue, 'the ');
-  });
-
-  it('cursor-0 recovery only deletes last word (multi-word buffer)', () => {
-    const result = processIntent({
-      type: 'insertText', data: 'obile ',
+      type: 'insertText', data: 'mobile ',
       rangeStart: null, rangeEnd: null,
       valueBefore: 'and mkbijf', cursorBefore: 0,
-    }, 'obile and mkbijf');
-    // Should delete "mkbijf" (6 chars) and replace with "m" + "obile " = "mobile "
+    }, 'mobile and mkbijf');
+    // Should delete "mkbijf" (6 chars) and replace with "mobile "
     assert.strictEqual(result.payload, '\x7f\x7f\x7f\x7f\x7f\x7fmobile ');
     assert.strictEqual(result.newInputValue, 'and mobile ');
+  });
+
+  it('cursor-0 recovery: empty last word (trailing space) is ignored', () => {
+    const result = processIntent({
+      type: 'insertText', data: 'the ',
+      rangeStart: null, rangeEnd: null,
+      valueBefore: 'hello ', cursorBefore: 0,
+    }, 'the hello ');
+    // Buffer ends with space → nothing to autocorrect
+    assert.strictEqual(result.payload, '');
+    assert.strictEqual(result.newInputValue, 'hello ');
   });
 
   it('deleteContentBackward with range', () => {

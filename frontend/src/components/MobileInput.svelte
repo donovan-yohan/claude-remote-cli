@@ -34,15 +34,13 @@
     // The cursor drifts to position 0, causing autocorrect to prepend text
     // instead of replacing at the correct position. Listen for selection
     // changes and force cursor back to end to prevent this.
+    // Prevent iOS cursor drift: selectionchange fires at document level per spec.
+    // Guard with activeElement check so we only act when our input is focused.
     const onSelectionChange = () => {
       if (document.activeElement === inputEl) {
         ensureCursorAtEnd();
       }
     };
-    if (inputEl) {
-      inputEl.addEventListener('selectionchange', onSelectionChange);
-    }
-    // Also listen at document level as fallback (some browsers only fire there)
     document.addEventListener('selectionchange', onSelectionChange);
 
     // Listen for devtools toggle from settings
@@ -53,7 +51,6 @@
     window.addEventListener('devtools-changed', onDevtoolsChanged);
 
     return () => {
-      if (inputEl) inputEl.removeEventListener('selectionchange', onSelectionChange);
       document.removeEventListener('selectionchange', onSelectionChange);
       window.removeEventListener('devtools-changed', onDevtoolsChanged);
     };
