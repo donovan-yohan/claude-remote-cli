@@ -255,6 +255,7 @@
   let contentScrollStartLine = 0;
   let contentTouchMoved = false;
   let contentScrollAccumulator = 0;
+  let contentLastTouchY = 0; // tracks previous touchmove Y for incremental delta
 
   // Long-press text selection state (mobile)
   let selectionMode = $state(false);
@@ -401,6 +402,7 @@
     const touch = e.touches[0];
     if (!touch) return;
     contentTouchStartY = touch.clientY;
+    contentLastTouchY = touch.clientY;
     contentScrollStartLine = term.buffer.active.viewportY;
     contentTouchMoved = false;
     contentScrollAccumulator = 0;
@@ -454,8 +456,12 @@
         const lineHeight = containerEl.clientHeight / term.rows;
 
         if (term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none') {
-          // Alternate screen with mouse tracking (tmux, vim): send mouse wheel escape sequences
-          const lineDelta = deltaY / lineHeight;
+          // Alternate screen with mouse tracking (tmux, vim): send mouse wheel escape sequences.
+          // Use INCREMENTAL delta (since last touchmove), not total delta from touchstart,
+          // because we send relative wheel events — total delta would grow quadratically.
+          const incrementalDelta = contentLastTouchY - touch.clientY;
+          contentLastTouchY = touch.clientY;
+          const lineDelta = incrementalDelta / lineHeight;
           contentScrollAccumulator += lineDelta;
           const rawLines = Math.trunc(contentScrollAccumulator);
           if (rawLines !== 0) {
@@ -471,8 +477,10 @@
           }
         } else if (term.buffer.active.type === 'alternate') {
           // Alternate screen without mouse tracking (less, man, or stale alternate mode):
-          // send arrow keys as fallback for pagers
-          const lineDelta = deltaY / lineHeight;
+          // send arrow keys as fallback for pagers. Same incremental delta logic.
+          const incrementalDelta = contentLastTouchY - touch.clientY;
+          contentLastTouchY = touch.clientY;
+          const lineDelta = incrementalDelta / lineHeight;
           contentScrollAccumulator += lineDelta;
           const rawLines = Math.trunc(contentScrollAccumulator);
           if (rawLines !== 0) {

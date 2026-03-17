@@ -20,6 +20,8 @@
   let debugVisible = $state(false);
   let debugLines: string[] = $state([]);
   let devtoolsEnabled = $state(false);
+  let mirrorValue = $state('');
+  let mirrorCursor = $state(0);
 
   onMount(() => {
     devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
@@ -57,6 +59,11 @@
   function dbg(msg: string) {
     const t = performance.now().toFixed(1);
     debugLines = [...debugLines.slice(-199), '[' + t + '] ' + msg];
+    // Update mirror display
+    if (inputEl) {
+      mirrorValue = inputEl.value;
+      mirrorCursor = inputEl.selectionStart ?? 0;
+    }
   }
 
   // ── Exposed methods ──────────────────────────────────────────────────────────
@@ -355,6 +362,12 @@
     </button>
   {/if}
 
+  {#if devtoolsEnabled}
+    <div class="input-mirror">
+      buf: "{mirrorValue}" cursor={mirrorCursor}
+    </div>
+  {/if}
+
   {#if debugVisible}
     <div class="debug-panel">
       {#each debugLines as line (line)}
@@ -398,6 +411,22 @@
   .mobile-input::-webkit-search-decoration {
     -webkit-appearance: none;
     appearance: none;
+  }
+
+  .input-mirror {
+    position: fixed;
+    bottom: 110px;
+    left: 8px;
+    right: 8px;
+    z-index: 10000;
+    background: rgba(0, 0, 0, 0.85);
+    color: #ff0;
+    border: 1px solid #ff0;
+    border-radius: 6px;
+    font: 12px monospace;
+    padding: 6px 10px;
+    pointer-events: none;
+    word-break: break-all;
   }
 
   .debug-toggle {
