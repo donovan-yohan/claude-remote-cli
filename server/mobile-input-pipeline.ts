@@ -12,6 +12,8 @@ export interface PipelineResult {
   payload: string;
   /** If set, caller must update inputEl.value and call ensureCursorAtEnd() */
   newInputValue?: string;
+  /** Debug info for diagnostics */
+  debug?: string;
 }
 
 export function codepointCount(str: string): number {
@@ -63,7 +65,7 @@ function handleInsert(intent: CapturedIntent, currentValue: string): PipelineRes
 
       // Buffer ends with a space — nothing to autocorrect
       if (lastWord.length === 0) {
-        return { payload: '', newInputValue: intent.valueBefore };
+        return { payload: '', newInputValue: intent.valueBefore, debug: 'CURSOR0: empty lastWord, skip' };
       }
 
       const prefix = lastSpaceIdx >= 0 ? intent.valueBefore.slice(0, lastSpaceIdx + 1) : '';
@@ -72,9 +74,11 @@ function handleInsert(intent: CapturedIntent, currentValue: string): PipelineRes
       // char (data[0] !== firstChar, e.g. "tsestin" → data="esting ").
       // Evidence from device diagnostics confirms both patterns occur.
       const firstChar = lastWord.charAt(0);
-      const replacement = data.charAt(0) === firstChar ? data : firstChar + data;
+      const isSuffix = data.charAt(0) !== firstChar;
+      const replacement = isSuffix ? firstChar + data : data;
       const payload = makeBackspaces(codepointCount(lastWord)) + replacement;
-      return { payload, newInputValue: prefix + replacement };
+      const debug = `CURSOR0: lastWord="${lastWord}" firstChar="${firstChar}" data[0]="${data.charAt(0)}" mode=${isSuffix ? 'suffix' : 'fullword'} replacement="${replacement}" del=${codepointCount(lastWord)}`;
+      return { payload, newInputValue: prefix + replacement, debug };
     }
 
     return { payload: data };

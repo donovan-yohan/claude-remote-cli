@@ -43,6 +43,12 @@
     };
     document.addEventListener('selectionchange', onSelectionChange);
 
+    // Listen for Terminal touch debug events
+    const onTermDebug = (e: Event) => {
+      dbg((e as CustomEvent).detail);
+    };
+    window.addEventListener('term-debug', onTermDebug);
+
     // Listen for devtools toggle from settings
     const onDevtoolsChanged = () => {
       devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
@@ -52,6 +58,7 @@
 
     return () => {
       document.removeEventListener('selectionchange', onSelectionChange);
+      window.removeEventListener('term-debug', onTermDebug);
       window.removeEventListener('devtools-changed', onDevtoolsChanged);
     };
   });
@@ -109,7 +116,8 @@
   function flushSendBuffer() {
     sendTimer = null;
     if (sendBuffer && isPtyConnected()) {
-      dbg('FLUSH: "' + sendBuffer.replace(/\x7f/g, '\u232b') + '" (' + sendBuffer.length + ' bytes)');
+      const hex = Array.from(sendBuffer).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' ');
+      dbg('FLUSH: "' + sendBuffer.replace(/\x7f/g, '\u232b') + '" (' + sendBuffer.length + 'B) hex=[' + hex + ']');
       sendPtyData(sendBuffer);
     }
     sendBuffer = '';
@@ -245,7 +253,7 @@
 
     const result = processIntent(intent, currentValue);
 
-    dbg('  → PIPELINE: payload="' + result.payload.replace(/\x7f/g, '\u232b') + '"' + (result.newInputValue !== undefined ? ' newVal="' + result.newInputValue + '"' : ''));
+    dbg('  → PIPELINE: payload="' + result.payload.replace(/\x7f/g, '\u232b') + '"' + (result.newInputValue !== undefined ? ' newVal="' + result.newInputValue + '"' : '') + (result.debug ? ' | ' + result.debug : ''));
 
     if (result.payload) {
       scheduleSend(result.payload);
@@ -333,6 +341,12 @@
       dbg('--- COPY FAILED ---');
     });
   }
+
+  function onClearDebugLogs(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    debugLines = [];
+  }
 </script>
 
 {#if isMobileDevice}
@@ -375,6 +389,9 @@
       {#if debugVisible}
         <button class="debug-toggle" onclick={onCopyDebugLogs}>
           copy
+        </button>
+        <button class="debug-toggle" onclick={onClearDebugLogs}>
+          clear
         </button>
       {/if}
     </div>

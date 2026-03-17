@@ -384,6 +384,8 @@
   }
 
   function onTerminalTouchStart(e: TouchEvent) {
+    const tag = (e.target as HTMLElement).tagName + '.' + (e.target as HTMLElement).className?.split?.(' ')?.[0];
+    termDbg('TOUCH_START target=' + tag + ' activeEl=' + document.activeElement?.tagName);
     if (selectionMode) {
       // Any tap exits selection mode — copy selected text first
       const selectedText = window.getSelection()?.toString() ?? '';
@@ -598,15 +600,22 @@
   }
 
   function onTerminalTouchEnd(e: TouchEvent) {
-    if (scrollbarDragging) return;
-    if (contentTouchMoved) return;
-    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
-    if (selectionMode) return;
+    const tag = (e.target as HTMLElement).tagName + '.' + (e.target as HTMLElement).className?.split?.(' ')?.[0];
+    if (scrollbarDragging) { termDbg('TOUCH_END blocked=scrollbarDragging target=' + tag); return; }
+    if (contentTouchMoved) { termDbg('TOUCH_END blocked=contentTouchMoved target=' + tag); return; }
+    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) { termDbg('TOUCH_END blocked=scrollbar target=' + tag); return; }
+    if (selectionMode) { termDbg('TOUCH_END blocked=selectionMode target=' + tag); return; }
+    termDbg('TOUCH_END → focus() ref=' + (mobileInputRef ? 'SET' : 'NULL') + ' target=' + tag);
     mobileInputRef?.focus();
     // Suppress synthetic mousedown/click that Android fires after touchend —
     // without this, the browser defocuses the hidden input immediately after
     // we focus it, causing the keyboard to open then instantly close.
     e.preventDefault();
+  }
+
+  // Debug logging — dispatches to MobileInput's dbg panel via custom event
+  function termDbg(msg: string) {
+    window.dispatchEvent(new CustomEvent('term-debug', { detail: msg }));
   }
 </script>
 
