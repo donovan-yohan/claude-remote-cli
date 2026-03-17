@@ -441,10 +441,12 @@
         e.preventDefault();
         const lineHeight = containerEl.clientHeight / term.rows;
 
-        if (term.buffer.active.type === 'alternate' && term.modes.mouseTrackingMode !== 'none') {
-          // Alternate screen with mouse tracking (tmux, vim): send mouse wheel escape sequences.
+        if (term.buffer.active.type === 'alternate') {
+          // Alternate screen (tmux, Claude Code, vim, less): send SGR mouse wheel sequences.
           // Use INCREMENTAL delta (since last touchmove), not total delta from touchstart,
           // because we send relative wheel events — total delta would grow quadratically.
+          // Wheel events work regardless of whether mouse tracking is enabled — TUI apps
+          // that use alternate screen (Claude Code, vim) handle wheel events for scrolling.
           const incrementalDelta = contentLastTouchY - touch.clientY;
           contentLastTouchY = touch.clientY;
           const lineDelta = incrementalDelta / lineHeight;
@@ -452,28 +454,13 @@
           const rawLines = Math.trunc(contentScrollAccumulator);
           if (rawLines !== 0) {
             contentScrollAccumulator -= rawLines;
-            // SGR mouse wheel: button 64 = wheel up (scroll toward top), 65 = wheel down (scroll toward bottom)
-            // rawLines > 0 means finger swiped up (deltaY > 0) → scroll down → button 65
+            // SGR mouse wheel: button 64 = wheel up, 65 = wheel down
             const button = rawLines > 0 ? 65 : 64;
             const col = Math.max(1, Math.round(term.cols / 2));
             const row = Math.max(1, Math.round(term.rows / 2));
             const seq = `\x1b[<${button};${col};${row}M`;
             const count = Math.min(Math.abs(rawLines), 5);
             for (let i = 0; i < count; i++) sendPtyData(seq);
-          }
-        } else if (term.buffer.active.type === 'alternate') {
-          // Alternate screen without mouse tracking (less, man, or stale alternate mode):
-          // send arrow keys as fallback for pagers. Same incremental delta logic.
-          const incrementalDelta = contentLastTouchY - touch.clientY;
-          contentLastTouchY = touch.clientY;
-          const lineDelta = incrementalDelta / lineHeight;
-          contentScrollAccumulator += lineDelta;
-          const rawLines = Math.trunc(contentScrollAccumulator);
-          if (rawLines !== 0) {
-            contentScrollAccumulator -= rawLines;
-            const key = rawLines > 0 ? '\x1b[B' : '\x1b[A'; // Down / Up arrow
-            const count = Math.min(Math.abs(rawLines), 5);
-            for (let i = 0; i < count; i++) sendPtyData(key);
           }
         } else {
           // Normal screen: scroll xterm.js scrollback buffer
