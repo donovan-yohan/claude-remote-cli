@@ -5,12 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgentType, Session, SessionType } from './types.js';
+import type { AgentType, Session, SessionStatus, SessionType } from './types.js';
 import { readMeta, writeMeta } from './config.js';
 
 const execFileAsync = promisify(execFile);
 
-type SessionSummary = Omit<Session, 'pty' | 'scrollback' | 'onPtyReplacedCallbacks'>;
+type SessionSummary = Omit<Session, 'pty' | 'scrollback' | 'onPtyReplacedCallbacks' | 'restored'>;
 
 const AGENT_COMMANDS: Record<AgentType, string> = {
   claude: 'claude',
@@ -74,6 +74,8 @@ type CreateParams = {
   tmuxSessionName?: string;
   /** Pre-loaded scrollback for restored sessions */
   initialScrollback?: string[];
+  /** Mark this session as a restored session (PTY exit won't delete it) */
+  restored?: boolean;
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
@@ -113,7 +115,7 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallbacks.push(cb);
 }
 
-function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback }: CreateParams): CreateResult {
+function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
   const resolvedCommand = command || AGENT_COMMANDS[agent];
@@ -167,6 +169,8 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     useTmux,
     tmuxSessionName,
     onPtyReplacedCallbacks: [],
+    status: 'active' as SessionStatus,
+    restored: paramRestored || false,
   };
   sessions.set(id, session);
 
@@ -200,6 +204,8 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
 
   function attachHandlers(proc: pty.IPty, canRetry: boolean): void {
     const spawnTime = Date.now();
+    // Clear restored flag after 3s of running — means the PTY is healthy
+    const restoredClearTimer = session.restored ? setTimeout(() => { session.restored = false; }, 3000) : null;
 
     proc.onData((data) => {
       session.lastActivity = new Date().toISOString();
@@ -251,6 +257,7 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
           });
         } catch {
           // Retry spawn failed — fall through to normal exit cleanup
+          if (restoredClearTimer) clearTimeout(restoredClearTimer);
           if (idleTimer) clearTimeout(idleTimer);
           if (metaFlushTimer) clearTimeout(metaFlushTimer);
           sessions.delete(id);
@@ -259,6 +266,17 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
         session.pty = retryPty;
         for (const cb of session.onPtyReplacedCallbacks) cb(retryPty);
         attachHandlers(retryPty, false);
+        return;
+      }
+
+      if (restoredClearTimer) clearTimeout(restoredClearTimer);
+
+      // If PTY exited and this is a restored session, mark disconnected rather than delete
+      if (session.restored) {
+        session.status = 'disconnected';
+        session.restored = false; // clear so user-initiated kills can delete normally
+        if (idleTimer) clearTimeout(idleTimer);
+        if (metaFlushTimer) clearTimeout(metaFlushTimer);
         return;
       }
 
@@ -275,7 +293,7 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
 
   attachHandlers(ptyProcess, continueArgs.some(a => args.includes(a)));
 
-  return { id, type: session.type, agent: session.agent, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false, cwd: resolvedCwd, customCommand: command || null, useTmux, tmuxSessionName };
+  return { id, type: session.type, agent: session.agent, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false, cwd: resolvedCwd, customCommand: command || null, useTmux, tmuxSessionName, status: 'active' as SessionStatus };
 }
 
 function get(id: string): Session | undefined {
@@ -284,7 +302,7 @@ function get(id: string): Session | undefined {
 
 function list(): SessionSummary[] {
   return Array.from(sessions.values())
-    .map(({ id, type, agent, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle, cwd, customCommand, useTmux, tmuxSessionName }) => ({
+    .map(({ id, type, agent, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle, cwd, customCommand, useTmux, tmuxSessionName, status }) => ({
       id,
       type,
       agent,
@@ -301,6 +319,7 @@ function list(): SessionSummary[] {
       customCommand,
       useTmux,
       tmuxSessionName,
+      status,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
@@ -317,7 +336,11 @@ function kill(id: string): void {
   if (!session) {
     throw new Error(`Session not found: ${id}`);
   }
-  session.pty.kill('SIGTERM');
+  try {
+    session.pty.kill('SIGTERM');
+  } catch {
+    // PTY may already be dead (e.g. disconnected sessions) — still delete from registry
+  }
   if (session.tmuxSessionName) {
     execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
   }
@@ -471,6 +494,7 @@ async function restoreFromDisk(configDir: string): Promise<number> {
         args,
         useTmux: false, // Don't re-wrap in tmux — either attaching to existing or using plain agent
         tmuxSessionName: s.tmuxSessionName,
+        restored: true,
       };
       if (command) createParams.command = command;
       if (initialScrollback) createParams.initialScrollback = initialScrollback;

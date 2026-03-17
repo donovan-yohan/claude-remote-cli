@@ -14,6 +14,7 @@ export interface SessionSummary {
   lastActivity: string;
   idle: boolean;
   useTmux?: boolean;
+  status?: 'active' | 'disconnected';
 }
 
 export interface WorktreeInfo {

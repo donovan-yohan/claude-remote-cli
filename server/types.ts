@@ -2,6 +2,7 @@ import type { IPty } from 'node-pty';
 
 export type SessionType = 'repo' | 'worktree' | 'terminal';
 export type AgentType = 'claude' | 'codex';
+export type SessionStatus = 'active' | 'disconnected';
 
 export interface Session {
   id: string;
@@ -23,6 +24,8 @@ export interface Session {
   customCommand: string | null;
   tmuxSessionName: string;
   onPtyReplacedCallbacks: Array<(newPty: IPty) => void>;
+  status: SessionStatus;
+  restored: boolean;
 }
 
 export interface WorktreeMetadata {

@@ -703,6 +703,44 @@ describe('session persistence', () => {
     assert.strictEqual(session.tmuxSessionName, 'crc-my-session-tmux-tes', 'tmuxSessionName should be preserved from serialized data');
   });
 
+  it('restored session remains in list after PTY exits (disconnected status)', async () => {
+    const configDir = createTmpDir();
+
+    const pending = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      sessions: [{
+        id: 'restore-exit-test',
+        type: 'worktree' as const,
+        agent: 'claude' as const,
+        root: '',
+        repoName: 'test-repo',
+        repoPath: '/tmp',
+        worktreeName: 'my-wt',
+        branchName: 'my-branch',
+        displayName: 'restored-session',
+        createdAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        useTmux: false,
+        tmuxSessionName: '',
+        customCommand: '/bin/false',
+        cwd: '/tmp',
+      }],
+    };
+    fs.writeFileSync(path.join(configDir, 'pending-sessions.json'), JSON.stringify(pending));
+
+    await restoreFromDisk(configDir);
+
+    // Wait for PTY to exit
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Session should still be in the list with disconnected status
+    const list = sessions.list();
+    const found = list.find(s => s.id === 'restore-exit-test');
+    assert.ok(found, 'restored session should remain in list after PTY exit');
+    assert.strictEqual(found.status, 'disconnected');
+  });
+
   it('serializeAll captures session state before kill', () => {
     const configDir = createTmpDir();
 
