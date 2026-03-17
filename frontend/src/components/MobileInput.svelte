@@ -38,6 +38,11 @@
     // so we only act when our input is focused.
     const onSelectionChange = () => {
       if (document.activeElement === inputEl) {
+        const pos = inputEl.selectionStart ?? 0;
+        const len = inputEl.value.length;
+        if (pos !== len && len > 0) {
+          dbg('SEL_DRIFT cursor=' + pos + ' len=' + len + ' → fixing');
+        }
         ensureCursorAtEnd();
       }
     };
@@ -411,7 +416,10 @@
   .mobile-input-form {
     /* Hidden visually but kept in-viewport so Android IME tracks cursor.
        Off-screen positioning (left:-9999px) causes Gboard to lose cursor
-       tracking, making characters prepend at position 0 instead of append. */
+       tracking, making characters prepend at position 0 instead of append.
+       clip-path:inset(50%) MUST NOT be used — it reports zero visible area
+       to the browser, causing Gboard to lose cursor position and fire
+       autocorrect at cursor=0 instead of the actual cursor position. */
     position: fixed;
     top: 0;
     left: 0;
@@ -420,7 +428,6 @@
     padding: 0;
     margin: 0;
     overflow: hidden;
-    clip-path: inset(50%);
     opacity: 0;
     pointer-events: none;
   }
