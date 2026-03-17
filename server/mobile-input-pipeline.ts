@@ -67,8 +67,14 @@ function handleInsert(intent: CapturedIntent, currentValue: string): PipelineRes
       }
 
       const prefix = lastSpaceIdx >= 0 ? intent.valueBefore.slice(0, lastSpaceIdx + 1) : '';
-      const payload = makeBackspaces(codepointCount(lastWord)) + data;
-      return { payload, newInputValue: prefix + data };
+      // Gboard sometimes sends the full replacement word (data[0] === firstChar,
+      // e.g. "teh" → data="the") and sometimes only the suffix after the first
+      // char (data[0] !== firstChar, e.g. "tsestin" → data="esting ").
+      // Evidence from device diagnostics confirms both patterns occur.
+      const firstChar = lastWord.charAt(0);
+      const replacement = data.charAt(0) === firstChar ? data : firstChar + data;
+      const payload = makeBackspaces(codepointCount(lastWord)) + replacement;
+      return { payload, newInputValue: prefix + replacement };
     }
 
     return { payload: data };

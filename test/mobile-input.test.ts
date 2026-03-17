@@ -151,6 +151,19 @@ describe('mobile-input-pipeline: processIntent', () => {
     assert.strictEqual(result.newInputValue, 'and mobile ');
   });
 
+  it('cursor-0 recovery: suffix-only data (data[0] !== firstChar)', () => {
+    // Gboard sends suffix "esting " instead of full word "testing "
+    // because firstChar "t" was kept and data starts with "e"
+    const result = processIntent({
+      type: 'insertText', data: 'esting ',
+      rangeStart: null, rangeEnd: null,
+      valueBefore: 'tsestin', cursorBefore: 0,
+    }, 'esting tsestin');
+    // data[0]='e' !== firstChar='t' → suffix mode: "t" + "esting " = "testing "
+    assert.strictEqual(result.payload, '\x7f\x7f\x7f\x7f\x7f\x7f\x7ftesting ');
+    assert.strictEqual(result.newInputValue, 'testing ');
+  });
+
   it('cursor-0 recovery: trailing space means nothing to autocorrect', () => {
     const result = processIntent({
       type: 'insertText', data: 'the ',

@@ -598,12 +598,15 @@
   }
 
   function onTerminalTouchEnd(e: TouchEvent) {
-    if (scrollbarDragging) { console.log('[TAP] blocked: scrollbarDragging'); return; }
-    if (contentTouchMoved) { console.log('[TAP] blocked: contentTouchMoved'); return; }
-    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) { console.log('[TAP] blocked: scrollbar target'); return; }
-    if (selectionMode) { console.log('[TAP] blocked: selectionMode'); return; }
-    console.log('[TAP] focusing mobileInputRef, ref is:', mobileInputRef ? 'SET' : 'NULL');
+    if (scrollbarDragging) return;
+    if (contentTouchMoved) return;
+    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
+    if (selectionMode) return;
     mobileInputRef?.focus();
+    // Suppress synthetic mousedown/click that Android fires after touchend —
+    // without this, the browser defocuses the hidden input immediately after
+    // we focus it, causing the keyboard to open then instantly close.
+    e.preventDefault();
   }
 </script>
 

@@ -322,6 +322,17 @@
     e.stopPropagation();
     debugVisible = !debugVisible;
   }
+
+  function onCopyDebugLogs(e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const text = debugLines.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      dbg('--- LOGS COPIED TO CLIPBOARD ---');
+    }).catch(() => {
+      dbg('--- COPY FAILED ---');
+    });
+  }
 </script>
 
 {#if isMobileDevice}
@@ -353,23 +364,25 @@
   </form>
 
   {#if devtoolsEnabled}
-    <button
-      class="debug-toggle"
-      style:opacity={debugVisible ? '1' : '0.5'}
-      onclick={onDebugToggle}
-    >
-      dbg
-    </button>
-  {/if}
-
-  {#if devtoolsEnabled}
-    <div class="input-mirror">
-      buf: "{mirrorValue}" cursor={mirrorCursor}
+    <div class="debug-buttons">
+      <button
+        class="debug-toggle"
+        style:opacity={debugVisible ? '1' : '0.5'}
+        onclick={onDebugToggle}
+      >
+        dbg
+      </button>
+      {#if debugVisible}
+        <button class="debug-toggle" onclick={onCopyDebugLogs}>
+          copy
+        </button>
+      {/if}
     </div>
   {/if}
 
   {#if debugVisible}
     <div class="debug-panel">
+      <div class="input-mirror-inline">buf: "{mirrorValue}" cursor={mirrorCursor}</div>
       {#each debugLines as line (line)}
         <div>{line}</div>
       {/each}
@@ -413,27 +426,26 @@
     appearance: none;
   }
 
-  .input-mirror {
-    position: fixed;
-    bottom: 110px;
-    left: 8px;
-    right: 8px;
-    z-index: 10000;
-    background: rgba(0, 0, 0, 0.85);
+  .input-mirror-inline {
+    position: sticky;
+    top: 0;
+    background: rgba(0, 0, 0, 0.95);
     color: #ff0;
-    border: 1px solid #ff0;
-    border-radius: 6px;
-    font: 12px monospace;
-    padding: 6px 10px;
-    pointer-events: none;
+    border-bottom: 1px solid #ff0;
+    padding: 4px 6px;
     word-break: break-all;
   }
 
-  .debug-toggle {
+  .debug-buttons {
     position: fixed;
     bottom: 60px;
     right: 8px;
     z-index: 10000;
+    display: flex;
+    gap: 4px;
+  }
+
+  .debug-toggle {
     background: #333;
     color: #0f0;
     border: 1px solid #0f0;

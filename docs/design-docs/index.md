@@ -33,3 +33,4 @@
 | [2026-03-13-push-notifications-design.md](2026-03-13-push-notifications-design.md) | Push notifications when sessions need user input (Browser Notification + Web Push PWA) | 2026-03-13 |
 | [2026-03-16-mobile-keyboard-testing-design.md](2026-03-16-mobile-keyboard-testing-design.md) | Fixture-based testing for mobile virtual keyboard event-intent pipeline | 2026-03-16 |
 | [2026-03-16-session-persistence-across-updates-design.md](2026-03-16-session-persistence-across-updates-design.md) | Persist and restore sessions across auto-updates | 2026-03-16 |
+| [2026-03-17-mobile-ux-fixes-design.md](2026-03-17-mobile-ux-fixes-design.md) | Android keyboard blur, autocorrect suffix, debug tools, paste button | 2026-03-17 |

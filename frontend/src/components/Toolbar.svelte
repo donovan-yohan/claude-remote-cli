@@ -33,7 +33,7 @@
     { html: '&#8593;', key: '\x1b[A', label: 'Up arrow', extraClass: 'tb-arrow' },
     { html: 'Esc', key: '\x1b', label: 'Escape' },
     { html: '&#128247;', id: 'upload-image-btn', label: 'Upload image' },
-    { html: '^D', key: '\x04', label: 'Ctrl+D' },
+    { html: '^V', id: 'paste-btn', label: 'Paste from clipboard' },
     { html: '^C', key: '\x03', label: 'Ctrl+C' },
     { html: '&#8592;', key: '\x1b[D', label: 'Left arrow', extraClass: 'tb-arrow' },
     { html: '&#8595;', key: '\x1b[B', label: 'Down arrow', extraClass: 'tb-arrow' },
@@ -66,6 +66,22 @@
   function handleButton(btn: typeof buttons[number]) {
     if (btn.id === 'upload-image-btn') {
       onUploadImage();
+      if (isMobileDevice) onRefocusMobileInput();
+      return;
+    }
+
+    if (btn.id === 'paste-btn') {
+      // Read clipboard — try text first, fall back to image upload
+      if (navigator.clipboard?.readText) {
+        navigator.clipboard.readText().then((text) => {
+          if (text) onSendKey(text);
+        }).catch(() => {
+          // Text read failed — try image upload instead
+          onUploadImage();
+        });
+      } else {
+        onUploadImage();
+      }
       if (isMobileDevice) onRefocusMobileInput();
       return;
     }
