@@ -70,6 +70,8 @@ type CreateParams = {
   rows?: number;
   configPath?: string;
   useTmux?: boolean;
+  /** Override for the tmux session name (used when restoring serialized sessions) */
+  tmuxSessionName?: string;
   /** Pre-loaded scrollback for restored sessions */
   initialScrollback?: string[];
 };
@@ -111,7 +113,7 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallbacks.push(cb);
 }
 
-function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, initialScrollback }: CreateParams): CreateResult {
+function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
   const resolvedCommand = command || AGENT_COMMANDS[agent];
@@ -123,7 +125,7 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
   const useTmux = !command && !!paramUseTmux;
   let spawnCommand = resolvedCommand;
   let spawnArgs = args;
-  const tmuxSessionName = useTmux ? generateTmuxSessionName(displayName || repoName || 'session', id) : '';
+  const tmuxSessionName = paramTmuxSessionName || (useTmux ? generateTmuxSessionName(displayName || repoName || 'session', id) : '');
 
   if (useTmux) {
     const tmux = resolveTmuxSpawn(resolvedCommand, args, tmuxSessionName);
@@ -468,6 +470,7 @@ async function restoreFromDisk(configDir: string): Promise<number> {
         displayName: s.displayName,
         args,
         useTmux: false, // Don't re-wrap in tmux — either attaching to existing or using plain agent
+        tmuxSessionName: s.tmuxSessionName,
       };
       if (command) createParams.command = command;
       if (initialScrollback) createParams.initialScrollback = initialScrollback;
