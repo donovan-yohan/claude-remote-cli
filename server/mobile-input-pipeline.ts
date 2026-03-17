@@ -54,9 +54,19 @@ function handleInsert(intent: CapturedIntent, currentValue: string): PipelineRes
     if (data.length > 1 && intent.cursorBefore === 0 &&
         intent.valueBefore.length > 0 &&
         currentValue === data + intent.valueBefore) {
-      const charsToDelete = codepointCount(intent.valueBefore);
-      const payload = makeBackspaces(charsToDelete) + data;
-      return { payload, newInputValue: data };
+      // Only delete and replace the LAST word (the one being autocorrected),
+      // not the entire buffer. Previous words were already sent correctly.
+      const lastSpaceIdx = intent.valueBefore.lastIndexOf(' ');
+      const lastWord = lastSpaceIdx >= 0 ? intent.valueBefore.slice(lastSpaceIdx + 1) : intent.valueBefore;
+      const prefix = lastSpaceIdx >= 0 ? intent.valueBefore.slice(0, lastSpaceIdx + 1) : '';
+      const charsToDelete = codepointCount(lastWord);
+      // Determine replacement text:
+      // - If data starts with the same char as the last word, it's the full replacement (Gboard)
+      // - Otherwise, the first char was kept and data is the suffix (iOS)
+      const firstChar = lastWord.charAt(0);
+      const replacement = data.charAt(0) === firstChar ? data : firstChar + data;
+      const payload = makeBackspaces(charsToDelete) + replacement;
+      return { payload, newInputValue: prefix + replacement };
     }
     // Collapsed range = normal character insertion
     return { payload: data };

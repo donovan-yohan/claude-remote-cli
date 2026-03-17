@@ -131,14 +131,39 @@ describe('mobile-input-pipeline: processIntent', () => {
     assert.strictEqual(result.payload, '\x7f\x7f\x7fthe');
   });
 
-  it('cursor-0 recovery sets newInputValue', () => {
+  it('cursor-0 recovery: Gboard full-word data', () => {
+    // Gboard sends the full replacement word as data
     const result = processIntent({
       type: 'insertText', data: 'the',
       rangeStart: null, rangeEnd: null,
       valueBefore: 'teh', cursorBefore: 0,
     }, 'theteh');
+    // data starts with same char as lastWord → full replacement
     assert.strictEqual(result.payload, '\x7f\x7f\x7fthe');
     assert.strictEqual(result.newInputValue, 'the');
+  });
+
+  it('cursor-0 recovery: iOS suffix-only data', () => {
+    // iOS sends only the suffix (after first char) as data
+    const result = processIntent({
+      type: 'insertText', data: 'he ',
+      rangeStart: null, rangeEnd: null,
+      valueBefore: 'teh', cursorBefore: 0,
+    }, 'he teh');
+    // data starts with 'h', lastWord starts with 't' → suffix mode: "t" + "he " = "the "
+    assert.strictEqual(result.payload, '\x7f\x7f\x7fthe ');
+    assert.strictEqual(result.newInputValue, 'the ');
+  });
+
+  it('cursor-0 recovery only deletes last word (multi-word buffer)', () => {
+    const result = processIntent({
+      type: 'insertText', data: 'obile ',
+      rangeStart: null, rangeEnd: null,
+      valueBefore: 'and mkbijf', cursorBefore: 0,
+    }, 'obile and mkbijf');
+    // Should delete "mkbijf" (6 chars) and replace with "m" + "obile " = "mobile "
+    assert.strictEqual(result.payload, '\x7f\x7f\x7f\x7f\x7f\x7fmobile ');
+    assert.strictEqual(result.newInputValue, 'and mobile ');
   });
 
   it('deleteContentBackward with range', () => {

@@ -30,6 +30,21 @@
     // Done at runtime to bypass Svelte's type checker.
     if (inputEl) inputEl.setAttribute('autocomplete', 'new-terminal-input');
 
+    // iOS Safari loses cursor tracking on hidden inputs (clip-path:inset).
+    // The cursor drifts to position 0, causing autocorrect to prepend text
+    // instead of replacing at the correct position. Listen for selection
+    // changes and force cursor back to end to prevent this.
+    const onSelectionChange = () => {
+      if (document.activeElement === inputEl) {
+        ensureCursorAtEnd();
+      }
+    };
+    if (inputEl) {
+      inputEl.addEventListener('selectionchange', onSelectionChange);
+    }
+    // Also listen at document level as fallback (some browsers only fire there)
+    document.addEventListener('selectionchange', onSelectionChange);
+
     // Listen for devtools toggle from settings
     const onDevtoolsChanged = () => {
       devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
@@ -38,6 +53,8 @@
     window.addEventListener('devtools-changed', onDevtoolsChanged);
 
     return () => {
+      if (inputEl) inputEl.removeEventListener('selectionchange', onSelectionChange);
+      document.removeEventListener('selectionchange', onSelectionChange);
       window.removeEventListener('devtools-changed', onDevtoolsChanged);
     };
   });
