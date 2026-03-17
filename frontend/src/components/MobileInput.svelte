@@ -30,12 +30,10 @@
     // Done at runtime to bypass Svelte's type checker.
     if (inputEl) inputEl.setAttribute('autocomplete', 'new-terminal-input');
 
-    // iOS Safari loses cursor tracking on hidden inputs (clip-path:inset).
-    // The cursor drifts to position 0, causing autocorrect to prepend text
-    // instead of replacing at the correct position. Listen for selection
-    // changes and force cursor back to end to prevent this.
-    // Prevent iOS cursor drift: selectionchange fires at document level per spec.
-    // Guard with activeElement check so we only act when our input is focused.
+    // iOS Safari loses cursor tracking on hidden inputs, causing autocorrect to
+    // prepend text at position 0 instead of replacing at the correct position.
+    // selectionchange fires at document level per spec — guard with activeElement
+    // so we only act when our input is focused.
     const onSelectionChange = () => {
       if (document.activeElement === inputEl) {
         ensureCursorAtEnd();

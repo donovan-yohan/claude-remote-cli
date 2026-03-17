@@ -49,29 +49,28 @@ function handleInsert(intent: CapturedIntent, currentValue: string): PipelineRes
   }
 
   if (data) {
-    // Detect bad cursor-0 autocorrect: keyboard lost cursor position
-    // and prepended data at position 0 instead of replacing a word.
-    if (data.length > 1 && intent.cursorBefore === 0 &&
-        intent.valueBefore.length > 0 &&
-        currentValue === data + intent.valueBefore) {
-      // Only delete and replace the LAST word (the one being autocorrected),
-      // not the entire buffer. Previous words were already sent correctly.
-      // This cursor-0 prepend is a Gboard bug — iOS autocorrect uses
-      // insertReplacementText with a range, not insertText at cursor 0.
-      // Gboard sends the full replacement word as data.
+    // Gboard cursor-0 bug: keyboard loses cursor position and prepends the
+    // replacement word at position 0 instead of replacing the last word in place.
+    // Detect by: multi-char data, cursor was at 0, and new value = data + old value.
+    const isCursor0Prepend = data.length > 1 &&
+      intent.cursorBefore === 0 &&
+      intent.valueBefore.length > 0 &&
+      currentValue === data + intent.valueBefore;
+
+    if (isCursor0Prepend) {
       const lastSpaceIdx = intent.valueBefore.lastIndexOf(' ');
       const lastWord = lastSpaceIdx >= 0 ? intent.valueBefore.slice(lastSpaceIdx + 1) : intent.valueBefore;
+
+      // Buffer ends with a space — nothing to autocorrect
       if (lastWord.length === 0) {
-        // Buffer ends with a space — nothing to autocorrect, ignore
         return { payload: '', newInputValue: intent.valueBefore };
       }
-      // prefix includes the trailing space (e.g. "and " for "and mkbijf")
+
       const prefix = lastSpaceIdx >= 0 ? intent.valueBefore.slice(0, lastSpaceIdx + 1) : '';
-      const charsToDelete = codepointCount(lastWord);
-      const payload = makeBackspaces(charsToDelete) + data;
+      const payload = makeBackspaces(codepointCount(lastWord)) + data;
       return { payload, newInputValue: prefix + data };
     }
-    // Collapsed range = normal character insertion
+
     return { payload: data };
   }
 

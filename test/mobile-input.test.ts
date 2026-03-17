@@ -132,7 +132,6 @@ describe('mobile-input-pipeline: processIntent', () => {
   });
 
   it('cursor-0 recovery: single word buffer', () => {
-    // Gboard sends the full replacement word as data
     const result = processIntent({
       type: 'insertText', data: 'the',
       rangeStart: null, rangeEnd: null,
@@ -148,18 +147,16 @@ describe('mobile-input-pipeline: processIntent', () => {
       rangeStart: null, rangeEnd: null,
       valueBefore: 'and mkbijf', cursorBefore: 0,
     }, 'mobile and mkbijf');
-    // Should delete "mkbijf" (6 chars) and replace with "mobile "
     assert.strictEqual(result.payload, '\x7f\x7f\x7f\x7f\x7f\x7fmobile ');
     assert.strictEqual(result.newInputValue, 'and mobile ');
   });
 
-  it('cursor-0 recovery: empty last word (trailing space) is ignored', () => {
+  it('cursor-0 recovery: trailing space means nothing to autocorrect', () => {
     const result = processIntent({
       type: 'insertText', data: 'the ',
       rangeStart: null, rangeEnd: null,
       valueBefore: 'hello ', cursorBefore: 0,
     }, 'the hello ');
-    // Buffer ends with space → nothing to autocorrect
     assert.strictEqual(result.payload, '');
     assert.strictEqual(result.newInputValue, 'hello ');
   });
