@@ -13,7 +13,7 @@
   import Terminal from './components/Terminal.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import MobileHeader from './components/MobileHeader.svelte';
-  import MobileInput from './components/MobileInput.svelte';
+  // MobileInput removed — xterm.js handles mobile keyboard natively
   import UpdateToast from './components/UpdateToast.svelte';
   import ImageToast from './components/ImageToast.svelte';
   import NewSessionDialog from './components/dialogs/NewSessionDialog.svelte';
@@ -52,7 +52,6 @@
 
   // Component refs — must be $state() so $effect can track bind:this assignments
   let terminalRef = $state<Terminal | undefined>();
-  let mobileInputRef = $state<MobileInput | undefined>();
   let imageToastRef = $state<ImageToast | undefined>();
   let newSessionDialogRef = $state<NewSessionDialog | undefined>();
   let settingsDialogRef = $state<SettingsDialog | undefined>();
@@ -193,21 +192,11 @@
     }
   });
 
-  // Wire MobileInput ref into Terminal after both are mounted (mobile only)
-  $effect(() => {
-    if (!isMobileDevice) return;
-    if (terminalRef && mobileInputRef) {
-      const el = mobileInputRef.getInputEl();
-      if (el) terminalRef.setMobileInputRef(el);
-    }
-  });
-
   function handleSelectSession(id: string) {
     sessionState.activeSessionId = id;
     clearAttention(id);
     closeSidebar();
     terminalRef?.focusTerm();
-    mobileInputRef?.onSessionChange?.();
   }
 
   function handleOpenNewSession(repo?: RepoInfo, options?: OpenSessionOptions) {
@@ -247,11 +236,11 @@
   }
 
   function handleFlushComposedText() {
-    mobileInputRef?.flushComposedText?.();
+    // No-op — xterm.js handles composition natively
   }
 
   function handleClearInput() {
-    mobileInputRef?.clearInput?.();
+    // No-op — xterm.js manages its own textarea
   }
 
   function handleUploadImage() {
@@ -269,7 +258,7 @@
   }
 
   function handleRefocusMobileInput() {
-    mobileInputRef?.focus?.();
+    terminalRef?.focusTerm();
   }
 
   let sessionTitle = $derived(
@@ -337,8 +326,6 @@
         inCopyMode={copyModeActive}
         onExitCopyMode={handleExitCopyMode}
       />
-
-      <MobileInput bind:this={mobileInputRef} />
 
       <div class="no-session-msg">
         {#if !sessionState.activeSessionId}
