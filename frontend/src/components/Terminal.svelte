@@ -590,10 +590,11 @@
   }
 
   function onTerminalTouchEnd(e: TouchEvent) {
-    if (scrollbarDragging) return;
-    if (contentTouchMoved) return;
-    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
-    if (selectionMode) return;
+    if (scrollbarDragging) { console.log('[TAP] blocked: scrollbarDragging'); return; }
+    if (contentTouchMoved) { console.log('[TAP] blocked: contentTouchMoved'); return; }
+    if ((e.target as HTMLElement).closest('.terminal-scrollbar')) { console.log('[TAP] blocked: scrollbar target'); return; }
+    if (selectionMode) { console.log('[TAP] blocked: selectionMode'); return; }
+    console.log('[TAP] focusing mobileInputRef, ref is:', mobileInputRef ? 'SET' : 'NULL');
     mobileInputRef?.focus();
   }
 </script>
