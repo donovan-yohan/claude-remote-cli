@@ -66,6 +66,7 @@
   }
 
   export function focus() {
+    dbg('FOCUS_REQ inputEl=' + (inputEl ? 'SET' : 'NULL'));
     inputEl?.focus();
   }
 
@@ -159,6 +160,7 @@
   }
 
   function onBlur() {
+    dbg('BLUR activeElement=' + document.activeElement?.tagName + '.' + document.activeElement?.className);
     if (isComposing) {
       isComposing = false;
     }
