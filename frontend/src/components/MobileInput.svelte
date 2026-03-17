@@ -371,18 +371,20 @@
   .mobile-input-form {
     /* Hidden visually but kept in-viewport so Android IME tracks cursor.
        Off-screen positioning (left:-9999px) causes Gboard to lose cursor
-       tracking, making characters prepend at position 0 instead of append. */
+       tracking, making characters prepend at position 0 instead of append.
+       clip-path:inset(50%) makes Android Chrome refuse to open the keyboard
+       on programmatic focus — use overflow:hidden + tiny dimensions instead. */
     position: fixed;
-    top: 0;
+    bottom: 0;
     left: 0;
-    width: 1px;
+    width: 100%;
     height: 1px;
     padding: 0;
     margin: 0;
     overflow: hidden;
-    clip-path: inset(50%);
-    opacity: 0;
+    opacity: 0.01;
     pointer-events: none;
+    z-index: -1;
   }
 
   .mobile-input {

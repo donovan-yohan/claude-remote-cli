@@ -30,7 +30,11 @@
   }
 
   export function focusTerm() {
-    if (!isMobileDevice) term?.focus();
+    if (isMobileDevice) {
+      mobileInputRef?.focus();
+    } else {
+      term?.focus();
+    }
   }
 
   export function fitTerm() {
