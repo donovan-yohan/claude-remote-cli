@@ -5,14 +5,19 @@
 </script>
 
 <div class="reasoning-panel">
-  <button class="reasoning-header" onclick={() => expanded = !expanded}>
+  <button
+    class="reasoning-header"
+    onclick={() => expanded = !expanded}
+    aria-expanded={expanded}
+    aria-controls="reasoning-content"
+  >
     <span class="reasoning-label">
       {#if expanded}Thinking{:else}Thinking<span class="dots">...</span>{/if}
     </span>
     <span class="toggle-icon">{expanded ? '\u25B2' : '\u25BC'}</span>
   </button>
   {#if expanded}
-    <div class="reasoning-content">{text}</div>
+    <div class="reasoning-content" id="reasoning-content">{text}</div>
   {/if}
 </div>
 
@@ -29,6 +34,7 @@
     align-items: center;
     gap: var(--spacing-sm);
     width: 100%;
+    min-height: 44px;
     padding: var(--spacing-xs) var(--spacing-md);
     background: none;
     border: none;

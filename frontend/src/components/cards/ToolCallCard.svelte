@@ -47,6 +47,7 @@
     align-items: center;
     gap: var(--spacing-sm);
     width: 100%;
+    min-height: 44px;
     padding: var(--spacing-sm) var(--spacing-md);
     background: none;
     border: none;

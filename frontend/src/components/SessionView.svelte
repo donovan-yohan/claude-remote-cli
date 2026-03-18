@@ -121,7 +121,8 @@
   }
 
   function handleRetry() {
-    handleSend('Retry');
+    const lastMsg = userMessages.length > 0 ? userMessages[userMessages.length - 1]!.text : 'Retry';
+    handleSend(lastMsg);
   }
 
   function openCompanionShell() {

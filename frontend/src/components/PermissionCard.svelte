@@ -11,7 +11,7 @@
     onDeny: (requestId: string) => void;
   } = $props();
 
-  let toolDescription = $derived(() => {
+  let toolDescription = $derived.by(() => {
     const input = permission.input;
     if (permission.toolName === 'Edit' || permission.toolName === 'Write') {
       const path = input['file_path'] ?? input['path'] ?? '';
@@ -25,9 +25,9 @@
   });
 </script>
 
-<div class="permission-card" class:resolved={permission.status !== 'pending'}>
+<div class="permission-card" class:resolved={permission.status !== 'pending'} class:timed_out={permission.status === 'timed_out'}>
   <div class="permission-header">
-    <span class="permission-tool">{toolDescription()}</span>
+    <span class="permission-tool">{toolDescription}</span>
   </div>
 
   {#if permission.status === 'pending'}
@@ -35,14 +35,14 @@
       <button
         class="approve-btn"
         onclick={() => onApprove(permission.id)}
-        aria-label="Approve: {toolDescription()}"
+        aria-label="Approve: {toolDescription}"
       >
         Approve
       </button>
       <button
         class="deny-btn"
         onclick={() => onDeny(permission.id)}
-        aria-label="Deny: {toolDescription()}"
+        aria-label="Deny: {toolDescription}"
       >
         Deny
       </button>
@@ -68,6 +68,11 @@
 
   .permission-card.resolved {
     opacity: 0.7;
+  }
+
+  .permission-card.timed_out {
+    border-left-color: var(--text-muted);
+    opacity: 0.5;
   }
 
   .permission-header {

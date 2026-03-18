@@ -37,7 +37,7 @@
 
   .quick-reply-btn {
     flex-shrink: 0;
-    height: 36px;
+    height: 40px;
     padding: 0 var(--spacing-md);
     background: none;
     border: 1px solid var(--border);
