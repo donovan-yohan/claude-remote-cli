@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse, Workspace, DashboardData, CiStatus, PrInfo } from './types.js';
+import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -40,7 +40,8 @@ export async function fetchWorktrees(): Promise<WorktreeInfo[]> {
 }
 
 export async function fetchWorkspaces(): Promise<Workspace[]> {
-  return json<Workspace[]>(await fetch('/workspaces'));
+  const data = await json<{ workspaces: Workspace[] }>(await fetch('/workspaces'));
+  return data.workspaces;
 }
 
 export async function addWorkspace(path: string): Promise<void> {
@@ -54,7 +55,19 @@ export async function removeWorkspace(path: string): Promise<void> {
 }
 
 export async function fetchDashboard(workspacePath: string): Promise<DashboardData> {
-  return json<DashboardData>(await fetch('/workspaces/dashboard?path=' + encodeURIComponent(workspacePath)));
+  interface RawDashboard {
+    pullRequests: { prs: PullRequest[]; error?: string };
+    branches: string[];
+    activity: ActivityEntry[];
+  }
+  const raw = await json<RawDashboard>(await fetch('/workspaces/dashboard?path=' + encodeURIComponent(workspacePath)));
+  return {
+    prs: raw.pullRequests?.prs ?? [],
+    activity: raw.activity ?? [],
+    isGitRepo: true,
+    defaultBranch: null,
+    hasGhCli: !raw.pullRequests?.error,
+  };
 }
 
 export async function fetchCiStatus(workspacePath: string, branch: string): Promise<CiStatus | null> {
