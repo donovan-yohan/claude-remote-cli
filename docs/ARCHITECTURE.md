@@ -16,22 +16,24 @@ The system has two compilation targets: a TypeScript + ESM backend (Express + no
 
 ### `server/`
 
-Ten TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
+Twelve TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
 
 | Module | Role |
 |--------|------|
 | `index.ts` | Composition root: Express app, REST routes, auth middleware, static serving |
+| `workspaces.ts` | Workspace CRUD (replaces roots), Express Router: dashboard, settings, CI status, branch switch, path autocomplete |
 | `sessions.ts` | PTY spawning via node-pty, session lifecycle, scrollback buffering (256KB max) |
+| `git.ts` | Git/GitHub CLI integration: branches, activity feed, CI status, PR lookup, branch switch |
 | `ws.ts` | WebSocket upgrade handler, bidirectional PTY relay, scrollback replay |
-| `watcher.ts` | File system watching for `.worktrees/` directories, debounced event emission |
+| `watcher.ts` | File system watching for workspace directories, debounced event emission |
 | `auth.ts` | PIN hashing (bcrypt), rate limiting (5 fails = 15-min lockout), cookie tokens |
-| `config.ts` | Config loading/saving with defaults, worktree metadata persistence |
+| `config.ts` | Config loading/saving with defaults, per-workspace settings, worktree metadata |
 | `clipboard.ts` | System clipboard detection and image-set operations (osascript/xclip) |
 | `service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
 | `push.ts` | Web Push notification management (VAPID keys, subscription registry, `web-push`) |
-| `types.ts` | Shared TypeScript interfaces |
+| `types.ts` | Shared TypeScript interfaces (Session, Workspace, Config, PR, CI, Activity types) |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `sessions.ts` depends on node-pty, only `push.ts` depends on web-push).
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `workspaces.ts` imports `git` and `config`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `sessions.ts` depends on node-pty, only `push.ts` depends on web-push).
 
 ### `frontend/`
 
@@ -39,7 +41,7 @@ Svelte 5 SPA built by Vite, output to `dist/frontend/`. Express serves the compi
 
 | Path | Role |
 |------|------|
-| `frontend/src/components/` | Svelte 5 components (Terminal, Sidebar, SessionList, dialogs, etc.) |
+| `frontend/src/components/` | Svelte 5 components (Terminal, Sidebar, WorkspaceItem, PrTopBar, SessionTabBar, RepoDashboard, SmartSearch, dialogs, etc.) |
 | `frontend/src/lib/state/` | Reactive state modules (`.svelte.ts` files) exporting state + mutations |
 | `frontend/src/lib/api.ts` | REST API client functions |
 | `frontend/src/lib/ws.ts` | WebSocket connection management (PTY relay + event channel) |
@@ -88,17 +90,23 @@ Browser (Svelte)   <--WebSocket /ws/events-- ws.ts <-- watcher.ts (fs.watch on .
 | `GET` | `/sessions` | List active sessions |
 | `POST` | `/sessions` | Create worktree session (accepts `branchName`, `claudeArgs`) |
 | `POST` | `/sessions/repo` | Create repo session (no worktree, supports `continue`) |
-| `GET` | `/branches` | List local and remote branches |
-| `GET` | `/git-status` | PR state and diff stats for a branch |
-| `GET` | `/pull-requests` | Open PRs (authored + review-requested) for a repo via `gh` CLI |
 | `PATCH` | `/sessions/:id` | Rename session |
 | `DELETE` | `/sessions/:id` | Terminate session |
-| `GET` | `/repos` | Scan root directories for git repos |
+| `POST` | `/sessions/:id/image` | Upload clipboard image |
+| `GET` | `/branches` | List local and remote branches |
 | `GET` | `/worktrees` | List inactive Claude Code worktrees |
 | `DELETE` | `/worktrees` | Remove worktree, prune refs, delete branch |
-| `GET/POST/DELETE` | `/roots` | Manage configured root directories |
+| `GET` | `/workspaces` | List configured workspace folders with git info |
+| `POST` | `/workspaces` | Add workspace folder (body: `{path}`) |
+| `DELETE` | `/workspaces` | Remove workspace folder |
+| `GET` | `/workspaces/dashboard` | Aggregated PRs + activity for a workspace (`?path=X`) |
+| `GET` | `/workspaces/settings` | Per-workspace settings (`?path=X`) |
+| `PATCH` | `/workspaces/settings` | Update per-workspace settings |
+| `GET` | `/workspaces/pr` | PR info for a branch (`?path=X&branch=Y`) |
+| `GET` | `/workspaces/ci-status` | CI check results (`?path=X&branch=Y`) |
+| `POST` | `/workspaces/branch` | Switch branch (`?path=X`, body: `{branch}`) |
+| `GET` | `/workspaces/autocomplete` | Path prefix autocomplete (`?prefix=X`) |
 | `GET` | `/version` | Check for npm updates |
-| `POST` | `/sessions/:id/image` | Upload clipboard image |
 | `POST` | `/update` | Self-update via npm |
 | `GET` | `/config/defaultAgent` | Get default coding agent |
 | `PATCH` | `/config/defaultAgent` | Set default coding agent (`claude` or `codex`) |

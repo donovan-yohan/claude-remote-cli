@@ -35,11 +35,11 @@
 - [x] Task 11: Frontend — Session tab bar component
 - [x] Task 12: Frontend — Repo dashboard component
 - [x] Task 13: Frontend — App.svelte layout routing + empty states
-- [ ] Task 14: Frontend — Keyboard shortcuts
-- [ ] Task 15: Frontend — Tab persistence (localStorage)
-- [ ] Task 16: Frontend — Mobile responsive
+- [x] Task 14: Frontend — Keyboard shortcuts
+- [x] Task 15: Frontend — Tab persistence (localStorage)
+- [x] Task 16: Frontend — Mobile responsive
 - [x] Task 17: Cleanup — remove old components + SDK code
-- [ ] Task 18: Tests — backend workspace + git modules
+- [x] Task 18: Tests — backend workspace + git modules (wired git functions into workspaces.ts)
 - [ ] Task 19: Integration testing + version bump
 
 ## Surprises & Discoveries
