@@ -158,10 +158,10 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
     });
     if (ws.readyState === ws.OPEN) ws.send(sessionInfo);
 
-    // Replay stored events
+    // Replay stored events (send as-is — client expects raw SdkEvent shape)
     for (const event of session.events) {
       if (ws.readyState !== ws.OPEN) break;
-      ws.send(JSON.stringify({ type: 'sdk_event', event }));
+      ws.send(JSON.stringify(event));
     }
 
     // Subscribe to live events with backpressure
@@ -176,7 +176,7 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
         return;
       }
 
-      ws.send(JSON.stringify({ type: 'sdk_event', event }));
+      ws.send(JSON.stringify(event));
     });
 
     // Periodically check if we can resume
