@@ -38,6 +38,7 @@ Options:
   --port <port>      Override server port (default: 3456)
   --host <host>      Override bind address (default: 0.0.0.0)
   --config <path>    Path to config.json (default: ~/.config/claude-remote-cli/config.json)
+  --debug-log        Enable SDK event debug logging to ~/.config/claude-remote-cli/debug/
   --yolo             With 'worktree add': pass --dangerously-skip-permissions to Claude
   --version, -v      Show version
   --help, -h         Show this help`);
@@ -217,5 +218,6 @@ const portArg = getArg('--port');
 if (portArg !== undefined) process.env['CLAUDE_REMOTE_PORT'] = portArg;
 const hostArg = getArg('--host');
 if (hostArg !== undefined) process.env['CLAUDE_REMOTE_HOST'] = hostArg;
+if (args.includes('--debug-log')) process.env['CLAUDE_REMOTE_DEBUG_LOG'] = '1';
 
 await import('../server/index.js');

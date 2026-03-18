@@ -123,6 +123,7 @@ export interface Config {
   rootDirs?: string[] | undefined;
   vapidPublicKey?: string | undefined;
   vapidPrivateKey?: string | undefined;
+  debugLog?: boolean | undefined;
 }
 
 export interface ServicePaths {

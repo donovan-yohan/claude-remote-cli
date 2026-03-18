@@ -13,7 +13,7 @@ import cookieParser from 'cookie-parser';
 import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
-import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions, serializeAll, restoreFromDisk, activeTmuxSessionNames } from './sessions.js';
+import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep } from './sessions.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
@@ -160,6 +160,13 @@ async function main(): Promise<void> {
   // CLI flag overrides
   if (process.env.CLAUDE_REMOTE_PORT) config.port = parseInt(process.env.CLAUDE_REMOTE_PORT, 10);
   if (process.env.CLAUDE_REMOTE_HOST) config.host = process.env.CLAUDE_REMOTE_HOST;
+
+  // Enable SDK debug logging if requested
+  if (process.env.CLAUDE_REMOTE_DEBUG_LOG === '1' || config.debugLog) {
+    const { enableDebugLog } = await import('./sdk-handler.js');
+    enableDebugLog(true);
+    console.log('SDK debug logging enabled → ~/.config/claude-remote-cli/debug/');
+  }
 
   push.ensureVapidKeys(config, CONFIG_PATH, saveConfig);
 
@@ -962,6 +969,58 @@ async function main(): Promise<void> {
     }
   });
 
+  // POST /sessions/:id/message — send message to SDK session
+  app.post('/sessions/:id/message', requireAuth, (req, res) => {
+    const id = req.params['id'] as string;
+    const { text } = req.body as { text?: string };
+    if (!text) {
+      res.status(400).json({ error: 'text is required' });
+      return;
+    }
+    const session = sessions.get(id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    if (session.mode !== 'sdk') {
+      res.status(400).json({ error: 'Session is not an SDK session — use WebSocket for PTY sessions' });
+      return;
+    }
+    try {
+      sessions.write(id, text);
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to send message';
+      res.status(500).json({ error: message });
+    }
+  });
+
+  // POST /sessions/:id/permission — handle permission approval for SDK session
+  app.post('/sessions/:id/permission', requireAuth, (req, res) => {
+    const id = req.params['id'] as string;
+    const { requestId, approved } = req.body as { requestId?: string; approved?: boolean };
+    if (!requestId || typeof approved !== 'boolean') {
+      res.status(400).json({ error: 'requestId and approved are required' });
+      return;
+    }
+    const session = sessions.get(id);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found' });
+      return;
+    }
+    if (session.mode !== 'sdk') {
+      res.status(400).json({ error: 'Session is not an SDK session' });
+      return;
+    }
+    try {
+      sessions.handlePermission(id, requestId, approved);
+      res.json({ ok: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to handle permission';
+      res.status(500).json({ error: message });
+    }
+  });
+
   // PATCH /sessions/:id — update displayName and persist to metadata
   app.patch('/sessions/:id', requireAuth, (req, res) => {
     const { displayName } = req.body as { displayName?: string };
@@ -1072,12 +1131,16 @@ async function main(): Promise<void> {
     // tmux not installed or no sessions — ignore
   }
 
+  // Start SDK idle sweep
+  startSdkIdleSweep();
+
   function gracefulShutdown() {
     server.close();
+    stopSdkIdleSweep();
     // Serialize sessions to disk BEFORE killing them
     const configDir = path.dirname(CONFIG_PATH);
     serializeAll(configDir);
-    // Kill all active sessions (PTY + tmux)
+    // Kill all active sessions (PTY + tmux + SDK)
     for (const s of sessions.list()) {
       try { sessions.kill(s.id); } catch { /* already exiting */ }
     }
