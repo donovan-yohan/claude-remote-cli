@@ -28,6 +28,19 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `PinGate.svelte` | PIN authentication screen |
 | `ImageToast.svelte` | Clipboard image paste feedback |
 | `UpdateToast.svelte` | Version update notification |
+| `SessionView.svelte` | SDK/PTY mode container: Chat+Terminal tabs for SDK, Terminal-only for PTY |
+| `ChatView.svelte` | Scrollable message list rendering SDK events as typed cards |
+| `ChatInput.svelte` | Multi-line textarea with send button (Enter sends, Shift+Enter newline) |
+| `QuickReplies.svelte` | Horizontal scrollable context-aware suggestion buttons |
+| `PermissionCard.svelte` | SDK permission approval/deny card with Approve/Deny buttons |
+| `CostDisplay.svelte` | Token count and estimated cost display |
+| `cards/UserMessage.svelte` | User message card with --accent left border |
+| `cards/AgentMessage.svelte` | Agent message with simple markdown rendering |
+| `cards/FileChangeCard.svelte` | File change indicator (filename + ±lines) |
+| `cards/ToolCallCard.svelte` | Collapsible tool call card with status badge |
+| `cards/ReasoningPanel.svelte` | Collapsible "Thinking..." reasoning panel |
+| `cards/ErrorCard.svelte` | Error card with retry/dismiss |
+| `cards/TurnCompletedCard.svelte` | Turn separator with token/cost info |
 | `dialogs/` | New session, settings, and other modal dialogs |
 
 ## State Management
@@ -40,6 +53,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 | `config.svelte.ts` | Global session defaults (continue, yolo, tmux, agent, notifications); shared by SettingsDialog, SessionList, NewSessionDialog |
 | `auth.svelte.ts` | Authentication state (PIN check, cookie token) |
 | `ui.svelte.ts` | UI state (active tab, sidebar, filters) |
+| `sdk.svelte.ts` | Per-session SDK state: events, permissions, streaming, token usage, quick replies |
 
 ## Conventions
 
@@ -55,10 +69,12 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 
 - **Event socket** (`/ws/events`): auto-reconnect with fixed 3-second delay
 - **PTY socket** (`/ws/:sessionId`): exponential backoff (1s, 2s, 4s, 8s, capped at 10s, max 30 attempts)
-- Close code 1000 = PTY exited — no reconnect, shows `[Session ended]`
-- Before reconnect, client verifies session still exists via `GET /sessions`
+- **SDK socket** (`/ws/:sessionId`): separate reconnect counter from PTY; exponential backoff
+- Close code 1000 = session ended — no reconnect
+- Before PTY reconnect, client verifies session still exists via `GET /sessions`
 - `[Reconnecting...]` shown once to avoid terminal spam
 - All event WebSocket connections must have both `close` and `error` handlers
+- SDK reconnect replays stored events from server on reconnection
 
 ## Key Patterns
 

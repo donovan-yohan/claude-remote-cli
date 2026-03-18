@@ -8,6 +8,22 @@
   --border: #3d3d3d;
   --sidebar-width: 240px;
   --toolbar-height: auto;
+
+  /* SDK / Chat UI tokens */
+  --card-bg: #252525;
+  --success: #4caf50;
+  --error: #e57373;
+  --warning: #ffb74d;
+  --info: #64b5f6;
+  --diff-add: #4caf50;
+  --diff-remove: #e57373;
+  --code-font: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
 }
 
 /* ===== Reset & Base ===== */

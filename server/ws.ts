@@ -3,7 +3,11 @@ import http from 'node:http';
 import type { IPty } from 'node-pty';
 import * as sessions from './sessions.js';
 import { WorktreeWatcher } from './watcher.js';
-import type { Session } from './types.js';
+import type { Session, SdkSession } from './types.js';
+import { onSdkEvent, sendMessage as sdkSendMessage, handlePermission as sdkHandlePermission } from './sdk-handler.js';
+
+const BACKPRESSURE_HIGH = 1024 * 1024; // 1MB
+const BACKPRESSURE_LOW = 512 * 1024; // 512KB
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -56,7 +60,7 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       return;
     }
 
-    // PTY channel: /ws/:sessionId
+    // PTY/SDK channel: /ws/:sessionId
     const match = request.url && request.url.match(/^\/ws\/([a-f0-9]+)$/);
     if (!match) {
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
@@ -84,6 +88,19 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
     const session = sessionMap.get(ws);
     if (!session) return;
 
+    if (session.mode === 'sdk') {
+      handleSdkConnection(ws, session);
+      return;
+    }
+
+    // PTY mode — existing behavior
+    if (session.mode !== 'pty') {
+      ws.close(1008, 'Session mode does not support PTY streaming');
+      return;
+    }
+
+    const ptySession = session;
+
     let dataDisposable: { dispose(): void } | null = null;
     let exitDisposable: { dispose(): void } | null = null;
 
@@ -93,7 +110,7 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       exitDisposable?.dispose();
 
       // Replay scrollback
-      for (const chunk of session!.scrollback) {
+      for (const chunk of ptySession.scrollback) {
         if (ws.readyState === ws.OPEN) ws.send(chunk);
       }
 
@@ -106,31 +123,110 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       });
     }
 
-    attachToPty(session.pty);
+    attachToPty(ptySession.pty);
 
     const ptyReplacedHandler = (newPty: IPty) => attachToPty(newPty);
-    session.onPtyReplacedCallbacks.push(ptyReplacedHandler);
+    ptySession.onPtyReplacedCallbacks.push(ptyReplacedHandler);
 
     ws.on('message', (msg) => {
       const str = msg.toString();
       try {
         const parsed = JSON.parse(str);
         if (parsed.type === 'resize' && parsed.cols && parsed.rows) {
-          sessions.resize(session.id, parsed.cols, parsed.rows);
+          sessions.resize(ptySession.id, parsed.cols, parsed.rows);
           return;
         }
       } catch (_) {}
-      // Use session.pty dynamically so writes go to current PTY
-      session.pty.write(str);
+      // Use ptySession.pty dynamically so writes go to current PTY
+      ptySession.pty.write(str);
     });
 
     ws.on('close', () => {
       dataDisposable?.dispose();
       exitDisposable?.dispose();
-      const idx = session.onPtyReplacedCallbacks.indexOf(ptyReplacedHandler);
-      if (idx !== -1) session.onPtyReplacedCallbacks.splice(idx, 1);
+      const idx = ptySession.onPtyReplacedCallbacks.indexOf(ptyReplacedHandler);
+      if (idx !== -1) ptySession.onPtyReplacedCallbacks.splice(idx, 1);
     });
   });
+
+  function handleSdkConnection(ws: WebSocket, session: SdkSession): void {
+    // Send session info
+    const sessionInfo = JSON.stringify({
+      type: 'session_info',
+      mode: 'sdk',
+      sessionId: session.id,
+    });
+    if (ws.readyState === ws.OPEN) ws.send(sessionInfo);
+
+    // Replay stored events (send as-is — client expects raw SdkEvent shape)
+    for (const event of session.events) {
+      if (ws.readyState !== ws.OPEN) break;
+      ws.send(JSON.stringify(event));
+    }
+
+    // Subscribe to live events with backpressure
+    let paused = false;
+
+    const unsubscribe = onSdkEvent(session.id, (event) => {
+      if (ws.readyState !== ws.OPEN) return;
+
+      // Backpressure check
+      if (ws.bufferedAmount > BACKPRESSURE_HIGH) {
+        paused = true;
+        return;
+      }
+
+      ws.send(JSON.stringify(event));
+    });
+
+    // Periodically check if we can resume
+    const backpressureInterval = setInterval(() => {
+      if (paused && ws.bufferedAmount < BACKPRESSURE_LOW) {
+        paused = false;
+      }
+    }, 100);
+
+    // Handle incoming messages
+    ws.on('message', (msg) => {
+      const str = msg.toString();
+      try {
+        const parsed = JSON.parse(str) as Record<string, unknown>;
+
+        if (parsed.type === 'message' && typeof parsed.text === 'string') {
+          if (parsed.text.length > 100_000) return;
+          sdkSendMessage(session.id, parsed.text);
+          return;
+        }
+
+        if (parsed.type === 'permission' && typeof parsed.requestId === 'string' && typeof parsed.approved === 'boolean') {
+          sdkHandlePermission(session.id, parsed.requestId, parsed.approved);
+          return;
+        }
+
+        if (parsed.type === 'resize' && typeof parsed.cols === 'number' && typeof parsed.rows === 'number') {
+          // TODO: wire up companion shell — currently open_companion message is unhandled server-side
+          return;
+        }
+
+        if (parsed.type === 'open_companion') {
+          // TODO: spawn companion PTY in session CWD and relay via terminal_data/terminal_exit frames
+          return;
+        }
+      } catch (_) {
+        // Not JSON — ignore for SDK sessions
+      }
+    });
+
+    ws.on('close', () => {
+      unsubscribe();
+      clearInterval(backpressureInterval);
+    });
+
+    ws.on('error', () => {
+      unsubscribe();
+      clearInterval(backpressureInterval);
+    });
+  }
 
   sessions.onIdleChange((sessionId, idle) => {
     broadcastEvent('session-idle-changed', { sessionId, idle });

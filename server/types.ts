@@ -3,29 +3,101 @@ import type { IPty } from 'node-pty';
 export type SessionType = 'repo' | 'worktree' | 'terminal';
 export type AgentType = 'claude' | 'codex';
 export type SessionStatus = 'active' | 'disconnected';
+export type SessionMode = 'sdk' | 'pty';
 
-export interface Session {
+// SDK event types for structured agent communication
+export type SdkEventType = 'user_message' | 'agent_message' | 'file_change' | 'tool_call' | 'reasoning' | 'error' | 'turn_started' | 'turn_completed' | 'session_started';
+
+export interface SdkEvent {
+  type: SdkEventType;
+  id?: string;
+  text?: string;
+  path?: string;
+  additions?: number;
+  deletions?: number;
+  toolName?: string;
+  toolInput?: Record<string, unknown>;
+  status?: string;
+  usage?: { input_tokens: number; output_tokens: number };
+  timestamp: string;
+}
+
+// Agent command records (shared by PTY and SDK handlers)
+export const AGENT_COMMANDS: Record<AgentType, string> = {
+  claude: 'claude',
+  codex: 'codex',
+};
+
+export const AGENT_CONTINUE_ARGS: Record<AgentType, string[]> = {
+  claude: ['--continue'],
+  codex: ['resume', '--last'],
+};
+
+export const AGENT_YOLO_ARGS: Record<AgentType, string[]> = {
+  claude: ['--dangerously-skip-permissions'],
+  codex: ['--full-auto'],
+};
+
+// Session types — discriminated union on `mode`
+interface BaseSession {
   id: string;
   type: SessionType;
   agent: AgentType;
+  mode: SessionMode;
   root: string;
   repoName: string;
   repoPath: string;
   worktreeName: string;
   branchName: string;
   displayName: string;
-  pty: IPty;
   createdAt: string;
   lastActivity: string;
-  scrollback: string[];
   idle: boolean;
-  useTmux: boolean;
   cwd: string;
   customCommand: string | null;
+  status: SessionStatus;
+}
+
+export interface PtySession extends BaseSession {
+  mode: 'pty';
+  pty: IPty;
+  scrollback: string[];
+  useTmux: boolean;
   tmuxSessionName: string;
   onPtyReplacedCallbacks: Array<(newPty: IPty) => void>;
-  status: SessionStatus;
   restored: boolean;
+}
+
+export interface SdkSession extends BaseSession {
+  mode: 'sdk';
+  events: SdkEvent[];
+  sdkSessionId: string | null;
+  tokenUsage: { input: number; output: number };
+  estimatedCost: number;
+}
+
+export type Session = PtySession | SdkSession;
+
+// Summary type for REST API responses (no internal handles)
+export interface SessionSummary {
+  id: string;
+  type: SessionType;
+  agent: AgentType;
+  mode: SessionMode;
+  root: string;
+  repoName: string;
+  repoPath: string;
+  worktreeName: string;
+  branchName: string;
+  displayName: string;
+  createdAt: string;
+  lastActivity: string;
+  idle: boolean;
+  cwd: string;
+  customCommand: string | null;
+  useTmux: boolean;
+  tmuxSessionName: string;
+  status: SessionStatus;
 }
 
 export interface WorktreeMetadata {
@@ -51,6 +123,7 @@ export interface Config {
   rootDirs?: string[] | undefined;
   vapidPublicKey?: string | undefined;
   vapidPrivateKey?: string | undefined;
+  debugLog?: boolean | undefined;
 }
 
 export interface ServicePaths {
