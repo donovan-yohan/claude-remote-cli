@@ -1,17 +1,11 @@
 import type { SdkEvent, PermissionRequest, TokenUsage } from '../types.js';
 import { calculateCost } from '../pricing.js';
 
-// Per-session event stores
+// Per-session state stores (keyed by sessionId)
 const sessionEvents = $state<Record<string, SdkEvent[]>>({});
-
-// Active permission request (only one at a time globally)
-let activePermission = $state<PermissionRequest | null>(null);
-
-// Cumulative token usage
-let tokenUsage = $state<TokenUsage>({ input: 0, output: 0, estimatedCost: 0 });
-
-// Whether the agent is currently streaming / working
-let isStreaming = $state(false);
+const sessionPermissions = $state<Record<string, PermissionRequest | null>>({});
+const sessionUsage = $state<Record<string, TokenUsage>>({});
+const sessionStreaming = $state<Record<string, boolean>>({});
 
 // Quick reply suggestions derived from last event
 function deriveQuickReplies(sessionId: string): string[] {
@@ -33,9 +27,9 @@ function deriveQuickReplies(sessionId: string): string[] {
 export function getSdkState(sessionId: string) {
   return {
     get events() { return sessionEvents[sessionId] ?? []; },
-    get activePermission() { return activePermission; },
-    get tokenUsage() { return tokenUsage; },
-    get isStreaming() { return isStreaming; },
+    get activePermission() { return sessionPermissions[sessionId] ?? null; },
+    get tokenUsage() { return sessionUsage[sessionId] ?? { input: 0, output: 0, estimatedCost: 0 }; },
+    get isStreaming() { return sessionStreaming[sessionId] ?? false; },
     get quickReplies() { return deriveQuickReplies(sessionId); },
   };
 }
@@ -48,51 +42,54 @@ export function appendEvent(sessionId: string, event: SdkEvent): void {
 
   // Update streaming state based on event type
   if (event.type === 'turn_started') {
-    isStreaming = true;
+    sessionStreaming[sessionId] = true;
   } else if (event.type === 'turn_completed' || event.type === 'error') {
-    isStreaming = false;
+    sessionStreaming[sessionId] = false;
   }
 
   // Update token usage if present
   if (event.usage) {
-    updateUsage(event.usage.input_tokens, event.usage.output_tokens);
+    updateUsage(sessionId, event.usage.input_tokens, event.usage.output_tokens);
   }
 }
 
-export function setPermission(request: PermissionRequest): void {
-  activePermission = request;
+export function setPermission(sessionId: string, request: PermissionRequest): void {
+  sessionPermissions[sessionId] = request;
 }
 
-export function resolvePermission(status: 'approved' | 'denied' | 'timed_out'): void {
-  if (activePermission) {
-    activePermission = { ...activePermission, status };
+export function resolvePermission(sessionId: string, status: 'approved' | 'denied' | 'timed_out'): void {
+  const current = sessionPermissions[sessionId];
+  if (current) {
+    sessionPermissions[sessionId] = { ...current, status };
   }
 }
 
-export function updateUsage(inputTokens: number, outputTokens: number): void {
-  tokenUsage = {
-    input: tokenUsage.input + inputTokens,
-    output: tokenUsage.output + outputTokens,
+export function updateUsage(sessionId: string, inputTokens: number, outputTokens: number): void {
+  const prev = sessionUsage[sessionId] ?? { input: 0, output: 0, estimatedCost: 0 };
+  sessionUsage[sessionId] = {
+    input: prev.input + inputTokens,
+    output: prev.output + outputTokens,
     estimatedCost: calculateCost(
-      tokenUsage.input + inputTokens,
-      tokenUsage.output + outputTokens,
+      prev.input + inputTokens,
+      prev.output + outputTokens,
     ),
   };
 }
 
 export function initSdkState(sessionId: string): void {
   sessionEvents[sessionId] = [];
-  activePermission = null;
-  tokenUsage = { input: 0, output: 0, estimatedCost: 0 };
-  isStreaming = false;
+  sessionPermissions[sessionId] = null;
+  sessionUsage[sessionId] = { input: 0, output: 0, estimatedCost: 0 };
+  sessionStreaming[sessionId] = false;
 }
 
 export function clearSdkState(sessionId: string): void {
   delete sessionEvents[sessionId];
-  activePermission = null;
-  isStreaming = false;
+  delete sessionPermissions[sessionId];
+  delete sessionUsage[sessionId];
+  delete sessionStreaming[sessionId];
 }
 
-export function setStreaming(value: boolean): void {
-  isStreaming = value;
+export function setStreaming(sessionId: string, value: boolean): void {
+  sessionStreaming[sessionId] = value;
 }

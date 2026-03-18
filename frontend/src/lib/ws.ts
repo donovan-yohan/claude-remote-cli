@@ -1,5 +1,5 @@
 import type { Terminal } from '@xterm/xterm';
-import type { SdkEvent, SessionInfo } from './types.js';
+import type { SdkEvent } from './types.js';
 
 const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
@@ -13,9 +13,12 @@ export type SessionModeCallback = (mode: 'sdk' | 'pty') => void;
 let eventWs: WebSocket | null = null;
 let ptyWs: WebSocket | null = null;
 let sdkWs: WebSocket | null = null;
-let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-let reconnectAttempt = 0;
 const MAX_RECONNECT_ATTEMPTS = 30;
+
+// Per-connection reconnect state (not shared between PTY and SDK)
+let ptyReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let ptyReconnectAttempt = 0;
+let sdkReconnectAttempt = 0;
 
 export function connectEventSocket(onMessage: EventCallback): void {
   if (eventWs) { eventWs.close(); eventWs = null; }
@@ -40,8 +43,8 @@ export function connectPtySocket(
   onResize: () => void,
   onSessionEnd: () => void,
 ): void {
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  reconnectAttempt = 0;
+  if (ptyReconnectTimer) { clearTimeout(ptyReconnectTimer); ptyReconnectTimer = null; }
+  ptyReconnectAttempt = 0;
 
   if (ptyWs) { ptyWs.onclose = null; ptyWs.close(); ptyWs = null; }
 
@@ -50,7 +53,7 @@ export function connectPtySocket(
 
   socket.onopen = () => {
     ptyWs = socket;
-    reconnectAttempt = 0;
+    ptyReconnectAttempt = 0;
     onResize();
   };
 
@@ -64,7 +67,7 @@ export function connectPtySocket(
       return;
     }
     ptyWs = null;
-    if (reconnectAttempt === 0) term.write('\r\n[Reconnecting...]\r\n');
+    if (ptyReconnectAttempt === 0) term.write('\r\n[Reconnecting...]\r\n');
     scheduleReconnect(sessionId, term, onResize, onSessionEnd);
   };
 
@@ -77,15 +80,15 @@ function scheduleReconnect(
   onResize: () => void,
   onSessionEnd: () => void,
 ): void {
-  if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+  if (ptyReconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
     term.write('\r\n[Gave up reconnecting after ' + MAX_RECONNECT_ATTEMPTS + ' attempts]\r\n');
     return;
   }
-  const delay = Math.min(1000 * 2 ** reconnectAttempt, 10000);
-  reconnectAttempt++;
+  const delay = Math.min(1000 * 2 ** ptyReconnectAttempt, 10000);
+  ptyReconnectAttempt++;
 
-  reconnectTimer = setTimeout(async () => {
-    reconnectTimer = null;
+  ptyReconnectTimer = setTimeout(async () => {
+    ptyReconnectTimer = null;
     try {
       const res = await fetch('/sessions');
       const sessionList = await res.json() as Array<{ id: string }>;
@@ -132,6 +135,7 @@ export function connectSdkSocket(
   callbacks: SdkSocketCallbacks,
 ): void {
   if (sdkWs) { sdkWs.onclose = null; sdkWs.close(); sdkWs = null; }
+  sdkReconnectAttempt = 0;
   sdkCallbacksRef = callbacks;
 
   const url = wsProtocol + '//' + location.host + '/ws/' + sessionId;
@@ -179,9 +183,9 @@ function scheduleSdkReconnect(
   sessionId: string,
   callbacks: SdkSocketCallbacks,
 ): void {
-  if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) return;
-  const delay = Math.min(1000 * 2 ** reconnectAttempt, 10000);
-  reconnectAttempt++;
+  if (sdkReconnectAttempt >= MAX_RECONNECT_ATTEMPTS) return;
+  const delay = Math.min(1000 * 2 ** sdkReconnectAttempt, 10000);
+  sdkReconnectAttempt++;
   setTimeout(() => {
     connectSdkSocket(sessionId, callbacks);
   }, delay);
@@ -219,8 +223,9 @@ export function connectSessionSocket(
   onModeDetected: SessionModeCallback,
   sdkCallbacks: SdkSocketCallbacks,
 ): void {
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-  reconnectAttempt = 0;
+  if (ptyReconnectTimer) { clearTimeout(ptyReconnectTimer); ptyReconnectTimer = null; }
+  ptyReconnectAttempt = 0;
+  sdkReconnectAttempt = 0;
 
   // Close any existing connections
   if (ptyWs) { ptyWs.onclose = null; ptyWs.close(); ptyWs = null; }
@@ -231,14 +236,15 @@ export function connectSessionSocket(
   let modeDetected = false;
 
   socket.onopen = () => {
-    reconnectAttempt = 0;
+    ptyReconnectAttempt = 0;
+    sdkReconnectAttempt = 0;
   };
 
   socket.onmessage = (event) => {
     if (!modeDetected) {
       // Try to parse first message as session_info
       try {
-        const data = JSON.parse(event.data as string) as SessionInfo;
+        const data = JSON.parse(event.data as string) as { type: string; mode?: string };
         if (data.type === 'session_info' && data.mode === 'sdk') {
           modeDetected = true;
           sdkWs = socket;
@@ -285,7 +291,7 @@ export function connectSessionSocket(
           return;
         }
         ptyWs = null;
-        if (reconnectAttempt === 0) term.write('\r\n[Reconnecting...]\r\n');
+        if (ptyReconnectAttempt === 0) term.write('\r\n[Reconnecting...]\r\n');
         scheduleReconnect(sessionId, term, onResize, onSessionEnd);
       };
       onModeDetected('pty');

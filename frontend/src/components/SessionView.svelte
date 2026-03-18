@@ -74,7 +74,7 @@
           if (!sessionId) return;
           // Handle permission requests embedded in tool_call events
           if (event.type === 'tool_call' && event.status === 'pending' && event.id && event.toolName) {
-            setPermission({
+            setPermission(sessionId, {
               id: event.id,
               toolName: event.toolName,
               input: event.toolInput ?? {},
@@ -92,7 +92,7 @@
           companionConnected = false;
         },
         onSessionEnd: () => {
-          setStreaming(false);
+          if (sessionId) setStreaming(sessionId, false);
         },
       };
 
@@ -111,12 +111,12 @@
   }
 
   function handleApprove(requestId: string) {
-    resolvePermission('approved');
+    if (sessionId) resolvePermission(sessionId, 'approved');
     sendPermissionResponse(requestId, true);
   }
 
   function handleDeny(requestId: string) {
-    resolvePermission('denied');
+    if (sessionId) resolvePermission(sessionId, 'denied');
     sendPermissionResponse(requestId, false);
   }
 

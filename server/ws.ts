@@ -193,6 +193,7 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
         const parsed = JSON.parse(str) as Record<string, unknown>;
 
         if (parsed.type === 'message' && typeof parsed.text === 'string') {
+          if (parsed.text.length > 100_000) return;
           sdkSendMessage(session.id, parsed.text);
           return;
         }

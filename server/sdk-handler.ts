@@ -393,7 +393,8 @@ export function createSdkSession(
       },
     });
     state.query = q;
-  } catch {
+  } catch (err) {
+    console.warn('SDK init failed, falling back to PTY:', err instanceof Error ? err.message : String(err));
     return { fallback: true };
   }
 
