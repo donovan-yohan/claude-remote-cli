@@ -6,7 +6,7 @@ export type SessionStatus = 'active' | 'disconnected';
 export type SessionMode = 'sdk' | 'pty';
 
 // SDK event types for structured agent communication
-export type SdkEventType = 'agent_message' | 'file_change' | 'tool_call' | 'reasoning' | 'error' | 'turn_started' | 'turn_completed' | 'session_started';
+export type SdkEventType = 'user_message' | 'agent_message' | 'file_change' | 'tool_call' | 'reasoning' | 'error' | 'turn_started' | 'turn_completed' | 'session_started';
 
 export interface SdkEvent {
   type: SdkEventType;

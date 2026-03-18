@@ -374,7 +374,7 @@ export function createSdkSession(
             id: requestId,
             toolName,
             toolInput: input,
-            status: 'pending_permission',
+            status: 'pending',
             text: options.title || `Claude wants to use ${toolName}`,
             timestamp: new Date().toISOString(),
           };

@@ -56,7 +56,9 @@
   {:else}
     <div class="message-list">
       {#each events as event (event.id ?? event.timestamp)}
-        {#if event.type === 'agent_message' && event.text}
+        {#if event.type === 'user_message' && event.text}
+          <UserMessage text={event.text} />
+        {:else if event.type === 'agent_message' && event.text}
           <AgentMessage text={event.text} />
         {:else if event.type === 'file_change' && event.path}
           <FileChangeCard path={event.path} additions={event.additions} deletions={event.deletions} />
@@ -88,10 +90,7 @@
 <style>
   .chat-view {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
     padding: var(--spacing-sm);
-    scroll-behavior: smooth;
   }
 
   .empty-state {

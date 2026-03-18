@@ -62,9 +62,7 @@
     background: var(--card-bg);
     border-radius: var(--radius-sm);
     padding: var(--spacing-md);
-    position: sticky;
-    bottom: 0;
-    z-index: 10;
+    flex-shrink: 0;
     width: 100%;
   }
 

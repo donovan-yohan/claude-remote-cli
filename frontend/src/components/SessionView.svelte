@@ -48,11 +48,10 @@
         // Insert user message before turn_started
         const um = userMessages[userIdx]!;
         result.push({
-          type: 'agent_message' as const,
+          type: 'user_message',
           text: um.text,
           timestamp: um.timestamp,
           id: 'user-' + um.timestamp,
-          // We'll use a special convention: id starts with "user-" means UserMessage card
         });
         userIdx++;
       }
@@ -193,12 +192,14 @@
     </div>
 
     <div class="tab-content">
-      <div class="tab-panel" style:display={activeTab === 'chat' ? 'flex' : 'none'}>
-        <ChatView
-          events={displayEvents()}
-          isStreaming={sdkState?.isStreaming ?? false}
-          onRetry={handleRetry}
-        />
+      <div class="tab-panel chat-panel" style:display={activeTab === 'chat' ? 'flex' : 'none'}>
+        <div class="chat-scroll-area">
+          <ChatView
+            events={displayEvents()}
+            isStreaming={sdkState?.isStreaming ?? false}
+            onRetry={handleRetry}
+          />
+        </div>
 
         {#if sdkState?.activePermission && sdkState.activePermission.status === 'pending'}
           <PermissionCard
@@ -314,6 +315,13 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+  }
+
+  .chat-scroll-area {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .terminal-panel {
