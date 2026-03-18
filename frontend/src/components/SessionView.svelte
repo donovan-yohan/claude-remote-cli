@@ -162,22 +162,11 @@
 
     <div class="tab-bar" role="tablist">
       <button
-        class="tab"
-        class:active={activeTab === 'chat'}
+        class="tab active"
         role="tab"
-        aria-selected={activeTab === 'chat'}
-        onclick={() => activeTab = 'chat'}
+        aria-selected={true}
       >
         Chat
-      </button>
-      <button
-        class="tab"
-        class:active={activeTab === 'terminal'}
-        role="tab"
-        aria-selected={activeTab === 'terminal'}
-        onclick={handleTerminalTabClick}
-      >
-        Terminal
       </button>
     </div>
 
@@ -212,28 +201,7 @@
         />
       </div>
 
-      <div class="tab-panel terminal-panel" style:display={activeTab === 'terminal' ? 'flex' : 'none'}>
-        {#if companionLoading}
-          <div class="companion-status">
-            <span class="spinner"></span>
-            Starting shell...
-          </div>
-        {:else if companionError}
-          <div class="companion-status">
-            <span class="error-text">Shell failed</span>
-            <button class="retry-shell-btn" onclick={openCompanionShell}>Retry</button>
-          </div>
-        {:else}
-          <Terminal
-            bind:this={terminalRef}
-            {sessionId}
-            onImageUpload={onImageUpload ?? undefined}
-            {useTmux}
-            onCopyModeChange={onCopyModeChange ?? undefined}
-            companionMode={true}
-          />
-        {/if}
-      </div>
+      <!-- Terminal tab hidden for SDK sessions until companion shell is implemented (open_companion WS handler needed on server) -->
     </div>
   </div>
 {:else}
