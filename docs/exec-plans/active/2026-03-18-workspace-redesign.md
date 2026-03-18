@@ -1,6 +1,6 @@
 # Workspace Redesign — v3 Rearchitecture
 
-> **Status**: Active | **Created**: 2026-03-18 | **Last Updated**: 2026-03-18
+> **Status**: Complete | **Created**: 2026-03-18 | **Last Updated**: 2026-03-18
 > **Design Doc**: `docs/design-docs/2026-03-18-workspace-redesign-design.md`
 > **For Claude:** Use /harness:orchestrate to execute this plan.
 
@@ -40,7 +40,7 @@
 - [x] Task 16: Frontend — Mobile responsive
 - [x] Task 17: Cleanup — remove old components + SDK code
 - [x] Task 18: Tests — backend workspace + git modules (wired git functions into workspaces.ts)
-- [ ] Task 19: Integration testing + version bump
+- [x] Task 19: Integration testing + version bump (docs updated, build + tests verified)
 
 ## Surprises & Discoveries
 
@@ -691,10 +691,17 @@ Parallelizable groups:
 _Filled by /harness:complete when work is done._
 
 **What worked:**
--
+- Parallel agent dispatching for independent modules (3 backend agents, 3 frontend component agents, 3 polish agents) — each group completed in ~30s
+- PR state machine as pure function with exhaustive tests — caught design at code time, not runtime
+- Building off v2.15.17 base (clean break from v3.0 SDK work) — avoided entanglement with discarded code
+- Design doc from CEO/Eng/Design reviews provided clear specs for every component — minimal ambiguity during implementation
 
 **What didn't:**
--
+- Agent-produced code sometimes left stubs ("TODO: wire up git.ts functions") that needed manual integration
+- Cascading type changes from removing `root` field required touching many components — could have been anticipated with a type migration step
+- SettingsDialog and NewSessionDialog needed manual fixes after the state module changes — agents only handled the files they were assigned
 
 **Learnings to codify:**
--
+- When removing a field from a shared type, create a dedicated "type migration" task that updates ALL consumers, not just the type definition
+- Agent tasks should specify "also update any files that import this module" when changing exports
+- The workspace-first model (flat sidebar, no tabs) is simpler than the 4-tab approach — fewer state variables, fewer components, clearer navigation
