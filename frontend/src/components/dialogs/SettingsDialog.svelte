@@ -1,12 +1,10 @@
 <script lang="ts">
-  import { fetchRoots, addRoot, removeRoot, setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate } from '../../lib/api.js';
+  import { setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
 
   let dialogEl: HTMLDialogElement;
 
-  let roots = $state<string[]>([]);
-  let newRootPath = $state('');
   let devtoolsEnabled = $state(false);
   const config = getConfigState();
   let error = $state('');
@@ -19,22 +17,12 @@
   let updating = $state(false);
   let updateStatus = $state('');
 
-  async function loadRoots() {
-    try {
-      roots = await fetchRoots();
-    } catch {
-      roots = [];
-    }
-  }
-
   export async function open() {
     error = '';
-    newRootPath = '';
     updateStatus = '';
     versionChecked = false;
     updating = false;
     devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
-    await loadRoots();
     await refreshConfig();
     dialogEl.showModal();
     handleCheckVersion();
@@ -42,29 +30,6 @@
 
   export function close() {
     dialogEl.close();
-  }
-
-  async function handleAddRoot() {
-    const path = newRootPath.trim();
-    if (!path) return;
-    error = '';
-    try {
-      roots = await addRoot(path);
-      newRootPath = '';
-      await refreshAll();
-    } catch {
-      error = 'Failed to add root directory.';
-    }
-  }
-
-  async function handleRemoveRoot(path: string) {
-    error = '';
-    try {
-      roots = await removeRoot(path);
-      await refreshAll();
-    } catch {
-      error = 'Failed to remove root directory.';
-    }
   }
 
   async function handleAgentChange() {
@@ -172,9 +137,7 @@
     }
   }
 
-  function onAddKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') handleAddRoot();
-  }
+  // Root directory management removed — workspaces are managed from the sidebar
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -190,44 +153,9 @@
     </div>
 
     <div class="dialog-body">
-      <!-- Root directories section -->
-      <section class="settings-section">
-        <h3 class="section-title">Root Directories</h3>
-        <p class="section-desc">Directories scanned for git repositories.</p>
-
-        {#if roots.length === 0}
-          <p class="empty-msg">No root directories configured.</p>
-        {:else}
-          <ul class="roots-list">
-            {#each roots as root (root)}
-              <li class="root-item">
-                <span class="root-path" title={root}>{root}</span>
-                <button
-                  class="remove-btn"
-                  aria-label="Remove {root}"
-                  onclick={() => handleRemoveRoot(root)}
-                >&#10005;</button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-
-        <div class="add-root-row">
-          <input
-            type="text"
-            class="add-root-input"
-            placeholder="/path/to/projects"
-            bind:value={newRootPath}
-            onkeydown={onAddKeydown}
-            autocomplete="off"
-          />
-          <button class="btn btn-primary" onclick={handleAddRoot}>Add</button>
-        </div>
-
-        {#if error}
-          <p class="error-msg">{error}</p>
-        {/if}
-      </section>
+      {#if error}
+        <p class="error-msg">{error}</p>
+      {/if}
 
       <!-- Default coding agent section -->
       <section class="settings-section">
