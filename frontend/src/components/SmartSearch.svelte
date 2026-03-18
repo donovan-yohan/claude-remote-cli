@@ -206,4 +206,21 @@
     min-width: 0;
     flex-shrink: 1;
   }
+
+  /* ── Mobile: full-width input ── */
+  @media (max-width: 600px) {
+    .smart-search {
+      width: 100%;
+    }
+
+    .input-row {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .search-input {
+      width: 100%;
+      min-width: 0;
+    }
+  }
 </style>

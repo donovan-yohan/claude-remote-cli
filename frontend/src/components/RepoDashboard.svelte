@@ -426,4 +426,35 @@
     0%, 100% { opacity: 0.4; }
     50%       { opacity: 0.7; }
   }
+
+  /* ── Mobile ── */
+  @media (max-width: 600px) {
+    .repo-dashboard {
+      padding: 14px;
+    }
+
+    .pr-row {
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 10px;
+      min-height: 44px;
+      align-items: flex-start;
+    }
+
+    .pr-row-left {
+      width: 100%;
+    }
+
+    .pr-action-pill {
+      align-self: flex-end;
+      margin-left: auto;
+      padding: 5px 12px;
+      min-height: 32px;
+    }
+
+    .cta-btn {
+      flex: 1;
+      min-height: 44px;
+    }
+  }
 </style>

@@ -25,20 +25,20 @@
 - [x] Task 1: Create v3 branch from v2.15.17 + update design system CSS
 - [x] Task 2: Backend — `workspaces.ts` module (replaces roots)
 - [x] Task 3: Backend — enhance `git.ts` (activity feed, CI status, branch switch)
-- [ ] Task 4: Backend — `index.ts` route migration (mount workspace router, remove old routes)
+- [x] Task 4: Backend — `index.ts` route migration (mount workspace router, remove old routes)
 - [x] Task 5: Backend — per-workspace settings in `config.ts`
-- [ ] Task 6: Frontend — types, API client, state modules update
-- [ ] Task 7: Frontend — Sidebar rearchitecture (WorkspaceItem, flat list)
-- [ ] Task 8: Frontend — Smart search component
+- [x] Task 6: Frontend — types, API client, state modules update
+- [x] Task 7: Frontend — Sidebar rearchitecture (WorkspaceItem, flat list)
+- [x] Task 8: Frontend — Smart search component
 - [x] Task 9: Frontend — PR state machine (`lib/pr-state.ts`) + tests
-- [ ] Task 10: Frontend — PR top bar component
-- [ ] Task 11: Frontend — Session tab bar component
-- [ ] Task 12: Frontend — Repo dashboard component
-- [ ] Task 13: Frontend — App.svelte layout routing + empty states
+- [x] Task 10: Frontend — PR top bar component
+- [x] Task 11: Frontend — Session tab bar component
+- [x] Task 12: Frontend — Repo dashboard component
+- [x] Task 13: Frontend — App.svelte layout routing + empty states
 - [ ] Task 14: Frontend — Keyboard shortcuts
 - [ ] Task 15: Frontend — Tab persistence (localStorage)
 - [ ] Task 16: Frontend — Mobile responsive
-- [ ] Task 17: Cleanup — remove old components + SDK code
+- [x] Task 17: Cleanup — remove old components + SDK code
 - [ ] Task 18: Tests — backend workspace + git modules
 - [ ] Task 19: Integration testing + version bump
 

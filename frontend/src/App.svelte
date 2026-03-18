@@ -90,6 +90,72 @@
       };
     }
 
+    // Keyboard shortcuts for tab navigation (desktop only)
+    const isMac = navigator.platform.toUpperCase().includes('MAC');
+    let cleanupKeydown: (() => void) | undefined;
+
+    {
+      const onKeydown = (e: KeyboardEvent) => {
+        const tag = (document.activeElement as HTMLElement | null)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+        const mod = isMac ? e.metaKey : e.ctrlKey;
+        if (!mod) return;
+
+        // Cmd/Ctrl+T — new session tab
+        if (e.key === 't' && !e.shiftKey) {
+          e.preventDefault();
+          handleOpenNewSession();
+          return;
+        }
+
+        // Cmd/Ctrl+W — close current session tab
+        if (e.key === 'w' && !e.shiftKey) {
+          e.preventDefault();
+          if (sessionState.activeSessionId) {
+            handleCloseSession(sessionState.activeSessionId);
+          }
+          return;
+        }
+
+        // Cmd/Ctrl+1–9 — switch to tab N (9 = last)
+        if (!e.shiftKey && e.key >= '1' && e.key <= '9') {
+          const sessions = workspaceSessions;
+          if (sessions.length === 0) return;
+          e.preventDefault();
+          const n = parseInt(e.key, 10);
+          const target = n === 9 ? sessions[sessions.length - 1] : sessions[n - 1];
+          if (target) handleSelectSession(target.id);
+          return;
+        }
+
+        // Cmd/Ctrl+Shift+[ — previous tab (cycle)
+        if (e.shiftKey && e.key === '[') {
+          const sessions = workspaceSessions;
+          if (sessions.length === 0) return;
+          e.preventDefault();
+          const idx = sessions.findIndex(s => s.id === sessionState.activeSessionId);
+          const prev = idx <= 0 ? sessions[sessions.length - 1] : sessions[idx - 1];
+          if (prev) handleSelectSession(prev.id);
+          return;
+        }
+
+        // Cmd/Ctrl+Shift+] — next tab (cycle)
+        if (e.shiftKey && e.key === ']') {
+          const sessions = workspaceSessions;
+          if (sessions.length === 0) return;
+          e.preventDefault();
+          const idx = sessions.findIndex(s => s.id === sessionState.activeSessionId);
+          const next = idx === -1 || idx === sessions.length - 1 ? sessions[0] : sessions[idx + 1];
+          if (next) handleSelectSession(next.id);
+          return;
+        }
+      };
+
+      document.addEventListener('keydown', onKeydown);
+      cleanupKeydown = () => document.removeEventListener('keydown', onKeydown);
+    }
+
     if (isMobileDevice) {
       const EDGE_ZONE = 30;
       const SWIPE_THRESHOLD = 50;
@@ -136,6 +202,7 @@
     }
 
     return () => {
+      cleanupKeydown?.();
       cleanupViewport?.();
       cleanupSwipe?.();
     };

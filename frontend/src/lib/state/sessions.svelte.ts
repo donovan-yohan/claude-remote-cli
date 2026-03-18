@@ -2,16 +2,29 @@ import type { SessionSummary, WorktreeInfo, GitStatus, Workspace } from '../type
 import { fireNotification, shouldFireNotification } from '../notifications.js';
 import * as api from '../api.js';
 
+const NOTIFICATIONS_STORAGE_KEY = 'claude-remote-notifications';
+const ACTIVE_SESSION_KEY = 'claude-remote-active-session';
+
+function loadActiveSessionId(): string | null {
+  try { return localStorage.getItem(ACTIVE_SESSION_KEY); }
+  catch { return null; }
+}
+
+function saveActiveSessionId(id: string | null): void {
+  try {
+    if (id === null) localStorage.removeItem(ACTIVE_SESSION_KEY);
+    else localStorage.setItem(ACTIVE_SESSION_KEY, id);
+  } catch { /* localStorage unavailable */ }
+}
+
 let sessions = $state<SessionSummary[]>([]);
 let worktrees = $state<WorktreeInfo[]>([]);
 let workspaces = $state<Workspace[]>([]);
-let activeSessionId = $state<string | null>(null);
+let activeSessionId = $state<string | null>(loadActiveSessionId());
 let attentionSessions = $state<Record<string, boolean>>({});
 let dismissedSessions = $state<Record<string, number>>({});
 let loadingItems = $state<Record<string, boolean>>({});
 let notificationSessions = $state<Record<string, boolean>>({});
-
-const NOTIFICATIONS_STORAGE_KEY = 'claude-remote-notifications';
 
 // Load notification preferences from localStorage
 try {
@@ -31,7 +44,10 @@ export function getSessionState() {
     get worktrees() { return worktrees; },
     get workspaces() { return workspaces; },
     get activeSessionId() { return activeSessionId; },
-    set activeSessionId(id: string | null) { activeSessionId = id; },
+    set activeSessionId(id: string | null) {
+      activeSessionId = id;
+      saveActiveSessionId(id);
+    },
     get attentionSessions() { return attentionSessions; },
     get loadingItems() { return loadingItems; },
     get notificationSessions() { return notificationSessions; },
@@ -49,8 +65,14 @@ export async function refreshAll(): Promise<void> {
     worktrees = w;
     workspaces = ws;
 
-    // Prune stale attention flags, dismissed cooldowns, and notification prefs
+    // Validate restored activeSessionId — clear if the session no longer exists
     const activeIds = new Set(sessions.map(sess => sess.id));
+    if (activeSessionId !== null && !activeIds.has(activeSessionId)) {
+      activeSessionId = null;
+      saveActiveSessionId(null);
+    }
+
+    // Prune stale attention flags, dismissed cooldowns, and notification prefs
     let notifPruned = false;
     for (const id of Object.keys(attentionSessions)) {
       if (!activeIds.has(id)) delete attentionSessions[id];

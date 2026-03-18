@@ -7,9 +7,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 
 import { loadConfig, saveConfig } from './config.js';
-import { listBranches } from './git.js';
-// These will be added by the git.ts enhancement task:
-// import { getActivityFeed, getCiStatus, getPrForBranch, switchBranch } from './git.js';
+import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, switchBranch } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace, WorkspaceSettings } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -292,12 +290,16 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       branches = await listBranches(workspacePath);
     } catch { /* not a git repo or git unavailable */ }
 
+    // Fetch recent activity
+    let activity: Awaited<ReturnType<typeof getActivityFeed>> = [];
+    try {
+      activity = await getActivityFeed(workspacePath);
+    } catch { /* git log unavailable */ }
+
     res.json({
       pullRequests,
       branches,
-      // activity and ciStatus will be populated once git.ts enhancements land:
-      // activity: await getActivityFeed(workspacePath),
-      // ciStatus: await getCiStatus(workspacePath),
+      activity,
     });
   });
 
@@ -344,6 +346,30 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
   });
 
   // -------------------------------------------------------------------------
+  // GET /workspaces/pr — PR info for a specific branch
+  // -------------------------------------------------------------------------
+  router.get('/pr', async (req: Request, res: Response) => {
+    const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
+    const branch = typeof req.query.branch === 'string' ? req.query.branch : undefined;
+
+    if (!workspacePath || !branch) {
+      res.status(400).json({ error: 'path and branch query parameters are required' });
+      return;
+    }
+
+    try {
+      const pr = await getPrForBranch(workspacePath, branch);
+      if (pr) {
+        res.json(pr);
+      } else {
+        res.status(404).json({ error: 'No PR found for branch' });
+      }
+    } catch {
+      res.status(404).json({ error: 'No PR found for branch' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // GET /workspaces/ci-status — CI check results for a workspace + branch
   // -------------------------------------------------------------------------
   router.get('/ci-status', async (req: Request, res: Response) => {
@@ -355,17 +381,12 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
-    // Stub: returns empty until getCiStatus is added to git.ts
-    // When git.ts is enhanced:
-    //   const status = await getCiStatus(workspacePath, branch);
-    //   res.json(status);
-
-    res.json({
-      workspacePath,
-      branch: branch ?? null,
-      checks: [],
-      // Will be populated once git.ts enhancement task lands
-    });
+    try {
+      const status = await getCiStatus(workspacePath, branch ?? 'HEAD');
+      res.json(status);
+    } catch {
+      res.json({ total: 0, passing: 0, failing: 0, pending: 0 });
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -387,18 +408,11 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
-    // Performs checkout until switchBranch is added to git.ts
-    // When git.ts is enhanced:
-    //   await switchBranch(workspacePath, branch);
-    //   res.json({ path: workspacePath, branch });
-
-    try {
-      await exec('git', ['checkout', branch], { cwd: workspacePath });
+    const result = await switchBranch(workspacePath, branch);
+    if (result.success) {
       res.json({ path: workspacePath, branch });
-    } catch (err) {
-      res.status(400).json({
-        error: err instanceof Error ? err.message : `Failed to switch to branch: ${branch}`,
-      });
+    } else {
+      res.status(400).json({ error: result.error ?? `Failed to switch to branch: ${branch}` });
     }
   });
 
