@@ -11,6 +11,7 @@
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Terminal from './components/Terminal.svelte';
+  import SessionView from './components/SessionView.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import MobileHeader from './components/MobileHeader.svelte';
   // MobileInput removed — xterm.js handles mobile keyboard natively
@@ -51,7 +52,7 @@
   initNotifications(navigateToSession);
 
   // Component refs — must be $state() so $effect can track bind:this assignments
-  let terminalRef = $state<Terminal | undefined>();
+  let terminalRef = $state<Terminal | SessionView | undefined>();
   let imageToastRef = $state<ImageToast | undefined>();
   let newSessionDialogRef = $state<NewSessionDialog | undefined>();
   let settingsDialogRef = $state<SettingsDialog | undefined>();
@@ -268,6 +269,7 @@
   );
 
   let activeSessionUseTmux = $derived(sessionState.sessions.find(s => s.id === sessionState.activeSessionId)?.useTmux ?? false);
+  let activeSessionMode = $derived<'sdk' | 'pty'>(sessionState.sessions.find(s => s.id === sessionState.activeSessionId)?.mode ?? 'pty');
   let copyModeActive = $state(false);
 
   function handleCopyModeChange(active: boolean) {
@@ -308,13 +310,24 @@
         hidden={keyboardOpen}
       />
 
-      <Terminal
-        bind:this={terminalRef}
-        sessionId={sessionState.activeSessionId}
-        onImageUpload={handleImageUpload}
-        useTmux={activeSessionUseTmux}
-        onCopyModeChange={handleCopyModeChange}
-      />
+      {#if activeSessionMode === 'sdk'}
+        <SessionView
+          bind:this={terminalRef}
+          sessionId={sessionState.activeSessionId}
+          mode="sdk"
+          onImageUpload={handleImageUpload}
+          useTmux={activeSessionUseTmux}
+          onCopyModeChange={handleCopyModeChange}
+        />
+      {:else}
+        <Terminal
+          bind:this={terminalRef}
+          sessionId={sessionState.activeSessionId}
+          onImageUpload={handleImageUpload}
+          useTmux={activeSessionUseTmux}
+          onCopyModeChange={handleCopyModeChange}
+        />
+      {/if}
 
       <Toolbar
         onSendKey={handleSendKey}

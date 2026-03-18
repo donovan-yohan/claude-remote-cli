@@ -12,11 +12,13 @@
     onImageUpload,
     useTmux = false,
     onCopyModeChange,
+    companionMode = false,
   }: {
     sessionId: string | null;
-    onImageUpload?: (text: string, showInsert: boolean, path?: string) => void;
+    onImageUpload?: ((text: string, showInsert: boolean, path?: string) => void) | undefined;
     useTmux?: boolean;
     onCopyModeChange?: ((active: boolean) => void) | undefined;
+    companionMode?: boolean;
   } = $props();
 
   let containerEl: HTMLDivElement;
@@ -214,7 +216,7 @@
 
   // React to sessionId changes
   $effect(() => {
-    if (sessionId && term) {
+    if (sessionId && term && !companionMode) {
       term.clear();
       connectPtySocket(
         sessionId,
