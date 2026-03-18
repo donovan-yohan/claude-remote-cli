@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse } from './types.js';
+import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse, Workspace, DashboardData, CiStatus, PrInfo } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -39,12 +39,45 @@ export async function fetchWorktrees(): Promise<WorktreeInfo[]> {
   return json<WorktreeInfo[]>(await fetch('/worktrees'));
 }
 
-export async function fetchRepos(): Promise<RepoInfo[]> {
-  return json<RepoInfo[]>(await fetch('/repos'));
+export async function fetchWorkspaces(): Promise<Workspace[]> {
+  return json<Workspace[]>(await fetch('/workspaces'));
 }
 
-export async function fetchRoots(): Promise<string[]> {
-  return json<string[]>(await fetch('/roots'));
+export async function addWorkspace(path: string): Promise<void> {
+  const res = await fetch('/workspaces', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
+  if (!res.ok) { const d = await res.json() as { error?: string }; throw new Error(d.error || 'Failed to add workspace'); }
+}
+
+export async function removeWorkspace(path: string): Promise<void> {
+  const res = await fetch('/workspaces', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
+  if (!res.ok) throw new Error('Failed to remove workspace');
+}
+
+export async function fetchDashboard(workspacePath: string): Promise<DashboardData> {
+  return json<DashboardData>(await fetch('/workspaces/dashboard?path=' + encodeURIComponent(workspacePath)));
+}
+
+export async function fetchCiStatus(workspacePath: string, branch: string): Promise<CiStatus | null> {
+  const res = await fetch('/workspaces/ci-status?path=' + encodeURIComponent(workspacePath) + '&branch=' + encodeURIComponent(branch));
+  if (!res.ok) return null;
+  return res.json() as Promise<CiStatus>;
+}
+
+export async function fetchPrForBranch(workspacePath: string, branch: string): Promise<PrInfo | null> {
+  const res = await fetch('/workspaces/pr?path=' + encodeURIComponent(workspacePath) + '&branch=' + encodeURIComponent(branch));
+  if (!res.ok) return null;
+  return res.json() as Promise<PrInfo>;
+}
+
+export async function autocompletePath(prefix: string): Promise<string[]> {
+  return json<string[]>(await fetch('/workspaces/autocomplete?prefix=' + encodeURIComponent(prefix)));
+}
+
+export async function switchBranch(workspacePath: string, branch: string): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch('/workspaces/branch?path=' + encodeURIComponent(workspacePath), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ branch })
+  });
+  return res.json() as Promise<{ success: boolean; error?: string }>;
 }
 
 export async function fetchBranches(repoPath: string, options: { refresh?: boolean } = {}): Promise<string[]> {
@@ -133,26 +166,6 @@ export async function deleteWorktree(worktreePath: string, repoPath: string): Pr
     const data = await res.json() as { error?: string };
     throw new Error(data.error || 'Failed to delete worktree');
   }
-}
-
-export async function addRoot(path: string): Promise<string[]> {
-  return json<string[]>(
-    await fetch('/roots', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    }),
-  );
-}
-
-export async function removeRoot(path: string): Promise<string[]> {
-  return json<string[]>(
-    await fetch('/roots', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    }),
-  );
 }
 
 export async function uploadImage(

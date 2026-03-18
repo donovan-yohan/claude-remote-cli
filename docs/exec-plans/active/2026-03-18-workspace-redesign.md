@@ -22,15 +22,15 @@
 
 ## Progress
 
-- [ ] Task 1: Create v3 branch from v2.15.17 + update design system CSS
-- [ ] Task 2: Backend — `workspaces.ts` module (replaces roots)
-- [ ] Task 3: Backend — enhance `git.ts` (activity feed, CI status, branch switch)
+- [x] Task 1: Create v3 branch from v2.15.17 + update design system CSS
+- [x] Task 2: Backend — `workspaces.ts` module (replaces roots)
+- [x] Task 3: Backend — enhance `git.ts` (activity feed, CI status, branch switch)
 - [ ] Task 4: Backend — `index.ts` route migration (mount workspace router, remove old routes)
-- [ ] Task 5: Backend — per-workspace settings in `config.ts`
+- [x] Task 5: Backend — per-workspace settings in `config.ts`
 - [ ] Task 6: Frontend — types, API client, state modules update
 - [ ] Task 7: Frontend — Sidebar rearchitecture (WorkspaceItem, flat list)
 - [ ] Task 8: Frontend — Smart search component
-- [ ] Task 9: Frontend — PR state machine (`lib/pr-state.ts`) + tests
+- [x] Task 9: Frontend — PR state machine (`lib/pr-state.ts`) + tests
 - [ ] Task 10: Frontend — PR top bar component
 - [ ] Task 11: Frontend — Session tab bar component
 - [ ] Task 12: Frontend — Repo dashboard component
