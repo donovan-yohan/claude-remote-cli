@@ -703,7 +703,7 @@ describe('session persistence', () => {
         lastActivity: new Date().toISOString(),
         useTmux: true,
         tmuxSessionName: 'crc-my-session-tmux-tes',
-        customCommand: null,
+        customCommand: '/bin/cat', // Use /bin/cat to avoid spawning real claude binary in test
         cwd: '/tmp',
       }],
     };

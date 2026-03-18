@@ -1,6 +1,6 @@
 {
   "name": "claude-remote-cli",
-  "version": "2.15.17",
+  "version": "3.0.2",
   "description": "Remote web interface for Claude Code CLI sessions",
   "type": "module",
   "main": "dist/server/index.js",
@@ -18,7 +18,7 @@
     "build:frontend": "svelte-check --workspace frontend && vite build --config frontend/vite.config.ts",
     "dev": "vite --config frontend/vite.config.ts",
     "start": "tsc && svelte-check --workspace frontend && vite build --config frontend/vite.config.ts && node dist/server/index.js",
-    "test": "svelte-check --workspace frontend && tsc -p tsconfig.test.json && node --test dist/test/*.test.js",
+    "test": "svelte-check --workspace frontend && tsc -p tsconfig.test.json && node --test --test-force-exit dist/test/*.test.js",
     "prepublishOnly": "npm run build",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper 2>/dev/null || true"
   },
