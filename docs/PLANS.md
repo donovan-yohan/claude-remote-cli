@@ -6,6 +6,7 @@ Execution plans for active and completed work.
 
 | Plan | Created | Topic |
 |------|---------|-------|
+| `workspace-redesign` | 2026-03-18 | v3 rearchitecture — workspace-first sidebar, PR top bar, multi-tab sessions, terminal aesthetic |
 | `session-persistence-fix` | 2026-03-17 | Fix sessions lost after auto-update restart |
 | `mobile-input-redesign` | 2026-02-25 | Event-intent architecture replacing value-diffing for mobile input |
 

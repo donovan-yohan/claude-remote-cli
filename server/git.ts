@@ -11,8 +11,35 @@ type ExecFileAsyncResult = {
 type ExecFileAsyncLike = (
   file: string,
   args: string[],
-  options: { cwd: string },
+  options: { cwd: string; timeout?: number },
 ) => Promise<ExecFileAsyncResult>;
+
+export interface ActivityEntry {
+  hash: string;
+  shortHash: string;
+  message: string;
+  author: string;
+  timeAgo: string;
+  branches: string[];
+}
+
+export interface CiStatus {
+  total: number;
+  passing: number;
+  failing: number;
+  pending: number;
+}
+
+export interface PrInfo {
+  number: number;
+  title: string;
+  url: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  headRefName: string;
+  baseRefName: string;
+  isDraft: boolean;
+  reviewDecision: string | null;
+}
 
 function normalizeBranchNames(stdout: string): string[] {
   const branches = stdout
@@ -49,4 +76,269 @@ async function listBranches(
   }
 }
 
-export { listBranches, normalizeBranchNames };
+async function getActivityFeed(
+  repoPath: string,
+  options: {
+    exec?: ExecFileAsyncLike;
+  } = {},
+): Promise<ActivityEntry[]> {
+  const run: ExecFileAsyncLike = options.exec || execFileAsync as ExecFileAsyncLike;
+
+  try {
+    const { stdout } = await run(
+      'git',
+      [
+        'log',
+        '--all',
+        '--since=24h',
+        '--oneline',
+        '--max-count=50',
+        '--format=%H|%h|%s|%an|%ar|%D',
+      ],
+      { cwd: repoPath, timeout: 5000 },
+    );
+
+    const lines = stdout.split('\n').filter((line) => line.trim());
+    const entries: ActivityEntry[] = [];
+
+    for (const line of lines) {
+      try {
+        // Split into exactly 6 parts by the first 5 pipe characters
+        const parts: string[] = [];
+        let remaining = line;
+        for (let i = 0; i < 5; i++) {
+          const idx = remaining.indexOf('|');
+          if (idx === -1) break;
+          parts.push(remaining.slice(0, idx));
+          remaining = remaining.slice(idx + 1);
+        }
+        parts.push(remaining);
+
+        if (parts.length < 5) continue;
+
+        const hash = parts[0] ?? '';
+        const shortHash = parts[1] ?? '';
+        const message = parts[2] ?? '';
+        const author = parts[3] ?? '';
+        const timeAgo = parts[4] ?? '';
+        const decorations = parts[5] ?? '';
+
+        if (!hash || !shortHash) continue;
+
+        const branches: string[] = decorations
+          .split(',')
+          .map((d) => d.trim())
+          .filter((d) => d && !d.startsWith('tag:') && d !== 'HEAD')
+          .map((d) => d.replace(/^HEAD -> /, '').replace(/^origin\//, ''));
+
+        entries.push({
+          hash: hash.trim(),
+          shortHash: shortHash.trim(),
+          message: message.trim(),
+          author: author.trim(),
+          timeAgo: timeAgo.trim(),
+          branches: [...new Set(branches)],
+        });
+      } catch {
+        // Skip malformed lines
+        continue;
+      }
+    }
+
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+async function getCiStatus(
+  repoPath: string,
+  branch: string,
+  options: {
+    exec?: ExecFileAsyncLike;
+  } = {},
+): Promise<(CiStatus & { authError?: boolean }) | null> {
+  const run: ExecFileAsyncLike = options.exec || execFileAsync as ExecFileAsyncLike;
+
+  let stdout: string;
+  let stderr: string;
+
+  try {
+    ({ stdout, stderr } = await run(
+      'gh',
+      ['pr', 'checks', branch, '--json', 'name,state,conclusion'],
+      { cwd: repoPath, timeout: 5000 },
+    ));
+  } catch (err: unknown) {
+    if (err && typeof err === 'object') {
+      const errObj = err as { code?: string; message?: string; stderr?: string };
+      const errorText = errObj.stderr ?? errObj.message ?? '';
+
+      // gh not installed
+      if (errObj.code === 'ENOENT') return null;
+
+      // Not authenticated
+      if (
+        typeof errorText === 'string' &&
+        (errorText.includes('not logged into') || errorText.includes('authentication'))
+      ) {
+        return { total: 0, passing: 0, failing: 0, pending: 0, authError: true };
+      }
+
+      // No PR for branch
+      if (
+        typeof errorText === 'string' &&
+        (errorText.includes('no pull requests found') || errorText.includes('Could not find'))
+      ) {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  // gh may exit 0 but write errors or auth prompts to stderr
+  if (stderr && (stderr.includes('not logged into') || stderr.includes('authentication'))) {
+    return { total: 0, passing: 0, failing: 0, pending: 0, authError: true };
+  }
+
+  if (!stdout.trim()) return null;
+
+  try {
+    const checks: Array<{ name: string; state: string; conclusion: string }> = JSON.parse(stdout);
+
+    let passing = 0;
+    let failing = 0;
+    let pending = 0;
+
+    for (const check of checks) {
+      const conclusion = (check.conclusion ?? '').toUpperCase();
+      const state = (check.state ?? '').toUpperCase();
+
+      if (conclusion === 'SUCCESS') {
+        passing++;
+      } else if (conclusion === 'FAILURE' || conclusion === 'CANCELLED' || conclusion === 'TIMED_OUT') {
+        failing++;
+      } else if (state === 'IN_PROGRESS' || state === 'QUEUED' || state === 'PENDING' || conclusion === '') {
+        pending++;
+      } else {
+        pending++;
+      }
+    }
+
+    return { total: checks.length, passing, failing, pending };
+  } catch {
+    return null;
+  }
+}
+
+async function getPrForBranch(
+  repoPath: string,
+  branch: string,
+  options: {
+    exec?: ExecFileAsyncLike;
+  } = {},
+): Promise<PrInfo | null> {
+  const run: ExecFileAsyncLike = options.exec || execFileAsync as ExecFileAsyncLike;
+
+  let stdout: string;
+
+  try {
+    ({ stdout } = await run(
+      'gh',
+      [
+        'pr',
+        'view',
+        branch,
+        '--json',
+        'number,title,url,state,headRefName,baseRefName,reviewDecision,isDraft',
+      ],
+      { cwd: repoPath, timeout: 5000 },
+    ));
+  } catch {
+    return null;
+  }
+
+  if (!stdout.trim()) return null;
+
+  try {
+    const data = JSON.parse(stdout) as {
+      number: number;
+      title: string;
+      url: string;
+      state: string;
+      headRefName: string;
+      baseRefName: string;
+      isDraft: boolean;
+      reviewDecision: string | null;
+    };
+
+    return {
+      number: data.number,
+      title: data.title,
+      url: data.url,
+      state: data.state as PrInfo['state'],
+      headRefName: data.headRefName,
+      baseRefName: data.baseRefName,
+      isDraft: data.isDraft,
+      reviewDecision: data.reviewDecision ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function switchBranch(
+  repoPath: string,
+  branch: string,
+  options: {
+    exec?: ExecFileAsyncLike;
+  } = {},
+): Promise<{ success: true } | { success: false; error: string }> {
+  const run: ExecFileAsyncLike = options.exec || execFileAsync as ExecFileAsyncLike;
+
+  try {
+    await run('git', ['checkout', branch], { cwd: repoPath, timeout: 5000 });
+    return { success: true };
+  } catch (err: unknown) {
+    if (err && typeof err === 'object') {
+      const errObj = err as { stderr?: string; message?: string };
+      const errorText = errObj.stderr ?? errObj.message ?? 'Unknown error';
+      return { success: false, error: errorText.trim() };
+    }
+    return { success: false, error: 'Unknown error' };
+  }
+}
+
+async function getCommitsAhead(
+  repoPath: string,
+  branch: string,
+  baseBranch: string,
+  options: {
+    exec?: ExecFileAsyncLike;
+  } = {},
+): Promise<number> {
+  const run: ExecFileAsyncLike = options.exec || execFileAsync as ExecFileAsyncLike;
+
+  try {
+    const { stdout } = await run(
+      'git',
+      ['rev-list', '--count', `${baseBranch}..${branch}`],
+      { cwd: repoPath, timeout: 5000 },
+    );
+    const count = parseInt(stdout.trim(), 10);
+    return Number.isFinite(count) ? count : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export {
+  listBranches,
+  normalizeBranchNames,
+  getActivityFeed,
+  getCiStatus,
+  getPrForBranch,
+  switchBranch,
+  getCommitsAhead,
+};
