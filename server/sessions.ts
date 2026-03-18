@@ -5,27 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgentType, Session, SessionStatus, SessionType } from './types.js';
+import type { AgentType, PtySession, Session, SessionStatus, SessionSummary, SessionType } from './types.js';
+import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './types.js';
 import { readMeta, writeMeta } from './config.js';
 
 const execFileAsync = promisify(execFile);
-
-type SessionSummary = Omit<Session, 'pty' | 'scrollback' | 'onPtyReplacedCallbacks' | 'restored'>;
-
-const AGENT_COMMANDS: Record<AgentType, string> = {
-  claude: 'claude',
-  codex: 'codex',
-};
-
-const AGENT_CONTINUE_ARGS: Record<AgentType, string[]> = {
-  claude: ['--continue'],
-  codex: ['resume', '--last'],
-};
-
-const AGENT_YOLO_ARGS: Record<AgentType, string[]> = {
-  claude: ['--dangerously-skip-permissions'],
-  codex: ['--full-auto'],
-};
 
 interface SerializedSession {
   id: string;
@@ -149,10 +133,11 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
   const MAX_SCROLLBACK = 256 * 1024; // 256KB max
 
   const resolvedCwd = cwd || repoPath;
-  const session: Session = {
+  const session: PtySession = {
     id,
     type: type || 'worktree',
     agent,
+    mode: 'pty' as const,
     root: root || '',
     repoName: repoName || '',
     repoPath,
@@ -293,7 +278,7 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
 
   attachHandlers(ptyProcess, continueArgs.some(a => args.includes(a)));
 
-  return { id, type: session.type, agent: session.agent, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false, cwd: resolvedCwd, customCommand: command || null, useTmux, tmuxSessionName, status: 'active' as SessionStatus };
+  return { id, type: session.type, agent: session.agent, mode: 'pty' as const, root: session.root, repoName: session.repoName, repoPath, worktreeName: session.worktreeName, branchName: session.branchName, displayName: session.displayName, pid: ptyProcess.pid, createdAt, lastActivity: createdAt, idle: false, cwd: resolvedCwd, customCommand: command || null, useTmux, tmuxSessionName, status: 'active' as SessionStatus };
 }
 
 function get(id: string): Session | undefined {
@@ -302,24 +287,25 @@ function get(id: string): Session | undefined {
 
 function list(): SessionSummary[] {
   return Array.from(sessions.values())
-    .map(({ id, type, agent, root, repoName, repoPath, worktreeName, branchName, displayName, createdAt, lastActivity, idle, cwd, customCommand, useTmux, tmuxSessionName, status }) => ({
-      id,
-      type,
-      agent,
-      root,
-      repoName,
-      repoPath,
-      worktreeName,
-      branchName,
-      displayName,
-      createdAt,
-      lastActivity,
-      idle,
-      cwd,
-      customCommand,
-      useTmux,
-      tmuxSessionName,
-      status,
+    .map((s): SessionSummary => ({
+      id: s.id,
+      type: s.type,
+      agent: s.agent,
+      mode: s.mode,
+      root: s.root,
+      repoName: s.repoName,
+      repoPath: s.repoPath,
+      worktreeName: s.worktreeName,
+      branchName: s.branchName,
+      displayName: s.displayName,
+      createdAt: s.createdAt,
+      lastActivity: s.lastActivity,
+      idle: s.idle,
+      cwd: s.cwd,
+      customCommand: s.customCommand,
+      useTmux: s.mode === 'pty' ? s.useTmux : false,
+      tmuxSessionName: s.mode === 'pty' ? s.tmuxSessionName : '',
+      status: s.status,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
@@ -336,20 +322,22 @@ function kill(id: string): void {
   if (!session) {
     throw new Error(`Session not found: ${id}`);
   }
-  try {
-    session.pty.kill('SIGTERM');
-  } catch {
-    // PTY may already be dead (e.g. disconnected sessions) — still delete from registry
-  }
-  if (session.tmuxSessionName) {
-    execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
+  if (session.mode === 'pty') {
+    try {
+      session.pty.kill('SIGTERM');
+    } catch {
+      // PTY may already be dead (e.g. disconnected sessions) — still delete from registry
+    }
+    if (session.tmuxSessionName) {
+      execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
+    }
   }
   sessions.delete(id);
 }
 
 function killAllTmuxSessions(): void {
   for (const session of sessions.values()) {
-    if (session.tmuxSessionName) {
+    if (session.mode === 'pty' && session.tmuxSessionName) {
       execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
     }
   }
@@ -360,7 +348,9 @@ function resize(id: string, cols: number, rows: number): void {
   if (!session) {
     throw new Error(`Session not found: ${id}`);
   }
-  session.pty.resize(cols, rows);
+  if (session.mode === 'pty') {
+    session.pty.resize(cols, rows);
+  }
 }
 
 function write(id: string, data: string): void {
@@ -368,7 +358,9 @@ function write(id: string, data: string): void {
   if (!session) {
     throw new Error(`Session not found: ${id}`);
   }
-  session.pty.write(data);
+  if (session.mode === 'pty') {
+    session.pty.write(data);
+  }
 }
 
 function findRepoSession(repoPath: string): SessionSummary | undefined {
@@ -385,6 +377,9 @@ function serializeAll(configDir: string): void {
 
   const serialized: SerializedSession[] = [];
   for (const session of sessions.values()) {
+    // Only serialize PTY sessions — SDK session serialization comes in a later task
+    if (session.mode !== 'pty') continue;
+
     // Write scrollback to disk
     const scrollbackPath = path.join(scrollbackDirPath, session.id + '.buf');
     fs.writeFileSync(scrollbackPath, session.scrollback.join(''), 'utf-8');
@@ -519,7 +514,7 @@ async function restoreFromDisk(configDir: string): Promise<number> {
 function activeTmuxSessionNames(): Set<string> {
   const names = new Set<string>();
   for (const session of sessions.values()) {
-    if (session.tmuxSessionName) names.add(session.tmuxSessionName);
+    if (session.mode === 'pty' && session.tmuxSessionName) names.add(session.tmuxSessionName);
   }
   return names;
 }
