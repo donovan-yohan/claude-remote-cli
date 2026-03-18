@@ -16,22 +16,24 @@ The system has two compilation targets: a TypeScript + ESM backend (Express + no
 
 ### `server/`
 
-Ten TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
+Twelve TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
 
 | Module | Role |
 |--------|------|
 | `index.ts` | Composition root: Express app, REST routes, auth middleware, static serving |
-| `sessions.ts` | PTY spawning via node-pty, session lifecycle, scrollback buffering (256KB max) |
-| `ws.ts` | WebSocket upgrade handler, bidirectional PTY relay, scrollback replay |
+| `sessions.ts` | Session registry + dispatcher: routes `create()` to sdk-handler or pty-handler, lifecycle ops, idle sweep |
+| `pty-handler.ts` | PTY session creation via node-pty, scrollback buffering (256KB), tmux wrapping, continue-retry |
+| `sdk-handler.ts` | Claude SDK session creation via `@anthropic-ai/claude-agent-sdk`, structured event streaming, permission queue, debug logging |
+| `ws.ts` | WebSocket upgrade handler with protocol negotiation: JSON frames for SDK sessions, binary relay for PTY |
 | `watcher.ts` | File system watching for `.worktrees/` directories, debounced event emission |
 | `auth.ts` | PIN hashing (bcrypt), rate limiting (5 fails = 15-min lockout), cookie tokens |
 | `config.ts` | Config loading/saving with defaults, worktree metadata persistence |
 | `clipboard.ts` | System clipboard detection and image-set operations (osascript/xclip) |
 | `service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
-| `push.ts` | Web Push notification management (VAPID keys, subscription registry, `web-push`) |
-| `types.ts` | Shared TypeScript interfaces |
+| `push.ts` | Web Push notification management (VAPID keys, subscription registry, SDK event enrichment) |
+| `types.ts` | Shared TypeScript interfaces (discriminated union Session = PtySession \| SdkSession) |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `sessions.ts` depends on node-pty, only `push.ts` depends on web-push).
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler` and `sdk-handler`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `pty-handler.ts` depends on node-pty, only `sdk-handler.ts` depends on `@anthropic-ai/claude-agent-sdk`, only `push.ts` depends on web-push).
 
 ### `frontend/`
 
@@ -64,21 +66,41 @@ Unit tests using `node:test` and `node:assert`. TypeScript source compiled via `
 
 ## Data Flow
 
+**PTY mode** (codex, terminal, SDK fallback):
 ```
-Browser (xterm.js) <--WebSocket /ws/:id--> ws.ts <--PTY I/O--> node-pty <--spawns--> claude CLI
+Browser (xterm.js) <--WebSocket /ws/:id--> ws.ts <--PTY I/O--> node-pty <--spawns--> agent CLI
                                               |
                                          scrollback buffer (in-memory, per session)
+```
 
+**SDK mode** (claude agent, default):
+```
+Browser (ChatView) <--WebSocket /ws/:id JSON--> ws.ts <--events--> sdk-handler.ts <--SDK--> claude process
+                                                   |
+                                              events array (in-memory, 2000 max FIFO)
+```
+
+**Event channel** (both modes):
+```
 Browser (Svelte)   <--WebSocket /ws/events-- ws.ts <-- watcher.ts (fs.watch on .worktrees/)
                                                     <-- POST/DELETE /roots (manual broadcast)
 ```
 
+PTY flow:
 1. User types in xterm.js terminal
 2. Keystrokes sent via WebSocket to server
 3. Server writes to PTY stdin
 4. PTY stdout/stderr relayed back over WebSocket
 5. xterm.js renders output in browser
 6. Resize events sent as JSON: `{type: 'resize', cols, rows}`
+
+SDK flow:
+1. User sends message via ChatInput → `{type: 'message', text}` over WebSocket
+2. ws.ts routes to sdk-handler `sendMessage()`
+3. SDK streams structured events (agent_message, file_change, tool_call, etc.)
+4. Events relayed as JSON frames to browser
+5. ChatView renders events as message cards
+6. Permission requests: server sends `tool_call` event → client shows PermissionCard → user taps Approve/Deny → `{type: 'permission', requestId, approved}` back to server
 
 ## REST API
 
@@ -99,13 +121,17 @@ Browser (Svelte)   <--WebSocket /ws/events-- ws.ts <-- watcher.ts (fs.watch on .
 | `GET/POST/DELETE` | `/roots` | Manage configured root directories |
 | `GET` | `/version` | Check for npm updates |
 | `POST` | `/sessions/:id/image` | Upload clipboard image |
+| `POST` | `/sessions/:id/message` | Send message to SDK session |
+| `POST` | `/sessions/:id/permission` | Approve/deny SDK permission request |
 | `POST` | `/update` | Self-update via npm |
 | `GET` | `/config/defaultAgent` | Get default coding agent |
 | `PATCH` | `/config/defaultAgent` | Set default coding agent (`claude` or `codex`) |
 
 ## WebSocket Channels
 
-- `/ws/:sessionId` — PTY relay (bidirectional: terminal I/O + resize). Close code 1000 = PTY exited.
+- `/ws/:sessionId` — Session relay with protocol negotiation:
+  - **SDK sessions**: First message is `{type: 'session_info', mode: 'sdk'}`. Subsequent frames are JSON (SDK events server→client, messages/permissions client→server). Backpressure pauses at 1MB buffered.
+  - **PTY sessions**: Raw binary terminal I/O + resize JSON. Close code 1000 = PTY exited.
 - `/ws/events` — Server-to-client broadcast (`worktrees-changed`, `session-idle-changed`).
 
 Both channels require authentication via `token` cookie verified during HTTP upgrade.
@@ -116,7 +142,7 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 **Auth:** Every HTTP request (except `/auth` POST) and every WebSocket upgrade requires a valid session cookie. Rate limiting is per-IP.
 
-**Session lifecycle:** Sessions are in-memory during normal operation. PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction. During auto-updates, sessions are serialized to disk (`pending-sessions.json` + scrollback files) and restored on restart.
+**Session lifecycle:** Sessions are in-memory during normal operation. PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction. SDK sessions cap at 2000 events with FIFO eviction. SDK sessions idle >30min are swept (max 5 idle). During auto-updates, sessions are serialized to disk (`pending-sessions.json` + scrollback files) and restored on restart.
 
 ---
 
@@ -126,7 +152,7 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 | ADR | Topic |
 |-----|-------|
-| ADR-001 | Modular server architecture (nine modules, composition root, dependency flow) |
+| ADR-001 | Modular server architecture (twelve modules, composition root, dependency flow) |
 | ADR-003 | PTY session management (in-memory state, scrollback, CLAUDECODE stripping) |
 | ADR-004 | PIN authentication (bcrypt, cookie tokens, rate limiting) |
 | ADR-005 | Built-in test runner (node:test, nine test files, no external framework) |
