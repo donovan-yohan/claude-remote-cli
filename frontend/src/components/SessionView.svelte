@@ -32,39 +32,22 @@
   let companionLoading = $state(false);
   let companionError = $state(false);
 
-  // User messages tracked separately for display
-  let userMessages = $state<Array<{ text: string; timestamp: string }>>([]);
+  // Track last user message for retry (#13)
+  let lastUserMessage = $state('');
 
   let sdkState = $derived(sessionId ? getSdkState(sessionId) : null);
 
-  // Build merged event list: interleave user messages at turn_started boundaries
+  // Events are the source of truth — user_message events are appended directly to the event stream
   let displayEvents = $derived(() => {
     if (!sdkState) return [] as SdkEvent[];
-    const events = sdkState.events;
-    const result: SdkEvent[] = [];
-    let userIdx = 0;
-    for (const event of events) {
-      if (event.type === 'turn_started' && userIdx < userMessages.length) {
-        // Insert user message before turn_started
-        const um = userMessages[userIdx]!;
-        result.push({
-          type: 'user_message',
-          text: um.text,
-          timestamp: um.timestamp,
-          id: 'user-' + um.timestamp,
-        });
-        userIdx++;
-      }
-      result.push(event);
-    }
-    return result;
+    return sdkState.events;
   });
 
   // Initialize SDK state when session changes
   $effect(() => {
     if (sessionId && mode === 'sdk') {
       initSdkState(sessionId);
-      userMessages = [];
+      lastUserMessage = '';
       companionConnected = false;
       companionError = false;
       activeTab = 'chat';
@@ -102,7 +85,14 @@
 
   function handleSend(text: string) {
     if (!sessionId) return;
-    userMessages.push({ text, timestamp: new Date().toISOString() });
+    lastUserMessage = text;
+    // Append user message directly to event stream so it survives reconnect/restore
+    appendEvent(sessionId, {
+      type: 'user_message',
+      text,
+      timestamp: new Date().toISOString(),
+      id: 'user-' + Date.now(),
+    });
     sendSdkMessage(text);
   }
 
@@ -121,8 +111,7 @@
   }
 
   function handleRetry() {
-    const lastMsg = userMessages.length > 0 ? userMessages[userMessages.length - 1]!.text : 'Retry';
-    handleSend(lastMsg);
+    handleSend(lastUserMessage || 'Retry');
   }
 
   function openCompanionShell() {

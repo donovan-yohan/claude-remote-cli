@@ -99,25 +99,47 @@ function cleanupOldDebugFiles(): void {
   }
 }
 
+// Async write queue to avoid blocking the event loop on debug log writes
+const debugWriteQueue = new Map<string, string[]>();
+let debugFlushPending = false;
+
+function flushDebugWrites(): void {
+  if (debugFlushPending) return;
+  debugFlushPending = true;
+  queueMicrotask(() => {
+    debugFlushPending = false;
+    for (const [filePath, lines] of debugWriteQueue) {
+      const data = lines.join('');
+      debugWriteQueue.delete(filePath);
+      fs.appendFile(filePath, data, 'utf-8', () => {});
+    }
+  });
+}
+
 function debugLogEvent(sessionId: string, event: SdkEvent): void {
   if (!debugLogEnabled) return;
   try {
     const filePath = path.join(DEBUG_DIR, `${sessionId}.jsonl`);
     const line = JSON.stringify({ ...event, _logged: new Date().toISOString() }) + '\n';
 
-    // Auto-rotate at 10MB
-    try {
-      const stat = fs.statSync(filePath);
-      if (stat.size > MAX_DEBUG_FILE_SIZE) {
+    // Async rotation check (best-effort, runs periodically)
+    fs.stat(filePath, (err, stat) => {
+      if (!err && stat.size > MAX_DEBUG_FILE_SIZE) {
         const rotatedPath = filePath + '.1';
-        try { fs.unlinkSync(rotatedPath); } catch { /* ignore */ }
-        fs.renameSync(filePath, rotatedPath);
+        fs.unlink(rotatedPath, () => {
+          fs.rename(filePath, rotatedPath, () => {});
+        });
       }
-    } catch {
-      // file doesn't exist yet, that's fine
-    }
+    });
 
-    fs.appendFileSync(filePath, line, 'utf-8');
+    // Queue the write
+    const existing = debugWriteQueue.get(filePath);
+    if (existing) {
+      existing.push(line);
+    } else {
+      debugWriteQueue.set(filePath, [line]);
+    }
+    flushDebugWrites();
   } catch {
     // debug logging should never crash the server
   }
@@ -148,6 +170,8 @@ interface ContentBlock {
   input?: unknown;
 }
 
+const FILE_EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit']);
+
 function extractAssistantEvents(msg: SDKAssistantMessage, timestamp: string): SdkEvent[] {
   const events: SdkEvent[] = [];
   const content = msg.message.content as ContentBlock[];
@@ -162,7 +186,7 @@ function extractAssistantEvents(msg: SDKAssistantMessage, timestamp: string): Sd
       thinkingParts.push(block.thinking);
     } else if (block.type === 'tool_use' && block.name && block.id) {
       const input = (block.input || {}) as Record<string, unknown>;
-      const isFileEdit = block.name === 'Edit' || block.name === 'Write' || block.name === 'MultiEdit';
+      const isFileEdit = FILE_EDIT_TOOLS.has(block.name);
       const filePath = (input.file_path as string | undefined) || (input.path as string | undefined);
 
       if (isFileEdit) {
@@ -546,15 +570,6 @@ export function killSdkSession(sessionId: string): void {
   runtimeStates.delete(sessionId);
 }
 
-export function getEvents(sessionId: string): SdkEvent[] {
-  const state = runtimeStates.get(sessionId);
-  if (!state) return [];
-  // We need to get the session from wherever it's stored
-  // The events are on the session object, but we need it from the sessions map
-  // This is a convenience — callers should use session.events directly
-  return [];
-}
-
 export function onSdkEvent(sessionId: string, callback: (event: SdkEvent) => void): () => void {
   const state = runtimeStates.get(sessionId);
   if (!state) {
@@ -569,13 +584,6 @@ export function onSdkEvent(sessionId: string, callback: (event: SdkEvent) => voi
 
 export function hasSdkRuntime(sessionId: string): boolean {
   return runtimeStates.has(sessionId);
-}
-
-export function getLastActivityTime(sessionId: string): string | null {
-  const state = runtimeStates.get(sessionId);
-  if (!state) return null;
-  // Runtime state doesn't store lastActivity — that's on the session
-  return null;
 }
 
 // Serialization for SDK sessions

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatTokenCount, formatCost } from '../../lib/pricing.js';
+  import { formatTokenCount, formatCost, calculateCost } from '../../lib/pricing.js';
 
   let {
     usage,
@@ -12,7 +12,7 @@
   <div class="separator-line"></div>
   {#if usage}
     <div class="usage-info">
-      {formatTokenCount(usage.input_tokens + usage.output_tokens)} tokens
+      {formatTokenCount(usage.input_tokens + usage.output_tokens)} tokens · {formatCost(calculateCost(usage.input_tokens, usage.output_tokens))}
     </div>
   {/if}
 </div>

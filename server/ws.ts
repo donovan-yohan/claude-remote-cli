@@ -204,7 +204,12 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
         }
 
         if (parsed.type === 'resize' && typeof parsed.cols === 'number' && typeof parsed.rows === 'number') {
-          // Resize companion shell if present (future feature)
+          // TODO: wire up companion shell — currently open_companion message is unhandled server-side
+          return;
+        }
+
+        if (parsed.type === 'open_companion') {
+          // TODO: spawn companion PTY in session CWD and relay via terminal_data/terminal_exit frames
           return;
         }
       } catch (_) {
