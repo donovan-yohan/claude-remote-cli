@@ -266,7 +266,9 @@
       : undefined
   );
 
-  let hasActiveSession = $derived(!!activeSession && activeSession.repoPath === ui.activeWorkspacePath);
+  let hasActiveSession = $derived(!!activeSession && !!ui.activeWorkspacePath && (
+    activeSession.repoPath === ui.activeWorkspacePath || activeSession.repoPath.startsWith(ui.activeWorkspacePath + '/')
+  ));
 
   let sessionTitle = $derived(
     activeSession?.displayName || activeWorkspace?.name || 'Claude Remote CLI'
@@ -298,7 +300,11 @@
     sessionState.activeSessionId = id;
     const session = sessionState.sessions.find(s => s.id === id);
     if (session) {
-      ui.activeWorkspacePath = session.repoPath;
+      // For worktree sessions, find the parent workspace path
+      const workspace = sessionState.workspaces.find(w =>
+        session.repoPath === w.path || session.repoPath.startsWith(w.path + '/')
+      );
+      ui.activeWorkspacePath = workspace?.path ?? session.repoPath;
     }
     clearAttention(id);
     closeSidebar();

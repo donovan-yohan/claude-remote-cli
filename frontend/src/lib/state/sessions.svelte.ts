@@ -91,7 +91,9 @@ export async function refreshAll(): Promise<void> {
 }
 
 export function getSessionsForWorkspace(workspacePath: string): SessionSummary[] {
-  return sessions.filter(s => s.repoPath === workspacePath);
+  // Match sessions where repoPath is the workspace itself OR a worktree under it
+  // (worktree sessions have repoPath like /workspace/.worktrees/name)
+  return sessions.filter(s => s.repoPath === workspacePath || s.repoPath.startsWith(workspacePath + '/'));
 }
 
 const ATTENTION_COOLDOWN_MS = 30_000;
