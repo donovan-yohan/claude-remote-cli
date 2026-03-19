@@ -73,6 +73,8 @@ export function connectPtySocket(
   socket.onmessage = (event) => { term.write(event.data as string); };
 
   socket.onclose = (event) => {
+    // Clear pending ref if this socket closed before onopen
+    if (pendingPtySocket === socket) pendingPtySocket = null;
     // If this socket was superseded, ignore its close event
     if (pendingPtySocket !== socket && ptyWs !== socket) return;
     if (event.code === 1000) {

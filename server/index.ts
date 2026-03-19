@@ -715,6 +715,10 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Sanitize optional terminal dimensions
+    const safeCols = typeof cols === 'number' && Number.isFinite(cols) && cols >= 1 && cols <= 500 ? Math.round(cols) : undefined;
+    const safeRows = typeof rows === 'number' && Number.isFinite(rows) && rows >= 1 && rows <= 200 ? Math.round(rows) : undefined;
+
     const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
     const baseArgs = [
@@ -804,8 +808,8 @@ async function main(): Promise<void> {
                 displayName: name,
                 args: baseArgs,
                 useTmux: useTmux ?? config.launchInTmux,
-                ...(cols != null && { cols }),
-                ...(rows != null && { rows }),
+                ...(safeCols != null && { cols: safeCols }),
+                ...(safeRows != null && { rows: safeRows }),
               });
 
               res.status(201).json(repoSession);
@@ -832,8 +836,8 @@ async function main(): Promise<void> {
                 args,
                 configPath: CONFIG_PATH,
                 useTmux: useTmux ?? config.launchInTmux,
-                ...(cols != null && { cols }),
-                ...(rows != null && { rows }),
+                ...(safeCols != null && { cols: safeCols }),
+                ...(safeRows != null && { rows: safeRows }),
               });
 
               writeMeta(CONFIG_PATH, {
@@ -880,8 +884,8 @@ async function main(): Promise<void> {
       args,
       configPath: CONFIG_PATH,
       useTmux: useTmux ?? config.launchInTmux,
-      ...(cols != null && { cols }),
-      ...(rows != null && { rows }),
+      ...(safeCols != null && { cols: safeCols }),
+      ...(safeRows != null && { rows: safeRows }),
     });
 
     if (!worktreePath) {
@@ -916,6 +920,10 @@ async function main(): Promise<void> {
 
     const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
 
+    // Sanitize optional terminal dimensions
+    const safeCols = typeof cols === 'number' && Number.isFinite(cols) && cols >= 1 && cols <= 500 ? Math.round(cols) : undefined;
+    const safeRows = typeof rows === 'number' && Number.isFinite(rows) && rows >= 1 && rows <= 200 ? Math.round(rows) : undefined;
+
     // One repo session at a time
     const existing = sessions.findRepoSession(repoPath);
     if (existing) {
@@ -944,8 +952,8 @@ async function main(): Promise<void> {
       displayName: name,
       args,
       useTmux: useTmux ?? config.launchInTmux,
-      ...(cols != null && { cols }),
-      ...(rows != null && { rows }),
+      ...(safeCols != null && { cols: safeCols }),
+      ...(safeRows != null && { rows: safeRows }),
     });
 
     res.status(201).json(session);
