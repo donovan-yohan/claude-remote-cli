@@ -167,6 +167,7 @@
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
           agent: selectedAgent,
           useTmux,
+          allowMultiple: true,
         });
       } else {
         session = await createSession({

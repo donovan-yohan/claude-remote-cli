@@ -461,12 +461,16 @@ async function main(): Promise<void> {
       }
     }
 
-    // Check no active session is using this worktree
-    const activeSessions = sessions.list();
-    const conflict = activeSessions.find(function (s) { return s.repoPath === worktreePath; });
-    if (conflict) {
-      res.status(409).json({ error: 'Close the active session first' });
-      return;
+    // Check no active session is using this worktree — unless creating a new tab
+    const bodyAllowMultiple = (req.body as Record<string, unknown>).allowMultiple;
+    const bodyNeedsBranchRename = (req.body as Record<string, unknown>).needsBranchRename;
+    if (!bodyNeedsBranchRename && !bodyAllowMultiple) {
+      const activeSessions = sessions.list();
+      const conflict = activeSessions.find(function (s) { return s.repoPath === worktreePath; });
+      if (conflict) {
+        res.status(409).json({ error: 'Close the active session first' });
+        return;
+      }
     }
 
     // Derive branch name from metadata or worktree directory name
@@ -713,7 +717,7 @@ async function main(): Promise<void> {
 
   // POST /sessions/repo — start a session in the repo root (no worktree)
   app.post('/sessions/repo', requireAuth, (req, res) => {
-    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux } = req.body as {
+    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux, allowMultiple } = req.body as {
       repoPath?: string;
       repoName?: string;
       continue?: boolean;
@@ -721,6 +725,7 @@ async function main(): Promise<void> {
       yolo?: boolean;
       agent?: AgentType;
       useTmux?: boolean;
+      allowMultiple?: boolean;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -729,11 +734,13 @@ async function main(): Promise<void> {
 
     const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
 
-    // One repo session at a time
-    const existing = sessions.findRepoSession(repoPath);
-    if (existing) {
-      res.status(409).json({ error: 'A session already exists for this repo', sessionId: existing.id });
-      return;
+    // One repo session at a time — unless explicitly creating a new tab
+    if (!allowMultiple) {
+      const existing = sessions.findRepoSession(repoPath);
+      if (existing) {
+        res.status(409).json({ error: 'A session already exists for this repo', sessionId: existing.id });
+        return;
+      }
     }
 
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';

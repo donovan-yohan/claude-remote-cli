@@ -135,6 +135,7 @@ export async function createSession(body: {
   useTmux?: boolean | undefined;
   needsBranchRename?: boolean | undefined;
   branchRenamePrompt?: string | undefined;
+  allowMultiple?: boolean | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions', {
     method: 'POST',
@@ -156,6 +157,7 @@ export async function createRepoSession(body: {
   yolo?: boolean | undefined;
   agent?: string | undefined;
   useTmux?: boolean | undefined;
+  allowMultiple?: boolean | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions/repo', {
     method: 'POST',

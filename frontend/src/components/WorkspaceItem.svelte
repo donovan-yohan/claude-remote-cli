@@ -188,8 +188,7 @@
           {:else}
             <span class={statusDotClass(session)}></span>
           {/if}
-          <span class="session-name">{sessionDisplayName(session)}</span>
-          <span class="session-status">{statusLabel(session)}</span>
+          <span class="session-name" class:bold={getSessionStatus(session) === 'attention'}>{sessionDisplayName(session)}</span>
           <ContextMenu items={sessionMenuItems(session)} />
         </li>
       {/each}
@@ -213,7 +212,6 @@
         >
           <span class="dot dot-inactive"></span>
           <span class="session-name">{wt.branchName || wt.displayName || wt.name}</span>
-          <span class="session-status">inactive</span>
           <ContextMenu items={worktreeMenuItems(wt)} />
         </li>
       {/each}
@@ -390,6 +388,10 @@
     white-space: nowrap;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+
+  .session-name.bold {
+    font-weight: 700;
   }
 
   .session-status {
