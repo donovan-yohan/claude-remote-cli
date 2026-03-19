@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, GitStatus, Workspace, SessionMeta } from '../types.js';
+import type { SessionSummary, WorktreeInfo, GitStatus, Workspace, SessionMeta, AgentState } from '../types.js';
 import { fireNotification, shouldFireNotification } from '../notifications.js';
 import * as api from '../api.js';
 
@@ -117,11 +117,37 @@ export function renameSession(sessionId: string, branchName: string, displayName
   }
 }
 
+export function setAgentState(sessionId: string, state: AgentState): void {
+  const session = sessions.find(s => s.id === sessionId);
+  if (session) session.agentState = state;
+
+  // Only trigger attention for waiting-for-input (real attention needed)
+  if (state === 'waiting-for-input' && sessionId !== activeSessionId && session?.type !== 'terminal') {
+    const dismissedAt = dismissedSessions[sessionId];
+    if (dismissedAt && Date.now() - dismissedAt < ATTENTION_COOLDOWN_MS) {
+      return;
+    }
+    delete dismissedSessions[sessionId];
+    attentionSessions[sessionId] = true;
+
+    if (session && notificationSessions[sessionId] && shouldFireNotification()) {
+      fireNotification(session);
+    }
+  } else if (state === 'processing' || state === 'initializing') {
+    // Agent is working — clear attention
+    delete attentionSessions[sessionId];
+  }
+}
+
 export function setAttention(sessionId: string, idle: boolean): void {
   // Update the idle flag on the session object so getSessionStatus() reflects
   // the real-time state without waiting for a full refreshAll() round-trip.
   const session = sessions.find(s => s.id === sessionId);
   if (session) session.idle = idle;
+
+  // If session has agentState from the output parser, skip the idle-based attention
+  // logic — setAgentState handles attention more accurately
+  if (session?.agentState && session.agentState !== 'idle') return;
 
   if (idle && sessionId !== activeSessionId && session?.type !== 'terminal') {
     const dismissedAt = dismissedSessions[sessionId];
@@ -169,8 +195,9 @@ export function setGitStatus(key: string, status: GitStatus): void {
   void key; void status;
 }
 
-export function getSessionStatus(session: SessionSummary): 'attention' | 'idle' | 'running' {
+export function getSessionStatus(session: SessionSummary): 'attention' | 'idle' | 'running' | 'permission-prompt' {
   if (attentionSessions[session.id]) return 'attention';
+  if (session.agentState === 'permission-prompt') return 'permission-prompt';
   if (session.idle) return 'idle';
   return 'running';
 }

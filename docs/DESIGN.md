@@ -48,7 +48,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 
 - **Repo sessions** (`POST /sessions/repo`) — The selected coding agent runs directly in the repo root. One per repo path (409 on conflict). Supports `continue: true`, which maps to agent-specific continue args.
 - **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/` and launches the selected coding agent there. Multiple per repo allowed. If a branch is already checked out (main worktree or another worktree), auto-redirects to that location instead of failing. Default branch names cycle through mountain names (everest, kilimanjaro, denali, ...) tracked per-config via `nextMountainIndex`.
-- **Branch auto-rename** — New worktrees with mountain names get `needsBranchRename: true`. On first interaction, the rename instruction is injected: SDK mode prepends to the first user message; PTY mode sends as a standalone first message when Claude CLI goes idle. A branch watcher polls `git rev-parse --abbrev-ref HEAD` every 3s (max 10 attempts) and broadcasts `session-renamed` when the branch changes.
+- **Branch auto-rename** — New worktrees with mountain names get `needsBranchRename: true`. The rename instruction is delivered via a sideband `claude -p` invocation (a one-shot non-interactive Claude process) rather than PTY injection, keeping the main session's input stream clean. A branch watcher polls `git rev-parse --abbrev-ref HEAD` every 3s (max 10 attempts) and broadcasts `session-renamed` when the branch changes.
 - **Worktree deletion** (`DELETE /worktrees`) — Validated via `git worktree list` (supports arbitrary paths, not just `.worktrees/`). Main worktree cannot be deleted.
 
 ## Idle Detection
@@ -56,6 +56,16 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 - `idle: true` when no PTY output for 5 seconds
 - `onIdleChange(callback)` is single-subscriber (not EventEmitter)
 - `ws.ts` broadcasts `session-idle-changed` events over event WebSocket
+- For agents with a registered output parser (e.g., Claude, Codex), a richer `AgentState` (e.g., `processing`, `idle`, `waiting-for-input`, `permission-prompt`) replaces raw idle as the primary signal. Raw idle remains the fallback for unsupported agents.
+
+## Output Parser
+
+The `server/output-parsers/` directory implements a vendor-extensible registry for parsing terminal output into semantic `AgentState` values.
+
+- **Registry pattern:** `index.ts` exports a `getParser(agentType)` function that returns the appropriate parser keyed by `AgentType`. Callers do not import individual parsers directly.
+- **Per-vendor parsers:** `claude-parser.ts` and `codex-parser.ts` each export a stateless parse function `(chunk: string, currentState: AgentState) => AgentState`.
+- **No cross-module deps:** The `output-parsers/` module only imports from `types.ts`; it does not depend on any other server module.
+- **Extending:** To add a new agent, create `<vendor>-parser.ts` and register it in `index.ts`.
 
 ## Clipboard Image Passthrough
 

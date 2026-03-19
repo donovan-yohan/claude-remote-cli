@@ -2,10 +2,11 @@ import pty from 'node-pty';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { AgentType, PtySession, SessionStatus, SessionSummary, SessionType } from './types.js';
+import type { AgentType, AgentState, PtySession, SessionStatus, SessionSummary, SessionType } from './types.js';
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS } from './types.js';
 import { readMeta, writeMeta } from './config.js';
 import { fireSessionEnd } from './sessions.js';
+import { outputParsers } from './output-parsers/index.js';
 
 const IDLE_TIMEOUT_MS = 5000;
 const MAX_SCROLLBACK = 256 * 1024; // 256KB max
@@ -59,6 +60,7 @@ export function createPtySession(
   params: CreatePtyParams,
   sessionsMap: Map<string, import('./types.js').Session>,
   idleChangeCallbacks: Array<(sessionId: string, idle: boolean) => void>,
+  stateChangeCallbacks: Array<(sessionId: string, state: AgentState) => void> = [],
 ): { session: PtySession; result: CreatePtyResult } {
   const {
     id,
@@ -113,6 +115,8 @@ export function createPtySession(
   let scrollbackBytes = initialScrollback ? initialScrollback.reduce((sum, s) => sum + s.length, 0) : 0;
 
   const resolvedCwd = cwd || repoPath;
+  // Instantiate vendor-specific output parser (terminal/custom-command sessions get no parser)
+  const parser = command ? outputParsers['claude']() : outputParsers[agent]();
   const session: PtySession = {
     id,
     type: type || 'worktree',
@@ -137,6 +141,8 @@ export function createPtySession(
     status: 'active' as SessionStatus,
     restored: paramRestored || false,
     needsBranchRename: false,
+    agentState: 'initializing',
+    outputParser: parser,
   };
   sessionsMap.set(id, session);
 
@@ -187,6 +193,13 @@ export function createPtySession(
           metaFlushTimer = null;
           writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
         }, 5000);
+      }
+
+      // Vendor-specific output parsing for semantic state detection
+      const parseResult = session.outputParser.onData(data, scrollback.slice(-20));
+      if (parseResult && parseResult.state !== session.agentState) {
+        session.agentState = parseResult.state;
+        for (const cb of stateChangeCallbacks) cb(session.id, parseResult.state);
       }
     });
 
@@ -276,6 +289,7 @@ export function createPtySession(
     tmuxSessionName,
     status: 'active' as SessionStatus,
     needsBranchRename: false,
+    agentState: 'initializing',
   };
 
   return { session, result };

@@ -1,4 +1,5 @@
 export type AgentType = 'claude' | 'codex';
+export type AgentState = 'initializing' | 'waiting-for-input' | 'processing' | 'permission-prompt' | 'error' | 'idle';
 
 export interface Workspace {
   path: string;
@@ -22,6 +23,7 @@ export interface SessionSummary {
   idle: boolean;
   useTmux?: boolean | undefined;
   status?: 'active' | 'disconnected' | undefined;
+  agentState?: AgentState | undefined;
 }
 
 export interface WorktreeInfo {
