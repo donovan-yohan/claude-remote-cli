@@ -26,6 +26,8 @@ export interface Session {
   onPtyReplacedCallbacks: Array<(newPty: IPty) => void>;
   status: SessionStatus;
   restored: boolean;
+  needsBranchRename?: boolean;
+  branchRenamePrompt?: string;
 }
 
 export interface WorktreeMetadata {
@@ -36,12 +38,35 @@ export interface WorktreeMetadata {
 }
 
 export interface WorkspaceSettings {
+  // Session defaults
   defaultAgent?: AgentType;
   defaultContinue?: boolean;
   defaultYolo?: boolean;
   launchInTmux?: boolean;
   claudeArgs?: string[];
+
+  // Git settings
+  defaultBranch?: string;
+  remote?: string;
+  branchPrefix?: string;
+
+  // Custom prompts (Conductor-style)
+  promptCodeReview?: string;
+  promptCreatePr?: string;
+  promptBranchRename?: string;
+  promptGeneral?: string;
+
+  // Worktree naming — mountains theme
+  nextMountainIndex?: number;
 }
+
+export const MOUNTAIN_NAMES = [
+  'everest', 'kilimanjaro', 'denali', 'fuji', 'rainier', 'matterhorn',
+  'elbrus', 'aconcagua', 'kangchenjunga', 'lhotse', 'makalu', 'cho-oyu',
+  'dhaulagiri', 'manaslu', 'annapurna', 'nanga-parbat', 'olympus',
+  'mont-blanc', 'k2', 'vinson', 'erebus', 'logan', 'puncak-jaya',
+  'wilhelm', 'cook', 'ararat', 'etna', 'shasta', 'whitney', 'hood',
+] as const;
 
 export interface Config {
   host: string;

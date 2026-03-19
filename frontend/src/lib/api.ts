@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry } from './types.js';
+import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -84,6 +84,15 @@ export async function fetchPrForBranch(workspacePath: string, branch: string): P
 
 export async function autocompletePath(prefix: string): Promise<string[]> {
   return json<string[]>(await fetch('/workspaces/autocomplete?prefix=' + encodeURIComponent(prefix)));
+}
+
+export async function createWorktree(workspacePath: string): Promise<{ branchName: string; mountainName: string; worktreePath: string }> {
+  const res = await fetch('/workspaces/worktree?path=' + encodeURIComponent(workspacePath), { method: 'POST' });
+  if (!res.ok) {
+    const data = await res.json() as { error?: string };
+    throw new Error(data.error || 'Failed to create worktree');
+  }
+  return res.json() as Promise<{ branchName: string; mountainName: string; worktreePath: string }>;
 }
 
 export async function switchBranch(workspacePath: string, branch: string): Promise<{ success: boolean; error?: string }> {
@@ -265,4 +274,20 @@ export async function pushUnsubscribe(endpoint: string): Promise<void> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ endpoint }),
   });
+}
+
+export async function fetchWorkspaceSettings(workspacePath: string): Promise<WorkspaceSettings> {
+  return json<WorkspaceSettings>(await fetch('/workspaces/settings?path=' + encodeURIComponent(workspacePath)));
+}
+
+export async function updateWorkspaceSettings(workspacePath: string, settings: WorkspaceSettings): Promise<void> {
+  const res = await fetch('/workspaces/settings?path=' + encodeURIComponent(workspacePath), {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) {
+    const data = await res.json() as { error?: string };
+    throw new Error(data.error || 'Failed to update workspace settings');
+  }
 }

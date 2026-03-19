@@ -114,8 +114,79 @@ Archive = existing cleanup flow (kill session, remove worktree, prune branch).
 - Terminals are a session type under a workspace (different icon), not a separate section
 - Context menu action on workspace to "Open terminal" at repo root
 - Each workspace detects git repo → enables git/gh integrations
-- Per-workspace settings (agent, yolo, continue, tmux, custom args)
+- Per-workspace settings (agent, yolo, continue, tmux, custom args, custom prompts)
 - Multi-tab sessions: each tab = separate Claude Code terminal process
+
+### Worktree Default Names — Mountains Theme
+`+ new worktree` instantly creates a worktree with the next mountain name:
+```
+everest, kilimanjaro, denali, fuji, rainier, matterhorn, elbrus, aconcagua,
+kangchenjunga, lhotse, makalu, cho-oyu, dhaulagiri, manaslu, annapurna,
+nanga-parbat, olympus, mont-blanc, k2, vinson, erebus, logan, puncak-jaya,
+wilhelm, cook, ararat, etna, shasta, whitney, hood
+```
+- Counter tracked per-workspace: `nextMountainIndex`
+- Click `+ new worktree` → immediately creates worktree + starts session (no dialog)
+- Branch auto-renamed after first message via prompt injection (see below)
+
+### Branch Auto-Rename (Conductor pattern)
+When the user sends their first message in a new worktree session:
+1. Detect first Enter in `ws.ts` (buffer client→server data)
+2. Prepend the branch rename prompt before the user's message:
+   ```
+   [Before responding: rename the current branch using `git branch -m` to a
+   descriptive name based on this task. {user's branch rename preferences}.
+   Then proceed with the task.]
+
+   {user's actual message}
+   ```
+3. The Claude/Codex CLI session renames the branch itself
+4. Session metadata updates when git refs change
+5. Only happens once per worktree (flagged `needsBranchRename`)
+
+### Per-Workspace Settings (Conductor-inspired)
+Accessible via gear icon on workspace item. Full settings page per repo:
+
+**Git settings:**
+- Default branch to create worktrees from (auto-detected, configurable)
+- Remote origin (default: `origin`)
+- Branch prefix (e.g., `dy/`, `feat/`)
+
+**Session defaults:**
+- Default agent (claude / codex)
+- Default continue, yolo, tmux toggles
+- Custom claude args
+
+**Custom prompts (collapsible text areas with preview):**
+- **Code review preferences** — injected when "Code Review" action button clicked
+- **Create PR preferences** — injected when "Create PR" action button clicked
+- **Branch rename preferences** — injected with first message for auto-rename
+- **General preferences** — injected at start of every new session
+
+```typescript
+interface WorkspaceSettings {
+  // Session defaults
+  defaultAgent?: AgentType;
+  defaultContinue?: boolean;
+  defaultYolo?: boolean;
+  launchInTmux?: boolean;
+  claudeArgs?: string[];
+
+  // Git settings
+  defaultBranch?: string;
+  remote?: string;
+  branchPrefix?: string;
+
+  // Custom prompts
+  promptCodeReview?: string;
+  promptCreatePr?: string;
+  promptBranchRename?: string;
+  promptGeneral?: string;
+
+  // Worktree naming
+  nextMountainIndex?: number;
+}
+```
 
 ### Repo Dashboard
 - Click workspace with no active sessions → shows development dashboard

@@ -105,3 +105,19 @@ export interface PrInfo {
   isDraft: boolean;
   reviewDecision: string | null;
 }
+
+export interface WorkspaceSettings {
+  defaultAgent?: AgentType;
+  defaultContinue?: boolean;
+  defaultYolo?: boolean;
+  launchInTmux?: boolean;
+  claudeArgs?: string[];
+  defaultBranch?: string;
+  remote?: string;
+  branchPrefix?: string;
+  promptCodeReview?: string;
+  promptCreatePr?: string;
+  promptBranchRename?: string;
+  promptGeneral?: string;
+  nextMountainIndex?: number;
+}

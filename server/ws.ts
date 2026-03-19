@@ -120,6 +120,29 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
           return;
         }
       } catch (_) {}
+
+      // Branch rename interception: prepend rename prompt before the user's first message
+      if (session.needsBranchRename) {
+        if (!(session as any)._renameBuffer) (session as any)._renameBuffer = '';
+        const enterIndex = str.indexOf('\r');
+        if (enterIndex === -1) {
+          // No Enter yet — buffer and pass through so the user sees echo
+          (session as any)._renameBuffer += str;
+          session.pty.write(str);
+          return;
+        }
+        // Enter detected — inject rename prompt before the user's message
+        const buffered: string = (session as any)._renameBuffer;
+        const beforeEnter = buffered + str.slice(0, enterIndex);
+        const afterEnter = str.slice(enterIndex); // includes the \r
+        const renamePrompt = `Before doing anything else, rename the current git branch using \`git branch -m <new-name>\`. Choose a short, descriptive kebab-case branch name based on the task below.${session.branchRenamePrompt ? ' User preferences: ' + session.branchRenamePrompt : ''} Do not ask for confirmation — just rename and proceed.\n\n`;
+        const clearLine = '\x15'; // Ctrl+U clears the current input line
+        session.pty.write(clearLine + renamePrompt + beforeEnter + afterEnter);
+        session.needsBranchRename = false;
+        delete (session as any)._renameBuffer;
+        return;
+      }
+
       // Use session.pty dynamically so writes go to current PTY
       session.pty.write(str);
     });

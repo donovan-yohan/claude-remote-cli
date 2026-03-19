@@ -314,8 +314,12 @@
     }
   }
 
-  function handleOpenSettings() {
-    settingsDialogRef?.open();
+  function handleOpenSettings(workspace?: Workspace) {
+    if (workspace) {
+      workspaceSettingsDialogRef?.open(workspace.path, workspace.name);
+    } else {
+      settingsDialogRef?.open();
+    }
   }
 
   function handleNewWorktree(workspace: Workspace) {
@@ -481,6 +485,14 @@
   <SettingsDialog bind:this={settingsDialogRef} />
   <DeleteWorktreeDialog bind:this={deleteWorktreeDialogRef} />
   <AddWorkspaceDialog bind:this={addWorkspaceDialogRef} onWorkspaceAdded={handleWorkspaceAdded} />
+  <WorkspaceSettingsDialog
+    bind:this={workspaceSettingsDialogRef}
+    onRemoveWorkspace={async (p) => {
+      await fetch('/workspaces', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: p }) });
+      await refreshAll();
+      if (ui.activeWorkspacePath === p) ui.activeWorkspacePath = null;
+    }}
+  />
 
   <!-- Toasts -->
   <UpdateToast />

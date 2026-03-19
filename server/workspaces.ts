@@ -6,9 +6,10 @@ import { promisify } from 'node:util';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
-import { loadConfig, saveConfig } from './config.js';
+import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings } from './config.js';
 import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, switchBranch } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace, WorkspaceSettings } from './types.js';
+import { MOUNTAIN_NAMES } from './types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -414,6 +415,49 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     } else {
       res.status(400).json({ error: result.error ?? `Failed to switch to branch: ${branch}` });
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /workspaces/worktree — create a new worktree with the next mountain name
+  // -------------------------------------------------------------------------
+  router.post('/worktree', async (req: Request, res: Response) => {
+    const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
+
+    if (!workspacePath) {
+      res.status(400).json({ error: 'path query parameter is required' });
+      return;
+    }
+
+    const resolved = path.resolve(workspacePath);
+    const config = getConfig();
+    const settings = getWorkspaceSettings(config, resolved);
+
+    // Get next mountain name
+    const index = settings.nextMountainIndex ?? 0;
+    const mountainName = MOUNTAIN_NAMES[index % MOUNTAIN_NAMES.length] ?? 'everest';
+
+    // Increment counter
+    setWorkspaceSettings(configPath, config, resolved, {
+      nextMountainIndex: index + 1,
+    });
+
+    // Build branch name with optional prefix
+    const prefix = settings.branchPrefix ?? '';
+    const branchName = prefix + mountainName;
+    const baseBranch = settings.defaultBranch ?? 'main';
+
+    // Create git worktree at <workspacePath>/.worktrees/<mountainName>
+    const worktreePath = path.join(resolved, '.worktrees', mountainName);
+
+    try {
+      await exec('git', ['worktree', 'add', '-b', branchName, worktreePath, baseBranch], { cwd: resolved });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: `Failed to create worktree: ${msg}` });
+      return;
+    }
+
+    res.json({ branchName, mountainName, worktreePath });
   });
 
   // -------------------------------------------------------------------------
