@@ -53,6 +53,12 @@ html, body {
   font-size: var(--font-size-base);
 }
 
+/* ===== Focus ===== */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ===== Scrollbar ===== */
 ::-webkit-scrollbar {
   width: 4px;
