@@ -36,6 +36,7 @@
   let branchDropdownVisible = $state(false);
   let branchesLoading = $state(false);
   let branchesRefreshing = $state(false);
+  let creating = $state(false);
   let branchRequestId = 0;
 
   // Derived
@@ -152,7 +153,8 @@
 
   async function handleSubmit() {
     const repoPath = selectedRepoPath;
-    if (!repoPath) return;
+    if (!repoPath || creating) return;
+    creating = true;
 
     const claudeArgs = claudeArgsInput.trim().split(/\s+/).filter(Boolean);
 
@@ -203,6 +205,8 @@
           onSessionCreated?.(conflictErr.sessionId);
         }
       }
+    } finally {
+      creating = false;
     }
   }
 
@@ -385,13 +389,13 @@
     </div>
 
     <div class="dialog-footer">
-      <button class="btn btn-ghost" onclick={() => dialogEl.close()}>Cancel</button>
+      <button class="btn btn-ghost" onclick={() => dialogEl.close()} disabled={creating}>Cancel</button>
       <button
         class="btn btn-primary"
         onclick={handleSubmit}
-        disabled={!selectedRepoPath}
+        disabled={!selectedRepoPath || creating}
       >
-        {activeTab === 'repos' ? 'Start Session' : 'Create Worktree'}
+        {creating ? 'Creating...' : activeTab === 'repos' ? 'Start Session' : 'Create Worktree'}
       </button>
     </div>
   </div>

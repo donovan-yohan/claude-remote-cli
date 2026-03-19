@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll, setAttention, clearAttention, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, refreshSessionMeta } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, setAttention, clearAttention, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, refreshSessionMeta, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
@@ -353,6 +353,9 @@
     // 1. Create git worktree with next mountain name via POST /workspaces/worktree
     // 2. Start a session in the new worktree with workspace default settings
     // 3. Session is flagged needsBranchRename — first message triggers auto-rename
+    const loadingKey = `new-worktree:${workspace.path}`;
+    if (isItemLoading(loadingKey)) return;
+    setLoading(loadingKey);
     try {
       // Resolve session defaults: workspace settings override global config
       let yolo = configState.defaultYolo;
@@ -385,6 +388,8 @@
     } catch (e) {
       // Fall back to dialog on error
       newSessionDialogRef?.open({ name: workspace.name, path: workspace.path });
+    } finally {
+      clearLoading(loadingKey);
     }
   }
 
@@ -655,6 +660,7 @@
         <RepoDashboard
           workspacePath={ui.activeWorkspacePath ?? ''}
           workspaceName={activeWorkspace?.name ?? ''}
+          creatingWorktree={isItemLoading(`new-worktree:${ui.activeWorkspacePath ?? ''}`)}
           onNewSession={() => handleOpenNewSession()}
           onNewWorktree={() => { if (activeWorkspace) handleNewWorktree(activeWorkspace); }}
           onFixConflicts={handleFixConflicts}
