@@ -8,6 +8,7 @@
   import { getConfigState } from './lib/state/config.svelte.js';
   import { isMobileDevice } from './lib/utils.js';
   import type { WorktreeInfo, OpenSessionOptions, Workspace } from './lib/types.js';
+  import { createWorktree, createSession } from './lib/api.js';
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Terminal from './components/Terminal.svelte';
@@ -328,14 +329,14 @@
     // 2. Start a session in the new worktree with workspace default settings
     // 3. Session is flagged needsBranchRename — first message triggers auto-rename
     try {
-      const { branchName, worktreePath } = await import('./lib/api.js').then(m => m.createWorktree(workspace.path));
-      const session = await import('./lib/api.js').then(m => m.createSession({
+      const { branchName, worktreePath } = await createWorktree(workspace.path);
+      const session = await createSession({
         repoPath: workspace.path,
         repoName: workspace.name,
         worktreePath,
         branchName,
         needsBranchRename: true,
-      }));
+      });
       await refreshAll();
       sessionState.activeSessionId = session.id;
       ui.activeWorkspacePath = workspace.path;
