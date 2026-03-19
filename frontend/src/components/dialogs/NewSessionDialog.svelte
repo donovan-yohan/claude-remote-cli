@@ -156,6 +156,10 @@
 
     const claudeArgs = claudeArgsInput.trim().split(/\s+/).filter(Boolean);
 
+    // Estimate terminal dimensions from window size so PTY starts at correct size
+    const cols = Math.max(80, Math.floor((window.innerWidth - 60) / 8));
+    const rows = Math.max(24, Math.floor((window.innerHeight - 120) / 17));
+
     try {
       let session;
       if (activeTab === 'repos') {
@@ -167,6 +171,8 @@
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
           agent: selectedAgent,
           useTmux,
+          cols,
+          rows,
           allowMultiple: true,
         });
       } else {
@@ -178,6 +184,8 @@
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
           agent: selectedAgent,
           useTmux,
+          cols,
+          rows,
         });
       }
       dialogEl.close();

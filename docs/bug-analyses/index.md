@@ -14,3 +14,4 @@
 | [non-tmux-scroll-bug-analysis.md](2026-03-17-non-tmux-scroll-bug-analysis.md) | Touch scroll sends arrow keys instead of wheel events in non-tmux alternate screen sessions | 2026-03-17 |
 | [session-persistence-across-updates-bug-analysis.md](2026-03-17-session-persistence-across-updates-bug-analysis.md) | Sessions lost after auto-update: tmux orphan cleanup race, no graceful shutdown serialization, PTY-coupled lifecycle | 2026-03-17 |
 | [branch-auto-rename-not-implemented-bug-analysis.md](2026-03-18-branch-auto-rename-not-implemented-bug-analysis.md) | Branch auto-rename on first message was designed but never implemented — no per-repo settings, no prompt prepending, no first-message tracking | 2026-03-18 |
+| [first-enter-duplicate-content-bug-analysis.md](2026-03-19-first-enter-duplicate-content-bug-analysis.md) | First Enter on new session duplicates terminal content — likely conditional rendering or PTY resize | 2026-03-19 |

@@ -516,7 +516,7 @@ async function main(): Promise<void> {
 
   // POST /sessions
   app.post('/sessions', requireAuth, async (req, res) => {
-    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux, needsBranchRename, branchRenamePrompt } = req.body as {
+    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux, cols, rows, needsBranchRename, branchRenamePrompt } = req.body as {
       repoPath?: string;
       repoName?: string;
       worktreePath?: string;
@@ -525,6 +525,8 @@ async function main(): Promise<void> {
       yolo?: boolean;
       agent?: AgentType;
       useTmux?: boolean;
+      cols?: number;
+      rows?: number;
       needsBranchRename?: boolean;
       branchRenamePrompt?: string;
     };
@@ -532,6 +534,10 @@ async function main(): Promise<void> {
       res.status(400).json({ error: 'repoPath is required' });
       return;
     }
+
+    // Sanitize optional terminal dimensions
+    const safeCols = typeof cols === 'number' && Number.isFinite(cols) && cols >= 1 && cols <= 500 ? Math.round(cols) : undefined;
+    const safeRows = typeof rows === 'number' && Number.isFinite(rows) && rows >= 1 && rows <= 200 ? Math.round(rows) : undefined;
 
     const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
@@ -632,6 +638,8 @@ async function main(): Promise<void> {
                 displayName: name,
                 args: baseArgs,
                 useTmux: useTmux ?? config.launchInTmux,
+                ...(safeCols != null && { cols: safeCols }),
+                ...(safeRows != null && { rows: safeRows }),
               });
 
               res.status(201).json(repoSession);
@@ -658,6 +666,8 @@ async function main(): Promise<void> {
                 args,
                 configPath: CONFIG_PATH,
                 useTmux: useTmux ?? config.launchInTmux,
+                ...(safeCols != null && { cols: safeCols }),
+                ...(safeRows != null && { rows: safeRows }),
               });
 
               writeMeta(CONFIG_PATH, {
@@ -704,6 +714,8 @@ async function main(): Promise<void> {
       args,
       configPath: CONFIG_PATH,
       useTmux: useTmux ?? config.launchInTmux,
+      ...(safeCols != null && { cols: safeCols }),
+      ...(safeRows != null && { rows: safeRows }),
       needsBranchRename: isMountainName || (needsBranchRename ?? false),
       branchRenamePrompt: branchRenamePrompt ?? '',
     });
@@ -722,7 +734,7 @@ async function main(): Promise<void> {
 
   // POST /sessions/repo — start a session in the repo root (no worktree)
   app.post('/sessions/repo', requireAuth, (req, res) => {
-    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux } = req.body as {
+    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux, cols, rows } = req.body as {
       repoPath?: string;
       repoName?: string;
       continue?: boolean;
@@ -730,6 +742,8 @@ async function main(): Promise<void> {
       yolo?: boolean;
       agent?: AgentType;
       useTmux?: boolean;
+      cols?: number;
+      rows?: number;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -737,6 +751,10 @@ async function main(): Promise<void> {
     }
 
     const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
+
+    // Sanitize optional terminal dimensions
+    const safeCols = typeof cols === 'number' && Number.isFinite(cols) && cols >= 1 && cols <= 500 ? Math.round(cols) : undefined;
+    const safeRows = typeof rows === 'number' && Number.isFinite(rows) && rows >= 1 && rows <= 200 ? Math.round(rows) : undefined;
 
     // Multiple sessions per repo allowed (multi-tab support)
 
@@ -761,6 +779,8 @@ async function main(): Promise<void> {
       displayName: name,
       args,
       useTmux: useTmux ?? config.launchInTmux,
+      ...(safeCols != null && { cols: safeCols }),
+      ...(safeRows != null && { rows: safeRows }),
     });
 
     res.status(201).json(session);

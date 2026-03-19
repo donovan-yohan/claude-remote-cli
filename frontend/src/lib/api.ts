@@ -177,6 +177,8 @@ export async function createSession(body: {
   yolo?: boolean | undefined;
   agent?: string | undefined;
   useTmux?: boolean | undefined;
+  cols?: number | undefined;
+  rows?: number | undefined;
   needsBranchRename?: boolean | undefined;
   branchRenamePrompt?: string | undefined;
   allowMultiple?: boolean | undefined;
@@ -201,6 +203,8 @@ export async function createRepoSession(body: {
   yolo?: boolean | undefined;
   agent?: string | undefined;
   useTmux?: boolean | undefined;
+  cols?: number | undefined;
+  rows?: number | undefined;
   allowMultiple?: boolean | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions/repo', {
