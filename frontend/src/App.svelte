@@ -230,6 +230,12 @@
           handleSelectSession(sessionState.sessions[0]!.id);
         }
 
+        // Auto-select if exactly one session exists and none is selected
+        if (!sessionState.activeSessionId && !sessionParam && sessionState.sessions.length === 1) {
+          handleSelectSession(sessionState.sessions[0]!.id);
+        }
+
+        // Initialize notifications for existing sessions
         for (const s of sessionState.sessions) {
           initSessionNotification(s.id, configState.defaultNotifications);
         }
@@ -332,9 +338,9 @@
 
   function handleOpenNewSession(workspace?: Workspace, options?: OpenSessionOptions) {
     if (workspace) {
-      newSessionDialogRef?.open({ name: workspace.name, path: workspace.path }, options);
+      newSessionDialogRef?.open({ name: workspace.name, path: workspace.path, root: '' }, options);
     } else if (activeWorkspace) {
-      newSessionDialogRef?.open({ name: activeWorkspace.name, path: activeWorkspace.path }, options);
+      newSessionDialogRef?.open({ name: activeWorkspace.name, path: activeWorkspace.path, root: '' }, options);
     } else {
       newSessionDialogRef?.open(undefined, options);
     }
@@ -387,7 +393,7 @@
       terminalRef?.focusTerm();
     } catch (e) {
       // Fall back to dialog on error
-      newSessionDialogRef?.open({ name: workspace.name, path: workspace.path });
+      newSessionDialogRef?.open({ name: workspace.name, path: workspace.path, root: '' });
     } finally {
       clearLoading(loadingKey);
     }

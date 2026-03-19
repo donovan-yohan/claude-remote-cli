@@ -37,6 +37,8 @@ export interface WorktreeInfo {
 export interface RepoInfo {
   name: string;
   path: string;
+  root: string;
+  defaultBranch?: string | null;
 }
 
 export interface OpenSessionOptions {

@@ -89,6 +89,37 @@ function execErrorMessage(err: unknown, fallback: string): string {
 
 type RepoEntry = { name: string; path: string; root: string };
 
+function scanReposInRoot(rootDir: string): RepoEntry[] {
+  const repos: RepoEntry[] = [];
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(rootDir, { withFileTypes: true });
+  } catch (_) {
+    return repos;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    const fullPath = path.join(rootDir, entry.name);
+    const dotGit = path.join(fullPath, '.git');
+    try {
+      if (fs.statSync(dotGit).isDirectory()) {
+        repos.push({ name: entry.name, path: fullPath, root: rootDir });
+      }
+    } catch (_) {
+      // .git doesn't exist — not a repo
+    }
+  }
+  return repos;
+}
+
+function scanAllRepos(rootDirs: string[]): RepoEntry[] {
+  const repos: RepoEntry[] = [];
+  for (const rootDir of rootDirs) {
+    repos.push(...scanReposInRoot(rootDir));
+  }
+  return repos;
+}
+
 function parseTTL(ttl: string): number {
   if (typeof ttl !== 'string') return 24 * 60 * 60 * 1000;
   const match = ttl.match(/^(\d+)([smhd])$/);
@@ -279,21 +310,27 @@ async function main(): Promise<void> {
     res.json(sessions.list());
   });
 
-  // GET /sessions/meta — bulk metadata for all sessions (cached)
-  app.get('/sessions/meta', requireAuth, (_req, res) => {
-    res.json(getAllSessionMeta());
-  });
-
-  // GET /sessions/:id/meta — individual session metadata
-  app.get('/sessions/:id/meta', requireAuth, async (req, res) => {
-    const id = req.params.id ?? '';
-    const refresh = req.query.refresh === 'true';
-    try {
-      const meta = await getSessionMeta(id, refresh);
-      res.json(meta ?? { prNumber: null, additions: 0, deletions: 0, fetchedAt: new Date().toISOString() });
-    } catch {
-      res.json({ prNumber: null, additions: 0, deletions: 0, fetchedAt: new Date().toISOString() });
+  // GET /repos — scan root dirs for repos
+  app.get('/repos', requireAuth, async (_req, res) => {
+    const repos = scanAllRepos(config.rootDirs || []);
+    // Also include legacy manually-added repos
+    if (config.repos) {
+      for (const repo of config.repos as unknown as RepoEntry[]) {
+        if (!repos.some((r) => r.path === repo.path)) {
+          repos.push(repo);
+        }
+      }
     }
+    // Enrich with current branch (best-effort, parallel)
+    const enriched = await Promise.all(repos.map(async (repo) => {
+      try {
+        const { stdout } = await execFileAsync('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: repo.path });
+        return { ...repo, defaultBranch: stdout.trim() };
+      } catch {
+        return { ...repo, defaultBranch: null };
+      }
+    }));
+    res.json(enriched);
   });
 
   // GET /branches?repo=<path> — list local and remote branches for a repo
