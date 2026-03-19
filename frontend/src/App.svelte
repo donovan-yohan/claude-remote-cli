@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll, setAttention, clearAttention, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, setAttention, clearAttention, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
@@ -12,6 +12,7 @@
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Terminal from './components/Terminal.svelte';
+  import SessionView from './components/SessionView.svelte';
   import PrTopBar from './components/PrTopBar.svelte';
   import SessionTabBar from './components/SessionTabBar.svelte';
   import RepoDashboard from './components/RepoDashboard.svelte';
@@ -55,7 +56,8 @@
 
   initNotifications(navigateToSession);
 
-  let terminalRef = $state<Terminal | undefined>();
+  // Component refs — must be $state() so $effect can track bind:this assignments
+  let terminalRef = $state<Terminal | SessionView | undefined>();
   let imageToastRef = $state<ImageToast | undefined>();
   let newSessionDialogRef = $state<NewSessionDialog | undefined>();
   let settingsDialogRef = $state<SettingsDialog | undefined>();
@@ -247,8 +249,6 @@
           refreshAll();
         } else if (msg.type === 'session-idle-changed' && msg.sessionId) {
           setAttention(msg.sessionId, msg.idle ?? false);
-        } else if (msg.type === 'session-renamed' && msg.sessionId) {
-          renameSession(msg.sessionId as string, msg.branchName as string, msg.displayName as string);
         }
       });
     }
@@ -290,6 +290,7 @@
   );
 
   let activeSessionUseTmux = $derived(activeSession?.useTmux ?? false);
+  let activeSessionMode = $derived<'sdk' | 'pty'>(activeSession?.mode ?? 'pty');
   let copyModeActive = $state(false);
 
   // View state: which main area content to show
@@ -350,26 +351,12 @@
     // 2. Start a session in the new worktree with workspace default settings
     // 3. Session is flagged needsBranchRename — first message triggers auto-rename
     try {
-      // Resolve session defaults: workspace settings override global config
-      let yolo = configState.defaultYolo;
-      let agent: string = configState.defaultAgent;
-      let useTmux = configState.launchInTmux;
-      try {
-        const ws = await fetchWorkspaceSettings(workspace.path);
-        if (ws.defaultYolo !== undefined) yolo = ws.defaultYolo;
-        if (ws.defaultAgent) agent = ws.defaultAgent;
-        if (ws.launchInTmux !== undefined) useTmux = ws.launchInTmux;
-      } catch { /* use global defaults */ }
-
       const { branchName, worktreePath } = await createWorktree(workspace.path);
       const session = await createSession({
         repoPath: workspace.path,
         repoName: workspace.name,
         worktreePath,
         branchName,
-        yolo,
-        agent,
-        useTmux,
         needsBranchRename: true,
       });
       await refreshAll();
@@ -498,17 +485,12 @@
     addWorkspaceDialogRef?.open();
   }
 
-  async function handleWorkspaceAdded(folderPath: string) {
-    try {
-      await fetch('/workspaces', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: folderPath }),
-      });
-      await refreshAll();
-      // Auto-select the newly added workspace
-      ui.activeWorkspacePath = folderPath;
-    } catch { /* silent */ }
+  async function handleWorkspacesAdded(paths: string[]) {
+    await refreshAll();
+    // Auto-select the first newly added workspace
+    if (paths.length > 0) {
+      ui.activeWorkspacePath = paths[0]!;
+    }
   }
 </script>
 
@@ -577,13 +559,24 @@
           onNewTerminal={() => handleOpenNewSession(undefined, { agent: 'claude' })}
         />
 
-        <Terminal
-          bind:this={terminalRef}
-          sessionId={sessionState.activeSessionId}
-          onImageUpload={handleImageUpload}
-          useTmux={activeSessionUseTmux}
-          onCopyModeChange={handleCopyModeChange}
-        />
+        {#if activeSessionMode === 'sdk'}
+          <SessionView
+            bind:this={terminalRef}
+            sessionId={sessionState.activeSessionId}
+            mode="sdk"
+            onImageUpload={handleImageUpload}
+            useTmux={activeSessionUseTmux}
+            onCopyModeChange={handleCopyModeChange}
+          />
+        {:else}
+          <Terminal
+            bind:this={terminalRef}
+            sessionId={sessionState.activeSessionId}
+            onImageUpload={handleImageUpload}
+            useTmux={activeSessionUseTmux}
+            onCopyModeChange={handleCopyModeChange}
+          />
+        {/if}
 
         <Toolbar
           onSendKey={handleSendKey}
@@ -606,7 +599,7 @@
   />
   <SettingsDialog bind:this={settingsDialogRef} />
   <DeleteWorktreeDialog bind:this={deleteWorktreeDialogRef} />
-  <AddWorkspaceDialog bind:this={addWorkspaceDialogRef} onWorkspaceAdded={handleWorkspaceAdded} />
+  <AddWorkspaceDialog bind:this={addWorkspaceDialogRef} onWorkspacesAdded={handleWorkspacesAdded} />
   <WorkspaceSettingsDialog
     bind:this={workspaceSettingsDialogRef}
     onRemoveWorkspace={async (p) => {

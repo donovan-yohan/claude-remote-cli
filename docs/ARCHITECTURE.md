@@ -115,6 +115,8 @@ SDK flow:
 | `PATCH` | `/sessions/:id` | Rename session |
 | `DELETE` | `/sessions/:id` | Terminate session |
 | `POST` | `/sessions/:id/image` | Upload clipboard image |
+| `POST` | `/sessions/:id/message` | Send message to SDK session |
+| `POST` | `/sessions/:id/permission` | Approve/deny SDK permission request |
 | `GET` | `/branches` | List local and remote branches |
 | `GET` | `/worktrees` | List inactive Claude Code worktrees |
 | `DELETE` | `/worktrees` | Remove worktree, prune refs, delete branch |
@@ -127,13 +129,12 @@ SDK flow:
 | `GET` | `/workspaces/pr` | PR info for a branch (`?path=X&branch=Y`) |
 | `GET` | `/workspaces/ci-status` | CI check results (`?path=X&branch=Y`) |
 | `POST` | `/workspaces/branch` | Switch branch (`?path=X`, body: `{branch}`) |
+| `GET` | `/workspaces/browse` | Browse filesystem directories for tree UI (`?path=X&prefix=Y&showHidden=bool`) |
+| `POST` | `/workspaces/bulk` | Add multiple workspace paths at once (body: `{paths}`) |
 | `GET` | `/workspaces/autocomplete` | Path prefix autocomplete (`?prefix=X`) |
 | `POST` | `/workspaces/worktree` | Create worktree with mountain name (`?path=X`) |
 | `GET` | `/workspaces/current-branch` | Current checked-out branch (`?path=X`) |
 | `GET` | `/version` | Check for npm updates |
-| `POST` | `/sessions/:id/image` | Upload clipboard image |
-| `POST` | `/sessions/:id/message` | Send message to SDK session |
-| `POST` | `/sessions/:id/permission` | Approve/deny SDK permission request |
 | `POST` | `/update` | Self-update via npm |
 | `GET` | `/config/defaultAgent` | Get default coding agent |
 | `PATCH` | `/config/defaultAgent` | Set default coding agent (`claude` or `codex`) |

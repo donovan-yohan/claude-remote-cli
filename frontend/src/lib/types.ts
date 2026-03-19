@@ -47,7 +47,6 @@ export interface SessionSummary {
   type: 'repo' | 'worktree' | 'terminal';
   agent: AgentType;
   mode?: 'sdk' | 'pty' | undefined;
-  root: string;
   repoName: string;
   repoPath: string;
   worktreeName: string;

@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgentType, PtySession, SdkSession, Session, SessionSummary, SessionType } from './types.js';
+import type { AgentType, SdkSession, Session, SessionSummary, SessionType } from './types.js';
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './types.js';
-import { createPtySession, generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
+import { createPtySession } from './pty-handler.js';
 import type { CreatePtyParams } from './pty-handler.js';
-import { createSdkSession, killSdkSession, sendMessage as sdkSendMessage, handlePermission as sdkHandlePermission, interruptSession as sdkInterruptSession, serializeSdkSession, restoreSdkSession } from './sdk-handler.js';
+import { createSdkSession, killSdkSession, sendMessage as sdkSendMessage, handlePermission as sdkHandlePermission, serializeSdkSession, restoreSdkSession } from './sdk-handler.js';
 import type { SerializedSdkSession } from './sdk-handler.js';
 
 const execFileAsync = promisify(execFile);
@@ -84,11 +84,6 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallbacks.push(cb);
 }
 
-function offIdleChange(cb: IdleChangeCallback): void {
-  const idx = idleChangeCallbacks.indexOf(cb);
-  if (idx !== -1) idleChangeCallbacks.splice(idx, 1);
-}
-
 function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored, needsBranchRename: paramNeedsBranchRename, branchRenamePrompt: paramBranchRenamePrompt }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
@@ -112,11 +107,7 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     );
 
     if (!('fallback' in sdkResult)) {
-      if (paramNeedsBranchRename) {
-        // createSdkSession initializes needsBranchRename to false; set it now
-        sessions.get(id)!.needsBranchRename = true;
-      }
-      return { ...sdkResult.result, pid: undefined, needsBranchRename: !!paramNeedsBranchRename };
+      return { ...sdkResult.result, pid: undefined, needsBranchRename: false };
     }
     // SDK init failed — fall through to PTY
   }
@@ -144,11 +135,14 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     restored: paramRestored,
   };
 
-  const { result, session: ptySession } = createPtySession(ptyParams, sessions, idleChangeCallbacks);
+  const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks);
   if (paramNeedsBranchRename) {
     ptySession.needsBranchRename = true;
   }
-  return { ...result, needsBranchRename: ptySession.needsBranchRename };
+  if (paramBranchRenamePrompt) {
+    ptySession.branchRenamePrompt = paramBranchRenamePrompt;
+  }
+  return { ...result, needsBranchRename: !!ptySession.needsBranchRename };
 }
 
 function get(id: string): Session | undefined {
@@ -176,7 +170,7 @@ function list(): SessionSummary[] {
       useTmux: s.mode === 'pty' ? s.useTmux : false,
       tmuxSessionName: s.mode === 'pty' ? s.tmuxSessionName : '',
       status: s.status,
-      needsBranchRename: s.needsBranchRename,
+      needsBranchRename: s.mode === 'pty' ? !!s.needsBranchRename : false,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
@@ -463,4 +457,4 @@ function stopSdkIdleSweep(): void {
 // Re-export pty-handler utilities for backward compatibility
 export { generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
 
-export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, handlePermission, onIdleChange, offIdleChange, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, handlePermission, onIdleChange, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
