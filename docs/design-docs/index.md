@@ -36,3 +36,4 @@
 | [2026-03-17-mobile-ux-fixes-design.md](2026-03-17-mobile-ux-fixes-design.md) | Android keyboard blur, autocorrect suffix, debug tools, paste button | 2026-03-17 |
 | [2026-03-19-filesystem-browser-api-design.md](2026-03-19-filesystem-browser-api-design.md) | File system browser API + tree UI for workspace selection with bulk import | 2026-03-19 |
 | [2026-03-19-pr-lifecycle-top-bar-design.md](2026-03-19-pr-lifecycle-top-bar-design.md) | PR lifecycle top bar: session-end refresh, diff stats, conflicts, comments, archive flow | 2026-03-19 |
+| [2026-03-19-enriched-sidebar-sessions-design.md](2026-03-19-enriched-sidebar-sessions-design.md) | Enriched sidebar: two-line rows with relative time, worktree name, PR#, diff stats, collapsible workspaces | 2026-03-19 |
