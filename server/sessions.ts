@@ -135,7 +135,16 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     spawnArgs = tmux.args;
   }
 
-  const ptyProcess = pty.spawn(spawnCommand, spawnArgs, {
+  // Wrap the spawn command to trap SIGPIPE in the child shell.
+  // Without this, piped bash commands (e.g. `cmd | grep | tail`) run by
+  // Claude Code inside the PTY can generate SIGPIPE when the reading end
+  // of the pipe closes, which propagates up and kills the PTY session.
+  // Wrapping with `trap '' PIPE; exec ...` makes the shell ignore SIGPIPE
+  // before exec'ing the agent, so the agent inherits SIG_IGN for PIPE.
+  const wrappedCommand = '/bin/bash';
+  const wrappedArgs = ['-c', `trap '' PIPE; exec ${spawnCommand} ${spawnArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ')}`];
+
+  const ptyProcess = pty.spawn(wrappedCommand, wrappedArgs, {
     name: 'xterm-256color',
     cols,
     rows,
@@ -248,7 +257,9 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
         }
         let retryPty: pty.IPty;
         try {
-          retryPty = pty.spawn(retryCommand, retrySpawnArgs, {
+          // Wrap retry spawn with SIGPIPE trap (same as initial spawn)
+          const retryWrapped = ['-c', `trap '' PIPE; exec ${retryCommand} ${retrySpawnArgs.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ')}`];
+          retryPty = pty.spawn('/bin/bash', retryWrapped, {
             name: 'xterm-256color',
             cols,
             rows,
