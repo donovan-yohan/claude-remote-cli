@@ -16,10 +16,11 @@ No tech debt tracked yet.
 
 ## Completed Plans
 
-See `docs/exec-plans/completed/` for historical plans (23 completed).
+See `docs/exec-plans/completed/` for historical plans (24 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `sdk-chat-ui-remnant` | 2026-03-19 | Remove dead SDK chat UI code — PTY-only architecture (2,814 lines removed) |
 | `workspace-redesign` | 2026-03-18 | v3 rearchitecture — workspace-first sidebar, PR top bar, multi-tab sessions, terminal aesthetic |
 | `mobile-keyboard-testing` | 2026-03-16 | Fixture-based testing for mobile input event-intent pipeline |
 | `continue-retry-exit-code-fix` | 2026-03-14 | Fix --continue retry to fire regardless of exit code (tmux masks to 0) |
