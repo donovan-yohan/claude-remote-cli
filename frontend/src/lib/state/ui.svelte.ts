@@ -65,3 +65,41 @@ export function toggleSidebarCollapsed(): void {
   try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed)); }
   catch { /* localStorage unavailable */ }
 }
+
+// ── Collapsible workspaces ──
+const COLLAPSED_WORKSPACES_KEY = 'claude-remote-collapsed-workspaces';
+
+function loadCollapsedWorkspaces(): Set<string> {
+  try {
+    const stored = localStorage.getItem(COLLAPSED_WORKSPACES_KEY);
+    if (stored) return new Set(JSON.parse(stored) as string[]);
+  } catch { /* localStorage unavailable */ }
+  return new Set();
+}
+
+let collapsedWorkspaces = $state<Set<string>>(loadCollapsedWorkspaces());
+
+function saveCollapsedWorkspaces(): void {
+  try {
+    localStorage.setItem(COLLAPSED_WORKSPACES_KEY, JSON.stringify([...collapsedWorkspaces]));
+  } catch { /* localStorage unavailable */ }
+}
+
+export function toggleWorkspaceCollapse(path: string): void {
+  if (collapsedWorkspaces.has(path)) {
+    collapsedWorkspaces.delete(path);
+  } else {
+    collapsedWorkspaces.add(path);
+  }
+  collapsedWorkspaces = new Set(collapsedWorkspaces); // trigger reactivity
+  saveCollapsedWorkspaces();
+}
+
+export function isWorkspaceCollapsed(path: string): boolean {
+  return collapsedWorkspaces.has(path);
+}
+
+// ── Time tick (30s interval for reactive time display) ──
+let timeTick = $state(0);
+setInterval(() => { timeTick++; }, 30_000);
+export function getTimeTick(): number { return timeTick; }

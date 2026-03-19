@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
-  import { getSessionState, getSessionStatus, refreshAll } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, getSessionStatus, refreshAll, getSessionMetaById } from '../lib/state/sessions.svelte.js';
+  import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick } from '../lib/state/ui.svelte.js';
+  import { formatRelativeTimeCompact } from '../lib/utils.js';
   import { createSession } from '../lib/api.js';
   import ContextMenu from './ContextMenu.svelte';
   import type { MenuItem } from './ContextMenu.svelte';
@@ -57,13 +59,8 @@
 
   let initialColor = $derived(deriveColor(workspace.name));
   let initial = $derived(workspace.name.charAt(0).toUpperCase());
-
-  function statusLabel(session: SessionSummary): string {
-    const st = getSessionStatus(session);
-    if (st === 'attention') return 'attention';
-    if (st === 'running') return 'running';
-    return 'idle';
-  }
+  let collapsed = $derived(isWorkspaceCollapsed(workspace.path));
+  let totalItems = $derived(sessions.length + inactiveWorktrees.length);
 
   function statusDotClass(session: SessionSummary): string {
     const st = getSessionStatus(session);
@@ -75,6 +72,19 @@
   }
 
   let hasAttention = $derived(sessions.some(s => getSessionStatus(s) === 'attention'));
+
+  // Force re-derive on time tick
+  let _tick = $derived(getTimeTick());
+
+  function sessionTime(session: SessionSummary): string {
+    void _tick;
+    return formatRelativeTimeCompact(session.lastActivity);
+  }
+
+  function worktreeTime(wt: WorktreeInfo): string {
+    void _tick;
+    return formatRelativeTimeCompact(wt.lastActivity);
+  }
 
   async function handleRename(session: SessionSummary) {
     const newName = prompt('Rename session:', sessionDisplayName(session));
@@ -146,8 +156,18 @@
     onclick={() => onSelectWorkspace(workspace.path)}
   >
     <div class="workspace-left">
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span
+        class="collapse-chevron"
+        class:collapsed
+        onclick={(e) => { e.stopPropagation(); toggleWorkspaceCollapse(workspace.path); }}
+      >{collapsed ? '›' : '⌄'}</span>
       <span class="initial-block" style:background={initialColor}>{initial}</span>
       <span class="workspace-name">{workspace.name}</span>
+      {#if collapsed && totalItems > 0}
+        <span class="collapse-count">{totalItems}</span>
+      {/if}
     </div>
     <div class="workspace-actions">
       <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -174,9 +194,11 @@
     </div>
   </div>
 
-  {#if sessions.length > 0 || inactiveWorktrees.length > 0}
+  {#if !collapsed && (sessions.length > 0 || inactiveWorktrees.length > 0)}
     <ul class="session-list">
       {#each sessions as session (session.id)}
+        {@const meta = getSessionMetaById(session.id)}
+        {@const hasDiff = meta && (meta.additions > 0 || meta.deletions > 0)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <li
@@ -186,16 +208,35 @@
           class:attention={getSessionStatus(session) === 'attention'}
           onclick={() => onSelectSession(session.id)}
         >
-          {#if session.type === 'terminal'}
-            <span class="terminal-icon">&gt;_</span>
-          {:else}
-            <span class={statusDotClass(session)}></span>
-          {/if}
-          <span class="session-name" class:bold={getSessionStatus(session) === 'attention'}>{sessionDisplayName(session)}</span>
-          <ContextMenu items={sessionMenuItems(session)} />
+          <div class="session-row-primary">
+            {#if session.type === 'terminal'}
+              <span class="terminal-icon">&gt;_</span>
+            {:else}
+              <span class={statusDotClass(session)}></span>
+            {/if}
+            <span class="session-name" class:bold={getSessionStatus(session) === 'attention'}>{sessionDisplayName(session)}</span>
+            {#if hasDiff}
+              <span class="diff-badge">
+                <span class="diff-add">+{meta.additions}</span>
+                <span class="diff-del">-{meta.deletions}</span>
+              </span>
+            {/if}
+          </div>
+          <div class="session-row-secondary">
+            {#if session.worktreeName && session.worktreeName !== sessionDisplayName(session)}
+              <span class="secondary-worktree">{session.worktreeName}</span>
+            {/if}
+            {#if meta?.prNumber}
+              <span class="secondary-pr">PR #{meta.prNumber}</span>
+            {/if}
+            <span class="secondary-time">{sessionTime(session)}</span>
+            <ContextMenu items={sessionMenuItems(session)} />
+          </div>
         </li>
       {/each}
       {#each inactiveWorktrees as wt (wt.path)}
+        {@const meta = getSessionMetaById(wt.path)}
+        {@const hasDiff = meta && (meta.additions > 0 || meta.deletions > 0)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <li
@@ -213,19 +254,35 @@
             } catch { /* silent */ }
           }}
         >
-          <span class="dot dot-inactive"></span>
-          <span class="session-name">{wt.branchName || wt.displayName || wt.name}</span>
-          <ContextMenu items={worktreeMenuItems(wt)} />
+          <div class="session-row-primary">
+            <span class="dot dot-inactive"></span>
+            <span class="session-name">{wt.branchName || wt.displayName || wt.name}</span>
+            {#if hasDiff}
+              <span class="diff-badge">
+                <span class="diff-add">+{meta.additions}</span>
+                <span class="diff-del">-{meta.deletions}</span>
+              </span>
+            {/if}
+          </div>
+          <div class="session-row-secondary">
+            {#if meta?.prNumber}
+              <span class="secondary-pr">PR #{meta.prNumber}</span>
+            {/if}
+            <span class="secondary-time">{worktreeTime(wt)}</span>
+            <ContextMenu items={worktreeMenuItems(wt)} />
+          </div>
         </li>
       {/each}
     </ul>
   {/if}
 
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="add-worktree-row" onclick={() => onNewWorktree(workspace)}>
-    <span class="add-worktree-btn">+ new worktree</span>
-  </div>
+  {#if !collapsed}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="add-worktree-row" onclick={() => onNewWorktree(workspace)}>
+      <span class="add-worktree-btn">+ new worktree</span>
+    </div>
+  {/if}
 
   <div class="workspace-divider"></div>
 </div>
@@ -261,6 +318,33 @@
     gap: 8px;
     min-width: 0;
     flex: 1;
+  }
+
+  .collapse-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 0.12s;
+  }
+
+  .collapse-chevron:hover {
+    color: var(--text);
+  }
+
+  .collapse-count {
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    background: var(--border);
+    border-radius: 8px;
+    padding: 1px 6px;
+    flex-shrink: 0;
   }
 
   .initial-block {
@@ -329,8 +413,8 @@
 
   .session-row {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    flex-direction: column;
+    gap: 2px;
     padding: 6px 10px 6px 36px;
     cursor: pointer;
     min-height: 44px;
@@ -338,10 +422,8 @@
     font-family: var(--font-mono);
     color: var(--text-muted);
     transition: background 0.1s;
-  }
-
-  .session-row {
     border-left: 3px solid transparent;
+    justify-content: center;
   }
 
   .session-row:hover {
@@ -359,6 +441,58 @@
     font-weight: 700;
     color: var(--text);
   }
+
+  /* Two-line row layout */
+  .session-row-primary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .session-row-secondary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-left: 15px;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+    min-width: 0;
+  }
+
+  .secondary-worktree {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .secondary-pr {
+    white-space: nowrap;
+    flex-shrink: 0;
+    color: var(--accent);
+  }
+
+  .secondary-time {
+    white-space: nowrap;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  /* Diff badge */
+  .diff-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.6rem;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .diff-add { color: var(--status-success); }
+  .diff-del { color: var(--status-error); }
 
   /* Status dot */
   .status-dot {
@@ -405,18 +539,6 @@
 
   .session-name.bold {
     font-weight: 700;
-  }
-
-  .session-status {
-    font-size: 0.65rem;
-    color: var(--text-muted);
-    opacity: 0.6;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .session-row.terminal .session-status {
-    display: none;
   }
 
   /* Add worktree row */

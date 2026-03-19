@@ -145,6 +145,13 @@ export interface ServicePaths {
   label: string;
 }
 
+export interface SessionMeta {
+  prNumber: number | null;
+  additions: number;
+  deletions: number;
+  fetchedAt: string;
+}
+
 export interface GitStatus {
   prState: 'open' | 'merged' | 'closed' | null;
   additions: number;

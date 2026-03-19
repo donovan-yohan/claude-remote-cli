@@ -20,6 +20,23 @@ export function formatRelativeTime(isoString: string): string {
   return months[d.getMonth()] + ' ' + d.getDate();
 }
 
+export function formatRelativeTimeCompact(isoString: string): string {
+  if (!isoString) return '';
+  const now = Date.now();
+  const then = new Date(isoString).getTime();
+  const diffSec = Math.floor((now - then) / 1000);
+  if (diffSec < 60) return diffSec + 's';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return diffMin + 'm';
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return diffHr + 'h';
+  const d = new Date(isoString);
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
 export const isMobileDevice =
   typeof window !== 'undefined' &&
   'ontouchstart' in window &&
