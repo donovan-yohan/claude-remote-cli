@@ -1,9 +1,11 @@
 <script lang="ts">
   import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
-  import { getSessionStatus, refreshAll } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, getSessionStatus, refreshAll } from '../lib/state/sessions.svelte.js';
   import { createSession } from '../lib/api.js';
   import ContextMenu from './ContextMenu.svelte';
   import type { MenuItem } from './ContextMenu.svelte';
+
+  const sessionState = getSessionState();
 
   let {
     workspace,
@@ -180,6 +182,7 @@
         <li
           class="session-row"
           class:terminal={session.type === 'terminal'}
+          class:selected={sessionState.activeSessionId === session.id}
           class:attention={getSessionStatus(session) === 'attention'}
           onclick={() => onSelectSession(session.id)}
         >
@@ -337,7 +340,17 @@
     transition: background 0.1s;
   }
 
+  .session-row {
+    border-left: 3px solid transparent;
+  }
+
   .session-row:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+
+  .session-row.selected {
+    border-left-color: var(--accent);
     background: var(--surface-hover);
     color: var(--text);
   }
