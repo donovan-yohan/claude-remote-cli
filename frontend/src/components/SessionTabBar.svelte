@@ -141,7 +141,6 @@
     background: var(--bg);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
-    overflow: hidden;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
   }
