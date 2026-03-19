@@ -21,3 +21,4 @@
 | [sidebar-session-model-mismatch-bug-analysis.md](2026-03-19-sidebar-session-model-mismatch-bug-analysis.md) | Sidebar shows 1 row per session instead of 1 row per folder — duplicates, no persistent repo entry, architectural mismatch | 2026-03-19 |
 | [repo-root-click-dashboard-bug-analysis.md](2026-03-19-repo-root-click-dashboard-bug-analysis.md) | Clicking inactive repo root goes to dashboard instead of creating a session — wrong click handler in persistent entry | 2026-03-19 |
 | [missing-loading-feedback-bug-analysis.md](2026-03-19-missing-loading-feedback-bug-analysis.md) | No loading feedback on worktree/session creation — button stays clickable, no spinner or disabled state | 2026-03-19 |
+| [closed-pr-shown-in-sidebar-bug-analysis.md](2026-03-19-closed-pr-shown-in-sidebar-bug-analysis.md) | Closed/merged PRs still shown in sidebar — `gh pr view` returns all states, no filtering applied | 2026-03-19 |
