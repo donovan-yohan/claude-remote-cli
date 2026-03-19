@@ -160,6 +160,16 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     const { isGitRepo, defaultBranch } = await detectGitRepo(resolved, exec);
 
     config.workspaces = [...workspaces, resolved];
+
+    // Store detected default branch in per-workspace settings
+    if (isGitRepo && defaultBranch) {
+      if (!config.workspaceSettings) config.workspaceSettings = {};
+      config.workspaceSettings[resolved] = {
+        ...config.workspaceSettings[resolved],
+        defaultBranch,
+      };
+    }
+
     saveConfig(configPath, config);
 
     const workspace: Workspace = {

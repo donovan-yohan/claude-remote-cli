@@ -66,16 +66,22 @@
       return;
     }
 
-    if (e.key === 'Tab' && suggestions.length > 0) {
-      // Tab completion — fill with first/focused suggestion
+    if (e.key === 'Tab') {
+      // Always prevent Tab from leaving the input — this is a terminal-style input
       e.preventDefault();
-      const target = focusedIndex >= 0 ? suggestions[focusedIndex] : suggestions[0];
-      if (target) {
-        pathValue = target;
-        suggestions = [];
-        // Re-fetch for the new path
+      if (suggestions.length > 0) {
+        // Tab completion — fill with first/focused suggestion
+        const target = focusedIndex >= 0 ? suggestions[focusedIndex] : suggestions[0];
+        if (target) {
+          pathValue = target;
+          suggestions = [];
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => fetchSuggestions(pathValue), 100);
+        }
+      } else if (pathValue.trim()) {
+        // No suggestions visible — trigger fetch immediately
         if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => fetchSuggestions(pathValue), 100);
+        fetchSuggestions(pathValue);
       }
       return;
     }
