@@ -299,7 +299,7 @@ async function main(): Promise<void> {
   });
 
   // GET /repos — scan root dirs for repos
-  app.get('/repos', requireAuth, (_req, res) => {
+  app.get('/repos', requireAuth, async (_req, res) => {
     const repos = scanAllRepos(config.rootDirs || []);
     // Also include legacy manually-added repos
     if (config.repos) {
@@ -309,7 +309,16 @@ async function main(): Promise<void> {
         }
       }
     }
-    res.json(repos);
+    // Enrich with current branch (best-effort, parallel)
+    const enriched = await Promise.all(repos.map(async (repo) => {
+      try {
+        const { stdout } = await execFileAsync('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: repo.path });
+        return { ...repo, defaultBranch: stdout.trim() };
+      } catch {
+        return { ...repo, defaultBranch: null };
+      }
+    }));
+    res.json(enriched);
   });
 
   // GET /branches?repo=<path> — list local and remote branches for a repo
