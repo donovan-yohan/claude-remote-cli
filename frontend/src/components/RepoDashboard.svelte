@@ -175,6 +175,7 @@
     padding: 20px;
     background: var(--bg);
     min-height: 0;
+    max-width: 800px;
   }
 
   /* ── Section ── */
