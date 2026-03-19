@@ -6,6 +6,7 @@ Execution plans for active and completed work.
 
 | Plan | Created | Topic |
 |------|---------|-------|
+| `branch-lifecycle-fix` | 2026-03-19 | Unique branch names on worktree reuse, auto-rename on first message, display names |
 | `sdk-chat-ui-remnant` | 2026-03-19 | Remove dead SDK chat UI code — PTY-only architecture |
 | `structured-agent-ui` | 2026-03-18 | Claude SDK integration + structured chat UI with rich message cards |
 | `session-persistence-fix` | 2026-03-17 | Fix sessions lost after auto-update restart |
