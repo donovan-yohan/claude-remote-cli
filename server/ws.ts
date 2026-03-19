@@ -310,6 +310,10 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
     broadcastEvent('session-idle-changed', { sessionId, idle });
   });
 
+  sessions.onSessionEnd((sessionId, repoPath, branchName) => {
+    broadcastEvent('session-ended', { sessionId, repoPath, branchName });
+  });
+
   return { wss, broadcastEvent };
 }
 

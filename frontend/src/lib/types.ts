@@ -142,6 +142,10 @@ export interface PrInfo {
   baseRefName: string;
   isDraft: boolean;
   reviewDecision: string | null;
+  additions: number;
+  deletions: number;
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  unresolvedCommentCount: number;
 }
 
 export interface WorkspaceSettings {

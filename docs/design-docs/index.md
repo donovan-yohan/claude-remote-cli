@@ -35,3 +35,4 @@
 | [2026-03-16-session-persistence-across-updates-design.md](2026-03-16-session-persistence-across-updates-design.md) | Persist and restore sessions across auto-updates | 2026-03-16 |
 | [2026-03-17-mobile-ux-fixes-design.md](2026-03-17-mobile-ux-fixes-design.md) | Android keyboard blur, autocorrect suffix, debug tools, paste button | 2026-03-17 |
 | [2026-03-19-filesystem-browser-api-design.md](2026-03-19-filesystem-browser-api-design.md) | File system browser API + tree UI for workspace selection with bulk import | 2026-03-19 |
+| [2026-03-19-pr-lifecycle-top-bar-design.md](2026-03-19-pr-lifecycle-top-bar-design.md) | PR lifecycle top bar: session-end refresh, diff stats, conflicts, comments, archive flow | 2026-03-19 |

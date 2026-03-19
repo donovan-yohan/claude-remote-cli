@@ -8,9 +8,11 @@
  *   No commits ahead                  (none)
  *   Commits ahead, no PR              [Create PR]
  *   PR Draft                          [Ready for Review]
- *   PR Open + CI passing              [Code Review]
+ *   PR Open + CONFLICTING             [Fix Conflicts]
  *   PR Open + CI failing              [Fix Errors N/M]
  *   PR Open + CI pending              [Checks Running...]
+ *   PR Open + unresolved comments     [Resolve Comments (N)] + [Review PR]
+ *   PR Open + all clear               [Review PR]
  *   PR Merged                         [Archive]
  *   PR Closed                         [Archive]
  */
@@ -19,8 +21,10 @@ export type PrActionType =
   | 'none'
   | 'create-pr'
   | 'ready-for-review'
-  | 'code-review'
+  | 'review-pr'
   | 'fix-errors'
+  | 'fix-conflicts'
+  | 'resolve-comments'
   | 'checks-running'
   | 'archive-merged'
   | 'archive-closed';
@@ -47,10 +51,19 @@ export interface PrStateInput {
   ciFailing: number;
   ciPending: number;
   ciTotal: number;
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null;
+  unresolvedCommentCount: number;
+}
+
+export interface ActionPromptContext {
+  branchName: string;
+  baseBranch?: string;
+  prNumber?: number;
+  unresolvedCommentCount?: number;
 }
 
 export function derivePrAction(input: PrStateInput): PrAction {
-  const { commitsAhead, prState, ciFailing, ciPending, ciTotal } = input;
+  const { commitsAhead, prState, ciFailing, ciPending, ciTotal, mergeable, unresolvedCommentCount } = input;
 
   // No commits ahead of base — nothing to do
   if (commitsAhead <= 0 && prState === null) {
@@ -77,8 +90,13 @@ export function derivePrAction(input: PrStateInput): PrAction {
     return { type: 'archive-closed', color: 'muted', label: 'Archive' };
   }
 
-  // PR is open — check CI status
+  // PR is open — check for conflicts first
   if (prState === 'OPEN') {
+    // Merge conflicts take priority
+    if (mergeable === 'CONFLICTING') {
+      return { type: 'fix-conflicts', color: 'error', label: 'Fix Conflicts' };
+    }
+
     // CI checks are failing
     if (ciFailing > 0) {
       return {
@@ -93,24 +111,44 @@ export function derivePrAction(input: PrStateInput): PrAction {
       return { type: 'checks-running', color: 'warning', label: 'Checks Running...' };
     }
 
-    // All CI checks passing (or no checks configured)
-    return { type: 'code-review', color: 'success', label: 'Code Review' };
+    // Unresolved review comments
+    if (unresolvedCommentCount > 0) {
+      return {
+        type: 'resolve-comments',
+        color: 'accent',
+        label: `Resolve Comments (${unresolvedCommentCount})`,
+      };
+    }
+
+    // All CI checks passing (or no checks configured) — ready for review
+    return { type: 'review-pr', color: 'success', label: 'Review PR' };
   }
 
   // Fallback — should not reach here
   return { type: 'none', color: 'none', label: '' };
 }
 
-export function getActionPrompt(action: PrAction, branchName: string): string | null {
+export function deriveSecondaryAction(primary: PrAction, _input: PrStateInput): PrAction | null {
+  if (primary.type === 'resolve-comments') {
+    return { type: 'review-pr', color: 'muted', label: 'Review PR' };
+  }
+  return null;
+}
+
+export function getActionPrompt(action: PrAction, ctx: ActionPromptContext): string | null {
   switch (action.type) {
     case 'create-pr':
-      return `Create a pull request for the branch "${branchName}". Write a clear title and description based on the changes.`;
+      return `Create a pull request for the branch "${ctx.branchName}". Write a clear title and description based on the changes.`;
     case 'ready-for-review':
-      return `Mark the draft PR for branch "${branchName}" as ready for review using: gh pr ready`;
-    case 'code-review':
-      return `Review the code changes in the pull request for branch "${branchName}". Check for bugs, code quality, and suggest improvements.`;
+      return `Mark the draft PR for branch "${ctx.branchName}" as ready for review using: gh pr ready`;
+    case 'review-pr':
+      return `Review the pull request #${ctx.prNumber} for branch "${ctx.branchName}". Read the diff, check for bugs and code quality.`;
+    case 'fix-conflicts':
+      return `There are merge conflicts with the base branch "${ctx.baseBranch}". Run \`git merge ${ctx.baseBranch}\` and resolve all conflicts.`;
+    case 'resolve-comments':
+      return `There are ${ctx.unresolvedCommentCount} unresolved review comments on PR #${ctx.prNumber}. Read each comment thread, triage them, and address the feedback.`;
     case 'fix-errors':
-      return `The CI checks are failing on branch "${branchName}". Investigate the failing checks and fix the errors.`;
+      return `The CI checks are failing on branch "${ctx.branchName}". Investigate the failing checks and fix the errors.`;
     case 'archive-merged':
     case 'archive-closed':
       return null; // Archive is a UI action (delete worktree), not a Claude prompt

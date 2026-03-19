@@ -8,7 +8,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings } from './config.js';
-import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, switchBranch, getCurrentBranch } from './git.js';
+import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace, WorkspaceSettings } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
@@ -434,7 +434,12 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     try {
       const pr = await getPrForBranch(workspacePath, branch);
       if (pr) {
-        res.json(pr);
+        if (pr.state === 'OPEN') {
+          const unresolvedCommentCount = await getUnresolvedCommentCount(workspacePath, pr.number);
+          res.json({ ...pr, unresolvedCommentCount });
+        } else {
+          res.json({ ...pr, unresolvedCommentCount: 0 });
+        }
       } else {
         res.status(404).json({ error: 'No PR found for branch' });
       }

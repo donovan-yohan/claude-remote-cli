@@ -39,6 +39,10 @@ export interface PrInfo {
   baseRefName: string;
   isDraft: boolean;
   reviewDecision: string | null;
+  additions: number;
+  deletions: number;
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
+  unresolvedCommentCount: number;
 }
 
 function normalizeBranchNames(stdout: string): string[] {
@@ -265,7 +269,7 @@ async function getPrForBranch(
         'view',
         branch,
         '--json',
-        'number,title,url,state,headRefName,baseRefName,reviewDecision,isDraft',
+        'number,title,url,state,headRefName,baseRefName,reviewDecision,isDraft,additions,deletions,mergeable',
       ],
       { cwd: repoPath, timeout: 5000 },
     ));
@@ -285,6 +289,9 @@ async function getPrForBranch(
       baseRefName: string;
       isDraft: boolean;
       reviewDecision: string | null;
+      additions: number;
+      deletions: number;
+      mergeable: string;
     };
 
     return {
@@ -296,6 +303,10 @@ async function getPrForBranch(
       baseRefName: data.baseRefName,
       isDraft: data.isDraft,
       reviewDecision: data.reviewDecision ?? null,
+      additions: data.additions ?? 0,
+      deletions: data.deletions ?? 0,
+      mergeable: (data.mergeable as PrInfo['mergeable']) ?? 'UNKNOWN',
+      unresolvedCommentCount: 0,
     };
   } catch {
     return null;
@@ -347,12 +358,75 @@ async function getCommitsAhead(
   }
 }
 
+async function getUnresolvedCommentCount(
+  repoPath: string,
+  prNumber: number,
+  options: {
+    exec?: ExecFileAsyncLike;
+  } = {},
+): Promise<number> {
+  const run: ExecFileAsyncLike = options.exec || execFileAsync as ExecFileAsyncLike;
+
+  try {
+    const { stdout: repoStdout } = await run(
+      'gh',
+      ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'],
+      { cwd: repoPath, timeout: 5000 },
+    );
+    const nameWithOwner = repoStdout.trim();
+    if (!nameWithOwner) return 0;
+
+    const [owner, repo] = nameWithOwner.split('/');
+    if (!owner || !repo) return 0;
+
+    const query = `query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes { isResolved }
+      }
+    }
+  }
+}`;
+
+    const { stdout } = await run(
+      'gh',
+      [
+        'api', 'graphql',
+        '-f', `query=${query}`,
+        '-f', `owner=${owner}`,
+        '-f', `repo=${repo}`,
+        '-F', `number=${prNumber}`,
+      ],
+      { cwd: repoPath, timeout: 10000 },
+    );
+
+    const result = JSON.parse(stdout) as {
+      data?: {
+        repository?: {
+          pullRequest?: {
+            reviewThreads?: {
+              nodes?: Array<{ isResolved: boolean }>;
+            };
+          };
+        };
+      };
+    };
+
+    const nodes = result?.data?.repository?.pullRequest?.reviewThreads?.nodes ?? [];
+    return nodes.filter((n) => !n.isResolved).length;
+  } catch {
+    return 0;
+  }
+}
+
 export {
   listBranches,
   normalizeBranchNames,
   getActivityFeed,
   getCiStatus,
   getPrForBranch,
+  getUnresolvedCommentCount,
   switchBranch,
   getCommitsAhead,
   getCurrentBranch,

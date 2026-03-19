@@ -84,6 +84,17 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallbacks.push(cb);
 }
 
+type SessionEndCallback = (sessionId: string, repoPath: string, branchName: string) => void;
+const sessionEndCallbacks: SessionEndCallback[] = [];
+
+function onSessionEnd(cb: SessionEndCallback): void {
+  sessionEndCallbacks.push(cb);
+}
+
+function fireSessionEnd(sessionId: string, repoPath: string, branchName: string): void {
+  for (const cb of sessionEndCallbacks) cb(sessionId, repoPath, branchName);
+}
+
 function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored, needsBranchRename: paramNeedsBranchRename, branchRenamePrompt: paramBranchRenamePrompt }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
@@ -199,6 +210,7 @@ function kill(id: string): void {
   } else if (session.mode === 'sdk') {
     killSdkSession(id);
   }
+  fireSessionEnd(id, session.repoPath, session.branchName);
   sessions.delete(id);
 }
 
@@ -457,4 +469,4 @@ function stopSdkIdleSweep(): void {
 // Re-export pty-handler utilities for backward compatibility
 export { generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
 
-export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, handlePermission, onIdleChange, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, handlePermission, onIdleChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

@@ -49,6 +49,8 @@
       ciFailing: 0,
       ciPending: 0,
       ciTotal: 0, // No CI data → state machine returns "Code Review" for OPEN PRs
+      mergeable: (pr.mergeable as 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null) ?? null,
+      unresolvedCommentCount: 0, // Dashboard doesn't fetch per-PR unresolved counts
     });
   }
 

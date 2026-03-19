@@ -3,7 +3,7 @@ import type { SdkEvent } from './types.js';
 
 const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
-type EventCallback = (msg: { type: string; sessionId?: string; idle?: boolean; branchName?: string; displayName?: string }) => void;
+type EventCallback = (msg: { type: string; sessionId?: string; idle?: boolean; branchName?: string; displayName?: string; repoPath?: string }) => void;
 
 export type SdkMessageCallback = (event: SdkEvent) => void;
 export type SdkTerminalDataCallback = (data: string) => void;

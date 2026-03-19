@@ -8,7 +8,7 @@
   import { getConfigState } from './lib/state/config.svelte.js';
   import { isMobileDevice } from './lib/utils.js';
   import type { WorktreeInfo, OpenSessionOptions, Workspace, PullRequest } from './lib/types.js';
-  import { createWorktree, createSession, fetchWorkspaceSettings } from './lib/api.js';
+  import { createWorktree, createSession, fetchWorkspaceSettings, killSession, deleteWorktree } from './lib/api.js';
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Terminal from './components/Terminal.svelte';
@@ -249,6 +249,9 @@
           refreshAll();
         } else if (msg.type === 'session-idle-changed' && msg.sessionId) {
           setAttention(msg.sessionId, msg.idle ?? false);
+        } else if (msg.type === 'session-ended') {
+          queryClient.invalidateQueries({ queryKey: ['pr'] });
+          queryClient.invalidateQueries({ queryKey: ['ci-status'] });
         }
       });
     }
@@ -506,6 +509,34 @@
       ui.activeWorkspacePath = paths[0]!;
     }
   }
+
+  async function handleArchive() {
+    const sessionId = sessionState.activeSessionId;
+    if (!sessionId) return;
+    const session = sessionState.sessions.find(s => s.id === sessionId);
+    if (!session) return;
+
+    // Kill the session
+    await killSession(sessionId);
+
+    // If worktree session, delete the worktree too
+    if (session.type === 'worktree') {
+      const workspace = sessionState.workspaces.find(w =>
+        session.repoPath === w.path || session.repoPath.startsWith(w.path + '/')
+      );
+      if (workspace && session.repoPath !== workspace.path) {
+        try {
+          await deleteWorktree(session.repoPath, workspace.path);
+        } catch {
+          // Best effort — worktree may already be gone
+        }
+      }
+    }
+
+    // Clear active session and refresh
+    sessionState.activeSessionId = null;
+    await refreshAll();
+  }
 </script>
 
 {#if auth.checking}
@@ -562,6 +593,7 @@
           workspacePath={ui.activeWorkspacePath ?? ''}
           branchName={activeSession?.branchName ?? ''}
           sessionId={sessionState.activeSessionId}
+          onArchive={handleArchive}
         />
 
         <SessionTabBar

@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { AgentType, PtySession, SessionStatus, SessionSummary, SessionType } from './types.js';
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS } from './types.js';
 import { readMeta, writeMeta } from './config.js';
+import { fireSessionEnd } from './sessions.js';
 
 const IDLE_TIMEOUT_MS = 5000;
 const MAX_SCROLLBACK = 256 * 1024; // 256KB max
@@ -245,6 +246,7 @@ export function createPtySession(
       if (configPath && worktreeName) {
         writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
       }
+      fireSessionEnd(id, repoPath, session.branchName);
       sessionsMap.delete(id);
       const tmpDir = path.join(os.tmpdir(), 'claude-remote-cli', id);
       fs.rm(tmpDir, { recursive: true, force: true }, () => {});

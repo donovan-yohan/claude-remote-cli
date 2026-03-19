@@ -23,6 +23,8 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | SDK idle sweep | 60-second interval checks for SDK sessions idle >30min; max 5 idle SDK sessions enforced via LRU eviction | Design doc |
 | Debug event log | `--debug-log` CLI flag writes SDK events as JSONL to `~/.config/claude-remote-cli/debug/`. Async write queue, 10MB rotation, 7-day cleanup. | Design doc |
 | File system browser API | `GET /workspaces/browse` returns directory entries with `isGitRepo`/`hasChildren` metadata. `POST /workspaces/bulk` for multi-add. FileBrowser.svelte provides lazy tree UI with filter, multi-select, keyboard nav. Denylist skips `node_modules`/.git/etc, 100 entry cap. | Design doc |
+| Session-end broadcast | `session-ended` event emitted via `/ws/events` on PTY exit and `kill()`. Follows `onIdleChange` callback pattern in sessions.ts. Frontend invalidates svelte-query PR/CI caches on receipt. | Design doc |
+| PR lifecycle state machine | `pr-state.ts` derives action from PR state + CI + mergeable + unresolved comments. Supports dual buttons (resolve + review). Archive flow kills session + deletes worktree. GraphQL query for unresolved review thread count. | Design doc |
 
 ## Config Precedence (canonical)
 

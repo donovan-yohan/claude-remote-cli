@@ -4,10 +4,12 @@
   import { sendPtyData } from '../lib/ws.js';
   import {
     derivePrAction,
+    deriveSecondaryAction,
     getActionPrompt,
     getStatusCssVar,
     shouldUseDarkText,
   } from '../lib/pr-state.js';
+  import type { PrAction } from '../lib/pr-state.js';
   import type { PrInfo, CiStatus } from '../lib/types.js';
   import BranchSwitcher from './BranchSwitcher.svelte';
 
@@ -53,29 +55,43 @@
     enabled: prQuery.data?.state === 'OPEN',
   }));
 
+  // Refetch PR and CI data when session changes (e.g. workspace navigation)
+  $effect(() => {
+    if (sessionId) {
+      prQuery.refetch();
+      ciQuery.refetch();
+    }
+  });
+
   let pr = $derived(prQuery.data ?? null);
   let ci = $derived(ciQuery.data ?? null);
 
-  let prAction = $derived.by(() => {
-    const prState = pr
-      ? (pr.isDraft ? 'DRAFT' : pr.state)
-      : null;
-    return derivePrAction({
-      commitsAhead: pr ? 1 : 0,
-      prState,
-      ciPassing: ci?.passing ?? 0,
-      ciFailing: ci?.failing ?? 0,
-      ciPending: ci?.pending ?? 0,
-      ciTotal: ci?.total ?? 0,
-    });
+  let prStateInput = $derived({
+    commitsAhead: pr ? 1 : 0,
+    prState: pr ? (pr.isDraft ? 'DRAFT' : pr.state) : null as 'OPEN' | 'CLOSED' | 'MERGED' | 'DRAFT' | null,
+    ciPassing: ci?.passing ?? 0,
+    ciFailing: ci?.failing ?? 0,
+    ciPending: ci?.pending ?? 0,
+    ciTotal: ci?.total ?? 0,
+    mergeable: pr?.mergeable ?? null,
+    unresolvedCommentCount: pr?.unresolvedCommentCount ?? 0,
   });
+
+  let prAction = $derived(derivePrAction(prStateInput));
+  let secondaryAction = $derived(deriveSecondaryAction(prAction, prStateInput));
 
   let actionColor = $derived(getStatusCssVar(prAction.color));
   let actionDark = $derived(shouldUseDarkText(prAction.color));
   let showAction = $derived(prAction.type !== 'none');
 
-  function handleActionClick() {
-    const prompt = getActionPrompt(prAction, currentBranch);
+  function handleActionClick(action: PrAction = prAction) {
+    const ctx = {
+      branchName: currentBranch,
+      baseBranch: pr?.baseRefName ?? '',
+      prNumber: pr?.number ?? 0,
+      unresolvedCommentCount: pr?.unresolvedCommentCount ?? 0,
+    };
+    const prompt = getActionPrompt(action, ctx);
     if (prompt !== null) {
       if (sessionId) {
         sendPtyData(prompt + '\r');
@@ -91,7 +107,7 @@
   }
 </script>
 
-<div class="pr-top-bar">
+<div class="pr-top-bar" class:bar-merged={pr?.state === 'MERGED'} class:bar-conflicts={pr?.mergeable === 'CONFLICTING'}>
   <!-- Left section: branch switcher + target branch -->
   <div class="bar-left">
     <BranchSwitcher
@@ -107,7 +123,7 @@
     {/if}
   </div>
 
-  <!-- Middle: PR link -->
+  <!-- Middle: PR link + diff stats -->
   {#if pr}
     <div class="bar-middle" aria-label="pull request">
       <a
@@ -123,24 +139,39 @@
         </svg>
       </a>
     </div>
+    <span class="diff-stats">
+      <span class="diff-add">+{pr.additions}</span>
+      <span class="diff-del">-{pr.deletions}</span>
+    </span>
   {/if}
 
-  <!-- Right: action button -->
+  <!-- Right: action buttons -->
   <div class="bar-right">
     {#if prQuery.isLoading}
       <span class="bar-loading">…</span>
-    {:else if showAction}
-      <button
-        class="action-btn"
-        style:--action-color={actionColor}
-        class:action-btn--dark-text={actionDark}
-        class:action-btn--disabled={prAction.type === 'checks-running'}
-        onclick={handleActionClick}
-        disabled={prAction.type === 'checks-running'}
-        aria-label={prAction.label}
-      >
-        {prAction.label}
-      </button>
+    {:else}
+      {#if secondaryAction}
+        <button
+          class="action-btn action-btn--secondary"
+          onclick={() => handleActionClick(secondaryAction!)}
+          aria-label={secondaryAction.label}
+        >
+          {secondaryAction.label}
+        </button>
+      {/if}
+      {#if showAction}
+        <button
+          class="action-btn"
+          style:--action-color={actionColor}
+          class:action-btn--dark-text={actionDark}
+          class:action-btn--disabled={prAction.type === 'checks-running'}
+          onclick={() => handleActionClick()}
+          disabled={prAction.type === 'checks-running'}
+          aria-label={prAction.label}
+        >
+          {prAction.label}
+        </button>
+      {/if}
     {/if}
   </div>
 </div>
@@ -272,10 +303,38 @@
     opacity: 0.7;
   }
 
+  .bar-merged {
+    background: color-mix(in srgb, var(--status-merged) 8%, var(--surface));
+  }
+
+  .bar-conflicts {
+    background: color-mix(in srgb, var(--status-error) 8%, var(--surface));
+  }
+
+  .diff-stats {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    padding: 0 8px;
+    flex-shrink: 0;
+  }
+
+  .diff-add { color: var(--status-success); }
+  .diff-del { color: var(--status-error); }
+
+  .action-btn--secondary {
+    background: var(--border) !important;
+    color: var(--text) !important;
+    margin-right: 6px;
+  }
+
   /* ── Mobile: hide target branch + pr link ─── */
   @media (max-width: 600px) {
     .target-branch,
-    .bar-middle {
+    .bar-middle,
+    .diff-stats {
       display: none;
     }
 
