@@ -114,7 +114,7 @@
         <WorkspaceItem
           {workspace}
           sessions={getSessionsForWorkspace(workspace.path)}
-          isActive={ui.activeWorkspacePath === workspace.path}
+          isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
           onSelectWorkspace={handleSelectWorkspace}
           {onSelectSession}
           onNewWorktree={onNewWorktree}
