@@ -111,8 +111,8 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
 
     if (!('fallback' in sdkResult)) {
       if (paramNeedsBranchRename) {
-        const s = sessions.get(id);
-        if (s) s.needsBranchRename = true;
+        // createSdkSession initializes needsBranchRename to false; set it now
+        sessions.get(id)!.needsBranchRename = true;
       }
       return { ...sdkResult.result, pid: undefined, needsBranchRename: !!paramNeedsBranchRename };
     }

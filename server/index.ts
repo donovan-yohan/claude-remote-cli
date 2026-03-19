@@ -745,14 +745,12 @@ async function main(): Promise<void> {
         dirName = branchName.replace(/\//g, '-');
         resolvedBranch = branchName;
       } else {
-        // Pick next mountain name, skipping names that already exist as branches
+        // Pick the next mountain name from the cycling list
         const idx = config.nextMountainIndex || 0;
         const picked = MOUNTAIN_NAMES[idx % MOUNTAIN_NAMES.length]!;
         dirName = picked;
         resolvedBranch = picked;
         isMountainName = true;
-
-        // Advance counter and save
         config.nextMountainIndex = (idx + 1) % MOUNTAIN_NAMES.length;
         saveConfig(CONFIG_PATH, config);
       }
