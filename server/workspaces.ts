@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -12,6 +13,13 @@ import type { Config, PullRequest, PullRequestsResponse, Workspace, WorkspaceSet
 import { MOUNTAIN_NAMES } from './types.js';
 
 const execFileAsync = promisify(execFile);
+
+const BROWSE_DENYLIST = new Set([
+  'node_modules', '.git', '.Trash', '__pycache__',
+  '.cache', '.npm', '.yarn', '.nvm',
+]);
+const BROWSE_MAX_ENTRIES = 100;
+const BULK_MAX_PATHS = 50;
 
 // ---------------------------------------------------------------------------
 // Deps type
@@ -208,6 +216,70 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     saveConfig(configPath, config);
 
     res.json({ removed: resolved });
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /workspaces/bulk — add multiple workspaces at once
+  // -------------------------------------------------------------------------
+  router.post('/bulk', async (req: Request, res: Response) => {
+    const body = req.body as Record<string, unknown>;
+    const rawPaths = body.paths;
+
+    if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
+      res.status(400).json({ error: 'paths array is required' });
+      return;
+    }
+
+    if (rawPaths.length > BULK_MAX_PATHS) {
+      res.status(400).json({ error: `Too many paths (max ${BULK_MAX_PATHS})` });
+      return;
+    }
+
+    const config = getConfig();
+    const existing = new Set(config.workspaces ?? []);
+    const added: Array<{ path: string; name: string; isGitRepo: boolean; defaultBranch: string | null }> = [];
+    const errors: Array<{ path: string; error: string }> = [];
+
+    for (const rawPath of rawPaths) {
+      if (typeof rawPath !== 'string' || !rawPath) {
+        errors.push({ path: String(rawPath), error: 'Invalid path' });
+        continue;
+      }
+
+      let resolved: string;
+      try {
+        resolved = await validateWorkspacePath(rawPath);
+      } catch (err) {
+        errors.push({ path: rawPath, error: err instanceof Error ? err.message : String(err) });
+        continue;
+      }
+
+      if (existing.has(resolved)) {
+        errors.push({ path: rawPath, error: 'Already exists' });
+        continue;
+      }
+
+      const { isGitRepo, defaultBranch } = await detectGitRepo(resolved, exec);
+
+      existing.add(resolved);
+      added.push({ path: resolved, name: path.basename(resolved), isGitRepo, defaultBranch });
+
+      // Store detected default branch in per-workspace settings
+      if (isGitRepo && defaultBranch) {
+        if (!config.workspaceSettings) config.workspaceSettings = {};
+        config.workspaceSettings[resolved] = {
+          ...config.workspaceSettings[resolved],
+          defaultBranch,
+        };
+      }
+    }
+
+    if (added.length > 0) {
+      config.workspaces = [...(config.workspaces ?? []), ...added.map((a) => a.path)];
+      saveConfig(configPath, config);
+    }
+
+    res.status(201).json({ added, errors });
   });
 
   // -------------------------------------------------------------------------
@@ -502,6 +574,101 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
     const branch = await getCurrentBranch(path.resolve(workspacePath));
     res.json({ branch });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /workspaces/browse — browse filesystem directories for tree UI
+  // -------------------------------------------------------------------------
+  router.get('/browse', async (req: Request, res: Response) => {
+    const rawPath = typeof req.query.path === 'string' ? req.query.path : '~';
+    const prefix = typeof req.query.prefix === 'string' ? req.query.prefix : '';
+    const showHidden = req.query.showHidden === 'true';
+
+    // Resolve ~ to home directory
+    const expanded = rawPath === '~' || rawPath.startsWith('~/')
+      ? path.join(os.homedir(), rawPath.slice(1))
+      : rawPath;
+    const resolved = path.resolve(expanded);
+
+    // Validate path
+    let stat: fs.Stats;
+    try {
+      stat = await fs.promises.stat(resolved);
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EACCES') {
+        res.status(403).json({ error: 'Permission denied' });
+      } else {
+        res.status(400).json({ error: `Path does not exist: ${resolved}` });
+      }
+      return;
+    }
+
+    if (!stat.isDirectory()) {
+      res.status(400).json({ error: `Not a directory: ${resolved}` });
+      return;
+    }
+
+    // Read directory entries
+    let dirents: fs.Dirent[];
+    try {
+      dirents = await fs.promises.readdir(resolved, { withFileTypes: true });
+    } catch {
+      res.status(403).json({ error: 'Cannot read directory' });
+      return;
+    }
+
+    // Filter to directories only, apply denylist, hidden filter, prefix filter
+    let dirs = dirents.filter((d) => {
+      if (!d.isDirectory()) return false;
+      if (BROWSE_DENYLIST.has(d.name)) return false;
+      // Also check if name contains a path separator component in denylist
+      // e.g. "Library/Caches" — we check the full name, not path components
+      if (!showHidden && d.name.startsWith('.')) return false;
+      if (prefix && !d.name.toLowerCase().startsWith(prefix.toLowerCase())) return false;
+      return true;
+    });
+
+    // Sort alphabetically case-insensitive
+    dirs.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+
+    const total = dirs.length;
+    const truncated = dirs.length > BROWSE_MAX_ENTRIES;
+    if (truncated) dirs = dirs.slice(0, BROWSE_MAX_ENTRIES);
+
+    // Enrich each entry with isGitRepo and hasChildren (parallelized)
+    const entries = await Promise.all(
+      dirs.map(async (d) => {
+        const entryPath = path.join(resolved, d.name);
+
+        // Check for .git directory (isGitRepo)
+        let isGitRepo = false;
+        try {
+          const gitStat = await fs.promises.stat(path.join(entryPath, '.git'));
+          isGitRepo = gitStat.isDirectory();
+        } catch {
+          // not a git repo
+        }
+
+        // Check if has at least one subdirectory child (hasChildren)
+        let hasChildren = false;
+        try {
+          const children = await fs.promises.readdir(entryPath, { withFileTypes: true });
+          hasChildren = children.some((c) => c.isDirectory() && !BROWSE_DENYLIST.has(c.name));
+        } catch {
+          // can't read — treat as no children
+        }
+
+        return {
+          name: d.name,
+          path: entryPath,
+          isGitRepo,
+          hasChildren,
+        };
+      }),
+    );
+
+    res.json({ resolved, entries, truncated, total });
   });
 
   // -------------------------------------------------------------------------

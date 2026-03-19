@@ -1,140 +1,61 @@
 <script lang="ts">
-  import { autocompletePath } from '../../lib/api.js';
+  import { addWorkspacesBulk } from '../../lib/api.js';
+  import FileBrowser from '../FileBrowser.svelte';
 
   let {
-    onWorkspaceAdded,
+    onWorkspacesAdded,
   }: {
-    onWorkspaceAdded: (path: string) => void;
+    onWorkspacesAdded: (paths: string[]) => void;
   } = $props();
 
   let dialogEl: HTMLDialogElement;
-  let inputEl: HTMLInputElement | undefined;
-
-  let pathValue = $state('');
-  let suggestions = $state<string[]>([]);
-  let focusedIndex = $state(-1);
-  let loading = $state(false);
+  let fileBrowserRef = $state<FileBrowser | undefined>();
+  let selectedPaths = $state<string[]>([]);
   let error = $state('');
-
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let submitting = $state(false);
 
   export function open() {
-    pathValue = '';
-    suggestions = [];
-    focusedIndex = -1;
+    selectedPaths = [];
     error = '';
-    loading = false;
+    submitting = false;
+    fileBrowserRef?.reset();
     dialogEl.showModal();
-    // Focus input after dialog opens
-    setTimeout(() => inputEl?.focus(), 50);
   }
 
   export function close() {
     dialogEl.close();
   }
 
-  async function fetchSuggestions(prefix: string) {
-    if (!prefix || prefix.length < 2) {
-      suggestions = [];
-      return;
-    }
-    loading = true;
-    try {
-      suggestions = await autocompletePath(prefix);
-      focusedIndex = -1;
-    } catch {
-      suggestions = [];
-    } finally {
-      loading = false;
-    }
-  }
+  async function handleSubmit() {
+    if (selectedPaths.length === 0) return;
 
-  function handleInput() {
+    submitting = true;
     error = '';
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => fetchSuggestions(pathValue), 200);
-  }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      if (suggestions.length > 0) {
-        suggestions = [];
-        e.preventDefault();
+    try {
+      const result = await addWorkspacesBulk(selectedPaths);
+
+      if (result.errors.length > 0 && result.added.length === 0) {
+        error = result.errors.map((e) => `${e.path}: ${e.error}`).join('; ');
+        submitting = false;
         return;
       }
+
+      if (result.added.length > 0) {
+        onWorkspacesAdded(result.added.map((a) => a.path));
+      }
+
+      if (result.errors.length > 0) {
+        // Partial success — still close but log
+        console.warn('Some workspaces failed to add:', result.errors);
+      }
+
       close();
-      return;
+    } catch {
+      error = 'Failed to add workspaces.';
+    } finally {
+      submitting = false;
     }
-
-    if (e.key === 'Tab') {
-      // Always prevent Tab from leaving the input — this is a terminal-style input
-      e.preventDefault();
-      if (suggestions.length > 0) {
-        // Tab completion — fill with first/focused suggestion
-        const target = focusedIndex >= 0 ? suggestions[focusedIndex] : suggestions[0];
-        if (target) {
-          pathValue = target;
-          suggestions = [];
-          if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = setTimeout(() => fetchSuggestions(pathValue), 100);
-        }
-      } else if (pathValue.trim()) {
-        // No suggestions visible — trigger fetch immediately
-        if (debounceTimer) clearTimeout(debounceTimer);
-        fetchSuggestions(pathValue);
-      }
-      return;
-    }
-
-    if (e.key === 'ArrowDown' && suggestions.length > 0) {
-      e.preventDefault();
-      focusedIndex = Math.min(focusedIndex + 1, suggestions.length - 1);
-      return;
-    }
-
-    if (e.key === 'ArrowUp' && suggestions.length > 0) {
-      e.preventDefault();
-      focusedIndex = Math.max(focusedIndex - 1, -1);
-      return;
-    }
-
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      if (focusedIndex >= 0 && suggestions[focusedIndex]) {
-        // Select the focused suggestion
-        pathValue = suggestions[focusedIndex] ?? pathValue;
-        suggestions = [];
-        focusedIndex = -1;
-        // Re-fetch to drill deeper
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => fetchSuggestions(pathValue), 100);
-      } else {
-        // Submit the current path
-        handleSubmit();
-      }
-      return;
-    }
-  }
-
-  function selectSuggestion(path: string) {
-    pathValue = path;
-    suggestions = [];
-    focusedIndex = -1;
-    inputEl?.focus();
-    // Re-fetch to show subdirectories
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => fetchSuggestions(pathValue), 100);
-  }
-
-  function handleSubmit() {
-    const trimmed = pathValue.trim();
-    if (!trimmed) {
-      error = 'Path is required';
-      return;
-    }
-    error = '';
-    onWorkspaceAdded(trimmed);
-    close();
   }
 
   function onDialogClick(e: MouseEvent) {
@@ -152,57 +73,36 @@
 
     <div class="dialog-body">
       <p class="dialog-desc">
-        Enter the path to a folder on your machine. Git repos get PR tracking and branch management.
+        Browse for folders on your machine. Git repos get PR tracking and branch management.
       </p>
 
-      <div class="path-input-container">
-        <span class="prompt-char">&gt;</span>
-        <input
-          bind:this={inputEl}
-          type="text"
-          class="path-input"
-          placeholder="/path/to/project"
-          bind:value={pathValue}
-          oninput={handleInput}
-          onkeydown={handleKeydown}
-          autocomplete="off"
-          spellcheck="false"
-        />
-        {#if loading}
-          <span class="loading-indicator">...</span>
-        {/if}
-      </div>
-
-      {#if suggestions.length > 0}
-        <ul class="suggestions" role="listbox">
-          {#each suggestions as suggestion, i (suggestion)}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <li
-              class="suggestion-item"
-              class:focused={i === focusedIndex}
-              role="option"
-              aria-selected={i === focusedIndex}
-              onclick={() => selectSuggestion(suggestion)}
-            >
-              <span class="suggestion-icon">{suggestion.endsWith('/') ? '📁' : '📄'}</span>
-              <span class="suggestion-path">{suggestion}</span>
-            </li>
-          {/each}
-        </ul>
-      {/if}
+      <FileBrowser bind:this={fileBrowserRef} bind:selectedPaths />
 
       {#if error}
         <p class="error-msg">{error}</p>
       {/if}
-
-      <p class="hint">
-        Tab to autocomplete · Enter to add · Escape to cancel
-      </p>
     </div>
 
     <div class="dialog-footer">
-      <button class="btn btn-ghost" onclick={close}>Cancel</button>
-      <button class="btn btn-primary" onclick={handleSubmit}>Add Workspace</button>
+      <span class="selected-count">
+        {#if selectedPaths.length > 0}
+          {selectedPaths.length} selected
+        {/if}
+      </span>
+      <div class="footer-actions">
+        <button class="btn btn-ghost" onclick={close}>Cancel</button>
+        <button
+          class="btn btn-primary"
+          onclick={handleSubmit}
+          disabled={selectedPaths.length === 0 || submitting}
+        >
+          {#if submitting}
+            Adding...
+          {:else}
+            Add Workspace{selectedPaths.length > 1 ? 's' : ''}
+          {/if}
+        </button>
+      </div>
     </div>
   </div>
 </dialog>
@@ -215,7 +115,7 @@
     border-radius: 8px;
     padding: 0;
     width: min(520px, 95vw);
-    max-height: 80vh;
+    max-height: 85vh;
     overflow: hidden;
   }
 
@@ -226,7 +126,7 @@
   .dialog-content {
     display: flex;
     flex-direction: column;
-    max-height: 80vh;
+    max-height: 85vh;
   }
 
   .dialog-header {
@@ -239,9 +139,9 @@
   }
 
   .dialog-title {
-    font-size: var(--font-size-lg);
+    font-size: var(--font-size-lg, 1.1rem);
     font-weight: 600;
-    font-family: var(--font-mono);
+    font-family: var(--font-mono, monospace);
     margin: 0;
   }
 
@@ -270,134 +170,54 @@
   }
 
   .dialog-desc {
-    font-size: var(--font-size-sm);
+    font-size: var(--font-size-sm, 0.85rem);
     color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-family: var(--font-mono, monospace);
     margin: 0;
     line-height: 1.5;
   }
 
-  .path-input-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 0;
-    padding: 10px 12px;
-    transition: border-color 0.15s;
-  }
-
-  .path-input-container:focus-within {
-    border-color: var(--accent);
-  }
-
-  .prompt-char {
-    color: var(--accent);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-base);
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-
-  .path-input {
-    flex: 1;
-    background: none;
-    border: none;
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-base);
-    outline: none;
-  }
-
-  .path-input::placeholder {
-    color: var(--text-muted);
-    opacity: 0.5;
-  }
-
-  .loading-indicator {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    animation: blink 1s infinite;
-  }
-
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
-  .suggestions {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    max-height: 200px;
-    overflow-y: auto;
-  }
-
-  .suggestion-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    cursor: pointer;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    color: var(--text-muted);
-    transition: background 0.1s;
-  }
-
-  .suggestion-item:hover,
-  .suggestion-item.focused {
-    background: var(--surface-hover);
-    color: var(--text);
-  }
-
-  .suggestion-icon {
-    font-size: var(--font-size-xs);
-    flex-shrink: 0;
-  }
-
-  .suggestion-path {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .error-msg {
-    font-size: var(--font-size-xs);
-    color: var(--status-error);
-    font-family: var(--font-mono);
+    font-size: var(--font-size-xs, 0.75rem);
+    color: var(--status-error, #e57373);
+    font-family: var(--font-mono, monospace);
     margin: 0;
-  }
-
-  .hint {
-    font-size: var(--font-size-xs);
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    margin: 0;
-    opacity: 0.6;
   }
 
   .dialog-footer {
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: space-between;
     gap: 10px;
     padding: 12px 20px 16px;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
   }
 
+  .selected-count {
+    font-size: var(--font-size-sm, 0.85rem);
+    color: var(--text-muted);
+    font-family: var(--font-mono, monospace);
+  }
+
+  .footer-actions {
+    display: flex;
+    gap: 10px;
+  }
+
   .btn {
     padding: 8px 18px;
     border-radius: 0;
-    font-size: var(--font-size-sm);
-    font-family: var(--font-mono);
+    font-size: var(--font-size-sm, 0.85rem);
+    font-family: var(--font-mono, monospace);
     cursor: pointer;
     border: 1px solid transparent;
     font-weight: 500;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .btn-primary {
@@ -405,7 +225,7 @@
     color: #fff;
   }
 
-  .btn-primary:hover {
+  .btn-primary:hover:not(:disabled) {
     opacity: 0.9;
   }
 

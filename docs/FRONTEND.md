@@ -21,6 +21,7 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `SessionTabBar.svelte` | Multi-tab session management per worktree (role=tablist) |
 | `RepoDashboard.svelte` | Workspace dashboard: PRs with merge status, activity feed, CTAs |
 | `BranchSwitcher.svelte` | Branch dropdown with filter for PR top bar |
+| `FileBrowser.svelte` | Lazy-loading tree-view filesystem browser with multi-select, filter, keyboard nav |
 | `EmptyState.svelte` | Reusable empty state with icon, heading, description, CTA |
 | `Terminal.svelte` | xterm.js terminal wrapper with WebSocket connection |
 | `Toolbar.svelte` | Mobile touch toolbar for terminal interaction |

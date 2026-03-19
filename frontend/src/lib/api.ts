@@ -9,6 +9,20 @@ export class ConflictError extends Error {
   }
 }
 
+export interface BrowseEntry {
+  name: string;
+  path: string;
+  isGitRepo: boolean;
+  hasChildren: boolean;
+}
+
+export interface BrowseResponse {
+  resolved: string;
+  entries: BrowseEntry[];
+  truncated: boolean;
+  total: number;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<T>;
@@ -52,6 +66,32 @@ export async function addWorkspace(path: string): Promise<void> {
 export async function removeWorkspace(path: string): Promise<void> {
   const res = await fetch('/workspaces', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
   if (!res.ok) throw new Error('Failed to remove workspace');
+}
+
+export async function browseFsDirectory(
+  dirPath?: string,
+  options?: { prefix?: string; showHidden?: boolean },
+): Promise<BrowseResponse> {
+  const params = new URLSearchParams();
+  if (dirPath) params.set('path', dirPath);
+  if (options?.prefix) params.set('prefix', options.prefix);
+  if (options?.showHidden) params.set('showHidden', 'true');
+  return json<BrowseResponse>(await fetch('/workspaces/browse?' + params.toString()));
+}
+
+export interface BulkAddResult {
+  added: Array<{ path: string; name: string; isGitRepo: boolean; defaultBranch: string | null }>;
+  errors: Array<{ path: string; error: string }>;
+}
+
+export async function addWorkspacesBulk(paths: string[]): Promise<BulkAddResult> {
+  return json<BulkAddResult>(
+    await fetch('/workspaces/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths }),
+    }),
+  );
 }
 
 export async function fetchDashboard(workspacePath: string): Promise<DashboardData> {

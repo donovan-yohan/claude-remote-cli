@@ -129,6 +129,8 @@ SDK flow:
 | `GET` | `/workspaces/pr` | PR info for a branch (`?path=X&branch=Y`) |
 | `GET` | `/workspaces/ci-status` | CI check results (`?path=X&branch=Y`) |
 | `POST` | `/workspaces/branch` | Switch branch (`?path=X`, body: `{branch}`) |
+| `GET` | `/workspaces/browse` | Browse filesystem directories for tree UI (`?path=X&prefix=Y&showHidden=bool`) |
+| `POST` | `/workspaces/bulk` | Add multiple workspace paths at once (body: `{paths}`) |
 | `GET` | `/workspaces/autocomplete` | Path prefix autocomplete (`?prefix=X`) |
 | `POST` | `/workspaces/worktree` | Create worktree with mountain name (`?path=X`) |
 | `GET` | `/workspaces/current-branch` | Current checked-out branch (`?path=X`) |

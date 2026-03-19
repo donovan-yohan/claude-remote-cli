@@ -485,17 +485,12 @@
     addWorkspaceDialogRef?.open();
   }
 
-  async function handleWorkspaceAdded(folderPath: string) {
-    try {
-      await fetch('/workspaces', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: folderPath }),
-      });
-      await refreshAll();
-      // Auto-select the newly added workspace
-      ui.activeWorkspacePath = folderPath;
-    } catch { /* silent */ }
+  async function handleWorkspacesAdded(paths: string[]) {
+    await refreshAll();
+    // Auto-select the first newly added workspace
+    if (paths.length > 0) {
+      ui.activeWorkspacePath = paths[0]!;
+    }
   }
 </script>
 
@@ -604,7 +599,7 @@
   />
   <SettingsDialog bind:this={settingsDialogRef} />
   <DeleteWorktreeDialog bind:this={deleteWorktreeDialogRef} />
-  <AddWorkspaceDialog bind:this={addWorkspaceDialogRef} onWorkspaceAdded={handleWorkspaceAdded} />
+  <AddWorkspaceDialog bind:this={addWorkspaceDialogRef} onWorkspacesAdded={handleWorkspacesAdded} />
   <WorkspaceSettingsDialog
     bind:this={workspaceSettingsDialogRef}
     onRemoveWorkspace={async (p) => {
