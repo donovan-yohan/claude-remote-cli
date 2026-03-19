@@ -461,17 +461,7 @@ async function main(): Promise<void> {
       }
     }
 
-    // Check no active session is using this worktree — unless creating a new tab
-    const bodyAllowMultiple = (req.body as Record<string, unknown>).allowMultiple;
-    const bodyNeedsBranchRename = (req.body as Record<string, unknown>).needsBranchRename;
-    if (!bodyNeedsBranchRename && !bodyAllowMultiple) {
-      const activeSessions = sessions.list();
-      const conflict = activeSessions.find(function (s) { return s.repoPath === worktreePath; });
-      if (conflict) {
-        res.status(409).json({ error: 'Close the active session first' });
-        return;
-      }
-    }
+    // Multiple sessions per worktree allowed (multi-tab support)
 
     // Derive branch name from metadata or worktree directory name
     const meta = readMeta(CONFIG_PATH, worktreePath);
@@ -734,14 +724,7 @@ async function main(): Promise<void> {
 
     const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
 
-    // One repo session at a time — unless explicitly creating a new tab
-    if (!allowMultiple) {
-      const existing = sessions.findRepoSession(repoPath);
-      if (existing) {
-        res.status(409).json({ error: 'A session already exists for this repo', sessionId: existing.id });
-        return;
-      }
-    }
+    // Multiple sessions per repo allowed (multi-tab support)
 
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
     const baseArgs = [
