@@ -22,6 +22,7 @@
   import NewSessionDialog from './components/dialogs/NewSessionDialog.svelte';
   import SettingsDialog from './components/dialogs/SettingsDialog.svelte';
   import DeleteWorktreeDialog from './components/dialogs/DeleteWorktreeDialog.svelte';
+  import AddWorkspaceDialog from './components/dialogs/AddWorkspaceDialog.svelte';
   import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 
   const queryClient = new QueryClient({
@@ -367,16 +368,23 @@
   function handleCopyModeChange(active: boolean) { copyModeActive = active; }
   function handleExitCopyMode() { terminalRef?.exitCopyMode(); }
 
+  let addWorkspaceDialogRef = $state<AddWorkspaceDialog | undefined>();
+
   function handleAddWorkspace() {
-    // TODO: implement add workspace dialog with path autocomplete
-    const path = prompt('Enter workspace folder path:');
-    if (path) {
-      fetch('/workspaces', {
+    addWorkspaceDialogRef?.open();
+  }
+
+  async function handleWorkspaceAdded(folderPath: string) {
+    try {
+      await fetch('/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      }).then(() => refreshAll());
-    }
+        body: JSON.stringify({ path: folderPath }),
+      });
+      await refreshAll();
+      // Auto-select the newly added workspace
+      ui.activeWorkspacePath = folderPath;
+    } catch { /* silent */ }
   }
 </script>
 
@@ -471,6 +479,7 @@
   />
   <SettingsDialog bind:this={settingsDialogRef} />
   <DeleteWorktreeDialog bind:this={deleteWorktreeDialogRef} />
+  <AddWorkspaceDialog bind:this={addWorkspaceDialogRef} onWorkspaceAdded={handleWorkspaceAdded} />
 
   <!-- Toasts -->
   <UpdateToast />
