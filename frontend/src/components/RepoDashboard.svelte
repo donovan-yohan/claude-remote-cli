@@ -89,17 +89,19 @@
     </div>
   {:else}
     <!-- OPEN PULL REQUESTS section -->
-    <section class="dashboard-section">
+    <section class="dashboard-section dashboard-section--scroll">
       <div class="section-heading">OPEN PULL REQUESTS</div>
 
       {#if isLoading}
-        <div class="pr-list">
-          {#each [1, 2] as _}
-            <div class="pr-row skeleton">
-              <div class="skeleton-line skeleton-title"></div>
-              <div class="skeleton-line skeleton-meta"></div>
-            </div>
-          {/each}
+        <div class="scroll-container">
+          <div class="pr-list">
+            {#each [1, 2] as _}
+              <div class="pr-row skeleton">
+                <div class="skeleton-line skeleton-title"></div>
+                <div class="skeleton-line skeleton-meta"></div>
+              </div>
+            {/each}
+          </div>
         </div>
       {:else if isError}
         <div class="section-message">
@@ -121,97 +123,103 @@
             bind:value={searchQuery}
           />
         {/if}
-        <div class="pr-list">
-          {#each filteredPrs() as pr (pr.number)}
-            {@const action = prActionForRow(pr)}
-            {@const actionColor = getStatusCssVar(action.color)}
-            {@const darkText = shouldUseDarkText(action.color)}
-            <div class="pr-row">
-              <div class="pr-row-left">
-                <div class="pr-row-title-line">
-                  <span class={prStatusDotClass(pr)}></span>
-                  <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
-                    {pr.title}
-                  </a>
+        <div class="scroll-container">
+          <div class="pr-list">
+            {#each filteredPrs() as pr (pr.number)}
+              {@const action = prActionForRow(pr)}
+              {@const actionColor = getStatusCssVar(action.color)}
+              {@const darkText = shouldUseDarkText(action.color)}
+              <div class="pr-row">
+                <div class="pr-row-left">
+                  <div class="pr-row-title-line">
+                    <span class={prStatusDotClass(pr)}></span>
+                    <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
+                      {pr.title}
+                    </a>
+                  </div>
+                  <div class="pr-row-meta">
+                    <span class="pr-num">#{pr.number}</span>
+                    <span class="pr-sep">·</span>
+                    <span class="pr-role">{prRoleLabel(pr)}</span>
+                    <span class="pr-sep">·</span>
+                    <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
+                  </div>
                 </div>
-                <div class="pr-row-meta">
-                  <span class="pr-num">#{pr.number}</span>
-                  <span class="pr-sep">·</span>
-                  <span class="pr-role">{prRoleLabel(pr)}</span>
-                  <span class="pr-sep">·</span>
-                  <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
+                <div class="pr-row-actions">
+                  <button
+                    class="pr-session-btn"
+                    title="Open session on this branch"
+                    onclick={() => onOpenPrSession(pr)}
+                  >+</button>
+                  {#if pr.mergeable === 'CONFLICTING'}
+                    <button
+                      class="pr-action-pill pr-conflict-pill"
+                      title="Open worktree and fix merge conflicts"
+                      onclick={() => onFixConflicts(pr)}
+                    >
+                      Fix Conflicts
+                    </button>
+                  {/if}
+                  {#if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
+                    <a
+                      class="pr-action-pill pr-merge-pill"
+                      href={pr.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Ready to merge on GitHub"
+                    >
+                      Merge
+                    </a>
+                  {/if}
+                  {#if action.type !== 'none' && action.label}
+                    <button
+                      class="pr-action-pill"
+                      style:--pill-color={actionColor}
+                      class:dark-text={darkText}
+                      title={action.label}
+                      onclick={() => onPrAction(pr)}
+                    >
+                      {action.label}
+                    </button>
+                  {/if}
                 </div>
               </div>
-              <div class="pr-row-actions">
-                <button
-                  class="pr-session-btn"
-                  title="Open session on this branch"
-                  onclick={() => onOpenPrSession(pr)}
-                >+</button>
-                {#if pr.mergeable === 'CONFLICTING'}
-                  <button
-                    class="pr-action-pill pr-conflict-pill"
-                    title="Open worktree and fix merge conflicts"
-                    onclick={() => onFixConflicts(pr)}
-                  >
-                    Fix Conflicts
-                  </button>
-                {/if}
-                {#if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
-                  <a
-                    class="pr-action-pill pr-merge-pill"
-                    href={pr.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Ready to merge on GitHub"
-                  >
-                    Merge
-                  </a>
-                {/if}
-                {#if action.type !== 'none' && action.label}
-                  <button
-                    class="pr-action-pill"
-                    style:--pill-color={actionColor}
-                    class:dark-text={darkText}
-                    title={action.label}
-                    onclick={() => onPrAction(pr)}
-                  >
-                    {action.label}
-                  </button>
-                {/if}
-              </div>
-            </div>
-          {/each}
+            {/each}
+          </div>
         </div>
       {/if}
     </section>
 
     <!-- RECENT ACTIVITY section -->
-    <section class="dashboard-section">
+    <section class="dashboard-section dashboard-section--scroll">
       <div class="section-heading">RECENT ACTIVITY</div>
 
       {#if isLoading}
-        <div class="activity-list">
-          {#each [1, 2, 3] as _}
-            <div class="activity-row skeleton">
-              <div class="skeleton-line skeleton-activity"></div>
-            </div>
-          {/each}
+        <div class="scroll-container">
+          <div class="activity-list">
+            {#each [1, 2, 3] as _}
+              <div class="activity-row skeleton">
+                <div class="skeleton-line skeleton-activity"></div>
+              </div>
+            {/each}
+          </div>
         </div>
       {:else if data && data.activity.length === 0}
         <div class="section-message">No recent commits (24h)</div>
       {:else if data}
-        <div class="activity-list">
-          {#each data.activity as entry (entry.hash)}
-            <div class="activity-row">
-              <span class="commit-hash">{entry.shortHash}</span>
-              <span class="commit-msg">{entry.message}</span>
-              {#if entry.branches.length > 0}
-                <span class="commit-branch">{activityBranches(entry)}</span>
-              {/if}
-              <span class="commit-time">{entry.timeAgo}</span>
-            </div>
-          {/each}
+        <div class="scroll-container">
+          <div class="activity-list">
+            {#each data.activity as entry (entry.hash)}
+              <div class="activity-row">
+                <span class="commit-hash">{entry.shortHash}</span>
+                <span class="commit-msg">{entry.message}</span>
+                {#if entry.branches.length > 0}
+                  <span class="commit-branch">{activityBranches(entry)}</span>
+                {/if}
+                <span class="commit-time">{entry.timeAgo}</span>
+              </div>
+            {/each}
+          </div>
         </div>
       {/if}
     </section>
@@ -235,7 +243,7 @@
     background: var(--bg);
     min-height: 0;
     max-width: none;
-    overflow-y: auto;
+    overflow: hidden;
     flex: 1;
   }
 
@@ -244,6 +252,38 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .dashboard-section--scroll {
+    flex: 1;
+    min-height: 120px;
+    overflow: hidden;
+  }
+
+  /* ── Scroll container with gradient fades ── */
+  .scroll-container {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .dashboard-section--scroll {
+    position: relative;
+  }
+
+  .dashboard-section--scroll::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 32px;
+    background: linear-gradient(to bottom, transparent, var(--bg));
+    pointer-events: none;
+    z-index: 1;
   }
 
   .section-heading {
@@ -506,6 +546,7 @@
     align-items: center;
     gap: 10px;
     padding-top: 4px;
+    flex-shrink: 0;
   }
 
   .cta-btn {
