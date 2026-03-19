@@ -13,17 +13,18 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 
 | Component | Role |
 |-----------|------|
-| `App.svelte` | Root layout: sidebar + terminal + mobile header |
-| `Sidebar.svelte` | Three-tab sidebar (Repos / Worktrees / PRs), session list, filters |
-| `SessionList.svelte` | Filtered session/worktree list with status grouping, recency sorting, and collapsible repo groups |
-| `SessionItem.svelte` | 3-row session card: status dot + name, git metadata, time + diff stats; shimmer overlay during loading |
-| `SessionFilters.svelte` | Filter controls (root, repo, search) + Author/Reviewer toggle for PRs tab |
-| `PrRepoGroup.svelte` | Collapsible per-repo PR group with svelte-query fetching and PR count badge |
-| `PullRequestItem.svelte` | 3-row PR card: state icon + title, author + role badge, time + diff stats |
+| `App.svelte` | Root layout: sidebar + main area (dashboard / PR top bar + tabs + terminal) |
+| `Sidebar.svelte` | Flat workspace list with smart search, no tabs |
+| `WorkspaceItem.svelte` | Workspace tree item: letter icon, sessions, inactive worktrees, context menus |
+| `SmartSearch.svelte` | Terminal-style typeahead search with `>` prompt |
+| `PrTopBar.svelte` | Dynamic PR/CI bar with branch switcher and context-aware action button |
+| `SessionTabBar.svelte` | Multi-tab session management per worktree (role=tablist) |
+| `RepoDashboard.svelte` | Workspace dashboard: PRs with merge status, activity feed, CTAs |
+| `BranchSwitcher.svelte` | Branch dropdown with filter for PR top bar |
+| `EmptyState.svelte` | Reusable empty state with icon, heading, description, CTA |
 | `Terminal.svelte` | xterm.js terminal wrapper with WebSocket connection |
 | `Toolbar.svelte` | Mobile touch toolbar for terminal interaction |
 | `MobileHeader.svelte` | Mobile header with session info |
-| `MobileInput.svelte` | Mobile text input for terminal commands |
 | `ContextMenu.svelte` | Universal "..." dropdown menu for session/item actions |
 | `PinGate.svelte` | PIN authentication screen |
 | `ImageToast.svelte` | Clipboard image paste feedback |

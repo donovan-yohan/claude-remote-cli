@@ -1,6 +1,6 @@
 # Workspace Redesign — v3 Rearchitecture
 
-> **Status**: Complete | **Created**: 2026-03-18 | **Last Updated**: 2026-03-18
+> **Status**: Completed | **Created**: 2026-03-18 | **Completed**: 2026-03-18
 > **Design Doc**: `docs/design-docs/2026-03-18-workspace-redesign-design.md`
 > **For Claude:** Use /harness:orchestrate to execute this plan.
 

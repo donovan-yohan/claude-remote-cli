@@ -6,7 +6,6 @@ Execution plans for active and completed work.
 
 | Plan | Created | Topic |
 |------|---------|-------|
-| `workspace-redesign` | 2026-03-18 | v3 rearchitecture — workspace-first sidebar, PR top bar, multi-tab sessions, terminal aesthetic |
 | `session-persistence-fix` | 2026-03-17 | Fix sessions lost after auto-update restart |
 | `mobile-input-redesign` | 2026-02-25 | Event-intent architecture replacing value-diffing for mobile input |
 
@@ -20,6 +19,7 @@ See `docs/exec-plans/completed/` for historical plans (23 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `workspace-redesign` | 2026-03-18 | v3 rearchitecture — workspace-first sidebar, PR top bar, multi-tab sessions, terminal aesthetic |
 | `mobile-keyboard-testing` | 2026-03-16 | Fixture-based testing for mobile input event-intent pipeline |
 | `continue-retry-exit-code-fix` | 2026-03-14 | Fix --continue retry to fire regardless of exit code (tmux masks to 0) |
 | `osc52-clipboard-utf8-fix` | 2026-03-13 | Fix OSC 52 clipboard handler to properly decode UTF-8 from base64 |
