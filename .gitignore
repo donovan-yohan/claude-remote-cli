@@ -7,3 +7,4 @@ config.json
 bun.lockb
 dist/
 .worktrees/
+.gstack/
