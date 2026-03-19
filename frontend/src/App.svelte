@@ -451,6 +451,8 @@
       onNewSession={(w) => handleOpenNewSession(w)}
       onNewTerminal={(w) => handleOpenNewSession(w, { agent: 'claude' })}
       onAddWorkspace={handleAddWorkspace}
+      onDeleteSession={handleCloseSession}
+      onDeleteWorktree={handleDeleteWorktree}
     />
 
     <div class="terminal-area">

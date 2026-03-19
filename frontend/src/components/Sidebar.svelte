@@ -10,7 +10,7 @@
     COLLAPSED_SIDEBAR_WIDTH,
   } from '../lib/state/ui.svelte.js';
   import { getSessionState, getSessionsForWorkspace } from '../lib/state/sessions.svelte.js';
-  import type { Workspace } from '../lib/types.js';
+  import type { Workspace, WorktreeInfo } from '../lib/types.js';
   import WorkspaceItem from './WorkspaceItem.svelte';
   import SmartSearch from './SmartSearch.svelte';
 
@@ -24,6 +24,8 @@
     onNewSession,
     onNewTerminal,
     onAddWorkspace,
+    onDeleteSession,
+    onDeleteWorktree,
   }: {
     onSelectSession: (id: string) => void;
     onOpenSettings: (workspace?: Workspace) => void;
@@ -31,6 +33,8 @@
     onNewSession: (workspace: Workspace) => void;
     onNewTerminal: (workspace: Workspace) => void;
     onAddWorkspace: () => void;
+    onDeleteSession?: (id: string) => void;
+    onDeleteWorktree?: (wt: WorktreeInfo) => void;
   } = $props();
 
   let effectiveWidth = $derived(
@@ -129,6 +133,8 @@
           onNewSession={onNewSession}
           onNewTerminal={onNewTerminal}
           onOpenSettings={(ws) => onOpenSettings(ws)}
+          onDeleteSession={(id) => onDeleteSession?.(id)}
+          onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
         />
       {/each}
 

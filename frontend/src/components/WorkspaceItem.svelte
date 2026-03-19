@@ -2,6 +2,8 @@
   import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
   import { getSessionStatus, refreshAll } from '../lib/state/sessions.svelte.js';
   import { createSession } from '../lib/api.js';
+  import ContextMenu from './ContextMenu.svelte';
+  import type { MenuItem } from './ContextMenu.svelte';
 
   let {
     workspace,
@@ -14,6 +16,8 @@
     onNewSession,
     onNewTerminal,
     onOpenSettings,
+    onDeleteSession,
+    onDeleteWorktree,
   }: {
     workspace: Workspace;
     sessions: SessionSummary[];
@@ -25,6 +29,8 @@
     onNewSession: (workspace: Workspace) => void;
     onNewTerminal: (workspace: Workspace) => void;
     onOpenSettings: (workspace: Workspace) => void;
+    onDeleteSession?: (id: string) => void;
+    onDeleteWorktree?: (wt: WorktreeInfo) => void;
   } = $props();
 
   // Derive a consistent color for the workspace letter initial
@@ -67,6 +73,66 @@
   }
 
   let hasAttention = $derived(sessions.some(s => getSessionStatus(s) === 'attention'));
+
+  async function handleRename(session: SessionSummary) {
+    const newName = prompt('Rename session:', sessionDisplayName(session));
+    if (newName && newName.trim()) {
+      await fetch(`/sessions/${session.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: newName.trim() }),
+      });
+      await refreshAll();
+    }
+  }
+
+  function sessionMenuItems(session: SessionSummary): MenuItem[] {
+    return [
+      { label: 'Rename', action: () => handleRename(session) },
+      { label: 'Kill', action: () => onDeleteSession?.(session.id), danger: true },
+    ];
+  }
+
+  function worktreeMenuItems(wt: WorktreeInfo): MenuItem[] {
+    return [
+      {
+        label: 'Resume',
+        action: async () => {
+          try {
+            const session = await createSession({
+              repoPath: workspace.path,
+              repoName: workspace.name,
+              worktreePath: wt.path,
+              branchName: wt.branchName || wt.name,
+            });
+            await refreshAll();
+            onSelectSession(session.id);
+          } catch { /* silent */ }
+        },
+      },
+      {
+        label: 'Resume (YOLO)',
+        action: async () => {
+          try {
+            const session = await createSession({
+              repoPath: workspace.path,
+              repoName: workspace.name,
+              worktreePath: wt.path,
+              branchName: wt.branchName || wt.name,
+              yolo: true,
+            });
+            await refreshAll();
+            onSelectSession(session.id);
+          } catch { /* silent */ }
+        },
+      },
+      {
+        label: 'Delete Worktree',
+        action: () => onDeleteWorktree?.(wt),
+        danger: true,
+      },
+    ];
+  }
 </script>
 
 <div class="workspace-item" class:active={isActive}>
@@ -124,6 +190,7 @@
           {/if}
           <span class="session-name">{sessionDisplayName(session)}</span>
           <span class="session-status">{statusLabel(session)}</span>
+          <ContextMenu items={sessionMenuItems(session)} />
         </li>
       {/each}
       {#each inactiveWorktrees as wt (wt.path)}
@@ -147,6 +214,7 @@
           <span class="dot dot-inactive"></span>
           <span class="session-name">{wt.branchName || wt.displayName || wt.name}</span>
           <span class="session-status">inactive</span>
+          <ContextMenu items={worktreeMenuItems(wt)} />
         </li>
       {/each}
     </ul>
