@@ -294,6 +294,11 @@ async function getPrForBranch(
       mergeable: string;
     };
 
+    // Only return OPEN PRs — gh pr view returns merged/closed PRs too
+    if (data.state !== 'OPEN') {
+      return null;
+    }
+
     return {
       number: data.number,
       title: data.title,
@@ -438,6 +443,44 @@ async function getWorkingTreeDiff(
   }
 }
 
+/**
+ * Convert a git branch name to a human-readable display name.
+ * "fix-mobile-scroll-bug" → "Fix mobile scroll bug"
+ * "feature/add-auth"      → "Add auth"
+ */
+function branchToDisplayName(branch: string): string {
+  const stripped = branch.replace(/^(feature|fix|chore|refactor|docs|test|ci|build)\//i, '');
+  const words = stripped.replace(/[-_]/g, ' ').trim();
+  if (!words) return branch;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+async function isBranchStale(
+  repoPath: string,
+  branch: string,
+  options: { exec?: ExecFileAsyncLike } = {},
+): Promise<boolean> {
+  const run: ExecFileAsyncLike = options.exec || execFileAsync as ExecFileAsyncLike;
+  try {
+    for (const base of ['main', 'master']) {
+      try {
+        const { stdout } = await run(
+          'git', ['rev-list', '--count', `${base}..${branch}`],
+          { cwd: repoPath, timeout: 5000 },
+        );
+        const count = parseInt(stdout.trim(), 10);
+        if (count === 0) return true;
+        return false;
+      } catch {
+        continue;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export {
   listBranches,
   normalizeBranchNames,
@@ -449,4 +492,6 @@ export {
   getCommitsAhead,
   getCurrentBranch,
   getWorkingTreeDiff,
+  branchToDisplayName,
+  isBranchStale,
 };

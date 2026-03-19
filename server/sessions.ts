@@ -373,7 +373,7 @@ async function fetchMetaForSession(session: SessionSummary): Promise<SessionMeta
   if (branch) {
     try {
       const pr = await getPrForBranch(repoPath, branch);
-      if (pr && pr.state === 'OPEN') {
+      if (pr) {
         prNumber = pr.number;
         additions = pr.additions;
         deletions = pr.deletions;

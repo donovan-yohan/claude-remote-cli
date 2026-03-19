@@ -7,6 +7,7 @@ import * as sessions from './sessions.js';
 import { WorktreeWatcher } from './watcher.js';
 import type { Session } from './types.js';
 import { writeMeta } from './config.js';
+import { branchToDisplayName } from './git.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -35,12 +36,13 @@ function startBranchWatcher(
 
       if (currentBranch && currentBranch !== originalBranch) {
         clearInterval(timer);
+        const displayName = branchToDisplayName(currentBranch);
         session.branchName = currentBranch;
-        session.displayName = currentBranch;
-        broadcastEvent('session-renamed', { sessionId: session.id, branchName: currentBranch, displayName: currentBranch });
+        session.displayName = displayName;
+        broadcastEvent('session-renamed', { sessionId: session.id, branchName: currentBranch, displayName });
         writeMeta(cfgPath, {
           worktreePath: session.repoPath,
-          displayName: currentBranch,
+          displayName,
           lastActivity: new Date().toISOString(),
           branchName: currentBranch,
         });
@@ -174,16 +176,17 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
         if (!(ptySession as any)._renameBuffer) (ptySession as any)._renameBuffer = '';
         const enterIndex = str.indexOf('\r');
         if (enterIndex === -1) {
-          // Buffer without passthrough — don't echo to PTY during buffering.
-          // Previously we wrote to PTY here for echo and used Ctrl+U to undo on Enter,
-          // but Ctrl+U doesn't work reliably in Claude Code's Ink/React TUI.
           (ptySession as any)._renameBuffer += str;
+          ptySession.pty.write(str); // Echo to terminal so user sees what they type
           return;
         }
         // Enter detected — send rename prompt + full message to PTY in one shot
         const buffered: string = (ptySession as any)._renameBuffer;
         const beforeEnter = buffered + str.slice(0, enterIndex);
         const afterEnter = str.slice(enterIndex); // includes the \r
+        // Clear the echoed input line before writing the full prompt+message
+        const clearLine = '\r' + ' '.repeat(Math.min(beforeEnter.length + 2, 200)) + '\r';
+        ptySession.pty.write(clearLine);
         const renamePrompt = `Before doing anything else, rename the current git branch using \`git branch -m <new-name>\`. Choose a short, descriptive kebab-case branch name based on the task below.${ptySession.branchRenamePrompt ? ' User preferences: ' + ptySession.branchRenamePrompt : ''} Do not ask for confirmation — just rename and proceed.\n\n`;
         ptySession.pty.write(renamePrompt + beforeEnter + afterEnter);
         ptySession.needsBranchRename = false;

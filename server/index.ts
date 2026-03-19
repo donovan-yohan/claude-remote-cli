@@ -18,7 +18,7 @@ import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
-import { listBranches } from './git.js';
+import { listBranches, isBranchStale } from './git.js';
 import * as push from './push.js';
 import { createWorkspaceRouter } from './workspaces.js';
 import type { AgentType, Config } from './types.js';
@@ -609,10 +609,31 @@ async function main(): Promise<void> {
     let isMountainName = false;
 
     if (worktreePath) {
+      // Check if the worktree's branch is stale (merged/at base) and needs a fresh name
+      const currentBranchResult = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktreePath }).catch(() => null);
+      const currentBranch = currentBranchResult?.stdout.trim();
+
+      if (currentBranch && !needsBranchRename) {
+        const stale = await isBranchStale(worktreePath, currentBranch);
+        if (stale) {
+          // Generate unique temp branch: <mountain>-<short-timestamp>
+          const mountainName = worktreePath.split('/').pop() || 'branch';
+          const suffix = Date.now().toString(36).slice(-4);
+          const tempBranch = `${mountainName}-${suffix}`;
+          try {
+            await execFileAsync('git', ['checkout', '-b', tempBranch], { cwd: worktreePath });
+          } catch {
+            await execFileAsync('git', ['branch', '-m', tempBranch], { cwd: worktreePath }).catch(() => {});
+          }
+          isMountainName = true;
+        }
+      }
+
       // Only use --continue if:
       // 1. Not a brand-new worktree (needsBranchRename flag)
       // 2. A prior Claude session exists in this directory (.claude/ dir present)
-      const hasPriorSession = !needsBranchRename && fs.existsSync(path.join(worktreePath, '.claude'));
+      // 3. Branch is not stale (isMountainName means we just created a fresh branch)
+      const hasPriorSession = !needsBranchRename && !isMountainName && fs.existsSync(path.join(worktreePath, '.claude'));
       args = hasPriorSession ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs] : [...baseArgs];
       cwd = worktreePath;
       sessionRepoPath = worktreePath;
