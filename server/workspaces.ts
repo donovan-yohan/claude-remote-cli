@@ -211,7 +211,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
-    const fields = 'number,title,url,headRefName,state,author,updatedAt,additions,deletions,reviewDecision';
+    const fields = 'number,title,url,headRefName,state,author,updatedAt,additions,deletions,reviewDecision,mergeable,mergeStateStatus';
 
     // Get current GitHub user
     let currentUser = '';
@@ -246,6 +246,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
           additions: (pr.additions as number) ?? 0,
           deletions: (pr.deletions as number) ?? 0,
           reviewDecision: (pr.reviewDecision as string) ?? null,
+          mergeable: (pr.mergeable as string) ?? null,
         });
       }
     } catch { /* no authored PRs or gh error */ }
@@ -272,6 +273,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
           additions: (pr.additions as number) ?? 0,
           deletions: (pr.deletions as number) ?? 0,
           reviewDecision: (pr.reviewDecision as string) ?? null,
+          mergeable: (pr.mergeable as string) ?? null,
         });
       }
     } catch { /* no review-requested PRs or gh error */ }

@@ -101,7 +101,9 @@
               <div class="pr-row-left">
                 <div class="pr-row-title-line">
                   <span class={prStatusDotClass(pr)}></span>
-                  <span class="pr-title">{pr.title}</span>
+                  <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
+                    {pr.title}
+                  </a>
                 </div>
                 <div class="pr-row-meta">
                   <span class="pr-num">#{pr.number}</span>
@@ -111,18 +113,36 @@
                   <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
                 </div>
               </div>
-              {#if action.type !== 'none' && action.label}
-                <a
-                  class="pr-action-pill"
-                  href={pr.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style:--pill-color={actionColor}
-                  class:dark-text={darkText}
-                >
-                  {action.label}
-                </a>
-              {/if}
+              <div class="pr-row-actions">
+                {#if pr.mergeable === 'CONFLICTING'}
+                  <span class="pr-badge pr-badge-conflict" title="Merge conflicts must be resolved">
+                    Conflicts
+                  </span>
+                {/if}
+                {#if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
+                  <a
+                    class="pr-action-pill pr-merge-pill"
+                    href={pr.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Ready to merge on GitHub"
+                  >
+                    Merge
+                  </a>
+                {/if}
+                {#if action.type !== 'none' && action.label}
+                  <a
+                    class="pr-action-pill"
+                    href={pr.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style:--pill-color={actionColor}
+                    class:dark-text={darkText}
+                  >
+                    {action.label}
+                  </a>
+                {/if}
+              </div>
             </div>
           {/each}
         </div>
@@ -251,15 +271,51 @@
     min-width: 0;
   }
 
-  .pr-title {
+  .pr-title-link {
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     color: var(--text);
+    text-decoration: none;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
     flex: 1;
+  }
+
+  .pr-title-link:hover {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
+  .pr-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .pr-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+
+  .pr-badge-conflict {
+    background: color-mix(in srgb, var(--status-error) 20%, transparent);
+    color: var(--status-error);
+    border: 1px solid var(--status-error);
+  }
+
+  .pr-merge-pill {
+    background: var(--status-success) !important;
+    color: #1a1a1a !important;
+    border: none;
+    font-weight: 600;
   }
 
   .pr-row-meta {

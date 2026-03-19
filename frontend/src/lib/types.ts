@@ -64,6 +64,7 @@ export interface PullRequest {
   additions: number;
   deletions: number;
   reviewDecision: string | null;
+  mergeable: string | null;
 }
 
 export interface PullRequestsResponse {
