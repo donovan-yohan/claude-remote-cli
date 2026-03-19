@@ -175,7 +175,7 @@
     padding: 20px;
     background: var(--bg);
     min-height: 0;
-    max-width: 800px;
+    max-width: none;
   }
 
   /* ── Section ── */
@@ -296,22 +296,22 @@
     padding: 6px 12px;
     min-height: 32px;
     border-radius: 20px;
-    border: 1px solid var(--pill-color, var(--border));
+    border: none;
+    background: var(--pill-color, var(--border));
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
-    color: var(--pill-color, var(--text-muted));
+    color: #fff;
     text-decoration: none;
     white-space: nowrap;
-    transition: background 0.12s, opacity 0.12s;
+    transition: opacity 0.12s;
   }
 
   .pr-action-pill:hover {
-    background: color-mix(in srgb, var(--pill-color, var(--border)) 15%, transparent);
-    opacity: 0.9;
+    opacity: 0.85;
   }
 
   .pr-action-pill.dark-text {
-    color: #000;
+    color: #1a1a1a;
   }
 
   /* ── Activity list ── */
