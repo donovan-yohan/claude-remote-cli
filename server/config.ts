@@ -3,6 +3,13 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import type { Config, WorktreeMetadata } from './types.js';
 
+export const MOUNTAIN_NAMES = [
+  'everest', 'kilimanjaro', 'denali', 'fuji', 'rainier', 'matterhorn', 'elbrus', 'aconcagua',
+  'kangchenjunga', 'lhotse', 'makalu', 'cho-oyu', 'dhaulagiri', 'manaslu', 'annapurna',
+  'nanga-parbat', 'olympus', 'mont-blanc', 'k2', 'vinson', 'erebus', 'logan', 'puncak-jaya',
+  'wilhelm', 'cook', 'ararat', 'etna', 'shasta', 'whitney', 'hood',
+] as const;
+
 export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs'> = {
   host: '0.0.0.0',
   port: 3456,

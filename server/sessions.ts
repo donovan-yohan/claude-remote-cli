@@ -65,6 +65,8 @@ type CreateParams = {
   initialScrollback?: string[];
   /** Mark this session as a restored session (PTY exit won't delete it) */
   restored?: boolean;
+  /** When true, first user message will be prepended with branch rename instruction */
+  needsBranchRename?: boolean;
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
@@ -80,7 +82,12 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallbacks.push(cb);
 }
 
-function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored }: CreateParams): CreateResult {
+function offIdleChange(cb: IdleChangeCallback): void {
+  const idx = idleChangeCallbacks.indexOf(cb);
+  if (idx !== -1) idleChangeCallbacks.splice(idx, 1);
+}
+
+function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored, needsBranchRename: paramNeedsBranchRename }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
   // Dispatch: if agent is claude, no custom command, try SDK first
@@ -103,7 +110,11 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     );
 
     if (!('fallback' in sdkResult)) {
-      return { ...sdkResult.result, pid: undefined };
+      if (paramNeedsBranchRename) {
+        const s = sessions.get(id);
+        if (s) s.needsBranchRename = true;
+      }
+      return { ...sdkResult.result, pid: undefined, needsBranchRename: !!paramNeedsBranchRename };
     }
     // SDK init failed — fall through to PTY
   }
@@ -131,8 +142,11 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     restored: paramRestored,
   };
 
-  const { result } = createPtySession(ptyParams, sessions, idleChangeCallbacks);
-  return result;
+  const { result, session: ptySession } = createPtySession(ptyParams, sessions, idleChangeCallbacks);
+  if (paramNeedsBranchRename) {
+    ptySession.needsBranchRename = true;
+  }
+  return { ...result, needsBranchRename: ptySession.needsBranchRename };
 }
 
 function get(id: string): Session | undefined {
@@ -160,6 +174,7 @@ function list(): SessionSummary[] {
       useTmux: s.mode === 'pty' ? s.useTmux : false,
       tmuxSessionName: s.mode === 'pty' ? s.tmuxSessionName : '',
       status: s.status,
+      needsBranchRename: s.needsBranchRename,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
@@ -446,4 +461,4 @@ function stopSdkIdleSweep(): void {
 // Re-export pty-handler utilities for backward compatibility
 export { generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
 
-export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, handlePermission, onIdleChange, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, handlePermission, onIdleChange, offIdleChange, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

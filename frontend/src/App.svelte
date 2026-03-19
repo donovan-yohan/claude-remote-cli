@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll, setAttention, clearAttention, initSessionNotification, getNotificationSessionIds } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, setAttention, clearAttention, renameSession, initSessionNotification, getNotificationSessionIds } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
@@ -188,6 +188,8 @@
           refreshAll();
         } else if (msg.type === 'session-idle-changed' && msg.sessionId) {
           setAttention(msg.sessionId, msg.idle ?? false);
+        } else if (msg.type === 'session-renamed' && msg.sessionId) {
+          renameSession(msg.sessionId as string, msg.branchName as string, msg.displayName as string);
         }
       });
     }

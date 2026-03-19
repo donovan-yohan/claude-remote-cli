@@ -56,6 +56,7 @@ interface BaseSession {
   cwd: string;
   customCommand: string | null;
   status: SessionStatus;
+  needsBranchRename: boolean;
 }
 
 export interface PtySession extends BaseSession {
@@ -98,6 +99,7 @@ export interface SessionSummary {
   useTmux: boolean;
   tmuxSessionName: string;
   status: SessionStatus;
+  needsBranchRename: boolean;
 }
 
 export interface WorktreeMetadata {
@@ -124,6 +126,7 @@ export interface Config {
   vapidPublicKey?: string | undefined;
   vapidPrivateKey?: string | undefined;
   debugLog?: boolean | undefined;
+  nextMountainIndex?: number | undefined;
 }
 
 export interface ServicePaths {

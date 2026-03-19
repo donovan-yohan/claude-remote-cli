@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 
-import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir } from './config.js';
+import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir, MOUNTAIN_NAMES } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep } from './sessions.js';
@@ -237,7 +237,7 @@ async function main(): Promise<void> {
   watcher.rebuild(config.rootDirs || []);
 
   const server = http.createServer(app);
-  const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher);
+  const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher, CONFIG_PATH);
 
   // Restore sessions from a previous update restart
   const configDir = path.dirname(CONFIG_PATH);
@@ -730,6 +730,7 @@ async function main(): Promise<void> {
     let worktreeName: string;
     let sessionRepoPath: string;
     let resolvedBranch = '';
+    let isMountainName = false;
 
     if (worktreePath) {
       // Resume existing worktree
@@ -744,8 +745,16 @@ async function main(): Promise<void> {
         dirName = branchName.replace(/\//g, '-');
         resolvedBranch = branchName;
       } else {
-        dirName = 'mobile-' + name + '-' + Date.now().toString(36);
-        resolvedBranch = dirName;
+        // Pick next mountain name, skipping names that already exist as branches
+        const idx = config.nextMountainIndex || 0;
+        const picked = MOUNTAIN_NAMES[idx % MOUNTAIN_NAMES.length]!;
+        dirName = picked;
+        resolvedBranch = picked;
+        isMountainName = true;
+
+        // Advance counter and save
+        config.nextMountainIndex = (idx + 1) % MOUNTAIN_NAMES.length;
+        saveConfig(CONFIG_PATH, config);
       }
 
       const worktreeDir = path.join(repoPath, WORKTREE_DIRS[0]!);
@@ -874,6 +883,7 @@ async function main(): Promise<void> {
       args,
       configPath: CONFIG_PATH,
       useTmux: useTmux ?? config.launchInTmux,
+      needsBranchRename: isMountainName,
     });
 
     if (!worktreePath) {

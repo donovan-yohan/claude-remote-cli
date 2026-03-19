@@ -1,13 +1,26 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'node:http';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { IPty } from 'node-pty';
 import * as sessions from './sessions.js';
 import { WorktreeWatcher } from './watcher.js';
 import type { Session, SdkSession } from './types.js';
 import { onSdkEvent, sendMessage as sdkSendMessage, handlePermission as sdkHandlePermission } from './sdk-handler.js';
+import { writeMeta } from './config.js';
+
+const execFileAsync = promisify(execFile);
 
 const BACKPRESSURE_HIGH = 1024 * 1024; // 1MB
 const BACKPRESSURE_LOW = 512 * 1024; // 512KB
+
+// For SDK mode: prepended to the user's first message text
+const SDK_BRANCH_RENAME_INSTRUCTION = `Before responding to my message, first rename the current git branch using \`git branch -m <new-name>\` to a short, descriptive kebab-case name based on the task I'm asking about. Do not include any ticket numbers or prefixes. After renaming, proceed with my request normally.
+
+`;
+
+// For PTY mode: sent as a standalone first message before the user types
+const PTY_BRANCH_RENAME_INSTRUCTION = `When I send my next message, before responding to it, first rename the current git branch using \`git branch -m <new-name>\` to a short, descriptive kebab-case name based on the task I'm asking about. Do not include any ticket numbers or prefixes. After renaming, proceed with my request normally. Reply with only "Ready." and nothing else.`;
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -22,7 +35,50 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   return cookies;
 }
 
-function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, watcher: WorktreeWatcher | null): { wss: WebSocketServer; broadcastEvent: (type: string, data?: Record<string, unknown>) => void } {
+const BRANCH_POLL_INTERVAL_MS = 3000;
+const BRANCH_POLL_MAX_ATTEMPTS = 10;
+
+function startBranchWatcher(
+  session: Session,
+  broadcastEvent: (type: string, data?: Record<string, unknown>) => void,
+  configPath?: string,
+): void {
+  const originalBranch = session.branchName;
+  let attempts = 0;
+
+  const timer = setInterval(async () => {
+    attempts++;
+    if (attempts > BRANCH_POLL_MAX_ATTEMPTS) {
+      clearInterval(timer);
+      return;
+    }
+
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: session.cwd });
+      const currentBranch = stdout.trim();
+
+      if (currentBranch && currentBranch !== originalBranch) {
+        clearInterval(timer);
+        session.branchName = currentBranch;
+        session.displayName = currentBranch;
+        broadcastEvent('session-renamed', { sessionId: session.id, branchName: currentBranch, displayName: currentBranch });
+
+        if (configPath) {
+          writeMeta(configPath, {
+            worktreePath: session.repoPath,
+            displayName: currentBranch,
+            lastActivity: new Date().toISOString(),
+            branchName: currentBranch,
+          });
+        }
+      }
+    } catch {
+      // git command failed — session cwd may not exist yet, retry
+    }
+  }, BRANCH_POLL_INTERVAL_MS);
+}
+
+function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, watcher: WorktreeWatcher | null, configPath?: string): { wss: WebSocketServer; broadcastEvent: (type: string, data?: Record<string, unknown>) => void } {
   const wss = new WebSocketServer({ noServer: true });
   const eventClients = new Set<WebSocket>();
 
@@ -125,6 +181,21 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
 
     attachToPty(ptySession.pty);
 
+    // For PTY sessions needing branch rename, send the rename instruction once Claude CLI is ready.
+    // We watch for PTY idle (Claude shows its prompt and waits for input) as the trigger.
+    if (ptySession.needsBranchRename) {
+      ptySession.needsBranchRename = false;
+
+      const idleHandler = (_sessionId: string, idle: boolean) => {
+        if (idle && _sessionId === ptySession.id) {
+          sessions.offIdleChange(idleHandler);
+          ptySession.pty.write(PTY_BRANCH_RENAME_INSTRUCTION + '\r');
+          startBranchWatcher(ptySession, broadcastEvent, configPath);
+        }
+      };
+      sessions.onIdleChange(idleHandler);
+    }
+
     const ptyReplacedHandler = (newPty: IPty) => attachToPty(newPty);
     ptySession.onPtyReplacedCallbacks.push(ptyReplacedHandler);
 
@@ -137,6 +208,7 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
           return;
         }
       } catch (_) {}
+
       // Use ptySession.pty dynamically so writes go to current PTY
       ptySession.pty.write(str);
     });
@@ -194,7 +266,13 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
 
         if (parsed.type === 'message' && typeof parsed.text === 'string') {
           if (parsed.text.length > 100_000) return;
-          sdkSendMessage(session.id, parsed.text);
+          if (session.needsBranchRename) {
+            session.needsBranchRename = false;
+            sdkSendMessage(session.id, SDK_BRANCH_RENAME_INSTRUCTION + parsed.text);
+            startBranchWatcher(session, broadcastEvent, configPath);
+          } else {
+            sdkSendMessage(session.id, parsed.text);
+          }
           return;
         }
 
