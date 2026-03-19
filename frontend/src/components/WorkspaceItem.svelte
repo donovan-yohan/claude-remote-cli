@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
-  import { getSessionStatus } from '../lib/state/sessions.svelte.js';
+  import { getSessionStatus, refreshAll } from '../lib/state/sessions.svelte.js';
+  import { createSession } from '../lib/api.js';
 
   let {
     workspace,
@@ -9,7 +10,6 @@
     isActive,
     onSelectWorkspace,
     onSelectSession,
-    onResumeWorktree,
     onNewWorktree,
     onNewSession,
     onNewTerminal,
@@ -21,7 +21,6 @@
     isActive: boolean;
     onSelectWorkspace: (path: string) => void;
     onSelectSession: (id: string) => void;
-    onResumeWorktree?: (wt: WorktreeInfo) => void;
     onNewWorktree: (workspace: Workspace) => void;
     onNewSession: (workspace: Workspace) => void;
     onNewTerminal: (workspace: Workspace) => void;
@@ -132,7 +131,18 @@
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <li
           class="session-row inactive"
-          onclick={() => onResumeWorktree?.(wt)}
+          onclick={async () => {
+            try {
+              const session = await createSession({
+                repoPath: workspace.path,
+                repoName: workspace.name,
+                worktreePath: wt.path,
+                branchName: wt.branchName || wt.name,
+              });
+              await refreshAll();
+              onSelectSession(session.id);
+            } catch { /* silent */ }
+          }}
         >
           <span class="dot dot-inactive"></span>
           <span class="session-name">{wt.branchName || wt.displayName || wt.name}</span>
