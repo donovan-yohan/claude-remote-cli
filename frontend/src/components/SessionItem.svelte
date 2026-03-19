@@ -1,9 +1,8 @@
 <script lang="ts">
   import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from '../lib/types.js';
   import type { MenuItem } from './ContextMenu.svelte';
-  import { formatRelativeTime, rootShortName } from '../lib/utils.js';
+  import { formatRelativeTime } from '../lib/utils.js';
   import { scrollOnHover } from '../lib/actions.js';
-  import AgentBadge from './AgentBadge.svelte';
   import ContextMenu from './ContextMenu.svelte';
 
   type ActiveVariant = {
@@ -32,25 +31,25 @@
 
   let displayName = $derived.by(() => {
     switch (variant.kind) {
-      case 'active': return variant.session.displayName || variant.session.repoName || variant.session.id;
+      case 'active': {
+        if (variant.session.type === 'repo') {
+          // Show "default" unless the user explicitly renamed the session
+          const wasRenamed = variant.session.displayName && variant.session.displayName !== variant.session.repoName;
+          return wasRenamed ? variant.session.displayName : 'default';
+        }
+        return variant.session.displayName || variant.session.repoName || variant.session.id;
+      }
       case 'inactive-worktree': return variant.worktree.displayName || variant.worktree.name;
-      case 'idle-repo': return variant.repo.name;
+      case 'idle-repo': return 'default';
     }
   });
 
-  let rootName = $derived.by(() => {
-    switch (variant.kind) {
-      case 'active': return variant.session.root ? rootShortName(variant.session.root) : '';
-      case 'inactive-worktree': return variant.worktree.root ? rootShortName(variant.worktree.root) : '';
-      case 'idle-repo': return variant.repo.root ? rootShortName(variant.repo.root) : variant.repo.path;
-    }
-  });
 
-  let repoName = $derived.by(() => {
+  let branchName = $derived.by(() => {
     switch (variant.kind) {
-      case 'active': return variant.session.repoName || '';
-      case 'inactive-worktree': return variant.worktree.repoName || '';
-      case 'idle-repo': return '';
+      case 'active': return variant.session.branchName || '';
+      case 'inactive-worktree': return variant.worktree.branchName || '';
+      case 'idle-repo': return variant.repo.defaultBranch || '';
     }
   });
 
@@ -67,9 +66,6 @@
       ? 'status-dot status-dot--' + variant.status
       : 'status-dot status-dot--inactive',
   );
-
-  let isTerminal = $derived(variant.kind === 'active' && variant.session.type === 'terminal');
-  let agentType = $derived(variant.kind === 'active' && !isTerminal ? variant.session.agent : undefined);
 
   let isSelected = $derived(variant.kind === 'active' && variant.isSelected);
   let isActive = $derived(variant.kind === 'active');
@@ -111,32 +107,23 @@
         <span class="session-name-text">{displayName}</span>
       </span>
     </div>
-    <div class="session-row-2" class:has-badge={!!agentType || isTerminal}>
-      {#if isTerminal}
-        <span class="shell-badge">&gt;_</span>
-      {:else if agentType}
-        <AgentBadge agent={agentType} />
+    <div class="session-row-2">
+      {#if lastActivity}
+        <span class="session-time">{lastActivity}</span>
+      {/if}
+      {#if branchName}
+        <span class="session-branch">{branchName}</span>
       {/if}
       {#if prIcon}
         <span class={prIconClass}>{prIcon}</span>
       {/if}
-      {#if !isTerminal}
-        <span class="session-sub">{rootName}{repoName ? ' · ' + repoName : ''}</span>
-      {:else}
-        <span class="session-sub">Shell</span>
+      {#if gitStatus && (gitStatus.additions || gitStatus.deletions)}
+        <span class="git-diff">
+          {#if gitStatus.additions}<span class="diff-add">+{gitStatus.additions}</span>{/if}
+          {#if gitStatus.deletions}<span class="diff-del">-{gitStatus.deletions}</span>{/if}
+        </span>
       {/if}
     </div>
-    {#if lastActivity || (gitStatus && (gitStatus.additions || gitStatus.deletions))}
-      <div class="session-row-3">
-        <span class="session-time">{lastActivity}</span>
-        {#if gitStatus && (gitStatus.additions || gitStatus.deletions)}
-          <span class="git-diff">
-            {#if gitStatus.additions}<span class="diff-add">+{gitStatus.additions}</span>{/if}
-            {#if gitStatus.deletions}<span class="diff-del">-{gitStatus.deletions}</span>{/if}
-          </span>
-        {/if}
-      </div>
-    {/if}
   </div>
   {#if menuItems.length > 0}
     <ContextMenu items={menuItems} />
@@ -173,8 +160,8 @@
     border-left-color: #fff;
   }
 
-  li.active-session.selected .session-sub,
-  li.active-session.selected .session-time {
+  li.active-session.selected .session-time,
+  li.active-session.selected .session-branch {
     color: rgba(255, 255, 255, 0.7);
   }
 
@@ -224,7 +211,7 @@
   .session-info {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
     min-width: 0;
     flex: 1;
   }
@@ -301,52 +288,8 @@
     -webkit-mask-image: none;
   }
 
-  /* Row 2: agent badge + pr icon + root + repo */
+  /* Row 2: time + branch + PR + diff */
   .session-row-2 {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
-    padding-left: 16px;
-  }
-
-  .session-row-2.has-badge {
-    padding-left: 2px;
-  }
-
-  .shell-badge {
-    font-size: 0.55rem;
-    font-family: monospace;
-    font-weight: 700;
-    color: var(--text-muted);
-    flex-shrink: 0;
-    line-height: 1;
-  }
-
-  li.active-session.selected .shell-badge {
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  .pr-icon {
-    font-size: 0.65rem;
-    flex-shrink: 0;
-  }
-
-  .pr-open { color: #4ade80; }
-  .pr-merged { color: #a78bfa; }
-  .pr-closed { color: #f87171; }
-
-  .session-sub {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-  }
-
-  /* Row 3: time + diff stats */
-  .session-row-3 {
     display: flex;
     align-items: center;
     gap: 6px;
@@ -358,13 +301,34 @@
     font-size: 0.65rem;
     color: var(--text-muted);
     opacity: 0.6;
+    flex-shrink: 0;
   }
+
+  .session-branch {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .pr-icon {
+    font-size: 0.65rem;
+    flex-shrink: 0;
+  }
+
+  .pr-open { color: #4ade80; }
+  .pr-merged { color: #a78bfa; }
+  .pr-closed { color: #f87171; }
 
   .git-diff {
     display: flex;
     gap: 4px;
     font-size: 0.65rem;
     font-family: monospace;
+    flex-shrink: 0;
+    margin-left: auto;
   }
 
   .diff-add { color: #4ade80; }
