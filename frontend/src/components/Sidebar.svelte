@@ -267,10 +267,13 @@
     transition: background 0.1s, border-color 0.1s;
   }
 
-  .add-workspace-btn:hover {
-    background: var(--surface-hover);
+  .add-workspace-btn {
     border-color: var(--accent);
     color: var(--accent);
+  }
+
+  .add-workspace-btn:hover {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
 
   .add-workspace-btn:active {
