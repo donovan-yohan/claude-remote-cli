@@ -82,6 +82,11 @@ export async function fetchPrForBranch(workspacePath: string, branch: string): P
   return res.json() as Promise<PrInfo>;
 }
 
+export async function fetchCurrentBranch(workspacePath: string): Promise<string | null> {
+  const data = await json<{ branch: string | null }>(await fetch('/workspaces/current-branch?path=' + encodeURIComponent(workspacePath)));
+  return data.branch;
+}
+
 export async function autocompletePath(prefix: string): Promise<string[]> {
   const data = await json<{ suggestions: string[] }>(await fetch('/workspaces/autocomplete?prefix=' + encodeURIComponent(prefix)));
   return data.suggestions;

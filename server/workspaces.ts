@@ -7,7 +7,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings } from './config.js';
-import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, switchBranch } from './git.js';
+import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, switchBranch, getCurrentBranch } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace, WorkspaceSettings } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
@@ -475,6 +475,19 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     });
 
     res.json({ branchName, mountainName, worktreePath });
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /workspaces/current-branch — current checked-out branch for a path
+  // -------------------------------------------------------------------------
+  router.get('/current-branch', async (req: Request, res: Response) => {
+    const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
+    if (!workspacePath) {
+      res.status(400).json({ error: 'path query parameter is required' });
+      return;
+    }
+    const branch = await getCurrentBranch(path.resolve(workspacePath));
+    res.json({ branch });
   });
 
   // -------------------------------------------------------------------------

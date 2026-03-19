@@ -76,6 +76,19 @@ async function listBranches(
   }
 }
 
+async function getCurrentBranch(
+  repoPath: string,
+  options: { exec?: ExecFileAsyncLike } = {},
+): Promise<string | null> {
+  const run: ExecFileAsyncLike = options.exec || execFileAsync as ExecFileAsyncLike;
+  try {
+    const { stdout } = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoPath });
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 async function getActivityFeed(
   repoPath: string,
   options: {
@@ -342,4 +355,5 @@ export {
   getPrForBranch,
   switchBranch,
   getCommitsAhead,
+  getCurrentBranch,
 };

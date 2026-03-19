@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
-  import { fetchPrForBranch, fetchCiStatus } from '../lib/api.js';
+  import { fetchPrForBranch, fetchCiStatus, fetchCurrentBranch } from '../lib/api.js';
   import { sendPtyData } from '../lib/ws.js';
   import {
     derivePrAction,
@@ -28,6 +28,15 @@
   // svelte-ignore state_referenced_locally
   let currentBranch = $state(branchName);
   $effect(() => { currentBranch = branchName; });
+
+  // If branchName is empty (repo sessions), detect the current branch from git
+  $effect(() => {
+    if (!branchName && workspacePath) {
+      fetchCurrentBranch(workspacePath).then(branch => {
+        if (branch) currentBranch = branch;
+      });
+    }
+  });
 
   const prQuery = createQuery<PrInfo | null>(() => ({
     queryKey: ['pr', workspacePath, currentBranch],
