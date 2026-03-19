@@ -68,6 +68,17 @@ export async function removeWorkspace(path: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to remove workspace');
 }
 
+export async function reorderWorkspaces(paths: string[]): Promise<Workspace[]> {
+  const data = await json<{ workspaces: Workspace[] }>(
+    await fetch('/workspaces/reorder', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths }),
+    }),
+  );
+  return data.workspaces;
+}
+
 export async function browseFsDirectory(
   dirPath?: string,
   options?: { prefix?: string; showHidden?: boolean },

@@ -198,3 +198,8 @@ export async function refreshSessionMeta(id: string): Promise<void> {
     sessionMeta = new Map(sessionMeta); // trigger reactivity
   } catch { /* silent */ }
 }
+
+export async function reorderWorkspaces(paths: string[]): Promise<void> {
+  const updated = await api.reorderWorkspaces(paths);
+  workspaces = updated;
+}

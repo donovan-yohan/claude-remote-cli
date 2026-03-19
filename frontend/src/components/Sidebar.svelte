@@ -4,13 +4,16 @@
     closeSidebar,
     saveSidebarWidth,
     toggleSidebarCollapsed,
+    enterReorderMode,
+    exitReorderMode,
     MIN_SIDEBAR_WIDTH,
     MAX_SIDEBAR_WIDTH,
     DEFAULT_SIDEBAR_WIDTH,
     COLLAPSED_SIDEBAR_WIDTH,
   } from '../lib/state/ui.svelte.js';
-  import { getSessionState, getSessionsForWorkspace } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, getSessionsForWorkspace, reorderWorkspaces } from '../lib/state/sessions.svelte.js';
   import type { Workspace, WorktreeInfo } from '../lib/types.js';
+  import { dndzone } from 'svelte-dnd-action';
   import WorkspaceItem from './WorkspaceItem.svelte';
   import SmartSearch from './SmartSearch.svelte';
 
@@ -21,8 +24,6 @@
     onSelectSession,
     onOpenSettings,
     onNewWorktree,
-    onNewSession,
-    onNewTerminal,
     onAddWorkspace,
     onDeleteSession,
     onDeleteWorktree,
@@ -30,8 +31,6 @@
     onSelectSession: (id: string) => void;
     onOpenSettings: (workspace?: Workspace) => void;
     onNewWorktree: (workspace: Workspace) => void;
-    onNewSession: (workspace: Workspace) => void;
-    onNewTerminal: (workspace: Workspace) => void;
     onAddWorkspace: () => void;
     onDeleteSession?: (id: string) => void;
     onDeleteWorktree?: (wt: WorktreeInfo) => void;
@@ -84,6 +83,56 @@
     ui.sidebarWidth = DEFAULT_SIDEBAR_WIDTH;
     saveSidebarWidth();
   }
+
+  // ── Drag-and-drop reorder ──
+  const flipDurationMs = 200;
+
+  // svelte-dnd-action requires items with `id` property
+  let dndItems = $derived(
+    sessionState.workspaces.map(w => ({ id: w.path, workspace: w }))
+  );
+
+  // Local mutable copy for DnD updates
+  let localDndItems = $state<Array<{ id: string; workspace: Workspace }>>([]);
+  $effect(() => { localDndItems = dndItems; });
+
+  function handleDndConsider(e: CustomEvent<{ items: typeof localDndItems }>) {
+    localDndItems = e.detail.items;
+  }
+
+  function handleDndFinalize(e: CustomEvent<{ items: typeof localDndItems }>) {
+    localDndItems = e.detail.items;
+    const newOrder = localDndItems.map(item => item.id);
+    reorderWorkspaces(newOrder);
+  }
+
+  function handleDoneReorder() {
+    exitReorderMode();
+  }
+
+  // ── Mobile long-press to enter reorder mode ──
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function handleTouchStart() {
+    longPressTimer = setTimeout(() => {
+      enterReorderMode();
+      longPressTimer = null;
+    }, 500);
+  }
+
+  function handleTouchEnd() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+
+  function handleTouchMove() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
 </script>
 
 <aside
@@ -108,13 +157,25 @@
   </div>
 
   {#if !ui.sidebarCollapsed}
-    <SmartSearch
-      workspaces={sessionState.workspaces}
-      onSelect={handleSmartSearchSelect}
-    />
+    {#if !ui.reorderMode}
+      <SmartSearch
+        workspaces={sessionState.workspaces}
+        onSelect={handleSmartSearchSelect}
+      />
+    {/if}
 
-    <div class="workspace-list">
-      {#each sessionState.workspaces as workspace (workspace.path)}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="workspace-list"
+      use:dndzone={{ items: localDndItems, flipDurationMs, type: 'workspaces', dropTargetStyle: {} }}
+      onconsider={handleDndConsider}
+      onfinalize={handleDndFinalize}
+      ontouchstart={handleTouchStart}
+      ontouchend={handleTouchEnd}
+      ontouchmove={handleTouchMove}
+    >
+      {#each localDndItems as item (item.id)}
+        {@const workspace = item.workspace}
         {@const activeSessions = getSessionsForWorkspace(workspace.path)}
         {@const activeWorktreePaths = new Set(activeSessions.map(s => s.repoPath))}
         {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
@@ -124,7 +185,6 @@
         )}
         {@const groupedByPath = (() => {
           const groups = new Map<string, typeof activeSessions>();
-          // Always include repo root as first entry
           groups.set(workspace.path, []);
           for (const s of activeSessions) {
             const existing = groups.get(s.repoPath);
@@ -133,20 +193,20 @@
           }
           return groups;
         })()}
-        <WorkspaceItem
-          {workspace}
-          sessionGroups={groupedByPath}
-          {inactiveWorktrees}
-          isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
-          onSelectWorkspace={handleSelectWorkspace}
-          {onSelectSession}
-          onNewWorktree={onNewWorktree}
-          onNewSession={onNewSession}
-          onNewTerminal={onNewTerminal}
-          onOpenSettings={(ws) => onOpenSettings(ws)}
-          onDeleteSession={(id) => onDeleteSession?.(id)}
-          onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
-        />
+        <div>
+          <WorkspaceItem
+            {workspace}
+            sessionGroups={groupedByPath}
+            {inactiveWorktrees}
+            isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
+            onSelectWorkspace={handleSelectWorkspace}
+            {onSelectSession}
+            onNewWorktree={onNewWorktree}
+            onOpenSettings={(ws) => onOpenSettings(ws)}
+            onDeleteSession={(id) => onDeleteSession?.(id)}
+            onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
+          />
+        </div>
       {/each}
 
       {#if sessionState.workspaces.length === 0}
@@ -156,9 +216,17 @@
       {/if}
     </div>
 
-    <button class="add-workspace-btn" onclick={onAddWorkspace}>
-      + Add Workspace
-    </button>
+    {#if ui.reorderMode}
+      <button class="done-reorder-btn" onclick={handleDoneReorder}>
+        Done reordering
+      </button>
+    {/if}
+
+    {#if !ui.reorderMode}
+      <button class="add-workspace-btn" onclick={onAddWorkspace}>
+        + Add Workspace
+      </button>
+    {/if}
     <button class="settings-btn" onclick={() => onOpenSettings()}>
       ⚙ Settings
     </button>
@@ -304,6 +372,32 @@
   }
 
   .add-workspace-btn:active {
+    background: var(--border);
+  }
+
+  /* Done reordering button */
+  .done-reorder-btn {
+    margin: 8px;
+    padding: 10px 12px;
+    min-height: 40px;
+    background: none;
+    border: 1px solid var(--accent);
+    border-radius: 0;
+    color: var(--accent);
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    cursor: pointer;
+    touch-action: manipulation;
+    text-align: center;
+    flex-shrink: 0;
+    transition: background 0.1s;
+  }
+
+  .done-reorder-btn:hover {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .done-reorder-btn:active {
     background: var(--border);
   }
 

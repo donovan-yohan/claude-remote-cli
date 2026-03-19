@@ -1,13 +1,14 @@
 <script lang="ts">
   import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
   import { getSessionState, getSessionStatus, refreshAll, getSessionMetaById, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
-  import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick } from '../lib/state/ui.svelte.js';
+  import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
   import { createSession } from '../lib/api.js';
   import ContextMenu from './ContextMenu.svelte';
   import type { MenuItem } from './ContextMenu.svelte';
 
   const sessionState = getSessionState();
+  const ui = getUi();
 
   let {
     workspace,
@@ -17,8 +18,6 @@
     onSelectWorkspace,
     onSelectSession,
     onNewWorktree,
-    onNewSession,
-    onNewTerminal,
     onOpenSettings,
     onDeleteSession,
     onDeleteWorktree,
@@ -30,8 +29,6 @@
     onSelectWorkspace: (path: string) => void;
     onSelectSession: (id: string) => void;
     onNewWorktree: (workspace: Workspace) => void;
-    onNewSession: (workspace: Workspace) => void;
-    onNewTerminal: (workspace: Workspace) => void;
     onOpenSettings: (workspace: Workspace) => void;
     onDeleteSession?: (id: string) => void;
     onDeleteWorktree?: (wt: WorktreeInfo) => void;
@@ -76,6 +73,7 @@
 
   let hasAttention = $derived(allSessions.some(s => getSessionStatus(s) === 'attention'));
   let creatingWorktree = $derived(isItemLoading(`new-worktree:${workspace.path}`));
+  let inReorderMode = $derived(ui.reorderMode);
 
   // Force re-derive on time tick
   let _tick = $derived(getTimeTick());
@@ -165,48 +163,42 @@
   <div
     class="workspace-header"
     class:attention={hasAttention}
-    onclick={() => onSelectWorkspace(workspace.path)}
+    class:reorder-mode={inReorderMode}
+    onclick={() => { if (!inReorderMode) onSelectWorkspace(workspace.path); }}
   >
     <div class="workspace-left">
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <span
-        class="collapse-chevron"
-        class:collapsed
-        onclick={(e) => { e.stopPropagation(); toggleWorkspaceCollapse(workspace.path); }}
-      >{collapsed ? '›' : '⌄'}</span>
+      {#if inReorderMode}
+        <span class="grip-handle grip-visible">⠿</span>
+      {:else}
+        <span class="grip-handle">⠿</span>
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <span
+          class="collapse-chevron"
+          class:collapsed
+          onclick={(e) => { e.stopPropagation(); toggleWorkspaceCollapse(workspace.path); }}
+        >{collapsed ? '›' : '⌄'}</span>
+      {/if}
       <span class="initial-block" style:background={initialColor}>{initial}</span>
       <span class="workspace-name">{workspace.name}</span>
-      {#if collapsed && totalItems > 0}
+      {#if collapsed && totalItems > 0 && !inReorderMode}
         <span class="collapse-count">{totalItems}</span>
       {/if}
     </div>
-    <div class="workspace-actions">
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <span
-        class="action-btn"
-        title="New session"
-        onclick={(e) => { e.stopPropagation(); onNewSession(workspace); }}
-      >+</span>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <span
-        class="action-btn"
-        title="New terminal"
-        onclick={(e) => { e.stopPropagation(); onNewTerminal(workspace); }}
-      >&gt;_</span>
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <span
-        class="action-btn"
-        title="Settings"
-        onclick={(e) => { e.stopPropagation(); onOpenSettings(workspace); }}
-      >⚙</span>
-    </div>
+    {#if !inReorderMode}
+      <div class="workspace-actions">
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <span
+          class="action-btn"
+          title="Settings"
+          onclick={(e) => { e.stopPropagation(); onOpenSettings(workspace); }}
+        >⚙</span>
+      </div>
+    {/if}
   </div>
 
-  {#if !collapsed && (allSessions.length > 0 || inactiveWorktrees.length > 0)}
+  {#if !collapsed && !inReorderMode && (allSessions.length > 0 || inactiveWorktrees.length > 0)}
     <ul class="session-list">
       {#each [...sessionGroups.entries()] as [groupPath, groupSessions] (groupPath)}
         {@const representative = groupSessions.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity))[0]}
@@ -331,7 +323,7 @@
     </ul>
   {/if}
 
-  {#if !collapsed}
+  {#if !collapsed && !inReorderMode}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="add-worktree-row" class:disabled={creatingWorktree} onclick={() => { if (!creatingWorktree) onNewWorktree(workspace); }}>
@@ -339,7 +331,9 @@
     </div>
   {/if}
 
-  <div class="workspace-divider"></div>
+  {#if !inReorderMode}
+    <div class="workspace-divider"></div>
+  {/if}
 </div>
 
 <style>
@@ -373,6 +367,38 @@
     gap: 8px;
     min-width: 0;
     flex: 1;
+  }
+
+  /* Grip handle for drag reorder */
+  .grip-handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    cursor: grab;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s;
+    user-select: none;
+  }
+
+  .workspace-header:hover .grip-handle {
+    opacity: 1;
+  }
+
+  .grip-handle.grip-visible {
+    opacity: 1;
+  }
+
+  .workspace-header.reorder-mode {
+    cursor: grab;
+  }
+
+  .workspace-header.reorder-mode:active {
+    cursor: grabbing;
   }
 
   .collapse-chevron {
@@ -577,9 +603,9 @@
 
   .status-dot--running { background: var(--status-success); }
   .status-dot--idle    { background: var(--status-info); }
-  .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
-  .session-row.inactive { opacity: 0.6; }
-  .session-row.inactive:hover { opacity: 1; }
+  .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: #555; flex-shrink: 0; }
+  .session-row.inactive .session-name { color: var(--text-muted); }
+  .session-row.inactive:hover .session-name { color: var(--text); }
   .session-row.loading { pointer-events: none; opacity: 0.7; }
   .session-row.loading .session-name { color: var(--accent); }
   .status-dot--attention {
@@ -662,6 +688,11 @@
 
     /* Always show actions on mobile (no hover) */
     .workspace-actions {
+      opacity: 1;
+    }
+
+    /* Always show grip in reorder mode on mobile */
+    .grip-handle.grip-visible {
       opacity: 1;
     }
   }

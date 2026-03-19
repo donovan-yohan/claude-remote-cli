@@ -37,3 +37,4 @@
 | [2026-03-19-filesystem-browser-api-design.md](2026-03-19-filesystem-browser-api-design.md) | File system browser API + tree UI for workspace selection with bulk import | 2026-03-19 |
 | [2026-03-19-pr-lifecycle-top-bar-design.md](2026-03-19-pr-lifecycle-top-bar-design.md) | PR lifecycle top bar: session-end refresh, diff stats, conflicts, comments, archive flow | 2026-03-19 |
 | [2026-03-19-enriched-sidebar-sessions-design.md](2026-03-19-enriched-sidebar-sessions-design.md) | Enriched sidebar: two-line rows with relative time, worktree name, PR#, diff stats, collapsible workspaces | 2026-03-19 |
+| [2026-03-19-workspace-reorder-design.md](2026-03-19-workspace-reorder-design.md) | Drag-and-drop workspace reordering, sidebar header simplification, inactive session contrast | 2026-03-19 |

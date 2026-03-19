@@ -219,6 +219,49 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
   });
 
   // -------------------------------------------------------------------------
+  // PUT /workspaces/reorder — reorder workspaces
+  // -------------------------------------------------------------------------
+  router.put('/reorder', async (req: Request, res: Response) => {
+    const body = req.body as Record<string, unknown>;
+    const rawPaths = body.paths;
+
+    if (!Array.isArray(rawPaths)) {
+      res.status(400).json({ error: 'paths array is required' });
+      return;
+    }
+
+    const config = getConfig();
+    const current = config.workspaces ?? [];
+
+    // Validate that the submitted paths are the same set as the current workspaces
+    if (rawPaths.length !== current.length) {
+      res.status(400).json({ error: 'paths must contain the same set of workspaces as the current configuration' });
+      return;
+    }
+
+    const currentSet = new Set(current);
+    for (const p of rawPaths) {
+      if (typeof p !== 'string' || !currentSet.has(p)) {
+        res.status(400).json({ error: 'paths must contain the same set of workspaces as the current configuration' });
+        return;
+      }
+    }
+
+    config.workspaces = rawPaths as string[];
+    saveConfig(configPath, config);
+
+    const results: Workspace[] = await Promise.all(
+      (rawPaths as string[]).map(async (p) => {
+        const name = path.basename(p);
+        const { isGitRepo, defaultBranch } = await detectGitRepo(p, exec);
+        return { path: p, name, isGitRepo, defaultBranch };
+      }),
+    );
+
+    res.json({ workspaces: results });
+  });
+
+  // -------------------------------------------------------------------------
   // POST /workspaces/bulk — add multiple workspaces at once
   // -------------------------------------------------------------------------
   router.post('/bulk', async (req: Request, res: Response) => {
