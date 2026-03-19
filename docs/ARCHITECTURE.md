@@ -106,6 +106,8 @@ Browser (Svelte)   <--WebSocket /ws/events-- ws.ts <-- watcher.ts (fs.watch on .
 | `GET` | `/workspaces/ci-status` | CI check results (`?path=X&branch=Y`) |
 | `POST` | `/workspaces/branch` | Switch branch (`?path=X`, body: `{branch}`) |
 | `GET` | `/workspaces/autocomplete` | Path prefix autocomplete (`?prefix=X`) |
+| `POST` | `/workspaces/worktree` | Create worktree with mountain name (`?path=X`) |
+| `GET` | `/workspaces/current-branch` | Current checked-out branch (`?path=X`) |
 | `GET` | `/version` | Check for npm updates |
 | `POST` | `/update` | Self-update via npm |
 | `GET` | `/config/defaultAgent` | Get default coding agent |
@@ -124,7 +126,7 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 **Auth:** Every HTTP request (except `/auth` POST) and every WebSocket upgrade requires a valid session cookie. Rate limiting is per-IP.
 
-**Session lifecycle:** Sessions are in-memory during normal operation. PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction. During auto-updates, sessions are serialized to disk (`pending-sessions.json` + scrollback files) and restored on restart.
+**Session lifecycle:** Sessions are in-memory during normal operation. Multiple sessions per directory are allowed (multi-tab support). PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction. PTY spawns are wrapped with `trap '' PIPE; exec` to prevent SIGPIPE from killing sessions. During auto-updates, sessions are serialized to disk (`pending-sessions.json` + scrollback files) and restored on restart.
 
 ---
 

@@ -700,8 +700,18 @@ _Filled by /harness:complete when work is done._
 - Agent-produced code sometimes left stubs ("TODO: wire up git.ts functions") that needed manual integration
 - Cascading type changes from removing `root` field required touching many components — could have been anticipated with a type migration step
 - SettingsDialog and NewSessionDialog needed manual fixes after the state module changes — agents only handled the files they were assigned
+- API response shape mismatches (wrapper objects like `{ workspaces: [...] }` vs bare arrays) caused 3 separate bugs — fetchWorkspaces, fetchDashboard, autocompletePath all needed fixing
+- Session grouping by `repoPath` broke for worktree sessions (repoPath = worktree dir, not workspace root) — required `startsWith` matching
+- `POST /sessions` conflict checks (409) were fundamentally incompatible with multi-tab design — had to be removed entirely
+- Dynamic `import()` in Vite bundles failed silently, causing fallback to dialog — static imports required
+- SIGPIPE from piped bash commands killed PTY sessions — required both server-level and PTY-level signal trapping
 
 **Learnings to codify:**
 - When removing a field from a shared type, create a dedicated "type migration" task that updates ALL consumers, not just the type definition
 - Agent tasks should specify "also update any files that import this module" when changing exports
 - The workspace-first model (flat sidebar, no tabs) is simpler than the 4-tab approach — fewer state variables, fewer components, clearer navigation
+- API endpoints that return objects should be tested end-to-end with the frontend parser, not just the backend in isolation
+- Session grouping must account for parent-child directory relationships (worktrees under workspace), not just exact path matches
+- Never use dynamic import() in Svelte/Vite for modules that are already available — static imports are reliable, dynamic ones are fragile
+- PTY sessions need defensive signal handling: `process.on('SIGPIPE', () => {})` at server level + `trap '' PIPE; exec` at spawn level
+- Multi-session support should be the default from day one — conflict checks create more bugs than they prevent

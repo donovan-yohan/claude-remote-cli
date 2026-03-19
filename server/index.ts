@@ -707,7 +707,7 @@ async function main(): Promise<void> {
 
   // POST /sessions/repo — start a session in the repo root (no worktree)
   app.post('/sessions/repo', requireAuth, (req, res) => {
-    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux, allowMultiple } = req.body as {
+    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux } = req.body as {
       repoPath?: string;
       repoName?: string;
       continue?: boolean;
@@ -715,7 +715,6 @@ async function main(): Promise<void> {
       yolo?: boolean;
       agent?: AgentType;
       useTmux?: boolean;
-      allowMultiple?: boolean;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
