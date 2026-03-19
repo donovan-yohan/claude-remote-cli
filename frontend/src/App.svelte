@@ -168,11 +168,8 @@
         }
 
         // Auto-select if exactly one session exists and none is selected
-        const singleSession = !sessionState.activeSessionId && !sessionParam && sessionState.sessions.length === 1
-          ? sessionState.sessions[0]
-          : undefined;
-        if (singleSession) {
-          handleSelectSession(singleSession.id);
+        if (!sessionState.activeSessionId && !sessionParam && sessionState.sessions.length === 1) {
+          handleSelectSession(sessionState.sessions[0]!.id);
         }
 
         // Initialize notifications for existing sessions
