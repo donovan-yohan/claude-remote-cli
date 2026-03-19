@@ -39,6 +39,8 @@
 
   function handleSelectWorkspace(path: string) {
     ui.activeWorkspacePath = path;
+    // Clear active session so the main area shows the dashboard
+    sessionState.activeSessionId = null;
   }
 
   function handleSmartSearchSelect(path: string) {

@@ -322,8 +322,30 @@
     }
   }
 
-  function handleNewWorktree(workspace: Workspace) {
-    newSessionDialogRef?.open({ name: workspace.name, path: workspace.path });
+  async function handleNewWorktree(workspace: Workspace) {
+    // Instant worktree creation — no dialog.
+    // 1. Create git worktree with next mountain name via POST /workspaces/worktree
+    // 2. Start a session in the new worktree with workspace default settings
+    // 3. Session is flagged needsBranchRename — first message triggers auto-rename
+    try {
+      const { branchName, worktreePath } = await import('./lib/api.js').then(m => m.createWorktree(workspace.path));
+      const session = await import('./lib/api.js').then(m => m.createSession({
+        repoPath: workspace.path,
+        repoName: workspace.name,
+        worktreePath,
+        branchName,
+        needsBranchRename: true,
+      }));
+      await refreshAll();
+      sessionState.activeSessionId = session.id;
+      ui.activeWorkspacePath = workspace.path;
+      initSessionNotification(session.id, configState.defaultNotifications);
+      closeSidebar();
+      terminalRef?.focusTerm();
+    } catch (e) {
+      // Fall back to dialog on error
+      newSessionDialogRef?.open({ name: workspace.name, path: workspace.path });
+    }
   }
 
   function handleDeleteWorktree(wt: WorktreeInfo) {

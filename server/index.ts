@@ -514,7 +514,7 @@ async function main(): Promise<void> {
 
   // POST /sessions
   app.post('/sessions', requireAuth, async (req, res) => {
-    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux } = req.body as {
+    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux, needsBranchRename, branchRenamePrompt } = req.body as {
       repoPath?: string;
       repoName?: string;
       worktreePath?: string;
@@ -523,6 +523,8 @@ async function main(): Promise<void> {
       yolo?: boolean;
       agent?: AgentType;
       useTmux?: boolean;
+      needsBranchRename?: boolean;
+      branchRenamePrompt?: string;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -690,6 +692,8 @@ async function main(): Promise<void> {
       args,
       configPath: CONFIG_PATH,
       useTmux: useTmux ?? config.launchInTmux,
+      needsBranchRename: needsBranchRename ?? false,
+      branchRenamePrompt: branchRenamePrompt ?? '',
     });
 
     if (!worktreePath) {

@@ -127,6 +127,8 @@ export async function createSession(body: {
   yolo?: boolean | undefined;
   agent?: string | undefined;
   useTmux?: boolean | undefined;
+  needsBranchRename?: boolean | undefined;
+  branchRenamePrompt?: string | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions', {
     method: 'POST',

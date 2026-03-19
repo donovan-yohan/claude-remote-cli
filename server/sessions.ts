@@ -76,6 +76,10 @@ type CreateParams = {
   initialScrollback?: string[];
   /** Mark this session as a restored session (PTY exit won't delete it) */
   restored?: boolean;
+  /** Flag to trigger branch rename on first message (worktree auto-naming) */
+  needsBranchRename?: boolean;
+  /** Custom prompt for branch rename (from workspace settings) */
+  branchRenamePrompt?: string;
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
@@ -115,7 +119,7 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallbacks.push(cb);
 }
 
-function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored }: CreateParams): CreateResult {
+function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored, needsBranchRename: paramNeedsBranchRename, branchRenamePrompt: paramBranchRenamePrompt }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
   const createdAt = new Date().toISOString();
   const resolvedCommand = command || AGENT_COMMANDS[agent];
@@ -180,6 +184,8 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     onPtyReplacedCallbacks: [],
     status: 'active' as SessionStatus,
     restored: paramRestored || false,
+    needsBranchRename: paramNeedsBranchRename || false,
+    branchRenamePrompt: paramBranchRenamePrompt || '',
   };
   sessions.set(id, session);
 
