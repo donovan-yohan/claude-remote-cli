@@ -446,7 +446,13 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     // Build branch name with optional prefix
     const prefix = settings.branchPrefix ?? '';
     const branchName = prefix + mountainName;
-    const baseBranch = settings.defaultBranch ?? 'main';
+
+    // Detect base branch: user setting > git detected > fallback
+    let baseBranch = settings.defaultBranch;
+    if (!baseBranch) {
+      const detected = await detectGitRepo(resolved);
+      baseBranch = detected.defaultBranch ?? 'main';
+    }
 
     // Create git worktree at <workspacePath>/.worktrees/<mountainName>
     const worktreePath = path.join(resolved, '.worktrees', mountainName);
