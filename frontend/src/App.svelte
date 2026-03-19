@@ -9,6 +9,7 @@
   import { isMobileDevice } from './lib/utils.js';
   import type { WorktreeInfo, OpenSessionOptions, Workspace, PullRequest } from './lib/types.js';
   import { createWorktree, createSession, fetchWorkspaceSettings, killSession, deleteWorktree } from './lib/api.js';
+  import { derivePrAction, getActionPrompt } from './lib/pr-state.js';
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Terminal from './components/Terminal.svelte';
@@ -449,6 +450,78 @@
     }
   }
 
+  async function handleOpenPrBranch(pr: PullRequest, prompt?: string) {
+    if (!activeWorkspace) return;
+    const workspacePath = activeWorkspace.path;
+
+    const existingSession = sessionState.sessions.find(s => s.branchName === pr.headRefName && s.repoPath.startsWith(workspacePath));
+    const existingWorktree = sessionState.worktrees.find(w => w.branchName === pr.headRefName && w.repoPath === workspacePath);
+
+    try {
+      let worktreePath: string;
+      let branchName: string;
+
+      if (existingSession) {
+        worktreePath = existingSession.repoPath;
+        branchName = existingSession.branchName;
+      } else if (existingWorktree) {
+        worktreePath = existingWorktree.path;
+        branchName = existingWorktree.branchName;
+      } else {
+        const wt = await createWorktree(workspacePath, pr.headRefName);
+        worktreePath = wt.worktreePath;
+        branchName = wt.branchName;
+      }
+
+      const session = await createSession({
+        repoPath: workspacePath,
+        repoName: activeWorkspace.name,
+        worktreePath,
+        branchName,
+        allowMultiple: true,
+      });
+      await refreshAll();
+      sessionState.activeSessionId = session.id;
+      ui.activeWorkspacePath = workspacePath;
+      initSessionNotification(session.id, configState.defaultNotifications);
+      closeSidebar();
+
+      if (prompt) {
+        setTimeout(() => {
+          sendPtyData(prompt + '\r');
+        }, 1500);
+      }
+    } catch (e) {
+      console.error('Failed to open PR branch session:', e);
+    }
+  }
+
+  function handlePrAction(pr: PullRequest) {
+    const prState = pr.state === 'OPEN' ? 'OPEN' : pr.state === 'MERGED' ? 'MERGED' : 'CLOSED';
+    const action = derivePrAction({
+      commitsAhead: 1,
+      prState,
+      ciPassing: 0,
+      ciFailing: 0,
+      ciPending: 0,
+      ciTotal: 0,
+      mergeable: (pr.mergeable as 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null) ?? null,
+      unresolvedCommentCount: 0,
+    });
+    const prompt = getActionPrompt(action, {
+      branchName: pr.headRefName,
+      baseBranch: pr.baseRefName,
+      prNumber: pr.number,
+    });
+    if (prompt) {
+      handleOpenPrBranch(pr, prompt);
+    }
+  }
+
+  function handleOpenPrSession(pr: PullRequest) {
+    handleOpenPrBranch(pr);
+  }
+
   function handleDeleteWorktree(wt: WorktreeInfo) {
     deleteWorktreeDialogRef?.open(wt);
   }
@@ -586,6 +659,8 @@
           onNewSession={() => handleOpenNewSession()}
           onNewWorktree={() => { if (activeWorkspace) handleNewWorktree(activeWorkspace); }}
           onFixConflicts={handleFixConflicts}
+          onPrAction={handlePrAction}
+          onOpenPrSession={handleOpenPrSession}
         />
 
       {:else if viewMode === 'session'}

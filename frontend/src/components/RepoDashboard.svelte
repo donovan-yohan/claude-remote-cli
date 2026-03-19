@@ -11,12 +11,16 @@
     onNewSession,
     onNewWorktree,
     onFixConflicts,
+    onPrAction,
+    onOpenPrSession,
   }: {
     workspacePath: string;
     workspaceName: string;
     onNewSession: () => void;
     onNewWorktree: () => void;
     onFixConflicts: (pr: PullRequest) => void;
+    onPrAction: (pr: PullRequest) => void;
+    onOpenPrSession: (pr: PullRequest) => void;
   } = $props();
 
   const dashQuery = createQuery<DashboardData>(() => ({
@@ -62,6 +66,19 @@
     if (!entry.branches || entry.branches.length === 0) return '';
     return '(' + entry.branches.join(', ') + ')';
   }
+
+  let searchQuery = $state('');
+  let showSearch = $derived(data ? data.prs.length > 5 : false);
+  let filteredPrs = $derived(() => {
+    if (!data) return [];
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return data.prs;
+    return data.prs.filter(pr =>
+      pr.title.toLowerCase().includes(q) ||
+      String(pr.number).includes(q) ||
+      pr.headRefName.toLowerCase().includes(q)
+    );
+  });
 </script>
 
 <div class="repo-dashboard">
@@ -96,8 +113,16 @@
       {:else if data && data.prs.length === 0}
         <div class="section-message">No open pull requests</div>
       {:else if data}
+        {#if showSearch}
+          <input
+            class="pr-search"
+            type="text"
+            placeholder="Filter PRs by title, number, or branch..."
+            bind:value={searchQuery}
+          />
+        {/if}
         <div class="pr-list">
-          {#each data.prs as pr (pr.number)}
+          {#each filteredPrs() as pr (pr.number)}
             {@const action = prActionForRow(pr)}
             {@const actionColor = getStatusCssVar(action.color)}
             {@const darkText = shouldUseDarkText(action.color)}
@@ -118,6 +143,11 @@
                 </div>
               </div>
               <div class="pr-row-actions">
+                <button
+                  class="pr-session-btn"
+                  title="Open session on this branch"
+                  onclick={() => onOpenPrSession(pr)}
+                >+</button>
                 {#if pr.mergeable === 'CONFLICTING'}
                   <button
                     class="pr-action-pill pr-conflict-pill"
@@ -139,16 +169,15 @@
                   </a>
                 {/if}
                 {#if action.type !== 'none' && action.label}
-                  <a
+                  <button
                     class="pr-action-pill"
-                    href={pr.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
                     style:--pill-color={actionColor}
                     class:dark-text={darkText}
+                    title={action.label}
+                    onclick={() => onPrAction(pr)}
                   >
                     {action.label}
-                  </a>
+                  </button>
                 {/if}
               </div>
             </div>
@@ -206,6 +235,8 @@
     background: var(--bg);
     min-height: 0;
     max-width: none;
+    overflow-y: auto;
+    flex: 1;
   }
 
   /* ── Section ── */
@@ -239,6 +270,28 @@
 
   .section-message.info a:hover {
     text-decoration: underline;
+  }
+
+  /* ── PR search ── */
+  .pr-search {
+    padding: 8px 10px;
+    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.12s;
+  }
+
+  .pr-search::placeholder {
+    color: var(--text-muted);
+    opacity: 0.6;
+  }
+
+  .pr-search:focus {
+    border-color: var(--accent);
   }
 
   /* ── PR list ── */
@@ -303,6 +356,29 @@
     flex-shrink: 0;
   }
 
+  .pr-session-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    flex-shrink: 0;
+  }
+
+  .pr-session-btn:hover {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
   .pr-conflict-pill {
     --pill-color: var(--status-error);
     font-weight: 600;
@@ -357,6 +433,7 @@
     color: #fff;
     text-decoration: none;
     white-space: nowrap;
+    cursor: pointer;
     transition: opacity 0.12s;
   }
 
