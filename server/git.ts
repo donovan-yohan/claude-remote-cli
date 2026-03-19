@@ -107,7 +107,7 @@ async function getActivityFeed(
       [
         'log',
         '--all',
-        '--since=24h',
+        '--since=24 hours ago',
         '--oneline',
         '--max-count=50',
         '--format=%H|%h|%s|%an|%ar|%D',
