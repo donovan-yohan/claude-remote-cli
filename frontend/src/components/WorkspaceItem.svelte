@@ -3,7 +3,7 @@
   import { getSessionState, getSessionStatus, refreshAll, getSessionMetaById, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
-  import { createSession } from '../lib/api.js';
+  import { createSession, createRepoSession } from '../lib/api.js';
   import ContextMenu from './ContextMenu.svelte';
   import type { MenuItem } from './ContextMenu.svelte';
 
@@ -68,6 +68,11 @@
   }
 
   function sessionDisplayName(session: SessionSummary): string {
+    if (session.type === 'repo') {
+      // Show "default" unless the user explicitly renamed the session
+      const wasRenamed = session.displayName && session.displayName !== session.repoName;
+      return wasRenamed ? session.displayName : 'default';
+    }
     return session.displayName || session.branchName || session.repoName || session.id;
   }
 
@@ -198,7 +203,7 @@
     {/if}
   </div>
 
-  {#if !collapsed && !inReorderMode && (allSessions.length > 0 || inactiveWorktrees.length > 0)}
+  {#if !collapsed && !inReorderMode}
     <ul class="session-list">
       {#each [...sessionGroups.entries()] as [groupPath, groupSessions] (groupPath)}
         {@const representative = groupSessions.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity))[0]}
@@ -236,13 +241,14 @@
               {/if}
             </div>
             <div class="session-row-secondary">
-              {#if representative.worktreeName && representative.worktreeName !== sessionDisplayName(representative)}
-                <span class="secondary-worktree">{representative.worktreeName}</span>
+              <span class="secondary-time">{sessionTime(representative)}</span>
+              {#if representative.branchName}
+                <span class="secondary-branch">{representative.branchName}</span>
               {/if}
               {#if meta?.prNumber}
                 <span class="secondary-pr">PR #{meta.prNumber}</span>
               {/if}
-              <span class="secondary-time">{sessionTime(representative)}</span>
+              <span class="context-menu-spacer"></span>
               <ContextMenu items={sessionMenuItems(representative)} />
             </div>
           </li>
@@ -258,9 +264,10 @@
               if (isItemLoading(repoLoadingKey)) return;
               setLoading(repoLoadingKey);
               try {
-                const session = await createSession({
+                const session = await createRepoSession({
                   repoPath: workspace.path,
                   repoName: workspace.name,
+                  continue: true,
                 });
                 await refreshAll();
                 onSelectSession(session.id);
@@ -271,7 +278,14 @@
           >
             <div class="session-row-primary">
               <span class="dot dot-inactive"></span>
-              <span class="session-name">{isItemLoading(repoLoadingKey) ? 'starting...' : workspace.name}</span>
+              <span class="session-name">{isItemLoading(repoLoadingKey) ? 'starting...' : 'default'}</span>
+            </div>
+            <div class="session-row-secondary">
+              {#if workspace.defaultBranch}
+                <span class="secondary-branch">{workspace.defaultBranch}</span>
+              {/if}
+              <span class="context-menu-spacer"></span>
+              <ContextMenu items={[]} />
             </div>
           </li>
         {/if}
@@ -312,10 +326,14 @@
             {/if}
           </div>
           <div class="session-row-secondary">
+            <span class="secondary-time">{worktreeTime(wt)}</span>
+            {#if wt.branchName}
+              <span class="secondary-branch">{wt.branchName}</span>
+            {/if}
             {#if meta?.prNumber}
               <span class="secondary-pr">PR #{meta.prNumber}</span>
             {/if}
-            <span class="secondary-time">{worktreeTime(wt)}</span>
+            <span class="context-menu-spacer"></span>
             <ContextMenu items={worktreeMenuItems(wt)} />
           </div>
         </li>
@@ -542,11 +560,14 @@
     min-width: 0;
   }
 
-  .secondary-worktree {
+  .secondary-branch {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+  }
+
+  .context-menu-spacer {
     flex: 1;
   }
 
