@@ -174,18 +174,18 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
         if (!(ptySession as any)._renameBuffer) (ptySession as any)._renameBuffer = '';
         const enterIndex = str.indexOf('\r');
         if (enterIndex === -1) {
-          // No Enter yet — buffer and pass through so the user sees echo
+          // Buffer without passthrough — don't echo to PTY during buffering.
+          // Previously we wrote to PTY here for echo and used Ctrl+U to undo on Enter,
+          // but Ctrl+U doesn't work reliably in Claude Code's Ink/React TUI.
           (ptySession as any)._renameBuffer += str;
-          ptySession.pty.write(str);
           return;
         }
-        // Enter detected — inject rename prompt before the user's message
+        // Enter detected — send rename prompt + full message to PTY in one shot
         const buffered: string = (ptySession as any)._renameBuffer;
         const beforeEnter = buffered + str.slice(0, enterIndex);
         const afterEnter = str.slice(enterIndex); // includes the \r
         const renamePrompt = `Before doing anything else, rename the current git branch using \`git branch -m <new-name>\`. Choose a short, descriptive kebab-case branch name based on the task below.${ptySession.branchRenamePrompt ? ' User preferences: ' + ptySession.branchRenamePrompt : ''} Do not ask for confirmation — just rename and proceed.\n\n`;
-        const clearLine = '\x15'; // Ctrl+U clears the current input line
-        ptySession.pty.write(clearLine + renamePrompt + beforeEnter + afterEnter);
+        ptySession.pty.write(renamePrompt + beforeEnter + afterEnter);
         ptySession.needsBranchRename = false;
         delete (ptySession as any)._renameBuffer;
         if (configPath) startBranchWatcher(ptySession, broadcastEvent, configPath);
