@@ -10,11 +10,13 @@
     workspaceName,
     onNewSession,
     onNewWorktree,
+    onFixConflicts,
   }: {
     workspacePath: string;
     workspaceName: string;
     onNewSession: () => void;
     onNewWorktree: () => void;
+    onFixConflicts: (pr: PullRequest) => void;
   } = $props();
 
   const dashQuery = createQuery<DashboardData>(() => ({
@@ -115,9 +117,13 @@
               </div>
               <div class="pr-row-actions">
                 {#if pr.mergeable === 'CONFLICTING'}
-                  <span class="pr-badge pr-badge-conflict" title="Merge conflicts must be resolved">
-                    Conflicts
-                  </span>
+                  <button
+                    class="pr-action-pill pr-conflict-pill"
+                    title="Open worktree and fix merge conflicts"
+                    onclick={() => onFixConflicts(pr)}
+                  >
+                    Fix Conflicts
+                  </button>
                 {/if}
                 {#if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
                   <a
@@ -295,26 +301,14 @@
     flex-shrink: 0;
   }
 
-  .pr-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    white-space: nowrap;
-  }
-
-  .pr-badge-conflict {
-    background: color-mix(in srgb, var(--status-error) 20%, transparent);
-    color: var(--status-error);
-    border: 1px solid var(--status-error);
+  .pr-conflict-pill {
+    --pill-color: var(--status-error);
+    font-weight: 600;
   }
 
   .pr-merge-pill {
-    background: var(--status-success) !important;
-    color: #1a1a1a !important;
-    border: none;
+    --pill-color: var(--status-success);
+    color: #1a1a1a;
     font-weight: 600;
   }
 

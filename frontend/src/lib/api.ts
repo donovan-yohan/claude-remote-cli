@@ -92,8 +92,12 @@ export async function autocompletePath(prefix: string): Promise<string[]> {
   return data.suggestions;
 }
 
-export async function createWorktree(workspacePath: string): Promise<{ branchName: string; mountainName: string; worktreePath: string }> {
-  const res = await fetch('/workspaces/worktree?path=' + encodeURIComponent(workspacePath), { method: 'POST' });
+export async function createWorktree(workspacePath: string, branch?: string): Promise<{ branchName: string; mountainName: string; worktreePath: string }> {
+  const res = await fetch('/workspaces/worktree?path=' + encodeURIComponent(workspacePath), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ branch }),
+  });
   if (!res.ok) {
     const data = await res.json() as { error?: string };
     throw new Error(data.error || 'Failed to create worktree');

@@ -55,6 +55,7 @@ export interface WorkspaceSettings {
   promptCreatePr?: string;
   promptBranchRename?: string;
   promptGeneral?: string;
+  promptFixConflicts?: string;
 
   // Worktree naming — mountains theme
   nextMountainIndex?: number;
@@ -105,6 +106,7 @@ export interface PullRequest {
   title: string;
   url: string;
   headRefName: string;
+  baseRefName: string;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   author: string;
   role: 'author' | 'reviewer';
