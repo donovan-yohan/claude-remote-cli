@@ -280,13 +280,11 @@
               <span class="dot dot-inactive"></span>
               <span class="session-name">{isItemLoading(repoLoadingKey) ? 'starting...' : 'default'}</span>
             </div>
-            <div class="session-row-secondary">
-              {#if workspace.defaultBranch}
+            {#if workspace.defaultBranch}
+              <div class="session-row-secondary">
                 <span class="secondary-branch">{workspace.defaultBranch}</span>
-              {/if}
-              <span class="context-menu-spacer"></span>
-              <ContextMenu items={[]} />
-            </div>
+              </div>
+            {/if}
           </li>
         {/if}
       {/each}

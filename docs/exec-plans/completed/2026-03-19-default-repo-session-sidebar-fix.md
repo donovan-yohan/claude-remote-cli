@@ -10,7 +10,7 @@
 |------|-------|----------|-----------|
 | 2026-03-19 | Design | All 6 bugs fixed in single file `WorkspaceItem.svelte` | All root causes are in the same component; no server changes needed |
 | 2026-03-19 | Design | Use `createRepoSession` instead of `createSession` for repo root click | `createSession` hits `POST /sessions` (worktree endpoint); `createRepoSession` hits `POST /sessions/repo` |
-| 2026-03-19 | Design | Add ContextMenu wrapper `<span>` with `margin-left: auto` for right-alignment | Consistent with how `.diff-badge` uses `margin-left: auto` in primary row |
+| 2026-03-19 | Design | Add `.context-menu-spacer` with `flex: 1` for right-alignment | Pushes ContextMenu to right edge in all secondary rows |
 
 ## Progress
 
@@ -64,16 +64,16 @@ _None yet — updated when tasks deviate from plan during execution._
 
 **Steps:**
 
-1. Add a `session-row-secondary` div to the idle repo root `<li>` (after the `session-row-primary`):
+1. Add a conditional `session-row-secondary` div to the idle repo root `<li>` showing only the default branch name (no ContextMenu — idle repo has no actions yet):
    ```svelte
-   <div class="session-row-secondary">
-     <span class="secondary-branch">{workspace.defaultBranch || ''}</span>
-     <span class="context-menu-spacer"></span>
-     <ContextMenu items={repoRootMenuItems()} />
-   </div>
+   {#if workspace.defaultBranch}
+     <div class="session-row-secondary">
+       <span class="secondary-branch">{workspace.defaultBranch}</span>
+     </div>
+   {/if}
    ```
 
-2. Create a `repoRootMenuItems()` function in the script block that returns menu items appropriate for the idle repo root (e.g., "Customize" or similar to what idle-repo variant had).
+2. ~~Create a `repoRootMenuItems()` function~~ — Scope cut: idle repo root has no meaningful menu items yet. ContextMenu omitted to avoid rendering an empty menu.
 
 **Verification:** `npm run build` compiles without errors.
 

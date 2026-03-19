@@ -64,9 +64,9 @@ Missing `session-row-secondary` div entirely. Should show default branch name an
 ```
 worktreeName → PR# → time → ContextMenu
 ```
-FRONTEND.md:87 specifies: *"timestamp → branch name → PR icon → diff stats (right-aligned)"*. Expected order:
+FRONTEND.md:87 specifies: *"timestamp → branch name → PR number → context menu (right-aligned)"*. Expected order:
 ```
-time → branchName → PR → dots (right-aligned)
+time → branchName → PR → context menu (right-aligned)
 ```
 
 Same issue exists for inactive worktrees (lines 314-319): `PR → time → ContextMenu`.
@@ -103,6 +103,6 @@ All fixes are in `WorkspaceItem.svelte`:
 
 4. **Bug 4**: Add a `session-row-secondary` div to the idle repo root entry with branch name (workspace defaultBranch) and ContextMenu.
 
-5. **Bug 5**: Reorder secondary row items to: time → branchName → PR → diff → dots.
+5. **Bug 5**: Reorder secondary row items to: time → branchName → PR → context menu (right-aligned).
 
 6. **Bug 6**: Add a spacer or `margin-left: auto` on the ContextMenu wrapper in the secondary row to push dots to the right edge.
