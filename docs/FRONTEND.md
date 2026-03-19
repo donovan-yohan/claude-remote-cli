@@ -63,7 +63,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - Scoped `<style>` blocks in each component; global CSS variables in `frontend/src/app.css`
 - Sidebar status dots: green (processing), blue (idle), amber glow (waiting-for-input/attention), yellow pulse (permission-prompt), gray (inactive/initializing)
 - Attention state: tracked in `attentionSessions` reactive state; set when session becomes idle while not viewed; cleared when user opens session
-- Loading state: tracked in `loadingItems` reactive state; `setLoading`/`clearLoading` wrap async actions (start, kill, delete); SessionItem shows CSS shimmer overlay with `pointer-events: none`
+- Loading state: tracked in `loadingItems` reactive state; `setLoading`/`clearLoading` wrap async actions (start, kill, delete); WorkspaceItem shows CSS shimmer overlay with `pointer-events: none`
 - Hover effects: fade mask on overflow text, scroll reveal animation
 - Avoid naming local variables `state` in `.svelte` files — conflicts with `$state` rune
 - `bind:this` refs used in `$effect` must be declared with `$state()` — plain `let` refs won't trigger effect re-runs in Svelte 5
@@ -84,8 +84,9 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - The new-session dialog is tab-aware: repo mode hides branch input and shows "Continue previous conversation" checkbox; worktree mode shows branch input; PRs tab falls back to repo mode. The `open()` method accepts `OpenSessionOptions` with `tab`, `branchName`, `agent`, and `claudeArgs` for pre-filling (used by the "Customize" context menu action)
 - All session/item actions are accessed via a "..." context menu button (ContextMenu component). Menu items vary by state: Active → Rename, Kill; Inactive worktree → Customize, Resume, Resume (YOLO), Delete; Idle repo → Customize, New Worktree
 - "Customize" opens NewSessionDialog pre-filled with the item's root, repo, and branch (for worktrees). Idle repo items also support direct click to create a repo session with `continue: true` via `POST /sessions/repo`
-- Repo root items always display "default" as their name (unless the user has explicitly renamed the active session). The idle-repo variant in `SessionItem.svelte` always shows "default"
-- Session item secondary row order: timestamp → branch name → PR icon → diff stats (right-aligned). This applies to all variants (active, inactive-worktree, idle-repo)
+- **Session creation API split**: `createSession()` → `POST /sessions` (creates worktrees); `createRepoSession()` → `POST /sessions/repo` (repo root, no worktree). Use the correct one based on context — calling `createSession` without `worktreePath` creates an unwanted worktree
+- Repo root items always display "default" as their name (unless the user has explicitly renamed the active session). Both active and idle repo entries in `WorkspaceItem.svelte` enforce this
+- Session item secondary row order: timestamp → branch name → PR number → context menu (right-aligned via `.context-menu-spacer`). This applies to active sessions and inactive worktrees. Idle-repo entries show only the default branch name (no timestamp or PR). Diff stats appear in the primary row
 - PRs tab uses `PrRepoGroup` components — each repo group independently fetches PRs via `@tanstack/svelte-query` `createQuery` with `Accessor` pattern: `createQuery<T>(() => ({...}))` — the options must be wrapped in a function for Svelte 5 runes reactivity
 - Filters (root, repo, search) live below the tab bar
 - PR click cascade: active session → inactive worktree → create new worktree + session

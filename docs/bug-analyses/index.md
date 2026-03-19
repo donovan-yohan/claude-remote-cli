@@ -25,3 +25,4 @@
 | [closed-pr-shown-in-sidebar-bug-analysis.md](2026-03-19-closed-pr-shown-in-sidebar-bug-analysis.md) | Closed/merged PRs still shown in sidebar — `gh pr view` returns all states, no filtering applied | 2026-03-19 |
 | [pr-topbar-stale-merged-pr-bug-analysis.md](2026-03-19-pr-topbar-stale-merged-pr-bug-analysis.md) | PrTopBar shows stale merged PR data for reused branch names — sidebar was fixed but top bar was not | 2026-03-19 |
 | [branch-rename-pty-injection-bug-analysis.md](2026-03-19-branch-rename-pty-injection-bug-analysis.md) | PTY injection for branch rename is architecturally broken — vendor-extensible output parser + sideband rename needed | 2026-03-19 |
+| [default-repo-session-sidebar-bug-analysis.md](2026-03-19-default-repo-session-sidebar-bug-analysis.md) | Default repo entry: hidden when empty, wrong name, click creates worktree, missing secondary row, wrong item order, dots not right-aligned | 2026-03-19 |
