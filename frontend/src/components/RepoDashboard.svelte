@@ -8,6 +8,7 @@
   let {
     workspacePath,
     workspaceName,
+    creatingWorktree = false,
     onNewSession,
     onNewWorktree,
     onFixConflicts,
@@ -16,6 +17,7 @@
   }: {
     workspacePath: string;
     workspaceName: string;
+    creatingWorktree?: boolean;
     onNewSession: () => void;
     onNewWorktree: () => void;
     onFixConflicts: (pr: PullRequest) => void;
@@ -229,7 +231,9 @@
   <div class="cta-row">
     <button class="cta-btn" onclick={onNewSession}>+ Start Session</button>
     {#if !data || data.isGitRepo}
-      <button class="cta-btn" onclick={onNewWorktree}>+ New Worktree</button>
+      <button class="cta-btn" onclick={onNewWorktree} disabled={creatingWorktree}>
+        {creatingWorktree ? 'Creating...' : '+ New Worktree'}
+      </button>
     {/if}
   </div>
 </div>
@@ -566,8 +570,13 @@
     white-space: nowrap;
   }
 
-  .cta-btn:hover {
+  .cta-btn:hover:not(:disabled) {
     background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .cta-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* ── Skeletons ── */

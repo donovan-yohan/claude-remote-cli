@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
-  import { getSessionState, getSessionStatus, refreshAll, getSessionMetaById } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, getSessionStatus, refreshAll, getSessionMetaById, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
   import { createSession } from '../lib/api.js';
@@ -75,6 +75,7 @@
   }
 
   let hasAttention = $derived(allSessions.some(s => getSessionStatus(s) === 'attention'));
+  let creatingWorktree = $derived(isItemLoading(`new-worktree:${workspace.path}`));
 
   // Force re-derive on time tick
   let _tick = $derived(getTimeTick());
@@ -113,6 +114,8 @@
       {
         label: 'Resume',
         action: async () => {
+          if (isItemLoading(wt.path)) return;
+          setLoading(wt.path);
           try {
             const session = await createSession({
               repoPath: workspace.path,
@@ -122,12 +125,16 @@
             });
             await refreshAll();
             onSelectSession(session.id);
-          } catch { /* silent */ }
+          } catch { /* silent */ } finally {
+            clearLoading(wt.path);
+          }
         },
       },
       {
         label: 'Resume (YOLO)',
         action: async () => {
+          if (isItemLoading(wt.path)) return;
+          setLoading(wt.path);
           try {
             const session = await createSession({
               repoPath: workspace.path,
@@ -138,7 +145,9 @@
             });
             await refreshAll();
             onSelectSession(session.id);
-          } catch { /* silent */ }
+          } catch { /* silent */ } finally {
+            clearLoading(wt.path);
+          }
         },
       },
       {
@@ -249,9 +258,13 @@
           <!-- Persistent repo root entry — always shown even with no active sessions -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          {@const repoLoadingKey = `repo-session:${workspace.path}`}
           <li
             class="session-row inactive"
+            class:loading={isItemLoading(repoLoadingKey)}
             onclick={async () => {
+              if (isItemLoading(repoLoadingKey)) return;
+              setLoading(repoLoadingKey);
               try {
                 const session = await createSession({
                   repoPath: workspace.path,
@@ -259,12 +272,14 @@
                 });
                 await refreshAll();
                 onSelectSession(session.id);
-              } catch { /* silent */ }
+              } catch { /* silent */ } finally {
+                clearLoading(repoLoadingKey);
+              }
             }}
           >
             <div class="session-row-primary">
               <span class="dot dot-inactive"></span>
-              <span class="session-name">{workspace.name}</span>
+              <span class="session-name">{isItemLoading(repoLoadingKey) ? 'starting...' : workspace.name}</span>
             </div>
           </li>
         {/if}
@@ -276,7 +291,10 @@
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <li
           class="session-row inactive"
+          class:loading={isItemLoading(wt.path)}
           onclick={async () => {
+            if (isItemLoading(wt.path)) return;
+            setLoading(wt.path);
             try {
               const session = await createSession({
                 repoPath: workspace.path,
@@ -286,12 +304,14 @@
               });
               await refreshAll();
               onSelectSession(session.id);
-            } catch { /* silent */ }
+            } catch { /* silent */ } finally {
+              clearLoading(wt.path);
+            }
           }}
         >
           <div class="session-row-primary">
             <span class="dot dot-inactive"></span>
-            <span class="session-name">{wt.branchName || wt.displayName || wt.name}</span>
+            <span class="session-name">{isItemLoading(wt.path) ? 'resuming...' : wt.branchName || wt.displayName || wt.name}</span>
             {#if hasDiff}
               <span class="diff-badge">
                 <span class="diff-add">+{meta.additions}</span>
@@ -314,8 +334,8 @@
   {#if !collapsed}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="add-worktree-row" onclick={() => onNewWorktree(workspace)}>
-      <span class="add-worktree-btn">+ new worktree</span>
+    <div class="add-worktree-row" class:disabled={creatingWorktree} onclick={() => { if (!creatingWorktree) onNewWorktree(workspace); }}>
+      <span class="add-worktree-btn">{creatingWorktree ? 'creating...' : '+ new worktree'}</span>
     </div>
   {/if}
 
@@ -560,6 +580,8 @@
   .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
   .session-row.inactive { opacity: 0.6; }
   .session-row.inactive:hover { opacity: 1; }
+  .session-row.loading { pointer-events: none; opacity: 0.7; }
+  .session-row.loading .session-name { color: var(--accent); }
   .status-dot--attention {
     background: var(--status-warning);
     box-shadow: 0 0 5px 1px rgba(251, 191, 36, 0.45);
@@ -610,6 +632,15 @@
   .add-worktree-btn:hover {
     opacity: 1;
     color: var(--text);
+  }
+
+  .add-worktree-row.disabled {
+    pointer-events: none;
+  }
+
+  .add-worktree-row.disabled .add-worktree-btn {
+    opacity: 0.7;
+    color: var(--accent);
   }
 
   /* Solid divider */
