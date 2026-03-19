@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings } from './types.js';
+import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, SessionMeta } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -348,4 +348,13 @@ export async function updateWorkspaceSettings(workspacePath: string, settings: W
     const data = await res.json() as { error?: string };
     throw new Error(data.error || 'Failed to update workspace settings');
   }
+}
+
+export async function fetchAllSessionMeta(): Promise<Record<string, SessionMeta>> {
+  return json<Record<string, SessionMeta>>(await fetch('/sessions/meta'));
+}
+
+export async function fetchSessionMeta(id: string, options?: { refresh?: boolean }): Promise<SessionMeta> {
+  const url = '/sessions/' + encodeURIComponent(id) + '/meta' + (options?.refresh ? '?refresh=true' : '');
+  return json<SessionMeta>(await fetch(url));
 }

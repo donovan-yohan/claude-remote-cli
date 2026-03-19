@@ -3,12 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgentType, SdkSession, Session, SessionSummary, SessionType } from './types.js';
+import type { AgentType, SdkSession, Session, SessionSummary, SessionMeta, SessionType } from './types.js';
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './types.js';
 import { createPtySession } from './pty-handler.js';
 import type { CreatePtyParams } from './pty-handler.js';
 import { createSdkSession, killSdkSession, sendMessage as sdkSendMessage, handlePermission as sdkHandlePermission, serializeSdkSession, restoreSdkSession } from './sdk-handler.js';
 import type { SerializedSdkSession } from './sdk-handler.js';
+import { getPrForBranch, getWorkingTreeDiff } from './git.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -75,6 +76,9 @@ type CreateResult = SessionSummary & { pid: number | undefined };
 
 // In-memory registry: id -> Session
 const sessions = new Map<string, Session>();
+
+// Session metadata cache: session ID or worktree path -> SessionMeta
+const metaCache = new Map<string, SessionMeta>();
 
 let terminalCounter = 0;
 type IdleChangeCallback = (sessionId: string, idle: boolean) => void;
@@ -466,7 +470,71 @@ function stopSdkIdleSweep(): void {
   }
 }
 
+async function fetchMetaForSession(session: SessionSummary): Promise<SessionMeta> {
+  const repoPath = session.repoPath;
+  const branch = session.branchName;
+
+  let prNumber: number | null = null;
+  let additions = 0;
+  let deletions = 0;
+
+  if (branch) {
+    try {
+      const pr = await getPrForBranch(repoPath, branch);
+      if (pr) {
+        prNumber = pr.number;
+        additions = pr.additions;
+        deletions = pr.deletions;
+      }
+    } catch { /* gh CLI unavailable */ }
+  }
+
+  // Fallback to working tree diff if no PR data
+  if (additions === 0 && deletions === 0) {
+    const diff = await getWorkingTreeDiff(repoPath);
+    additions = diff.additions;
+    deletions = diff.deletions;
+  }
+
+  return { prNumber, additions, deletions, fetchedAt: new Date().toISOString() };
+}
+
+async function getSessionMeta(id: string, refresh = false): Promise<SessionMeta | null> {
+  if (!refresh && metaCache.has(id)) return metaCache.get(id)!;
+
+  const session = sessions.get(id);
+  if (!session) return metaCache.get(id) ?? null;
+
+  const summary = list().find(s => s.id === id);
+  if (!summary) return null;
+
+  const meta = await fetchMetaForSession(summary);
+  metaCache.set(id, meta);
+  return meta;
+}
+
+function getAllSessionMeta(): Record<string, SessionMeta> {
+  const result: Record<string, SessionMeta> = {};
+  for (const [key, meta] of metaCache) {
+    result[key] = meta;
+  }
+  return result;
+}
+
+// Populate cache for all active sessions (called on startup or refresh)
+async function populateMetaCache(): Promise<void> {
+  const allSessions = list();
+  await Promise.allSettled(
+    allSessions.map(async (s) => {
+      if (!metaCache.has(s.id)) {
+        const meta = await fetchMetaForSession(s);
+        metaCache.set(s.id, meta);
+      }
+    }),
+  );
+}
+
 // Re-export pty-handler utilities for backward compatibility
 export { generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
 
-export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, handlePermission, onIdleChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, handlePermission, onIdleChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

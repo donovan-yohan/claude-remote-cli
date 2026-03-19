@@ -420,6 +420,24 @@ async function getUnresolvedCommentCount(
   }
 }
 
+async function getWorkingTreeDiff(
+  repoPath: string,
+  exec: ExecFileAsyncLike = execFileAsync,
+): Promise<{ additions: number; deletions: number }> {
+  try {
+    const { stdout } = await exec('git', ['diff', '--shortstat'], { cwd: repoPath, timeout: 5000 });
+    // Output like: " 3 files changed, 55 insertions(+), 12 deletions(-)"
+    const insertions = stdout.match(/(\d+) insertion/);
+    const deletions = stdout.match(/(\d+) deletion/);
+    return {
+      additions: insertions?.[1] ? parseInt(insertions[1], 10) : 0,
+      deletions: deletions?.[1] ? parseInt(deletions[1], 10) : 0,
+    };
+  } catch {
+    return { additions: 0, deletions: 0 };
+  }
+}
+
 export {
   listBranches,
   normalizeBranchNames,
@@ -430,4 +448,5 @@ export {
   switchBranch,
   getCommitsAhead,
   getCurrentBranch,
+  getWorkingTreeDiff,
 };

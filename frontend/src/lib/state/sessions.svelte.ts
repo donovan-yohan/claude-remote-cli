@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, GitStatus, Workspace } from '../types.js';
+import type { SessionSummary, WorktreeInfo, GitStatus, Workspace, SessionMeta } from '../types.js';
 import { fireNotification, shouldFireNotification } from '../notifications.js';
 import * as api from '../api.js';
 
@@ -24,6 +24,7 @@ let activeSessionId = $state<string | null>(loadActiveSessionId());
 let attentionSessions = $state<Record<string, boolean>>({});
 let dismissedSessions = $state<Record<string, number>>({});
 let loadingItems = $state<Record<string, boolean>>({});
+let sessionMeta = $state<Map<string, SessionMeta>>(new Map());
 let notificationSessions = $state<Record<string, boolean>>({});
 
 // Load notification preferences from localStorage
@@ -87,6 +88,16 @@ export async function refreshAll(): Promise<void> {
       }
     }
     if (notifPruned) saveNotificationPrefs();
+
+    // Fetch session metadata (non-blocking — uses cached server values)
+    try {
+      const metaData = await api.fetchAllSessionMeta();
+      const newMap = new Map<string, SessionMeta>();
+      for (const [key, val] of Object.entries(metaData)) {
+        newMap.set(key, val);
+      }
+      sessionMeta = newMap;
+    } catch { /* silent */ }
   } catch { /* silent */ }
 }
 
@@ -174,4 +185,16 @@ export function clearLoading(key: string): void {
 
 export function isItemLoading(key: string): boolean {
   return !!loadingItems[key];
+}
+
+export function getSessionMetaById(id: string): SessionMeta | undefined {
+  return sessionMeta.get(id);
+}
+
+export async function refreshSessionMeta(id: string): Promise<void> {
+  try {
+    const meta = await api.fetchSessionMeta(id, { refresh: true });
+    sessionMeta.set(id, meta);
+    sessionMeta = new Map(sessionMeta); // trigger reactivity
+  } catch { /* silent */ }
 }

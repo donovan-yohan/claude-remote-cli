@@ -13,7 +13,7 @@ import cookieParser from 'cookie-parser';
 import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
-import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep } from './sessions.js';
+import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, getSessionMeta, getAllSessionMeta, populateMetaCache } from './sessions.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
@@ -231,6 +231,9 @@ async function main(): Promise<void> {
     console.log(`Restored ${restoredCount} session(s) from previous update.`);
   }
 
+  // Populate session metadata cache in background (non-blocking)
+  populateMetaCache().catch(() => {});
+
   // Push notifications on session idle
   sessions.onIdleChange((sessionId, idle) => {
     if (idle) {
@@ -281,6 +284,23 @@ async function main(): Promise<void> {
   // GET /sessions
   app.get('/sessions', requireAuth, (_req, res) => {
     res.json(sessions.list());
+  });
+
+  // GET /sessions/meta — bulk metadata for all sessions (cached)
+  app.get('/sessions/meta', requireAuth, (_req, res) => {
+    res.json(getAllSessionMeta());
+  });
+
+  // GET /sessions/:id/meta — individual session metadata
+  app.get('/sessions/:id/meta', requireAuth, async (req, res) => {
+    const id = req.params.id ?? '';
+    const refresh = req.query.refresh === 'true';
+    try {
+      const meta = await getSessionMeta(id, refresh);
+      res.json(meta ?? { prNumber: null, additions: 0, deletions: 0, fetchedAt: new Date().toISOString() });
+    } catch {
+      res.json({ prNumber: null, additions: 0, deletions: 0, fetchedAt: new Date().toISOString() });
+    }
   });
 
   // GET /branches?repo=<path> — list local and remote branches for a repo
