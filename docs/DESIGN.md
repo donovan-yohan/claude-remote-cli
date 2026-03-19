@@ -22,6 +22,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | SDK permission queue | `canUseTool` callback queues promises in sdk-handler runtime state. Frontend shows PermissionCard, user taps Approve/Deny, WS relays decision back to resolve promise. | Design doc |
 | SDK idle sweep | 60-second interval checks for SDK sessions idle >30min; max 5 idle SDK sessions enforced via LRU eviction | Design doc |
 | Debug event log | `--debug-log` CLI flag writes SDK events as JSONL to `~/.config/claude-remote-cli/debug/`. Async write queue, 10MB rotation, 7-day cleanup. | Design doc |
+| File system browser API | `GET /workspaces/browse` returns directory entries with `isGitRepo`/`hasChildren` metadata. `POST /workspaces/bulk` for multi-add. FileBrowser.svelte provides lazy tree UI with filter, multi-select, keyboard nav. Denylist skips `node_modules`/.git/etc, 100 entry cap. | Design doc |
 
 ## Config Precedence (canonical)
 
@@ -44,7 +45,8 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 ## Session Types
 
 - **Repo sessions** (`POST /sessions/repo`) — The selected coding agent runs directly in the repo root. One per repo path (409 on conflict). Supports `continue: true`, which maps to agent-specific continue args.
-- **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/` and launches the selected coding agent there. Multiple per repo allowed. If a branch is already checked out (main worktree or another worktree), auto-redirects to that location instead of failing.
+- **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/` and launches the selected coding agent there. Multiple per repo allowed. If a branch is already checked out (main worktree or another worktree), auto-redirects to that location instead of failing. Default branch names cycle through mountain names (everest, kilimanjaro, denali, ...) tracked per-config via `nextMountainIndex`.
+- **Branch auto-rename** — New worktrees with mountain names get `needsBranchRename: true`. On first interaction, the rename instruction is injected: SDK mode prepends to the first user message; PTY mode sends as a standalone first message when Claude CLI goes idle. A branch watcher polls `git rev-parse --abbrev-ref HEAD` every 3s (max 10 attempts) and broadcasts `session-renamed` when the branch changes.
 - **Worktree deletion** (`DELETE /worktrees`) — Validated via `git worktree list` (supports arbitrary paths, not just `.worktrees/`). Main worktree cannot be deleted.
 
 ## Idle Detection

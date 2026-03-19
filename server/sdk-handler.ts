@@ -365,6 +365,7 @@ export function createSdkSession(
     cwd: resolvedCwd,
     customCommand: null,
     status: 'active' as SessionStatus,
+    needsBranchRename: false,
     events: [],
     sdkSessionId: null,
     tokenUsage: { input: 0, output: 0 },
@@ -487,6 +488,7 @@ export function createSdkSession(
     useTmux: false,
     tmuxSessionName: '',
     status: 'active' as SessionStatus,
+    needsBranchRename: false,
   };
 
   return { session, result };
@@ -650,6 +652,7 @@ export function restoreSdkSession(
     cwd: serialized.cwd,
     customCommand: null,
     status: 'disconnected' as SessionStatus,
+    needsBranchRename: false,
     events: serialized.events || [],
     sdkSessionId: serialized.sdkSessionId,
     tokenUsage: serialized.tokenUsage || { input: 0, output: 0 },

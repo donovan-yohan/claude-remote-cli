@@ -135,6 +135,7 @@ export function createPtySession(
     onPtyReplacedCallbacks: [],
     status: 'active' as SessionStatus,
     restored: paramRestored || false,
+    needsBranchRename: false,
   };
   sessionsMap.set(id, session);
 
@@ -272,6 +273,7 @@ export function createPtySession(
     useTmux,
     tmuxSessionName,
     status: 'active' as SessionStatus,
+    needsBranchRename: false,
   };
 
   return { session, result };

@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["server/**/*.ts", "bin/**/*.ts", "test/**/*.ts"],
+  "include": ["server/**/*.ts", "bin/**/*.ts", "test/**/*.ts", "frontend/src/lib/pr-state.ts"],
   "exclude": ["public/", "node_modules/", "dist/"]
 }

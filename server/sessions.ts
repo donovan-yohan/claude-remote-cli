@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgentType, PtySession, SdkSession, Session, SessionSummary, SessionType } from './types.js';
+import type { AgentType, SdkSession, Session, SessionSummary, SessionType } from './types.js';
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './types.js';
-import { createPtySession, generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
+import { createPtySession } from './pty-handler.js';
 import type { CreatePtyParams } from './pty-handler.js';
-import { createSdkSession, killSdkSession, sendMessage as sdkSendMessage, handlePermission as sdkHandlePermission, interruptSession as sdkInterruptSession, serializeSdkSession, restoreSdkSession } from './sdk-handler.js';
+import { createSdkSession, killSdkSession, sendMessage as sdkSendMessage, handlePermission as sdkHandlePermission, serializeSdkSession, restoreSdkSession } from './sdk-handler.js';
 import type { SerializedSdkSession } from './sdk-handler.js';
 
 const execFileAsync = promisify(execFile);
@@ -65,6 +65,10 @@ type CreateParams = {
   initialScrollback?: string[];
   /** Mark this session as a restored session (PTY exit won't delete it) */
   restored?: boolean;
+  /** Flag to trigger branch rename on first message (worktree auto-naming) */
+  needsBranchRename?: boolean;
+  /** Custom prompt for branch rename (from workspace settings) */
+  branchRenamePrompt?: string;
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
@@ -80,7 +84,7 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallbacks.push(cb);
 }
 
-function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored }: CreateParams): CreateResult {
+function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored, needsBranchRename: paramNeedsBranchRename, branchRenamePrompt: paramBranchRenamePrompt }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
   // Dispatch: if agent is claude, no custom command, try SDK first
@@ -103,7 +107,7 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     );
 
     if (!('fallback' in sdkResult)) {
-      return { ...sdkResult.result, pid: undefined };
+      return { ...sdkResult.result, pid: undefined, needsBranchRename: false };
     }
     // SDK init failed — fall through to PTY
   }
@@ -131,8 +135,14 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     restored: paramRestored,
   };
 
-  const { result } = createPtySession(ptyParams, sessions, idleChangeCallbacks);
-  return result;
+  const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks);
+  if (paramNeedsBranchRename) {
+    ptySession.needsBranchRename = true;
+  }
+  if (paramBranchRenamePrompt) {
+    ptySession.branchRenamePrompt = paramBranchRenamePrompt;
+  }
+  return { ...result, needsBranchRename: !!ptySession.needsBranchRename };
 }
 
 function get(id: string): Session | undefined {
@@ -160,6 +170,7 @@ function list(): SessionSummary[] {
       useTmux: s.mode === 'pty' ? s.useTmux : false,
       tmuxSessionName: s.mode === 'pty' ? s.tmuxSessionName : '',
       status: s.status,
+      needsBranchRename: s.mode === 'pty' ? !!s.needsBranchRename : false,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
