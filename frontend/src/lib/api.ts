@@ -83,7 +83,8 @@ export async function fetchPrForBranch(workspacePath: string, branch: string): P
 }
 
 export async function autocompletePath(prefix: string): Promise<string[]> {
-  return json<string[]>(await fetch('/workspaces/autocomplete?prefix=' + encodeURIComponent(prefix)));
+  const data = await json<{ suggestions: string[] }>(await fetch('/workspaces/autocomplete?prefix=' + encodeURIComponent(prefix)));
+  return data.suggestions;
 }
 
 export async function createWorktree(workspacePath: string): Promise<{ branchName: string; mountainName: string; worktreePath: string }> {
