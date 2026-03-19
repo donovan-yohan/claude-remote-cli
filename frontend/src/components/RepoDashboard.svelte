@@ -292,7 +292,8 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    padding: 3px 10px;
+    padding: 6px 12px;
+    min-height: 32px;
     border-radius: 20px;
     border: 1px solid var(--pill-color, var(--border));
     font-size: var(--font-size-xs);
@@ -379,7 +380,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 6px 16px;
+    padding: 10px 18px;
+    min-height: 40px;
     background: transparent;
     border: 1px solid var(--accent);
     border-radius: 4px;

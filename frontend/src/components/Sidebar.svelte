@@ -195,11 +195,16 @@
     color: var(--text-muted);
     font-size: 1.1rem;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 8px 10px;
     border-radius: 4px;
     flex-shrink: 0;
     line-height: 1;
     font-family: var(--font-mono);
+    min-width: 36px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .collapse-btn:hover {
@@ -248,6 +253,7 @@
   .add-workspace-btn {
     margin: 8px;
     padding: 10px 12px;
+    min-height: 40px;
     background: none;
     border: 1px solid var(--border);
     border-radius: 0;
@@ -274,6 +280,7 @@
   .settings-btn {
     margin: 0 8px 8px;
     padding: 10px 12px;
+    min-height: 40px;
     background: none;
     border: 1px solid var(--border);
     border-radius: 0;

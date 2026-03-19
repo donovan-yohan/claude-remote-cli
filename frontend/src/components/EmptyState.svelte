@@ -40,6 +40,8 @@
     max-width: 320px;
     text-align: center;
     padding: 32px 16px;
+    flex: 1;
+    margin: 0 auto;
   }
 
   .empty-icon {
@@ -68,7 +70,8 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 6px 18px;
+    padding: 10px 18px;
+    min-height: 40px;
     background: transparent;
     border: 1px solid var(--accent);
     border-radius: 4px;
