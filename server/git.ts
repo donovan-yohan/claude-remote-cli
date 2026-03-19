@@ -215,13 +215,14 @@ async function getCiStatus(
       const conclusion = (check.conclusion ?? '').toUpperCase();
       const state = (check.state ?? '').toUpperCase();
 
-      if (conclusion === 'SUCCESS') {
+      if (conclusion === 'SUCCESS' || conclusion === 'SKIPPED' || conclusion === 'NEUTRAL') {
         passing++;
       } else if (conclusion === 'FAILURE' || conclusion === 'CANCELLED' || conclusion === 'TIMED_OUT') {
         failing++;
       } else if (state === 'IN_PROGRESS' || state === 'QUEUED' || state === 'PENDING' || conclusion === '') {
         pending++;
       } else {
+        // Unknown conclusion — treat as pending rather than silently ignoring
         pending++;
       }
     }

@@ -234,59 +234,47 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
-    // Fetch authored PRs
-    const authored: PullRequest[] = [];
-    try {
-      const { stdout } = await exec(
-        'gh',
-        ['pr', 'list', '--author', currentUser, '--state', 'open', '--limit', '30', '--json', fields],
-        { cwd: workspacePath },
-      );
-      const raw = JSON.parse(stdout) as Array<Record<string, unknown>>;
-      for (const pr of raw) {
-        authored.push({
-          number: pr.number as number,
-          title: pr.title as string,
-          url: pr.url as string,
-          headRefName: pr.headRefName as string,
-          state: pr.state as 'OPEN' | 'CLOSED' | 'MERGED',
-          author: (pr.author as { login?: string })?.login ?? currentUser,
-          role: 'author',
-          updatedAt: pr.updatedAt as string,
-          additions: (pr.additions as number) ?? 0,
-          deletions: (pr.deletions as number) ?? 0,
-          reviewDecision: (pr.reviewDecision as string) ?? null,
-          mergeable: (pr.mergeable as string) ?? null,
-        });
-      }
-    } catch { /* no authored PRs or gh error */ }
+    // Helper to map raw gh JSON to PullRequest
+    function mapRawPr(raw: Record<string, unknown>, role: 'author' | 'reviewer', fallbackAuthor: string): PullRequest {
+      return {
+        number: raw.number as number,
+        title: raw.title as string,
+        url: raw.url as string,
+        headRefName: raw.headRefName as string,
+        state: raw.state as 'OPEN' | 'CLOSED' | 'MERGED',
+        author: (raw.author as { login?: string })?.login ?? fallbackAuthor,
+        role,
+        updatedAt: raw.updatedAt as string,
+        additions: (raw.additions as number) ?? 0,
+        deletions: (raw.deletions as number) ?? 0,
+        reviewDecision: (raw.reviewDecision as string) ?? null,
+        mergeable: (raw.mergeable as string) ?? null,
+      };
+    }
 
-    // Fetch review-requested PRs
-    const reviewing: PullRequest[] = [];
-    try {
-      const { stdout } = await exec(
-        'gh',
-        ['pr', 'list', '--search', `review-requested:${currentUser}`, '--state', 'open', '--limit', '30', '--json', fields],
-        { cwd: workspacePath },
-      );
-      const raw = JSON.parse(stdout) as Array<Record<string, unknown>>;
-      for (const pr of raw) {
-        reviewing.push({
-          number: pr.number as number,
-          title: pr.title as string,
-          url: pr.url as string,
-          headRefName: pr.headRefName as string,
-          state: pr.state as 'OPEN' | 'CLOSED' | 'MERGED',
-          author: (pr.author as { login?: string })?.login ?? '',
-          role: 'reviewer',
-          updatedAt: pr.updatedAt as string,
-          additions: (pr.additions as number) ?? 0,
-          deletions: (pr.deletions as number) ?? 0,
-          reviewDecision: (pr.reviewDecision as string) ?? null,
-          mergeable: (pr.mergeable as string) ?? null,
-        });
-      }
-    } catch { /* no review-requested PRs or gh error */ }
+    // Fetch authored + review-requested PRs in parallel
+    const [authored, reviewing] = await Promise.all([
+      (async (): Promise<PullRequest[]> => {
+        try {
+          const { stdout } = await exec(
+            'gh',
+            ['pr', 'list', '--author', currentUser, '--state', 'open', '--limit', '30', '--json', fields],
+            { cwd: workspacePath },
+          );
+          return (JSON.parse(stdout) as Array<Record<string, unknown>>).map(pr => mapRawPr(pr, 'author', currentUser));
+        } catch { return []; }
+      })(),
+      (async (): Promise<PullRequest[]> => {
+        try {
+          const { stdout } = await exec(
+            'gh',
+            ['pr', 'list', '--search', `review-requested:${currentUser}`, '--state', 'open', '--limit', '30', '--json', fields],
+            { cwd: workspacePath },
+          );
+          return (JSON.parse(stdout) as Array<Record<string, unknown>>).map(pr => mapRawPr(pr, 'reviewer', ''));
+        } catch { return []; }
+      })(),
+    ]);
 
     // Deduplicate: if a PR appears in both, keep as 'author'
     const seen = new Set(authored.map((pr) => pr.number));
@@ -448,11 +436,6 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     const index = settings.nextMountainIndex ?? 0;
     const mountainName = MOUNTAIN_NAMES[index % MOUNTAIN_NAMES.length] ?? 'everest';
 
-    // Increment counter
-    setWorkspaceSettings(configPath, config, resolved, {
-      nextMountainIndex: index + 1,
-    });
-
     // Build branch name with optional prefix
     const prefix = settings.branchPrefix ?? '';
     const branchName = prefix + mountainName;
@@ -468,12 +451,28 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     const worktreePath = path.join(resolved, '.worktrees', mountainName);
 
     try {
+      // Ensure .worktrees/ is in .gitignore
+      const gitignorePath = path.join(resolved, '.gitignore');
+      try {
+        const existing = await fs.promises.readFile(gitignorePath, 'utf8');
+        if (!existing.includes('.worktrees/')) {
+          await fs.promises.appendFile(gitignorePath, '\n.worktrees/\n');
+        }
+      } catch {
+        await fs.promises.writeFile(gitignorePath, '.worktrees/\n');
+      }
+
       await exec('git', ['worktree', 'add', '-b', branchName, worktreePath, baseBranch], { cwd: resolved });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: `Failed to create worktree: ${msg}` });
       return;
     }
+
+    // Increment mountain counter AFTER successful creation (don't skip names on failure)
+    setWorkspaceSettings(configPath, config, resolved, {
+      nextMountainIndex: index + 1,
+    });
 
     res.json({ branchName, mountainName, worktreePath });
   });

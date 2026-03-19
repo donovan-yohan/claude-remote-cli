@@ -550,8 +550,9 @@ async function main(): Promise<void> {
     let resolvedBranch = '';
 
     if (worktreePath) {
-      // Resume existing worktree
-      args = [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs];
+      // Resume existing worktree — but skip --continue for brand-new worktrees
+      // (flagged by needsBranchRename from the instant worktree creation flow)
+      args = needsBranchRename ? [...baseArgs] : [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs];
       cwd = worktreePath;
       sessionRepoPath = worktreePath;
       worktreeName = worktreePath.split('/').pop() || '';
