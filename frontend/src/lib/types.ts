@@ -57,6 +57,7 @@ export interface PullRequest {
   title: string;
   url: string;
   headRefName: string;
+  baseRefName: string;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   author: string;
   role: 'author' | 'reviewer';
@@ -120,5 +121,6 @@ export interface WorkspaceSettings {
   promptCreatePr?: string;
   promptBranchRename?: string;
   promptGeneral?: string;
+  promptFixConflicts?: string;
   nextMountainIndex?: number;
 }

@@ -221,7 +221,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
-    const fields = 'number,title,url,headRefName,state,author,updatedAt,additions,deletions,reviewDecision,mergeable,mergeStateStatus';
+    const fields = 'number,title,url,headRefName,baseRefName,state,author,updatedAt,additions,deletions,reviewDecision,mergeable,mergeStateStatus';
 
     // Get current GitHub user
     let currentUser = '';
@@ -241,6 +241,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
         title: raw.title as string,
         url: raw.url as string,
         headRefName: raw.headRefName as string,
+        baseRefName: (raw.baseRefName as string) ?? '',
         state: raw.state as 'OPEN' | 'CLOSED' | 'MERGED',
         author: (raw.author as { login?: string })?.login ?? fallbackAuthor,
         role,
@@ -428,26 +429,39 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
+    const existingBranch = typeof req.body?.branch === 'string' ? req.body.branch : undefined;
+
     const resolved = path.resolve(workspacePath);
     const config = getConfig();
     const settings = getWorkspaceSettings(config, resolved);
 
-    // Get next mountain name
-    const index = settings.nextMountainIndex ?? 0;
-    const mountainName = MOUNTAIN_NAMES[index % MOUNTAIN_NAMES.length] ?? 'everest';
+    let branchName: string;
+    let mountainName: string;
+    let gitArgs: string[];
+    let nextMountainIndex: number | undefined;
 
-    // Build branch name with optional prefix
-    const prefix = settings.branchPrefix ?? '';
-    const branchName = prefix + mountainName;
+    if (existingBranch) {
+      // Checkout existing branch into a worktree — sanitize branch name for use as directory name
+      mountainName = existingBranch.replace(/\//g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
+      branchName = existingBranch;
+      gitArgs = ['worktree', 'add', path.join(resolved, '.worktrees', mountainName), existingBranch];
+    } else {
+      // Create a new branch using the next mountain name
+      const index = settings.nextMountainIndex ?? 0;
+      mountainName = MOUNTAIN_NAMES[index % MOUNTAIN_NAMES.length] ?? 'everest';
+      branchName = (settings.branchPrefix ?? '') + mountainName;
+      nextMountainIndex = index + 1;
 
-    // Detect base branch: user setting > git detected > fallback
-    let baseBranch = settings.defaultBranch;
-    if (!baseBranch) {
-      const detected = await detectGitRepo(resolved);
-      baseBranch = detected.defaultBranch ?? 'main';
+      // Detect base branch: user setting > git detected > fallback
+      let baseBranch = settings.defaultBranch;
+      if (!baseBranch) {
+        const detected = await detectGitRepo(resolved);
+        baseBranch = detected.defaultBranch ?? 'main';
+      }
+
+      gitArgs = ['worktree', 'add', '-b', branchName, path.join(resolved, '.worktrees', mountainName), baseBranch];
     }
 
-    // Create git worktree at <workspacePath>/.worktrees/<mountainName>
     const worktreePath = path.join(resolved, '.worktrees', mountainName);
 
     try {
@@ -462,7 +476,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
         await fs.promises.writeFile(gitignorePath, '.worktrees/\n');
       }
 
-      await exec('git', ['worktree', 'add', '-b', branchName, worktreePath, baseBranch], { cwd: resolved });
+      await exec('git', gitArgs, { cwd: resolved });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: `Failed to create worktree: ${msg}` });
@@ -470,9 +484,9 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
 
     // Increment mountain counter AFTER successful creation (don't skip names on failure)
-    setWorkspaceSettings(configPath, config, resolved, {
-      nextMountainIndex: index + 1,
-    });
+    if (nextMountainIndex !== undefined) {
+      setWorkspaceSettings(configPath, config, resolved, { nextMountainIndex });
+    }
 
     res.json({ branchName, mountainName, worktreePath });
   });
