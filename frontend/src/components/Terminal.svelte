@@ -217,7 +217,8 @@
   // React to sessionId changes
   $effect(() => {
     if (sessionId && term && !companionMode) {
-      term.reset();
+      term.write('\x1b[?1049l'); // Exit alternate screen buffer if active
+      term.clear();
       connectPtySocket(
         sessionId,
         term,
