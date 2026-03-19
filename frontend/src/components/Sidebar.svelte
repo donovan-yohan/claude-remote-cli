@@ -122,9 +122,20 @@
           wt.path.startsWith(workspace.path + '/') &&
           !activeWorktreePaths.has(wt.path)
         )}
+        {@const groupedByPath = (() => {
+          const groups = new Map<string, typeof activeSessions>();
+          // Always include repo root as first entry
+          groups.set(workspace.path, []);
+          for (const s of activeSessions) {
+            const existing = groups.get(s.repoPath);
+            if (existing) existing.push(s);
+            else groups.set(s.repoPath, [s]);
+          }
+          return groups;
+        })()}
         <WorkspaceItem
           {workspace}
-          sessions={activeSessions}
+          sessionGroups={groupedByPath}
           {inactiveWorktrees}
           isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
           onSelectWorkspace={handleSelectWorkspace}

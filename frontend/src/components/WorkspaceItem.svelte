@@ -11,7 +11,7 @@
 
   let {
     workspace,
-    sessions,
+    sessionGroups,
     inactiveWorktrees = [],
     isActive,
     onSelectWorkspace,
@@ -24,7 +24,7 @@
     onDeleteWorktree,
   }: {
     workspace: Workspace;
-    sessions: SessionSummary[];
+    sessionGroups: Map<string, SessionSummary[]>;
     inactiveWorktrees?: WorktreeInfo[];
     isActive: boolean;
     onSelectWorkspace: (path: string) => void;
@@ -36,6 +36,9 @@
     onDeleteSession?: (id: string) => void;
     onDeleteWorktree?: (wt: WorktreeInfo) => void;
   } = $props();
+
+  // Flatten all sessions for attention detection
+  let allSessions = $derived([...sessionGroups.values()].flat());
 
   // Derive a consistent color for the workspace letter initial
   const INITIAL_COLORS = [
@@ -60,7 +63,7 @@
   let initialColor = $derived(deriveColor(workspace.name));
   let initial = $derived(workspace.name.charAt(0).toUpperCase());
   let collapsed = $derived(isWorkspaceCollapsed(workspace.path));
-  let totalItems = $derived(sessions.length + inactiveWorktrees.length);
+  let totalItems = $derived(allSessions.length + inactiveWorktrees.length);
 
   function statusDotClass(session: SessionSummary): string {
     const st = getSessionStatus(session);
@@ -71,7 +74,7 @@
     return session.displayName || session.branchName || session.repoName || session.id;
   }
 
-  let hasAttention = $derived(sessions.some(s => getSessionStatus(s) === 'attention'));
+  let hasAttention = $derived(allSessions.some(s => getSessionStatus(s) === 'attention'));
 
   // Force re-derive on time tick
   let _tick = $derived(getTimeTick());
@@ -194,45 +197,68 @@
     </div>
   </div>
 
-  {#if !collapsed && (sessions.length > 0 || inactiveWorktrees.length > 0)}
+  {#if !collapsed && (allSessions.length > 0 || inactiveWorktrees.length > 0)}
     <ul class="session-list">
-      {#each sessions as session (session.id)}
-        {@const meta = getSessionMetaById(session.id)}
-        {@const hasDiff = meta && (meta.additions > 0 || meta.deletions > 0)}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <li
-          class="session-row"
-          class:terminal={session.type === 'terminal'}
-          class:selected={sessionState.activeSessionId === session.id}
-          class:attention={getSessionStatus(session) === 'attention'}
-          onclick={() => onSelectSession(session.id)}
-        >
-          <div class="session-row-primary">
-            {#if session.type === 'terminal'}
-              <span class="terminal-icon">&gt;_</span>
-            {:else}
-              <span class={statusDotClass(session)}></span>
-            {/if}
-            <span class="session-name" class:bold={getSessionStatus(session) === 'attention'}>{sessionDisplayName(session)}</span>
-            {#if hasDiff}
-              <span class="diff-badge">
-                <span class="diff-add">+{meta.additions}</span>
-                <span class="diff-del">-{meta.deletions}</span>
-              </span>
-            {/if}
-          </div>
-          <div class="session-row-secondary">
-            {#if session.worktreeName && session.worktreeName !== sessionDisplayName(session)}
-              <span class="secondary-worktree">{session.worktreeName}</span>
-            {/if}
-            {#if meta?.prNumber}
-              <span class="secondary-pr">PR #{meta.prNumber}</span>
-            {/if}
-            <span class="secondary-time">{sessionTime(session)}</span>
-            <ContextMenu items={sessionMenuItems(session)} />
-          </div>
-        </li>
+      {#each [...sessionGroups.entries()] as [groupPath, groupSessions] (groupPath)}
+        {@const representative = groupSessions.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity))[0]}
+        {@const sessionCount = groupSessions.length}
+        {@const isRepoRoot = groupPath === workspace.path}
+        {@const hasActiveSessions = sessionCount > 0}
+        {@const groupHasAttention = groupSessions.some(s => getSessionStatus(s) === 'attention')}
+        {#if hasActiveSessions && representative}
+          {@const meta = getSessionMetaById(representative.id)}
+          {@const hasDiff = meta && (meta.additions > 0 || meta.deletions > 0)}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <li
+            class="session-row"
+            class:terminal={representative.type === 'terminal'}
+            class:selected={groupSessions.some(s => sessionState.activeSessionId === s.id)}
+            class:attention={groupHasAttention}
+            onclick={() => onSelectSession(representative.id)}
+          >
+            <div class="session-row-primary">
+              {#if representative.type === 'terminal'}
+                <span class="terminal-icon">&gt;_</span>
+              {:else}
+                <span class={statusDotClass(representative)}></span>
+              {/if}
+              <span class="session-name" class:bold={groupHasAttention}>{sessionDisplayName(representative)}</span>
+              {#if sessionCount > 1}
+                <span class="session-count-badge">{sessionCount}</span>
+              {/if}
+              {#if hasDiff}
+                <span class="diff-badge">
+                  <span class="diff-add">+{meta.additions}</span>
+                  <span class="diff-del">-{meta.deletions}</span>
+                </span>
+              {/if}
+            </div>
+            <div class="session-row-secondary">
+              {#if representative.worktreeName && representative.worktreeName !== sessionDisplayName(representative)}
+                <span class="secondary-worktree">{representative.worktreeName}</span>
+              {/if}
+              {#if meta?.prNumber}
+                <span class="secondary-pr">PR #{meta.prNumber}</span>
+              {/if}
+              <span class="secondary-time">{sessionTime(representative)}</span>
+              <ContextMenu items={sessionMenuItems(representative)} />
+            </div>
+          </li>
+        {:else if isRepoRoot}
+          <!-- Persistent repo root entry — always shown even with no active sessions -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <li
+            class="session-row inactive"
+            onclick={() => onSelectWorkspace(workspace.path)}
+          >
+            <div class="session-row-primary">
+              <span class="dot dot-inactive"></span>
+              <span class="session-name">{workspace.name}</span>
+            </div>
+          </li>
+        {/if}
       {/each}
       {#each inactiveWorktrees as wt (wt.path)}
         {@const meta = getSessionMetaById(wt.path)}
@@ -479,6 +505,23 @@
     white-space: nowrap;
     flex-shrink: 0;
     opacity: 0.7;
+  }
+
+  /* Session count badge */
+  .session-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    background: var(--border);
+    color: var(--text-muted);
+    font-size: 0.55rem;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    padding: 0 4px;
+    flex-shrink: 0;
   }
 
   /* Diff badge */
