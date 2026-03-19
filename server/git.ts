@@ -294,11 +294,6 @@ async function getPrForBranch(
       mergeable: string;
     };
 
-    // Only return OPEN PRs — gh pr view returns merged/closed PRs too
-    if (data.state !== 'OPEN') {
-      return null;
-    }
-
     return {
       number: data.number,
       title: data.title,

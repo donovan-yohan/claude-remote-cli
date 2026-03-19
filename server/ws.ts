@@ -61,7 +61,11 @@ async function spawnBranchRename(
   broadcastEvent: (type: string, data?: Record<string, unknown>) => void,
 ): Promise<void> {
   try {
-    const prompt = `Output ONLY a short kebab-case git branch name (no explanation, no backticks, no prefix, just the name) that describes this task:\n\n${firstMessage.slice(0, 500)}`;
+    const cleanMessage = firstMessage.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/[\x00-\x1f]/g, ' ').trim();
+    if (!cleanMessage) return;
+    const basePrompt = session.branchRenamePrompt
+      ?? `Output ONLY a short kebab-case git branch name (no explanation, no backticks, no prefix, just the name) that describes this task:`;
+    const prompt = `${basePrompt}\n\n${cleanMessage.slice(0, 500)}`;
     const { stdout } = await execFileAsync('claude', ['-p', '--model', 'haiku', prompt], {
       cwd: session.cwd,
       timeout: 30000,
@@ -214,6 +218,10 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       } catch (_) {}
 
       // Sideband branch rename: capture first message, pass through unmodified, rename out-of-band
+      if (ptySession.needsBranchRename && ptySession.agentState !== 'waiting-for-input') {
+        ptySession.pty.write(str);
+        return;
+      }
       if (ptySession.needsBranchRename) {
         if (!(ptySession as any)._renameBuffer) (ptySession as any)._renameBuffer = '';
         const enterIndex = str.indexOf('\r');

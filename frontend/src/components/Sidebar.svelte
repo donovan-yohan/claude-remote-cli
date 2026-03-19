@@ -222,14 +222,16 @@
       </button>
     {/if}
 
-    {#if !ui.reorderMode}
-      <button class="add-workspace-btn" onclick={onAddWorkspace}>
-        + Add Workspace
+    <div class="sidebar-footer-row">
+      {#if !ui.reorderMode}
+        <button class="add-workspace-btn" onclick={onAddWorkspace}>
+          + Add Workspace
+        </button>
+      {/if}
+      <button class="settings-icon-btn" onclick={() => onOpenSettings()} aria-label="Settings">
+        ⚙
       </button>
-    {/if}
-    <button class="settings-btn" onclick={() => onOpenSettings()}>
-      ⚙ Settings
-    </button>
+    </div>
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-handle" onmousedown={startResize} ondblclick={resetWidth}></div>
@@ -344,27 +346,29 @@
     text-align: center;
   }
 
-  /* Bottom buttons */
-  .add-workspace-btn {
+  /* Bottom footer row */
+  .sidebar-footer-row {
+    display: flex;
+    gap: 8px;
     margin: 8px;
+    align-items: stretch;
+    flex-shrink: 0;
+  }
+
+  .add-workspace-btn {
+    flex: 1;
     padding: 10px 12px;
     min-height: 40px;
     background: none;
-    border: 1px solid var(--border);
+    border: 1px solid var(--accent);
     border-radius: 0;
-    color: var(--text);
+    color: var(--accent);
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     cursor: pointer;
     touch-action: manipulation;
     text-align: center;
-    flex-shrink: 0;
-    transition: background 0.1s, border-color 0.1s;
-  }
-
-  .add-workspace-btn {
-    border-color: var(--accent);
-    color: var(--accent);
+    transition: background 0.1s;
   }
 
   .add-workspace-btn:hover {
@@ -401,29 +405,29 @@
     background: var(--border);
   }
 
-  .settings-btn {
-    margin: 0 8px 8px;
-    padding: 10px 12px;
+  .settings-icon-btn {
+    width: 40px;
     min-height: 40px;
     background: none;
     border: 1px solid var(--border);
     border-radius: 0;
     color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
+    font-size: 1rem;
     cursor: pointer;
     touch-action: manipulation;
-    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    transition: background 0.1s;
+    transition: background 0.1s, color 0.1s;
   }
 
-  .settings-btn:hover {
+  .settings-icon-btn:hover {
     background: var(--surface-hover);
     color: var(--text);
   }
 
-  .settings-btn:active {
+  .settings-icon-btn:active {
     background: var(--border);
   }
 

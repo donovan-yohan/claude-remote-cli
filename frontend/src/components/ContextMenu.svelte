@@ -8,13 +8,16 @@
 
   let {
     items,
+    hideTrigger = false,
   }: {
     items: MenuItem[];
+    hideTrigger?: boolean;
   } = $props();
 
   let open = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
   let menuEl = $state<HTMLUListElement | null>(null);
+  let anchorRect = $state<DOMRect | null>(null);
 
   function toggle(e: MouseEvent) {
     e.stopPropagation();
@@ -28,14 +31,23 @@
 
   function close() {
     open = false;
+    anchorRect = null;
+  }
+
+  /** Open the menu programmatically, anchored to the given element */
+  export function openAt(anchor: HTMLElement) {
+    anchorRect = anchor.getBoundingClientRect();
+    open = true;
+    requestAnimationFrame(positionMenu);
   }
 
   function positionMenu() {
-    if (!triggerEl || !menuEl) return;
-    const rect = triggerEl.getBoundingClientRect();
+    if (!menuEl) return;
+    const rect = anchorRect || triggerEl?.getBoundingClientRect();
+    if (!rect) return;
     const menuRect = menuEl.getBoundingClientRect();
 
-    // Right-align to trigger, open below by default
+    // Right-align to anchor, open below by default
     let top = rect.bottom + 4;
     let left = rect.right - menuRect.width;
 
@@ -74,16 +86,18 @@
 
 <svelte:document onkeydown={handleKeydown} />
 
-<button
-  class="context-menu-trigger"
-  bind:this={triggerEl}
-  onclick={toggle}
-  aria-label="Actions"
-  aria-haspopup="true"
-  aria-expanded={open}
->
-  &middot;&middot;&middot;
-</button>
+{#if !hideTrigger}
+  <button
+    class="context-menu-trigger"
+    bind:this={triggerEl}
+    onclick={toggle}
+    aria-label="Actions"
+    aria-haspopup="true"
+    aria-expanded={open}
+  >
+    &middot;&middot;&middot;
+  </button>
+{/if}
 
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->

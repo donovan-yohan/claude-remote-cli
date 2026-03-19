@@ -804,7 +804,7 @@ async function main(): Promise<void> {
   });
 
   // POST /sessions/repo — start a session in the repo root (no worktree)
-  app.post('/sessions/repo', requireAuth, (req, res) => {
+  app.post('/sessions/repo', requireAuth, async (req, res) => {
     const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux, cols, rows } = req.body as {
       repoPath?: string;
       repoName?: string;
@@ -840,6 +840,12 @@ async function main(): Promise<void> {
     const roots = config.rootDirs || [];
     const root = roots.find(function (r) { return repoPath.startsWith(r); }) || '';
 
+    let branchName = '';
+    try {
+      const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoPath });
+      branchName = stdout.trim();
+    } catch { /* non-fatal */ }
+
     const session = sessions.create({
       type: 'repo',
       agent: resolvedAgent,
@@ -849,6 +855,7 @@ async function main(): Promise<void> {
       root,
       displayName: name,
       args,
+      branchName,
       useTmux: useTmux ?? config.launchInTmux,
       ...(safeCols != null && { cols: safeCols }),
       ...(safeRows != null && { rows: safeRows }),

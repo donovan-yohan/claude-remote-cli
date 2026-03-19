@@ -22,6 +22,7 @@ See `docs/exec-plans/completed/` for historical plans (26 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `sidebar-ux-and-branch-pr-bugs` | 2026-03-19 | 7 sidebar fixes: menu readability, triple-dots UX, branch listener, PR filter, grip dots, footer layout, repo branch name |
 | `output-parser-sideband-rename` | 2026-03-19 | Vendor-extensible output parser + sideband branch rename (replaces PTY injection) |
 | `default-repo-session-sidebar-fix` | 2026-03-19 | Fix 6 sidebar bugs: hidden repo root, wrong name, wrong click, missing 2nd row, item order, dots alignment |
 | `sdk-chat-ui-remnant` | 2026-03-19 | Remove dead SDK chat UI code — PTY-only architecture (2,814 lines removed) |

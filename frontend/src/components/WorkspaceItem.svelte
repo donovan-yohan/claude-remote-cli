@@ -80,6 +80,37 @@
   let creatingWorktree = $derived(isItemLoading(`new-worktree:${workspace.path}`));
   let inReorderMode = $derived(ui.reorderMode);
 
+  // Detect mobile for context menu behavior
+  let isMobile = $state(typeof window !== 'undefined' && window.matchMedia('(max-width: 600px)').matches);
+
+  // Context menu refs (keyed by row identifier)
+  let menuRefs: Record<string, ContextMenu> = {};
+
+  // Long-press handling for mobile context menus
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function handleRowTouchStart(key: string, el: HTMLElement) {
+    longPressTimer = setTimeout(() => {
+      longPressTimer = null;
+      const menu = menuRefs[key];
+      if (menu) menu.openAt(el);
+    }, 500);
+  }
+
+  function handleRowTouchEnd() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+
+  function handleRowTouchMove() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+
   // Force re-derive on time tick
   let _tick = $derived(getTimeTick());
 
@@ -172,10 +203,7 @@
     onclick={() => { if (!inReorderMode) onSelectWorkspace(workspace.path); }}
   >
     <div class="workspace-left">
-      {#if inReorderMode}
-        <span class="grip-handle grip-visible">⠿</span>
-      {:else}
-        <span class="grip-handle">⠿</span>
+      {#if !inReorderMode}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <span
@@ -222,6 +250,9 @@
             class:selected={groupSessions.some(s => sessionState.activeSessionId === s.id)}
             class:attention={groupHasAttention}
             onclick={() => onSelectSession(representative.id)}
+            ontouchstart={(e) => handleRowTouchStart(representative.id, e.currentTarget as HTMLElement)}
+            ontouchend={handleRowTouchEnd}
+            ontouchmove={handleRowTouchMove}
           >
             <div class="session-row-primary">
               {#if representative.type === 'terminal'}
@@ -248,8 +279,9 @@
               {#if meta?.prNumber}
                 <span class="secondary-pr">PR #{meta.prNumber}</span>
               {/if}
-              <span class="context-menu-spacer"></span>
-              <ContextMenu items={sessionMenuItems(representative)} />
+            </div>
+            <div class="row-menu-overlay">
+              <ContextMenu items={sessionMenuItems(representative)} hideTrigger={isMobile} bind:this={menuRefs[representative.id]} />
             </div>
           </li>
         {:else if isRepoRoot}
@@ -312,6 +344,9 @@
               clearLoading(wt.path);
             }
           }}
+          ontouchstart={(e) => handleRowTouchStart(wt.path, e.currentTarget as HTMLElement)}
+          ontouchend={handleRowTouchEnd}
+          ontouchmove={handleRowTouchMove}
         >
           <div class="session-row-primary">
             <span class="dot dot-inactive"></span>
@@ -331,8 +366,9 @@
             {#if meta?.prNumber}
               <span class="secondary-pr">PR #{meta.prNumber}</span>
             {/if}
-            <span class="context-menu-spacer"></span>
-            <ContextMenu items={worktreeMenuItems(wt)} />
+          </div>
+          <div class="row-menu-overlay">
+            <ContextMenu items={worktreeMenuItems(wt)} hideTrigger={isMobile} bind:this={menuRefs[wt.path]} />
           </div>
         </li>
       {/each}
@@ -383,30 +419,6 @@
     gap: 8px;
     min-width: 0;
     flex: 1;
-  }
-
-  /* Grip handle for drag reorder */
-  .grip-handle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    cursor: grab;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity 0.12s;
-    user-select: none;
-  }
-
-  .workspace-header:hover .grip-handle {
-    opacity: 1;
-  }
-
-  .grip-handle.grip-visible {
-    opacity: 1;
   }
 
   .workspace-header.reorder-mode {
@@ -509,6 +521,7 @@
   }
 
   .session-row {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -554,7 +567,6 @@
     padding-left: 15px;
     font-size: 0.65rem;
     color: var(--text-muted);
-    opacity: 0.7;
     min-width: 0;
   }
 
@@ -565,8 +577,19 @@
     min-width: 0;
   }
 
-  .context-menu-spacer {
-    flex: 1;
+  /* Context menu overlay — positioned over the row, visible on hover (desktop) */
+  .row-menu-overlay {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 0.12s;
+    z-index: 2;
+  }
+
+  .session-row:hover .row-menu-overlay {
+    opacity: 1;
   }
 
   .secondary-pr {
@@ -715,9 +738,9 @@
       opacity: 1;
     }
 
-    /* Always show grip in reorder mode on mobile */
-    .grip-handle.grip-visible {
-      opacity: 1;
+    /* On mobile, hide the dots overlay — long-press opens menu instead */
+    .row-menu-overlay {
+      display: none;
     }
   }
 </style>
