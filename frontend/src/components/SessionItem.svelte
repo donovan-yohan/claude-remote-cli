@@ -160,6 +160,7 @@
 
   li.active-session {
     background: var(--bg);
+    border-left: 3px solid transparent;
   }
 
   li.active-session:hover {
@@ -169,6 +170,7 @@
   li.active-session.selected {
     background: var(--accent);
     color: #fff;
+    border-left-color: #fff;
   }
 
   li.active-session.selected .session-sub,

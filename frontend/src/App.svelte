@@ -167,6 +167,14 @@
           navigateToSession(sessionParam, tabParam || 'repo');
         }
 
+        // Auto-select if exactly one session exists and none is selected
+        const singleSession = !sessionState.activeSessionId && !sessionParam && sessionState.sessions.length === 1
+          ? sessionState.sessions[0]
+          : undefined;
+        if (singleSession) {
+          handleSelectSession(singleSession.id);
+        }
+
         // Initialize notifications for existing sessions
         for (const s of sessionState.sessions) {
           initSessionNotification(s.id, configState.defaultNotifications);
