@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fetchWorkspaceSettings, updateWorkspaceSettings, fetchBranches } from '../../lib/api.js';
+  import { updateWorkspaceSettings, fetchBranches, fetchMergedWorkspaceSettings } from '../../lib/api.js';
   import type { WorkspaceSettings } from '../../lib/types.js';
 
   interface Props {
@@ -30,6 +30,9 @@
   let promptBranchRename = $state('');
   let promptGeneral = $state('');
 
+  let overriddenKeys = $state<string[]>([]);
+  let originalSettings = $state<Record<string, unknown>>({});
+
   // Collapsible prompt sections
   let codeReviewOpen = $state(false);
   let createPrOpen = $state(false);
@@ -59,13 +62,20 @@
     dialogEl.showModal();
 
     try {
-      const [settings, branchList] = await Promise.all([
-        fetchWorkspaceSettings(path),
+      const [mergedResult, branchList] = await Promise.all([
+        fetchMergedWorkspaceSettings(path),
         fetchBranches(path).catch(() => [] as string[]),
       ]);
 
       branches = branchList;
-      applySettings(settings);
+      applySettings(mergedResult.settings);
+      originalSettings = {
+        defaultAgent: mergedResult.settings.defaultAgent,
+        defaultContinue: mergedResult.settings.defaultContinue,
+        defaultYolo: mergedResult.settings.defaultYolo,
+        launchInTmux: mergedResult.settings.launchInTmux,
+      };
+      overriddenKeys = mergedResult.overridden;
     } catch {
       error = 'Failed to load workspace settings.';
     }
@@ -94,12 +104,13 @@
     error = '';
     saveSuccess = false;
     try {
-      const settings: Record<string, unknown> = {
-        defaultAgent,
-        defaultContinue,
-        defaultYolo,
-        launchInTmux,
-      };
+      const settings: Record<string, unknown> = {};
+      // Only include session default fields if user changed them from the effective value
+      if (defaultAgent !== originalSettings.defaultAgent) settings.defaultAgent = defaultAgent;
+      if (defaultContinue !== originalSettings.defaultContinue) settings.defaultContinue = defaultContinue;
+      if (defaultYolo !== originalSettings.defaultYolo) settings.defaultYolo = defaultYolo;
+      if (launchInTmux !== originalSettings.launchInTmux) settings.launchInTmux = launchInTmux;
+      // Always include non-boolean fields if they have values
       if (defaultBranch) settings.defaultBranch = defaultBranch;
       if (remote) settings.remote = remote;
       if (branchPrefix) settings.branchPrefix = branchPrefix;
@@ -107,11 +118,42 @@
       if (promptCreatePr) settings.promptCreatePr = promptCreatePr;
       if (promptBranchRename) settings.promptBranchRename = promptBranchRename;
       if (promptGeneral) settings.promptGeneral = promptGeneral;
-      await updateWorkspaceSettings(workspacePath, settings);
+      if (Object.keys(settings).length > 0) {
+        await updateWorkspaceSettings(workspacePath, settings);
+      }
       saveSuccess = true;
       setTimeout(() => { saveSuccess = false; }, 2000);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to save settings.';
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function handleResetSessionDefaults() {
+    saving = true;
+    error = '';
+    try {
+      await updateWorkspaceSettings(workspacePath, {
+        defaultAgent: null,
+        defaultContinue: null,
+        defaultYolo: null,
+        launchInTmux: null,
+      } as unknown as Record<string, unknown>);
+      // Re-fetch merged settings to update UI
+      const merged = await fetchMergedWorkspaceSettings(workspacePath);
+      applySettings(merged.settings);
+      originalSettings = {
+        defaultAgent: merged.settings.defaultAgent,
+        defaultContinue: merged.settings.defaultContinue,
+        defaultYolo: merged.settings.defaultYolo,
+        launchInTmux: merged.settings.launchInTmux,
+      };
+      overriddenKeys = merged.overridden;
+      saveSuccess = true;
+      setTimeout(() => { saveSuccess = false; }, 2000);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to reset settings.';
     } finally {
       saving = false;
     }
@@ -193,7 +235,12 @@
 
       <!-- Session Defaults -->
       <section class="settings-section">
-        <h3 class="section-label">SESSION DEFAULTS</h3>
+        <h3 class="section-label">
+          SESSION DEFAULTS
+          {#if overriddenKeys.some(k => ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'].includes(k))}
+            <span class="override-badge">overridden</span>
+          {/if}
+        </h3>
 
         <div class="inline-row">
           <label class="field-label" for="ws-agent">Default agent</label>
@@ -308,6 +355,11 @@
         Remove Workspace
       </button>
       <div class="footer-right">
+        {#if overriddenKeys.some(k => ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'].includes(k))}
+          <button class="btn btn-ghost" onclick={handleResetSessionDefaults} disabled={saving}>
+            Reset to Global
+          </button>
+        {/if}
         {#if saveSuccess}
           <span class="save-success">Saved</span>
         {/if}
@@ -618,5 +670,25 @@
   .btn-danger:hover {
     background: rgba(192, 57, 43, 0.1);
     border-color: #c0392b;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border);
+  }
+
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  .override-badge {
+    font-size: 0.68rem;
+    font-weight: 400;
+    color: var(--accent);
+    letter-spacing: 0;
+    text-transform: none;
+    margin-left: 6px;
   }
 </style>

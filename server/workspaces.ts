@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
-import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings } from './config.js';
+import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
 import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace, WorkspaceSettings } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
@@ -425,6 +425,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
   // -------------------------------------------------------------------------
   router.get('/settings', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
+    const merged = req.query.merged === 'true';
 
     if (!workspacePath) {
       res.status(400).json({ error: 'path query parameter is required' });
@@ -433,9 +434,19 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
 
     const config = getConfig();
     const resolved = path.resolve(workspacePath);
-    const settings: WorkspaceSettings = config.workspaceSettings?.[resolved] ?? {};
 
-    res.json(settings);
+    if (merged) {
+      const wsOverrides = config.workspaceSettings?.[resolved] ?? {};
+      const effective = getWorkspaceSettings(config, resolved);
+      const overridden: string[] = [];
+      for (const key of ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'] as const) {
+        if (wsOverrides[key] !== undefined) overridden.push(key);
+      }
+      res.json({ settings: effective, overridden });
+    } else {
+      const settings = config.workspaceSettings?.[resolved] ?? {};
+      res.json(settings);
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -450,16 +461,34 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
 
     const resolved = path.resolve(workspacePath);
-    const updates = req.body as Partial<WorkspaceSettings>;
+    const updates = req.body as Record<string, unknown>;
 
     const config = getConfig();
-    const current: WorkspaceSettings = config.workspaceSettings?.[resolved] ?? {};
-    const merged: WorkspaceSettings = { ...current, ...updates };
 
-    config.workspaceSettings = { ...config.workspaceSettings, [resolved]: merged };
-    saveConfig(configPath, config);
+    // Separate null values (deletions) from actual updates
+    const keysToDelete: string[] = [];
+    const keysToUpdate: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null) {
+        keysToDelete.push(key);
+      } else {
+        keysToUpdate[key] = value;
+      }
+    }
 
-    res.json(merged);
+    // Apply deletions first
+    if (keysToDelete.length > 0) {
+      deleteWorkspaceSettingKeys(configPath, config, resolved, keysToDelete);
+    }
+
+    // Apply updates
+    if (Object.keys(keysToUpdate).length > 0) {
+      setWorkspaceSettings(configPath, config, resolved, keysToUpdate);
+    }
+
+    // Return the current raw workspace settings
+    const final = config.workspaceSettings?.[resolved] ?? {};
+    res.json(final);
   });
 
   // -------------------------------------------------------------------------

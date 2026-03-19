@@ -173,8 +173,8 @@
 
       <!-- Session defaults section -->
       <section class="settings-section">
-        <h3 class="section-title">Session Defaults</h3>
-        <p class="section-desc">Default options for new sessions. Override per-session via Customize.</p>
+        <h3 class="section-title">Global Defaults</h3>
+        <p class="section-desc">Default options for all workspaces. Override per-workspace in workspace settings.</p>
         <div class="devtools-row">
           <input id="default-continue" type="checkbox" class="dialog-checkbox" bind:checked={config.defaultContinue} onchange={handleContinueChange} />
           <label for="default-continue" class="devtools-label">Continue existing session</label>

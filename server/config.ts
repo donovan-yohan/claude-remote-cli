@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import type { Config, WorkspaceSettings, WorktreeMetadata } from './types.js';
+import type { AgentType, Config, WorkspaceSettings, WorktreeMetadata } from './types.js';
 
 export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs' | 'workspaceSettings' | 'vapidPublicKey' | 'vapidPrivateKey'> = {
   host: '0.0.0.0',
@@ -82,6 +82,54 @@ export function getWorkspaceSettings(config: Config, workspacePath: string): Wor
   const perWorkspace = config.workspaceSettings?.[workspacePath] || {};
   // Per-workspace settings override global — only for defined keys
   return { ...globalDefaults, ...perWorkspace };
+}
+
+export interface ResolvedSessionSettings {
+  agent: AgentType;
+  yolo: boolean;
+  continue: boolean;
+  useTmux: boolean;
+  claudeArgs: string[];
+}
+
+export interface SessionSettingsOverrides {
+  agent?: AgentType | undefined;
+  yolo?: boolean | undefined;
+  continue?: boolean | undefined;
+  useTmux?: boolean | undefined;
+  claudeArgs?: string[] | undefined;
+}
+
+export function resolveSessionSettings(
+  config: Config,
+  repoPath: string,
+  overrides: SessionSettingsOverrides,
+): ResolvedSessionSettings {
+  const ws = getWorkspaceSettings(config, repoPath);
+  return {
+    agent: overrides.agent ?? ws.defaultAgent ?? 'claude' as AgentType,
+    yolo: overrides.yolo ?? ws.defaultYolo ?? false,
+    continue: overrides.continue ?? ws.defaultContinue ?? true,
+    useTmux: overrides.useTmux ?? ws.launchInTmux ?? false,
+    claudeArgs: overrides.claudeArgs ?? ws.claudeArgs ?? [],
+  };
+}
+
+export function deleteWorkspaceSettingKeys(
+  configPath: string,
+  config: Config,
+  workspacePath: string,
+  keys: string[],
+): void {
+  if (!config.workspaceSettings?.[workspacePath]) return;
+  for (const key of keys) {
+    delete (config.workspaceSettings[workspacePath] as Record<string, unknown>)[key];
+  }
+  // Clean up empty workspace entries
+  if (Object.keys(config.workspaceSettings[workspacePath]!).length === 0) {
+    delete config.workspaceSettings[workspacePath];
+  }
+  saveConfig(configPath, config);
 }
 
 export function setWorkspaceSettings(

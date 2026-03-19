@@ -349,6 +349,17 @@ export async function fetchWorkspaceSettings(workspacePath: string): Promise<Wor
   return json<WorkspaceSettings>(await fetch('/workspaces/settings?path=' + encodeURIComponent(workspacePath)));
 }
 
+export interface MergedWorkspaceSettings {
+  settings: WorkspaceSettings;
+  overridden: string[];
+}
+
+export async function fetchMergedWorkspaceSettings(workspacePath: string): Promise<MergedWorkspaceSettings> {
+  return json<MergedWorkspaceSettings>(
+    await fetch('/workspaces/settings?merged=true&path=' + encodeURIComponent(workspacePath))
+  );
+}
+
 export async function updateWorkspaceSettings(workspacePath: string, settings: WorkspaceSettings): Promise<void> {
   const res = await fetch('/workspaces/settings?path=' + encodeURIComponent(workspacePath), {
     method: 'PATCH',

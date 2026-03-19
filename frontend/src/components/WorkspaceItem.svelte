@@ -299,7 +299,6 @@
                 const session = await createRepoSession({
                   repoPath: workspace.path,
                   repoName: workspace.name,
-                  continue: true,
                 });
                 await refreshAll();
                 onSelectSession(session.id);

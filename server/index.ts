@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 
-import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir } from './config.js';
+import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir, resolveSessionSettings } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache } from './sessions.js';
@@ -589,12 +589,12 @@ async function main(): Promise<void> {
     const safeCols = typeof cols === 'number' && Number.isFinite(cols) && cols >= 1 && cols <= 500 ? Math.round(cols) : undefined;
     const safeRows = typeof rows === 'number' && Number.isFinite(rows) && rows >= 1 && rows <= 200 ? Math.round(rows) : undefined;
 
-    const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
+    const resolved = resolveSessionSettings(config, repoPath, { agent, yolo, useTmux, claudeArgs });
+    const resolvedAgent = resolved.agent;
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
     const baseArgs = [
-      ...(config.claudeArgs || []),
-      ...(yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
-      ...(claudeArgs || []),
+      ...(resolved.claudeArgs),
+      ...(resolved.yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
     ];
 
     // Compute root by matching repoPath against configured rootDirs
@@ -708,7 +708,7 @@ async function main(): Promise<void> {
                 root,
                 displayName: name,
                 args: baseArgs,
-                useTmux: useTmux ?? config.launchInTmux,
+                useTmux: resolved.useTmux,
                 ...(safeCols != null && { cols: safeCols }),
                 ...(safeRows != null && { rows: safeRows }),
               });
@@ -736,7 +736,7 @@ async function main(): Promise<void> {
                 displayName: displayNameVal,
                 args,
                 configPath: CONFIG_PATH,
-                useTmux: useTmux ?? config.launchInTmux,
+                useTmux: resolved.useTmux,
                 ...(safeCols != null && { cols: safeCols }),
                 ...(safeRows != null && { rows: safeRows }),
               });
@@ -784,7 +784,7 @@ async function main(): Promise<void> {
       displayName,
       args,
       configPath: CONFIG_PATH,
-      useTmux: useTmux ?? config.launchInTmux,
+      useTmux: resolved.useTmux,
       ...(safeCols != null && { cols: safeCols }),
       ...(safeRows != null && { rows: safeRows }),
       needsBranchRename: isMountainName || (needsBranchRename ?? false),
@@ -821,7 +821,10 @@ async function main(): Promise<void> {
       return;
     }
 
-    const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
+    const resolved = resolveSessionSettings(config, repoPath, {
+      agent, yolo, continue: continueSession, useTmux, claudeArgs,
+    });
+    const resolvedAgent = resolved.agent;
 
     // Sanitize optional terminal dimensions
     const safeCols = typeof cols === 'number' && Number.isFinite(cols) && cols >= 1 && cols <= 500 ? Math.round(cols) : undefined;
@@ -831,11 +834,10 @@ async function main(): Promise<void> {
 
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
     const baseArgs = [
-      ...(config.claudeArgs || []),
-      ...(yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
-      ...(claudeArgs || []),
+      ...(resolved.claudeArgs),
+      ...(resolved.yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
     ];
-    const args = continueSession ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs] : [...baseArgs];
+    const args = resolved.continue ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs] : [...baseArgs];
 
     const roots = config.rootDirs || [];
     const root = roots.find(function (r) { return repoPath.startsWith(r); }) || '';
@@ -856,7 +858,7 @@ async function main(): Promise<void> {
       displayName: name,
       args,
       branchName,
-      useTmux: useTmux ?? config.launchInTmux,
+      useTmux: resolved.useTmux,
       ...(safeCols != null && { cols: safeCols }),
       ...(safeRows != null && { rows: safeRows }),
     });

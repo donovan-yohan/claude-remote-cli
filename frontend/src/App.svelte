@@ -367,26 +367,12 @@
     if (isItemLoading(loadingKey)) return;
     setLoading(loadingKey);
     try {
-      // Resolve session defaults: workspace settings override global config
-      let yolo = configState.defaultYolo;
-      let agent: string = configState.defaultAgent;
-      let useTmux = configState.launchInTmux;
-      try {
-        const ws = await fetchWorkspaceSettings(workspace.path);
-        if (ws.defaultYolo !== undefined) yolo = ws.defaultYolo;
-        if (ws.defaultAgent) agent = ws.defaultAgent;
-        if (ws.launchInTmux !== undefined) useTmux = ws.launchInTmux;
-      } catch { /* use global defaults */ }
-
       const { branchName, worktreePath } = await createWorktree(workspace.path);
       const session = await createSession({
         repoPath: workspace.path,
         repoName: workspace.name,
         worktreePath,
         branchName,
-        yolo,
-        agent,
-        useTmux,
         needsBranchRename: true,
       });
       await refreshAll();
