@@ -114,7 +114,8 @@
         {@const activeSessions = getSessionsForWorkspace(workspace.path)}
         {@const activeWorktreePaths = new Set(activeSessions.map(s => s.repoPath))}
         {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
-          (wt.repoPath === workspace.path || wt.repoPath.startsWith(workspace.path + '/')) &&
+          wt.repoPath === workspace.path &&
+          wt.path.startsWith(workspace.path + '/') &&
           !activeWorktreePaths.has(wt.path)
         )}
         <WorkspaceItem
