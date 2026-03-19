@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll, setAttention, clearAttention, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, refreshSessionMeta, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, setAttention, setAgentState, clearAttention, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, refreshSessionMeta, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
@@ -253,8 +253,12 @@
       connectEventSocket((msg) => {
         if (msg.type === 'worktrees-changed') {
           refreshAll();
+        } else if (msg.type === 'session-state-changed' && msg.sessionId && msg.state) {
+          setAgentState(msg.sessionId, msg.state as import('./lib/types.js').AgentState);
         } else if (msg.type === 'session-idle-changed' && msg.sessionId) {
           setAttention(msg.sessionId, msg.idle ?? false);
+        } else if (msg.type === 'session-renamed' && msg.sessionId) {
+          renameSession(msg.sessionId, msg.branchName ?? '', msg.displayName ?? '');
         } else if (msg.type === 'session-ended') {
           queryClient.invalidateQueries({ queryKey: ['pr'] });
           queryClient.invalidateQueries({ queryKey: ['ci-status'] });

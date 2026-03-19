@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgentType, Session, SessionSummary, SessionMeta, SessionType } from './types.js';
+import type { AgentType, AgentState, Session, SessionSummary, SessionMeta, SessionType } from './types.js';
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './types.js';
 import { createPtySession } from './pty-handler.js';
 import type { CreatePtyParams } from './pty-handler.js';
@@ -82,6 +82,13 @@ function onIdleChange(cb: IdleChangeCallback): void {
   idleChangeCallbacks.push(cb);
 }
 
+type StateChangeCallback = (sessionId: string, state: AgentState) => void;
+const stateChangeCallbacks: StateChangeCallback[] = [];
+
+function onStateChange(cb: StateChangeCallback): void {
+  stateChangeCallbacks.push(cb);
+}
+
 type SessionEndCallback = (sessionId: string, repoPath: string, branchName: string) => void;
 const sessionEndCallbacks: SessionEndCallback[] = [];
 
@@ -119,7 +126,7 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     restored: paramRestored,
   };
 
-  const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks);
+  const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks, stateChangeCallbacks);
   if (paramNeedsBranchRename) {
     ptySession.needsBranchRename = true;
   }
@@ -155,6 +162,7 @@ function list(): SessionSummary[] {
       tmuxSessionName: s.tmuxSessionName,
       status: s.status,
       needsBranchRename: !!s.needsBranchRename,
+      agentState: s.agentState,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
@@ -429,4 +437,4 @@ async function populateMetaCache(): Promise<void> {
 // Re-export pty-handler utilities for backward compatibility
 export { generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
 
-export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

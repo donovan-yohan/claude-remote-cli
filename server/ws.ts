@@ -53,6 +53,48 @@ function startBranchWatcher(
   }, BRANCH_POLL_INTERVAL_MS);
 }
 
+/** Sideband branch rename: uses headless claude to generate a branch name from the first message */
+async function spawnBranchRename(
+  session: Session,
+  firstMessage: string,
+  cfgPath: string | undefined,
+  broadcastEvent: (type: string, data?: Record<string, unknown>) => void,
+): Promise<void> {
+  try {
+    const prompt = `Output ONLY a short kebab-case git branch name (no explanation, no backticks, no prefix, just the name) that describes this task:\n\n${firstMessage.slice(0, 500)}`;
+    const { stdout } = await execFileAsync('claude', ['-p', '--model', 'haiku', prompt], {
+      cwd: session.cwd,
+      timeout: 30000,
+    });
+    const branchName = stdout.trim().replace(/`/g, '').replace(/[^a-z0-9-]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 60);
+    if (!branchName) return;
+
+    await execFileAsync('git', ['branch', '-m', branchName], { cwd: session.cwd });
+
+    // Update session state
+    const displayName = branchToDisplayName(branchName);
+    session.branchName = branchName;
+    session.displayName = displayName;
+    broadcastEvent('session-renamed', {
+      sessionId: session.id,
+      branchName,
+      displayName,
+    });
+
+    if (cfgPath) {
+      writeMeta(cfgPath, {
+        worktreePath: session.repoPath,
+        displayName,
+        lastActivity: new Date().toISOString(),
+        branchName,
+      });
+    }
+  } catch {
+    // Sideband rename is best-effort — fall back to branch watcher if claude CLI isn't available
+    if (cfgPath) startBranchWatcher(session, broadcastEvent, cfgPath);
+  }
+}
+
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
   if (!cookieHeader) return cookies;
@@ -171,27 +213,24 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
         }
       } catch (_) {}
 
-      // Branch rename interception: prepend rename prompt before the user's first message
+      // Sideband branch rename: capture first message, pass through unmodified, rename out-of-band
       if (ptySession.needsBranchRename) {
         if (!(ptySession as any)._renameBuffer) (ptySession as any)._renameBuffer = '';
         const enterIndex = str.indexOf('\r');
         if (enterIndex === -1) {
           (ptySession as any)._renameBuffer += str;
-          ptySession.pty.write(str); // Echo to terminal so user sees what they type
+          ptySession.pty.write(str); // pass through to PTY normally — user sees their typing
           return;
         }
-        // Enter detected — send rename prompt + full message to PTY in one shot
+        // Enter detected — pass everything through unmodified
         const buffered: string = (ptySession as any)._renameBuffer;
-        const beforeEnter = buffered + str.slice(0, enterIndex);
-        const afterEnter = str.slice(enterIndex); // includes the \r
-        // Clear the echoed input line before writing the full prompt+message
-        const clearLine = '\r' + ' '.repeat(Math.min(beforeEnter.length + 2, 200)) + '\r';
-        ptySession.pty.write(clearLine);
-        const renamePrompt = `Before doing anything else, rename the current git branch using \`git branch -m <new-name>\`. Choose a short, descriptive kebab-case branch name based on the task below.${ptySession.branchRenamePrompt ? ' User preferences: ' + ptySession.branchRenamePrompt : ''} Do not ask for confirmation — just rename and proceed.\n\n`;
-        ptySession.pty.write(renamePrompt + beforeEnter + afterEnter);
+        const firstMessage = buffered + str.slice(0, enterIndex);
+        ptySession.pty.write(str); // pass through the Enter key
         ptySession.needsBranchRename = false;
         delete (ptySession as any)._renameBuffer;
-        if (configPath) startBranchWatcher(ptySession, broadcastEvent, configPath);
+
+        // Sideband: spawn headless claude to generate branch name (async, non-blocking)
+        spawnBranchRename(ptySession, firstMessage, configPath, broadcastEvent);
         return;
       }
 
@@ -209,6 +248,10 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
 
   sessions.onIdleChange((sessionId, idle) => {
     broadcastEvent('session-idle-changed', { sessionId, idle });
+  });
+
+  sessions.onStateChange((sessionId, state) => {
+    broadcastEvent('session-state-changed', { sessionId, state });
   });
 
   sessions.onSessionEnd((sessionId, repoPath, branchName) => {

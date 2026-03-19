@@ -1,4 +1,6 @@
 import type { IPty } from 'node-pty';
+export type { AgentState } from './output-parsers/index.js';
+import type { AgentState, OutputParser } from './output-parsers/index.js';
 
 export type SessionType = 'repo' | 'worktree' | 'terminal';
 export type AgentType = 'claude' | 'codex';
@@ -40,6 +42,7 @@ interface BaseSession {
   customCommand: string | null;
   status: SessionStatus;
   needsBranchRename: boolean;
+  agentState: AgentState;
 }
 
 export interface PtySession extends BaseSession {
@@ -51,6 +54,7 @@ export interface PtySession extends BaseSession {
   onPtyReplacedCallbacks: Array<(newPty: IPty) => void>;
   restored: boolean;
   branchRenamePrompt?: string;
+  outputParser: OutputParser;
 }
 
 export type Session = PtySession;
@@ -76,6 +80,7 @@ export interface SessionSummary {
   tmuxSessionName: string;
   status: SessionStatus;
   needsBranchRename: boolean;
+  agentState: AgentState;
 }
 
 export interface WorktreeMetadata {

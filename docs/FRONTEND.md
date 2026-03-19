@@ -56,11 +56,12 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 | `auth.svelte.ts` | Authentication state (PIN check, cookie token) |
 | `ui.svelte.ts` | UI state (active tab, sidebar, filters) |
 | `sdk.svelte.ts` | Per-session SDK state: events, permissions, streaming, token usage, quick replies |
+| `sessions.svelte.ts` (agentState) | `agentState` per session (`processing` \| `idle` \| `waiting-for-input` \| `permission-prompt`) updated from `session-idle-changed` events; drives sidebar dot color and attention logic |
 
 ## Conventions
 
 - Scoped `<style>` blocks in each component; global CSS variables in `frontend/src/app.css`
-- Sidebar status dots: green (running), blue (idle), amber glow (needs attention), gray (inactive)
+- Sidebar status dots: green (processing), blue (idle), amber glow (waiting-for-input/attention), yellow pulse (permission-prompt), gray (inactive/initializing)
 - Attention state: tracked in `attentionSessions` reactive state; set when session becomes idle while not viewed; cleared when user opens session
 - Loading state: tracked in `loadingItems` reactive state; `setLoading`/`clearLoading` wrap async actions (start, kill, delete); WorkspaceItem shows CSS shimmer overlay with `pointer-events: none`
 - Hover effects: fade mask on overflow text, scroll reveal animation

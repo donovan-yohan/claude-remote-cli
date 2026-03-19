@@ -632,6 +632,11 @@
     box-shadow: 0 0 5px 1px rgba(251, 191, 36, 0.45);
     animation: attention-glow 2s ease-in-out infinite;
   }
+  .status-dot--permission-prompt {
+    background: #eab308;
+    box-shadow: 0 0 5px 1px rgba(234, 179, 8, 0.45);
+    animation: attention-glow 1.5s ease-in-out infinite;
+  }
 
   @keyframes attention-glow {
     0%, 100% { box-shadow: 0 0 3px 1px rgba(251, 191, 36, 0.3); }
