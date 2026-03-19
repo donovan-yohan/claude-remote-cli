@@ -35,12 +35,18 @@ export interface TokenUsage {
   estimatedCost: number;
 }
 
+export interface Workspace {
+  path: string;
+  name: string;
+  isGitRepo: boolean;
+  defaultBranch: string | null;
+}
+
 export interface SessionSummary {
   id: string;
   type: 'repo' | 'worktree' | 'terminal';
   agent: AgentType;
   mode?: 'sdk' | 'pty' | undefined;
-  root: string;
   repoName: string;
   repoPath: string;
   worktreeName: string;
@@ -58,7 +64,6 @@ export interface WorktreeInfo {
   path: string;
   repoName: string;
   repoPath: string;
-  root: string;
   displayName: string;
   lastActivity: string;
   branchName: string;
@@ -67,12 +72,10 @@ export interface WorktreeInfo {
 export interface RepoInfo {
   name: string;
   path: string;
-  root: string;
 }
 
 export interface OpenSessionOptions {
   yolo?: boolean;
-  tab?: 'repos' | 'worktrees';
   branchName?: string;
   agent?: AgentType;
   claudeArgs?: string;
@@ -90,6 +93,7 @@ export interface PullRequest {
   title: string;
   url: string;
   headRefName: string;
+  baseRefName: string;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   author: string;
   role: 'author' | 'reviewer';
@@ -97,9 +101,62 @@ export interface PullRequest {
   additions: number;
   deletions: number;
   reviewDecision: string | null;
+  mergeable: string | null;
 }
 
 export interface PullRequestsResponse {
   prs: PullRequest[];
   error?: string | undefined;
+}
+
+export interface ActivityEntry {
+  hash: string;
+  shortHash: string;
+  message: string;
+  author: string;
+  timeAgo: string;
+  branches: string[];
+}
+
+export interface DashboardData {
+  prs: PullRequest[];
+  activity: ActivityEntry[];
+  isGitRepo: boolean;
+  defaultBranch: string | null;
+  hasGhCli: boolean;
+}
+
+export interface CiStatus {
+  total: number;
+  passing: number;
+  failing: number;
+  pending: number;
+}
+
+export interface PrInfo {
+  number: number;
+  title: string;
+  url: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  headRefName: string;
+  baseRefName: string;
+  isDraft: boolean;
+  reviewDecision: string | null;
+}
+
+export interface WorkspaceSettings {
+  defaultAgent?: AgentType;
+  defaultContinue?: boolean;
+  defaultYolo?: boolean;
+  launchInTmux?: boolean;
+  claudeArgs?: string[];
+  defaultBranch?: string;
+  remote?: string;
+  branchPrefix?: string;
+  promptCodeReview?: string;
+  promptCreatePr?: string;
+  promptBranchRename?: string;
+  promptGeneral?: string;
+  promptFixConflicts?: string;
+  nextMountainIndex?: number;
 }

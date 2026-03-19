@@ -487,6 +487,7 @@ export function createSdkSession(
     useTmux: false,
     tmuxSessionName: '',
     status: 'active' as SessionStatus,
+    needsBranchRename: false,
   };
 
   return { session, result };

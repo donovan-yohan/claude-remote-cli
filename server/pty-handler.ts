@@ -272,6 +272,7 @@ export function createPtySession(
     useTmux,
     tmuxSessionName,
     status: 'active' as SessionStatus,
+    needsBranchRename: false,
   };
 
   return { session, result };

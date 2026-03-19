@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import type { Config, WorktreeMetadata } from './types.js';
+import type { Config, WorkspaceSettings, WorktreeMetadata } from './types.js';
 
-export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs'> = {
+export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs' | 'workspaceSettings' | 'vapidPublicKey' | 'vapidPrivateKey'> = {
   host: '0.0.0.0',
   port: 3456,
   cookieTTL: '24h',
@@ -15,6 +15,7 @@ export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs'> = {
   defaultYolo: false,
   launchInTmux: false,
   defaultNotifications: true,
+  workspaces: [],
 };
 
 export function loadConfig(configPath: string): Config {
@@ -68,4 +69,31 @@ export function deleteMeta(configPath: string, worktreePath: string): void {
   } catch (_) {
     // File may not exist; ignore
   }
+}
+
+export function getWorkspaceSettings(config: Config, workspacePath: string): WorkspaceSettings {
+  const globalDefaults: WorkspaceSettings = {
+    defaultAgent: config.defaultAgent,
+    defaultContinue: config.defaultContinue,
+    defaultYolo: config.defaultYolo,
+    launchInTmux: config.launchInTmux,
+    claudeArgs: config.claudeArgs,
+  };
+  const perWorkspace = config.workspaceSettings?.[workspacePath] || {};
+  // Per-workspace settings override global — only for defined keys
+  return { ...globalDefaults, ...perWorkspace };
+}
+
+export function setWorkspaceSettings(
+  configPath: string,
+  config: Config,
+  workspacePath: string,
+  settings: Partial<WorkspaceSettings>,
+): void {
+  if (!config.workspaceSettings) config.workspaceSettings = {};
+  config.workspaceSettings[workspacePath] = {
+    ...config.workspaceSettings[workspacePath],
+    ...settings,
+  };
+  saveConfig(configPath, config);
 }

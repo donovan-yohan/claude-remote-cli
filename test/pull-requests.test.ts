@@ -9,13 +9,14 @@ describe('PullRequest types', () => {
       title: 'Fix bug',
       url: 'https://github.com/owner/repo/pull/42',
       headRefName: 'fix/bug',
+      baseRefName: 'main',
       state: 'OPEN',
       author: 'testuser',
       role: 'author',
       updatedAt: '2026-02-24T00:00:00Z',
       additions: 10,
       deletions: 5,
-      reviewDecision: 'APPROVED',
+      reviewDecision: 'APPROVED', mergeable: 'MERGEABLE',
     };
     assert.equal(pr.role, 'author');
     assert.equal(pr.state, 'OPEN');
@@ -27,13 +28,14 @@ describe('PullRequest types', () => {
       title: 'Add feature',
       url: 'https://github.com/owner/repo/pull/43',
       headRefName: 'feat/new',
+      baseRefName: 'main',
       state: 'OPEN',
       author: 'otheruser',
       role: 'reviewer',
       updatedAt: '2026-02-24T00:00:00Z',
       additions: 50,
       deletions: 20,
-      reviewDecision: null,
+      reviewDecision: null, mergeable: null,
     };
     assert.equal(pr.role, 'reviewer');
   });
@@ -54,13 +56,14 @@ describe('PullRequest types', () => {
         title: 'Test',
         url: 'https://github.com/o/r/pull/1',
         headRefName: 'test',
+        baseRefName: 'main',
         state: 'OPEN',
         author: 'user',
         role: 'author',
         updatedAt: '2026-02-24T00:00:00Z',
         additions: 0,
         deletions: 0,
-        reviewDecision: null,
+        reviewDecision: null, mergeable: null,
       }],
     };
     assert.equal(response.prs.length, 1);

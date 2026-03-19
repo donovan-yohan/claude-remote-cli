@@ -1,26 +1,56 @@
 <script lang="ts">
-  import { getUi, closeSidebar, saveSidebarWidth, toggleSidebarCollapsed, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, DEFAULT_SIDEBAR_WIDTH, COLLAPSED_SIDEBAR_WIDTH } from '../lib/state/ui.svelte.js';
-  import type { RepoInfo, WorktreeInfo, OpenSessionOptions } from '../lib/types.js';
-  import SessionList from './SessionList.svelte';
+  import {
+    getUi,
+    closeSidebar,
+    saveSidebarWidth,
+    toggleSidebarCollapsed,
+    MIN_SIDEBAR_WIDTH,
+    MAX_SIDEBAR_WIDTH,
+    DEFAULT_SIDEBAR_WIDTH,
+    COLLAPSED_SIDEBAR_WIDTH,
+  } from '../lib/state/ui.svelte.js';
+  import { getSessionState, getSessionsForWorkspace } from '../lib/state/sessions.svelte.js';
+  import type { Workspace, WorktreeInfo } from '../lib/types.js';
+  import WorkspaceItem from './WorkspaceItem.svelte';
+  import SmartSearch from './SmartSearch.svelte';
 
   const ui = getUi();
+  const sessionState = getSessionState();
 
   let {
     onSelectSession,
-    onOpenNewSession,
     onOpenSettings,
     onNewWorktree,
+    onNewSession,
+    onNewTerminal,
+    onAddWorkspace,
+    onDeleteSession,
     onDeleteWorktree,
   }: {
     onSelectSession: (id: string) => void;
-    onOpenNewSession: (repo?: RepoInfo, options?: OpenSessionOptions) => void;
-    onOpenSettings: () => void;
-    onNewWorktree: (repo: RepoInfo) => void;
-    onDeleteWorktree: (wt: WorktreeInfo) => void;
+    onOpenSettings: (workspace?: Workspace) => void;
+    onNewWorktree: (workspace: Workspace) => void;
+    onNewSession: (workspace: Workspace) => void;
+    onNewTerminal: (workspace: Workspace) => void;
+    onAddWorkspace: () => void;
+    onDeleteSession?: (id: string) => void;
+    onDeleteWorktree?: (wt: WorktreeInfo) => void;
   } = $props();
 
-  let newSessionLabel = $derived(ui.activeTab === 'worktrees' ? '+ New Worktree' : '+ New Session');
-  let effectiveWidth = $derived(ui.sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : ui.sidebarWidth);
+  let effectiveWidth = $derived(
+    ui.sidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : ui.sidebarWidth,
+  );
+
+  function handleSelectWorkspace(path: string) {
+    ui.activeWorkspacePath = path;
+    // Clear active session so the main area shows the dashboard
+    sessionState.activeSessionId = null;
+  }
+
+  function handleSmartSearchSelect(path: string) {
+    ui.activeWorkspacePath = path;
+    closeSidebar();
+  }
 
   function startResize(e: MouseEvent) {
     e.preventDefault();
@@ -28,7 +58,10 @@
     const startWidth = ui.sidebarWidth;
 
     const onMouseMove = (e: MouseEvent) => {
-      const newWidth = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, startWidth + (e.clientX - startX)));
+      const newWidth = Math.min(
+        MAX_SIDEBAR_WIDTH,
+        Math.max(MIN_SIDEBAR_WIDTH, startWidth + (e.clientX - startX)),
+      );
       ui.sidebarWidth = newWidth;
     };
 
@@ -53,29 +86,69 @@
   }
 </script>
 
-<aside class="sidebar" class:open={ui.sidebarOpen} class:collapsed={ui.sidebarCollapsed} style:width="{effectiveWidth}px" style:min-width="{effectiveWidth}px">
+<aside
+  class="sidebar"
+  class:open={ui.sidebarOpen}
+  class:collapsed={ui.sidebarCollapsed}
+  style:width="{effectiveWidth}px"
+  style:min-width="{effectiveWidth}px"
+>
   <div class="sidebar-header">
-    <button class="collapse-btn" aria-label={ui.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'} onclick={toggleSidebarCollapsed}>
+    <button
+      class="collapse-btn"
+      aria-label={ui.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      onclick={toggleSidebarCollapsed}
+    >
       {ui.sidebarCollapsed ? '»' : '«'}
     </button>
     {#if !ui.sidebarCollapsed}
-      <span class="sidebar-label">Sessions</span>
+      <span class="sidebar-label">Workspaces</span>
     {/if}
     <button class="icon-btn" aria-label="Close sidebar" onclick={closeSidebar}>✕</button>
   </div>
 
   {#if !ui.sidebarCollapsed}
-    <SessionList
-      {onSelectSession}
-      {onOpenNewSession}
-      {onNewWorktree}
-      {onDeleteWorktree}
+    <SmartSearch
+      workspaces={sessionState.workspaces}
+      onSelect={handleSmartSearchSelect}
     />
 
-    <button class="new-session-btn" onclick={() => onOpenNewSession()}>
-      {newSessionLabel}
+    <div class="workspace-list">
+      {#each sessionState.workspaces as workspace (workspace.path)}
+        {@const activeSessions = getSessionsForWorkspace(workspace.path)}
+        {@const activeWorktreePaths = new Set(activeSessions.map(s => s.repoPath))}
+        {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
+          wt.repoPath === workspace.path &&
+          wt.path.startsWith(workspace.path + '/') &&
+          !activeWorktreePaths.has(wt.path)
+        )}
+        <WorkspaceItem
+          {workspace}
+          sessions={activeSessions}
+          {inactiveWorktrees}
+          isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
+          onSelectWorkspace={handleSelectWorkspace}
+          {onSelectSession}
+          onNewWorktree={onNewWorktree}
+          onNewSession={onNewSession}
+          onNewTerminal={onNewTerminal}
+          onOpenSettings={(ws) => onOpenSettings(ws)}
+          onDeleteSession={(id) => onDeleteSession?.(id)}
+          onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
+        />
+      {/each}
+
+      {#if sessionState.workspaces.length === 0}
+        <div class="empty-state">
+          <span>No workspaces</span>
+        </div>
+      {/if}
+    </div>
+
+    <button class="add-workspace-btn" onclick={onAddWorkspace}>
+      + Add Workspace
     </button>
-    <button class="settings-btn" onclick={onOpenSettings}>
+    <button class="settings-btn" onclick={() => onOpenSettings()}>
       ⚙ Settings
     </button>
 
@@ -89,14 +162,14 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    /* width and min-width set via inline style (effectiveWidth) */
-    background: var(--surface);
+    background: var(--bg);
     border-right: 1px solid var(--border);
     overflow: hidden;
     transition: transform 0.25s ease, width 0.2s ease, min-width 0.2s ease;
     z-index: 100;
   }
 
+  /* Resize handle */
   .resize-handle {
     position: absolute;
     top: 0;
@@ -112,6 +185,7 @@
     background: var(--accent);
   }
 
+  /* Header */
   .sidebar-header {
     display: flex;
     align-items: center;
@@ -123,11 +197,12 @@
 
   .sidebar-label {
     flex: 1;
-    font-size: 0.85rem;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--text-muted);
+    font-family: var(--font-mono);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
   }
 
   .collapse-btn {
@@ -136,10 +211,16 @@
     color: var(--text-muted);
     font-size: 1.1rem;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 8px 10px;
     border-radius: 4px;
     flex-shrink: 0;
     line-height: 1;
+    font-family: var(--font-mono);
+    min-width: 36px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .collapse-btn:hover {
@@ -161,43 +242,80 @@
     padding: 4px 6px;
     border-radius: 4px;
     touch-action: manipulation;
-    display: none; /* shown on mobile */
+    display: none; /* shown on mobile only */
   }
 
   .icon-btn:active {
     background: var(--border);
   }
 
-  .new-session-btn {
+  /* Workspace list */
+  .workspace-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
+  .empty-state {
+    padding: 16px 10px;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    opacity: 0.5;
+    text-align: center;
+  }
+
+  /* Bottom buttons */
+  .add-workspace-btn {
     margin: 8px;
     padding: 10px 12px;
+    min-height: 40px;
     background: none;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 0;
     color: var(--text);
-    font-size: 0.875rem;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
     cursor: pointer;
     touch-action: manipulation;
     text-align: center;
     flex-shrink: 0;
+    transition: background 0.1s, border-color 0.1s;
   }
 
-  .new-session-btn:active {
+  .add-workspace-btn {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .add-workspace-btn:hover {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .add-workspace-btn:active {
     background: var(--border);
   }
 
   .settings-btn {
     margin: 0 8px 8px;
     padding: 10px 12px;
+    min-height: 40px;
     background: none;
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 0;
     color: var(--text-muted);
-    font-size: 0.8rem;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
     cursor: pointer;
     touch-action: manipulation;
     text-align: center;
     flex-shrink: 0;
+    transition: background 0.1s;
+  }
+
+  .settings-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text);
   }
 
   .settings-btn:active {

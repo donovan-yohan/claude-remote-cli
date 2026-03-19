@@ -20,11 +20,24 @@ import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import { listBranches } from './git.js';
 import * as push from './push.js';
-import type { AgentType, Config, PullRequest, PullRequestsResponse } from './types.js';
+import { createWorkspaceRouter } from './workspaces.js';
+import type { AgentType, Config } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
+
+// ── Signal protection ────────────────────────────────────────────────────
+// Ignore SIGPIPE: piped bash commands (e.g. `cmd | grep | tail`) generate
+// SIGPIPE when the reading end of the pipe closes before the writer finishes.
+// node-pty's native module can propagate these to PTY sessions, causing
+// unexpected "session exited" in the browser. Ignoring SIGPIPE at the server
+// level prevents this cascade.
+process.on('SIGPIPE', () => { /* intentionally ignored */ });
+
+// Ignore SIGHUP: if the controlling terminal disconnects (e.g. SSH drops),
+// keep the server and all PTY sessions alive.
+process.on('SIGHUP', () => { /* intentionally ignored */ });
 
 // When run via CLI bin, config lives in ~/.config/claude-remote-cli/
 // When run directly (development), fall back to local config.json
@@ -97,39 +110,6 @@ function promptPin(question: string): Promise<string> {
       resolve(answer.trim());
     });
   });
-}
-
-function scanReposInRoot(rootDir: string): RepoEntry[] {
-  const repos: RepoEntry[] = [];
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(rootDir, { withFileTypes: true });
-  } catch (_) {
-    return repos;
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-    const fullPath = path.join(rootDir, entry.name);
-    const dotGit = path.join(fullPath, '.git');
-    try {
-      // Only count directories with a .git *directory* as repos.
-      // Worktrees and submodules have a .git *file* and should be skipped.
-      if (fs.statSync(dotGit).isDirectory()) {
-        repos.push({ name: entry.name, path: fullPath, root: rootDir });
-      }
-    } catch (_) {
-      // .git doesn't exist — not a repo
-    }
-  }
-  return repos;
-}
-
-function scanAllRepos(rootDirs: string[]): RepoEntry[] {
-  const repos: RepoEntry[] = [];
-  for (const rootDir of rootDirs) {
-    repos.push(...scanReposInRoot(rootDir));
-  }
-  return repos;
 }
 
 function ensureGitignore(repoPath: string, entry: string): void {
@@ -234,10 +214,14 @@ async function main(): Promise<void> {
   }
 
   const watcher = new WorktreeWatcher();
-  watcher.rebuild(config.rootDirs || []);
+  watcher.rebuild(config.workspaces || []);
 
   const server = http.createServer(app);
   const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher);
+
+  // Mount workspace router
+  const workspaceRouter = createWorkspaceRouter({ configPath: CONFIG_PATH });
+  app.use('/workspaces', requireAuth, workspaceRouter);
 
   // Restore sessions from a previous update restart
   const configDir = path.dirname(CONFIG_PATH);
@@ -298,20 +282,6 @@ async function main(): Promise<void> {
     res.json(sessions.list());
   });
 
-  // GET /repos — scan root dirs for repos
-  app.get('/repos', requireAuth, (_req, res) => {
-    const repos = scanAllRepos(config.rootDirs || []);
-    // Also include legacy manually-added repos
-    if (config.repos) {
-      for (const repo of config.repos as unknown as RepoEntry[]) {
-        if (!repos.some((r) => r.path === repo.path)) {
-          repos.push(repo);
-        }
-      }
-    }
-    res.json(repos);
-  });
-
   // GET /branches?repo=<path> — list local and remote branches for a repo
   app.get('/branches', requireAuth, async (req, res) => {
     const repoPath = typeof req.query.repo === 'string' ? req.query.repo : undefined;
@@ -322,135 +292,6 @@ async function main(): Promise<void> {
     }
 
     res.json(await listBranches(repoPath, { refresh }));
-  });
-
-  // GET /git-status?repo=<path>&branch=<name>
-  app.get('/git-status', requireAuth, async (req, res) => {
-    const repoPath = typeof req.query.repo === 'string' ? req.query.repo : undefined;
-    const branch = typeof req.query.branch === 'string' ? req.query.branch : undefined;
-    if (!repoPath || !branch) {
-      res.status(400).json({ error: 'repo and branch query parameters are required' });
-      return;
-    }
-
-    let prState: 'open' | 'merged' | 'closed' | null = null;
-    let additions = 0;
-    let deletions = 0;
-
-    // Try gh CLI for PR status
-    try {
-      const { stdout } = await execFileAsync('gh', [
-        'pr', 'view', branch,
-        '--json', 'state,additions,deletions',
-      ], { cwd: repoPath });
-      const data = JSON.parse(stdout) as { state?: string; additions?: number; deletions?: number };
-      if (data.state) prState = data.state.toLowerCase() as 'open' | 'merged' | 'closed';
-      if (typeof data.additions === 'number') additions = data.additions;
-      if (typeof data.deletions === 'number') deletions = data.deletions;
-    } catch {
-      // No PR or gh not available — fall back to git diff against default branch
-      try {
-        // Detect default branch (main, master, etc.)
-        let baseBranch = 'main';
-        try {
-          const { stdout: headRef } = await execFileAsync('git', [
-            'symbolic-ref', 'refs/remotes/origin/HEAD', '--short',
-          ], { cwd: repoPath });
-          baseBranch = headRef.trim().replace(/^origin\//, '');
-        } catch { /* use main as fallback */ }
-        const { stdout } = await execFileAsync('git', [
-          'diff', '--shortstat', baseBranch + '...' + branch,
-        ], { cwd: repoPath });
-        const addMatch = stdout.match(/(\d+) insertion/);
-        const delMatch = stdout.match(/(\d+) deletion/);
-        if (addMatch) additions = parseInt(addMatch[1]!, 10);
-        if (delMatch) deletions = parseInt(delMatch[1]!, 10);
-      } catch { /* no diff data */ }
-    }
-
-    res.json({ prState, additions, deletions });
-  });
-
-  // GET /pull-requests?repo=<path>
-  app.get('/pull-requests', requireAuth, async (req, res) => {
-    const repoPath = typeof req.query.repo === 'string' ? req.query.repo : undefined;
-    if (!repoPath) {
-      res.status(400).json({ prs: [], error: 'repo query parameter is required' } satisfies PullRequestsResponse);
-      return;
-    }
-
-    const fields = 'number,title,url,headRefName,state,author,updatedAt,additions,deletions,reviewDecision';
-
-    // Get current GitHub user
-    let currentUser = '';
-    try {
-      const { stdout: whoami } = await execFileAsync('gh', ['api', 'user', '--jq', '.login'], { cwd: repoPath });
-      currentUser = whoami.trim();
-    } catch {
-      const response: PullRequestsResponse = { prs: [], error: 'gh_not_authenticated' };
-      res.json(response);
-      return;
-    }
-
-    // Fetch authored PRs
-    const authored: PullRequest[] = [];
-    try {
-      const { stdout } = await execFileAsync('gh', [
-        'pr', 'list', '--author', currentUser, '--state', 'open', '--limit', '30',
-        '--json', fields,
-      ], { cwd: repoPath });
-      const raw = JSON.parse(stdout) as Array<Record<string, unknown>>;
-      for (const pr of raw) {
-        authored.push({
-          number: pr.number as number,
-          title: pr.title as string,
-          url: pr.url as string,
-          headRefName: pr.headRefName as string,
-          state: pr.state as 'OPEN' | 'CLOSED' | 'MERGED',
-          author: (pr.author as { login?: string })?.login ?? currentUser,
-          role: 'author',
-          updatedAt: pr.updatedAt as string,
-          additions: (pr.additions as number) ?? 0,
-          deletions: (pr.deletions as number) ?? 0,
-          reviewDecision: (pr.reviewDecision as string) ?? null,
-        });
-      }
-    } catch { /* no authored PRs or gh error */ }
-
-    // Fetch review-requested PRs
-    const reviewing: PullRequest[] = [];
-    try {
-      const { stdout } = await execFileAsync('gh', [
-        'pr', 'list', '--search', `review-requested:${currentUser}`, '--state', 'open', '--limit', '30',
-        '--json', fields,
-      ], { cwd: repoPath });
-      const raw = JSON.parse(stdout) as Array<Record<string, unknown>>;
-      for (const pr of raw) {
-        reviewing.push({
-          number: pr.number as number,
-          title: pr.title as string,
-          url: pr.url as string,
-          headRefName: pr.headRefName as string,
-          state: pr.state as 'OPEN' | 'CLOSED' | 'MERGED',
-          author: (pr.author as { login?: string })?.login ?? '',
-          role: 'reviewer',
-          updatedAt: pr.updatedAt as string,
-          additions: (pr.additions as number) ?? 0,
-          deletions: (pr.deletions as number) ?? 0,
-          reviewDecision: (pr.reviewDecision as string) ?? null,
-        });
-      }
-    } catch { /* no review-requested PRs or gh error */ }
-
-    // Deduplicate: if a PR appears in both (user is author AND reviewer), keep as 'author'
-    const seen = new Set(authored.map(pr => pr.number));
-    const combined = [...authored, ...reviewing.filter(pr => !seen.has(pr.number))];
-
-    // Sort by updatedAt descending
-    combined.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-
-    const response: PullRequestsResponse = { prs: combined };
-    res.json(response);
   });
 
   // GET /worktrees?repo=<path> — list worktrees; omit repo to scan all repos in all rootDirs
@@ -464,7 +305,27 @@ async function main(): Promise<void> {
       const root = roots.find(function (r) { return repoParam.startsWith(r); }) || '';
       reposToScan = [{ path: repoParam, name: repoParam.split('/').filter(Boolean).pop() || '', root }];
     } else {
-      reposToScan = scanAllRepos(roots);
+      reposToScan = [];
+      for (const rootDir of roots) {
+        let entries: fs.Dirent[];
+        try {
+          entries = fs.readdirSync(rootDir, { withFileTypes: true });
+        } catch (_) {
+          continue;
+        }
+        for (const entry of entries) {
+          if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+          const fullPath = path.join(rootDir, entry.name);
+          const dotGit = path.join(fullPath, '.git');
+          try {
+            if (fs.statSync(dotGit).isDirectory()) {
+              reposToScan.push({ name: entry.name, path: fullPath, root: rootDir });
+            }
+          } catch (_) {
+            // .git doesn't exist — not a repo
+          }
+        }
+      }
     }
 
     for (const repo of reposToScan) {
@@ -524,44 +385,6 @@ async function main(): Promise<void> {
     });
 
     res.json(unique);
-  });
-
-  // GET /roots — list root directories
-  app.get('/roots', requireAuth, (_req, res) => {
-    res.json(config.rootDirs || []);
-  });
-
-  // POST /roots — add a root directory
-  app.post('/roots', requireAuth, (req, res) => {
-    const { path: rootPath } = req.body as { path?: string };
-    if (!rootPath) {
-      res.status(400).json({ error: 'path is required' });
-      return;
-    }
-    if (!config.rootDirs) config.rootDirs = [];
-    if (config.rootDirs.includes(rootPath)) {
-      res.status(409).json({ error: 'Root already exists' });
-      return;
-    }
-    config.rootDirs.push(rootPath);
-    saveConfig(CONFIG_PATH, config);
-    watcher.rebuild(config.rootDirs);
-    broadcastEvent('worktrees-changed');
-    res.status(201).json(config.rootDirs);
-  });
-
-  // DELETE /roots — remove a root directory
-  app.delete('/roots', requireAuth, (req, res) => {
-    const { path: rootPath } = req.body as { path?: string };
-    if (!rootPath || !config.rootDirs) {
-      res.status(400).json({ error: 'path is required' });
-      return;
-    }
-    config.rootDirs = config.rootDirs.filter((r) => r !== rootPath);
-    saveConfig(CONFIG_PATH, config);
-    watcher.rebuild(config.rootDirs);
-    broadcastEvent('worktrees-changed');
-    res.json(config.rootDirs);
   });
 
   // GET /config/defaultAgent — get default coding agent
@@ -645,13 +468,7 @@ async function main(): Promise<void> {
       }
     }
 
-    // Check no active session is using this worktree
-    const activeSessions = sessions.list();
-    const conflict = activeSessions.find(function (s) { return s.repoPath === worktreePath; });
-    if (conflict) {
-      res.status(409).json({ error: 'Close the active session first' });
-      return;
-    }
+    // Multiple sessions per worktree allowed (multi-tab support)
 
     // Derive branch name from metadata or worktree directory name
     const meta = readMeta(CONFIG_PATH, worktreePath);
@@ -698,7 +515,7 @@ async function main(): Promise<void> {
 
   // POST /sessions
   app.post('/sessions', requireAuth, async (req, res) => {
-    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux } = req.body as {
+    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux, needsBranchRename, branchRenamePrompt } = req.body as {
       repoPath?: string;
       repoName?: string;
       worktreePath?: string;
@@ -707,6 +524,8 @@ async function main(): Promise<void> {
       yolo?: boolean;
       agent?: AgentType;
       useTmux?: boolean;
+      needsBranchRename?: boolean;
+      branchRenamePrompt?: string;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -732,8 +551,11 @@ async function main(): Promise<void> {
     let resolvedBranch = '';
 
     if (worktreePath) {
-      // Resume existing worktree
-      args = [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs];
+      // Only use --continue if:
+      // 1. Not a brand-new worktree (needsBranchRename flag)
+      // 2. A prior Claude session exists in this directory (.claude/ dir present)
+      const hasPriorSession = !needsBranchRename && fs.existsSync(path.join(worktreePath, '.claude'));
+      args = hasPriorSession ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs] : [...baseArgs];
       cwd = worktreePath;
       sessionRepoPath = worktreePath;
       worktreeName = worktreePath.split('/').pop() || '';
@@ -874,6 +696,8 @@ async function main(): Promise<void> {
       args,
       configPath: CONFIG_PATH,
       useTmux: useTmux ?? config.launchInTmux,
+      needsBranchRename: needsBranchRename ?? false,
+      branchRenamePrompt: branchRenamePrompt ?? '',
     });
 
     if (!worktreePath) {
@@ -906,12 +730,7 @@ async function main(): Promise<void> {
 
     const resolvedAgent: AgentType = agent || config.defaultAgent || 'claude';
 
-    // One repo session at a time
-    const existing = sessions.findRepoSession(repoPath);
-    if (existing) {
-      res.status(409).json({ error: 'A session already exists for this repo', sessionId: existing.id });
-      return;
-    }
+    // Multiple sessions per repo allowed (multi-tab support)
 
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
     const baseArgs = [
