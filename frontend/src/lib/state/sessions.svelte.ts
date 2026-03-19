@@ -1,18 +1,30 @@
-import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from '../types.js';
+import type { SessionSummary, WorktreeInfo, GitStatus, Workspace } from '../types.js';
 import { fireNotification, shouldFireNotification } from '../notifications.js';
 import * as api from '../api.js';
 
+const NOTIFICATIONS_STORAGE_KEY = 'claude-remote-notifications';
+const ACTIVE_SESSION_KEY = 'claude-remote-active-session';
+
+function loadActiveSessionId(): string | null {
+  try { return localStorage.getItem(ACTIVE_SESSION_KEY); }
+  catch { return null; }
+}
+
+function saveActiveSessionId(id: string | null): void {
+  try {
+    if (id === null) localStorage.removeItem(ACTIVE_SESSION_KEY);
+    else localStorage.setItem(ACTIVE_SESSION_KEY, id);
+  } catch { /* localStorage unavailable */ }
+}
+
 let sessions = $state<SessionSummary[]>([]);
 let worktrees = $state<WorktreeInfo[]>([]);
-let repos = $state<RepoInfo[]>([]);
-let activeSessionId = $state<string | null>(null);
+let workspaces = $state<Workspace[]>([]);
+let activeSessionId = $state<string | null>(loadActiveSessionId());
 let attentionSessions = $state<Record<string, boolean>>({});
 let dismissedSessions = $state<Record<string, number>>({});
-let gitStatuses = $state<Record<string, GitStatus>>({});
 let loadingItems = $state<Record<string, boolean>>({});
 let notificationSessions = $state<Record<string, boolean>>({});
-
-const NOTIFICATIONS_STORAGE_KEY = 'claude-remote-notifications';
 
 // Load notification preferences from localStorage
 try {
@@ -30,11 +42,13 @@ export function getSessionState() {
   return {
     get sessions() { return sessions; },
     get worktrees() { return worktrees; },
-    get repos() { return repos; },
+    get workspaces() { return workspaces; },
     get activeSessionId() { return activeSessionId; },
-    set activeSessionId(id: string | null) { activeSessionId = id; },
+    set activeSessionId(id: string | null) {
+      activeSessionId = id;
+      saveActiveSessionId(id);
+    },
     get attentionSessions() { return attentionSessions; },
-    get gitStatuses() { return gitStatuses; },
     get loadingItems() { return loadingItems; },
     get notificationSessions() { return notificationSessions; },
   };
@@ -42,17 +56,23 @@ export function getSessionState() {
 
 export async function refreshAll(): Promise<void> {
   try {
-    const [s, w, r] = await Promise.all([
+    const [s, w, ws] = await Promise.all([
       api.fetchSessions(),
       api.fetchWorktrees(),
-      api.fetchRepos(),
+      api.fetchWorkspaces(),
     ]);
     sessions = s;
     worktrees = w;
-    repos = r;
+    workspaces = ws;
+
+    // Validate restored activeSessionId — clear if the session no longer exists
+    const activeIds = new Set(sessions.map(sess => sess.id));
+    if (activeSessionId !== null && !activeIds.has(activeSessionId)) {
+      activeSessionId = null;
+      saveActiveSessionId(null);
+    }
 
     // Prune stale attention flags, dismissed cooldowns, and notification prefs
-    const activeIds = new Set(sessions.map(sess => sess.id));
     let notifPruned = false;
     for (const id of Object.keys(attentionSessions)) {
       if (!activeIds.has(id)) delete attentionSessions[id];
@@ -67,26 +87,13 @@ export async function refreshAll(): Promise<void> {
       }
     }
     if (notifPruned) saveNotificationPrefs();
-
-    refreshGitStatuses();
   } catch { /* silent */ }
 }
 
-let gitStatusTimer: ReturnType<typeof setTimeout> | null = null;
-
-export async function refreshGitStatuses(): Promise<void> {
-  if (gitStatusTimer) clearTimeout(gitStatusTimer);
-  gitStatusTimer = setTimeout(async () => {
-    for (const wt of worktrees) {
-      const branch = wt.name; // worktree dir name is typically the branch
-      const key = wt.repoPath + ':' + branch;
-      if (gitStatuses[key]) continue; // already cached
-      try {
-        const status = await api.fetchGitStatus(wt.repoPath, branch);
-        gitStatuses[key] = status;
-      } catch { /* silent */ }
-    }
-  }, 500);
+export function getSessionsForWorkspace(workspacePath: string): SessionSummary[] {
+  // Match sessions where repoPath is the workspace itself OR a worktree under it
+  // (worktree sessions have repoPath like /workspace/.worktrees/name)
+  return sessions.filter(s => s.repoPath === workspacePath || s.repoPath.startsWith(workspacePath + '/'));
 }
 
 const ATTENTION_COOLDOWN_MS = 30_000;
@@ -147,7 +154,8 @@ export function getNotificationSessionIds(): string[] {
 }
 
 export function setGitStatus(key: string, status: GitStatus): void {
-  gitStatuses[key] = status;
+  // Per-session polling handles git statuses; this is kept for compatibility
+  void key; void status;
 }
 
 export function getSessionStatus(session: SessionSummary): 'attention' | 'idle' | 'running' {

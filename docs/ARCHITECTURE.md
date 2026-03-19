@@ -21,19 +21,21 @@ Twelve TypeScript modules compiled to `dist/server/` via `tsc`. Modules communic
 | Module | Role |
 |--------|------|
 | `index.ts` | Composition root: Express app, REST routes, auth middleware, static serving |
+| `workspaces.ts` | Workspace CRUD (replaces roots), Express Router: dashboard, settings, CI status, branch switch, path autocomplete |
 | `sessions.ts` | Session registry + dispatcher: routes `create()` to sdk-handler or pty-handler, lifecycle ops, idle sweep |
 | `pty-handler.ts` | PTY session creation via node-pty, scrollback buffering (256KB), tmux wrapping, continue-retry |
 | `sdk-handler.ts` | Claude SDK session creation via `@anthropic-ai/claude-agent-sdk`, structured event streaming, permission queue, debug logging |
+| `git.ts` | Git/GitHub CLI integration: branches, activity feed, CI status, PR lookup, branch switch |
 | `ws.ts` | WebSocket upgrade handler with protocol negotiation: JSON frames for SDK sessions, binary relay for PTY |
-| `watcher.ts` | File system watching for `.worktrees/` directories, debounced event emission |
+| `watcher.ts` | File system watching for workspace directories, debounced event emission |
 | `auth.ts` | PIN hashing (bcrypt), rate limiting (5 fails = 15-min lockout), cookie tokens |
-| `config.ts` | Config loading/saving with defaults, worktree metadata persistence |
+| `config.ts` | Config loading/saving with defaults, per-workspace settings, worktree metadata |
 | `clipboard.ts` | System clipboard detection and image-set operations (osascript/xclip) |
 | `service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
 | `push.ts` | Web Push notification management (VAPID keys, subscription registry, SDK event enrichment) |
-| `types.ts` | Shared TypeScript interfaces (discriminated union Session = PtySession \| SdkSession) |
+| `types.ts` | Shared TypeScript interfaces (discriminated union Session = PtySession \| SdkSession, Workspace, Config, PR, CI, Activity types) |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler` and `sdk-handler`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `pty-handler.ts` depends on node-pty, only `sdk-handler.ts` depends on `@anthropic-ai/claude-agent-sdk`, only `push.ts` depends on web-push).
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler` and `sdk-handler`; `workspaces.ts` imports `git` and `config`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `pty-handler.ts` depends on node-pty, only `sdk-handler.ts` depends on `@anthropic-ai/claude-agent-sdk`, only `push.ts` depends on web-push).
 
 ### `frontend/`
 
@@ -41,7 +43,7 @@ Svelte 5 SPA built by Vite, output to `dist/frontend/`. Express serves the compi
 
 | Path | Role |
 |------|------|
-| `frontend/src/components/` | Svelte 5 components (Terminal, Sidebar, SessionList, dialogs, etc.) |
+| `frontend/src/components/` | Svelte 5 components (Terminal, Sidebar, WorkspaceItem, PrTopBar, SessionTabBar, RepoDashboard, SmartSearch, dialogs, etc.) |
 | `frontend/src/lib/state/` | Reactive state modules (`.svelte.ts` files) exporting state + mutations |
 | `frontend/src/lib/api.ts` | REST API client functions |
 | `frontend/src/lib/ws.ts` | WebSocket connection management (PTY relay + event channel) |
@@ -110,15 +112,24 @@ SDK flow:
 | `GET` | `/sessions` | List active sessions |
 | `POST` | `/sessions` | Create worktree session (accepts `branchName`, `claudeArgs`) |
 | `POST` | `/sessions/repo` | Create repo session (no worktree, supports `continue`) |
-| `GET` | `/branches` | List local and remote branches |
-| `GET` | `/git-status` | PR state and diff stats for a branch |
-| `GET` | `/pull-requests` | Open PRs (authored + review-requested) for a repo via `gh` CLI |
 | `PATCH` | `/sessions/:id` | Rename session |
 | `DELETE` | `/sessions/:id` | Terminate session |
-| `GET` | `/repos` | Scan root directories for git repos |
+| `POST` | `/sessions/:id/image` | Upload clipboard image |
+| `GET` | `/branches` | List local and remote branches |
 | `GET` | `/worktrees` | List inactive Claude Code worktrees |
 | `DELETE` | `/worktrees` | Remove worktree, prune refs, delete branch |
-| `GET/POST/DELETE` | `/roots` | Manage configured root directories |
+| `GET` | `/workspaces` | List configured workspace folders with git info |
+| `POST` | `/workspaces` | Add workspace folder (body: `{path}`) |
+| `DELETE` | `/workspaces` | Remove workspace folder |
+| `GET` | `/workspaces/dashboard` | Aggregated PRs + activity for a workspace (`?path=X`) |
+| `GET` | `/workspaces/settings` | Per-workspace settings (`?path=X`) |
+| `PATCH` | `/workspaces/settings` | Update per-workspace settings |
+| `GET` | `/workspaces/pr` | PR info for a branch (`?path=X&branch=Y`) |
+| `GET` | `/workspaces/ci-status` | CI check results (`?path=X&branch=Y`) |
+| `POST` | `/workspaces/branch` | Switch branch (`?path=X`, body: `{branch}`) |
+| `GET` | `/workspaces/autocomplete` | Path prefix autocomplete (`?prefix=X`) |
+| `POST` | `/workspaces/worktree` | Create worktree with mountain name (`?path=X`) |
+| `GET` | `/workspaces/current-branch` | Current checked-out branch (`?path=X`) |
 | `GET` | `/version` | Check for npm updates |
 | `POST` | `/sessions/:id/image` | Upload clipboard image |
 | `POST` | `/sessions/:id/message` | Send message to SDK session |
@@ -142,7 +153,7 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 **Auth:** Every HTTP request (except `/auth` POST) and every WebSocket upgrade requires a valid session cookie. Rate limiting is per-IP.
 
-**Session lifecycle:** Sessions are in-memory during normal operation. PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction. SDK sessions cap at 2000 events with FIFO eviction. SDK sessions idle >30min are swept (max 5 idle). During auto-updates, sessions are serialized to disk (`pending-sessions.json` + scrollback files) and restored on restart.
+**Session lifecycle:** Sessions are in-memory during normal operation. Multiple sessions per directory are allowed (multi-tab support). PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction. SDK sessions cap at 2000 events with FIFO eviction. SDK sessions idle >30min are swept (max 5 idle). PTY spawns are wrapped with `trap '' PIPE; exec` to prevent SIGPIPE from killing sessions. During auto-updates, sessions are serialized to disk (`pending-sessions.json` + scrollback files) and restored on restart.
 
 ---
 

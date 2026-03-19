@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { MOUNTAIN_NAMES } from '../server/config.js';
+import { MOUNTAIN_NAMES } from '../server/types.js';
 
 describe('MOUNTAIN_NAMES', () => {
   test('contains 30 mountain names', () => {

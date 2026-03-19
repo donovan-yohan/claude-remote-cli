@@ -67,6 +67,7 @@ export interface PtySession extends BaseSession {
   tmuxSessionName: string;
   onPtyReplacedCallbacks: Array<(newPty: IPty) => void>;
   restored: boolean;
+  branchRenamePrompt?: string;
 }
 
 export interface SdkSession extends BaseSession {
@@ -109,6 +110,37 @@ export interface WorktreeMetadata {
   branchName?: string;
 }
 
+export interface WorkspaceSettings {
+  // Session defaults
+  defaultAgent?: AgentType;
+  defaultContinue?: boolean;
+  defaultYolo?: boolean;
+  launchInTmux?: boolean;
+  claudeArgs?: string[];
+
+  // Git settings
+  defaultBranch?: string;
+  remote?: string;
+  branchPrefix?: string;
+
+  // Custom prompts (Conductor-style)
+  promptCodeReview?: string;
+  promptCreatePr?: string;
+  promptBranchRename?: string;
+  promptGeneral?: string;
+
+  // Worktree naming — mountains theme
+  nextMountainIndex?: number;
+}
+
+export const MOUNTAIN_NAMES = [
+  'everest', 'kilimanjaro', 'denali', 'fuji', 'rainier', 'matterhorn',
+  'elbrus', 'aconcagua', 'kangchenjunga', 'lhotse', 'makalu', 'cho-oyu',
+  'dhaulagiri', 'manaslu', 'annapurna', 'nanga-parbat', 'olympus',
+  'mont-blanc', 'k2', 'vinson', 'erebus', 'logan', 'puncak-jaya',
+  'wilhelm', 'cook', 'ararat', 'etna', 'shasta', 'whitney', 'hood',
+] as const;
+
 export interface Config {
   host: string;
   port: number;
@@ -123,6 +155,8 @@ export interface Config {
   defaultNotifications: boolean;
   pinHash?: string | undefined;
   rootDirs?: string[] | undefined;
+  workspaces?: string[] | undefined;
+  workspaceSettings?: Record<string, WorkspaceSettings> | undefined;
   vapidPublicKey?: string | undefined;
   vapidPrivateKey?: string | undefined;
   debugLog?: boolean | undefined;
@@ -153,11 +187,54 @@ export interface PullRequest {
   additions: number;
   deletions: number;
   reviewDecision: string | null;
+  mergeable: string | null;
 }
 
 export interface PullRequestsResponse {
   prs: PullRequest[];
   error?: string | undefined;
+}
+
+export interface ActivityEntry {
+  hash: string;
+  shortHash: string;
+  message: string;
+  author: string;
+  timeAgo: string;
+  branches: string[];
+}
+
+export interface CiStatus {
+  total: number;
+  passing: number;
+  failing: number;
+  pending: number;
+}
+
+export interface PrInfo {
+  number: number;
+  title: string;
+  url: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  headRefName: string;
+  baseRefName: string;
+  isDraft: boolean;
+  reviewDecision: string | null;
+}
+
+export interface DashboardData {
+  prs: PullRequest[];
+  activity: ActivityEntry[];
+  isGitRepo: boolean;
+  defaultBranch: string | null;
+  hasGhCli: boolean;
+}
+
+export interface Workspace {
+  path: string;
+  name: string;
+  isGitRepo: boolean;
+  defaultBranch: string | null;
 }
 
 export type Platform = 'macos' | 'linux';

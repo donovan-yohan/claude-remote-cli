@@ -1,7 +1,6 @@
-export type TabId = 'repos' | 'worktrees' | 'terminals' | 'prs';
-
 const SIDEBAR_WIDTH_KEY = 'claude-remote-sidebar-width';
 const SIDEBAR_COLLAPSED_KEY = 'claude-remote-sidebar-collapsed';
+const ACTIVE_WORKSPACE_KEY = 'claude-remote-active-workspace';
 export const DEFAULT_SIDEBAR_WIDTH = 240;
 export const MIN_SIDEBAR_WIDTH = 180;
 export const MAX_SIDEBAR_WIDTH = 500;
@@ -23,14 +22,16 @@ function loadSidebarCollapsed(): boolean {
   catch { return false; }
 }
 
+function loadActiveWorkspacePath(): string | null {
+  try { return localStorage.getItem(ACTIVE_WORKSPACE_KEY); }
+  catch { return null; }
+}
+
 let sidebarOpen = $state(false);
 let sidebarWidth = $state(loadSidebarWidth());
 let sidebarCollapsed = $state(loadSidebarCollapsed());
-let activeTab = $state<TabId>('repos');
-let rootFilter = $state('');
-let repoFilter = $state('');
-let searchFilter = $state('');
-let prRoleFilter = $state<'all' | 'author' | 'reviewer'>('all');
+let searchQuery = $state('');
+let activeWorkspacePath = $state<string | null>(loadActiveWorkspacePath());
 
 export function getUi() {
   return {
@@ -40,16 +41,16 @@ export function getUi() {
     set sidebarWidth(v: number) { sidebarWidth = v; },
     get sidebarCollapsed() { return sidebarCollapsed; },
     set sidebarCollapsed(v: boolean) { sidebarCollapsed = v; },
-    get activeTab() { return activeTab; },
-    set activeTab(v: TabId) { activeTab = v; },
-    get rootFilter() { return rootFilter; },
-    set rootFilter(v: string) { rootFilter = v; },
-    get repoFilter() { return repoFilter; },
-    set repoFilter(v: string) { repoFilter = v; },
-    get searchFilter() { return searchFilter; },
-    set searchFilter(v: string) { searchFilter = v; },
-    get prRoleFilter() { return prRoleFilter; },
-    set prRoleFilter(v: 'all' | 'author' | 'reviewer') { prRoleFilter = v; },
+    get searchQuery() { return searchQuery; },
+    set searchQuery(v: string) { searchQuery = v; },
+    get activeWorkspacePath() { return activeWorkspacePath; },
+    set activeWorkspacePath(v: string | null) {
+      activeWorkspacePath = v;
+      try {
+        if (v === null) localStorage.removeItem(ACTIVE_WORKSPACE_KEY);
+        else localStorage.setItem(ACTIVE_WORKSPACE_KEY, v);
+      } catch { /* localStorage unavailable */ }
+    },
   };
 }
 

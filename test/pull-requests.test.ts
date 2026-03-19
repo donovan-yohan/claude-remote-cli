@@ -15,7 +15,7 @@ describe('PullRequest types', () => {
       updatedAt: '2026-02-24T00:00:00Z',
       additions: 10,
       deletions: 5,
-      reviewDecision: 'APPROVED',
+      reviewDecision: 'APPROVED', mergeable: 'MERGEABLE',
     };
     assert.equal(pr.role, 'author');
     assert.equal(pr.state, 'OPEN');
@@ -33,7 +33,7 @@ describe('PullRequest types', () => {
       updatedAt: '2026-02-24T00:00:00Z',
       additions: 50,
       deletions: 20,
-      reviewDecision: null,
+      reviewDecision: null, mergeable: null,
     };
     assert.equal(pr.role, 'reviewer');
   });
@@ -60,7 +60,7 @@ describe('PullRequest types', () => {
         updatedAt: '2026-02-24T00:00:00Z',
         additions: 0,
         deletions: 0,
-        reviewDecision: null,
+        reviewDecision: null, mergeable: null,
       }],
     };
     assert.equal(response.prs.length, 1);

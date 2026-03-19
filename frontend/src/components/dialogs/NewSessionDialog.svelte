@@ -1,9 +1,7 @@
 <script lang="ts">
-  import { fetchBranches, createSession, createRepoSession, fetchRepos } from '../../lib/api.js';
+  import { fetchBranches, createSession, createRepoSession } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
-  import { getUi } from '../../lib/state/ui.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
-  import { rootShortName } from '../../lib/utils.js';
   import type { RepoInfo, AgentType, OpenSessionOptions } from '../../lib/types.js';
 
   let {
@@ -14,20 +12,18 @@
     onSessionCreated?: (sessionId: string) => void;
   } = $props();
 
-  const ui = getUi();
   const config = getConfigState();
 
   let dialogEl: HTMLDialogElement;
 
-  // Tab state — mirrors sidebar's activeTab
+  // Tab state — 'repos' = repo session, 'worktrees' = worktree session
   let activeTab = $state<'repos' | 'worktrees'>('repos');
 
-  // Repo data
-  let allRepos = $state<RepoInfo[]>([]);
+  // Selected workspace/repo
+  let selectedRepoPath = $state('');
+  let selectedRepoName = $state('');
 
   // Form state
-  let selectedRoot = $state('');
-  let selectedRepoPath = $state('');
   let branchInput = $state('');
   let claudeArgsInput = $state('');
   let selectedAgent = $state<AgentType>('claude');
@@ -43,17 +39,6 @@
   let branchRequestId = 0;
 
   // Derived
-  let roots = $derived.by(() => {
-    const r = new Set<string>();
-    allRepos.forEach(repo => { if (repo.root) r.add(repo.root); });
-    return Array.from(r).sort();
-  });
-
-  let filteredRepos = $derived.by(() => {
-    if (!selectedRoot) return [];
-    return allRepos.filter(r => r.root === selectedRoot).sort((a, b) => a.name.localeCompare(b.name));
-  });
-
   let filteredBranches = $derived.by(() => {
     if (!branchInput.trim()) return [];
     const lower = branchInput.toLowerCase();
@@ -109,18 +94,6 @@
     branchesRefreshing = false;
   }
 
-  function onRootChange() {
-    selectedRepoPath = '';
-    resetBranchState();
-  }
-
-  function onRepoChange() {
-    resetBranchState();
-    if (selectedRepoPath) {
-      loadBranchesForRepo(selectedRepoPath);
-    }
-  }
-
   function onBranchInput() {
     branchDropdownVisible = branchInput.trim().length > 0;
   }
@@ -131,8 +104,8 @@
   }
 
   function reset() {
-    selectedRoot = '';
     selectedRepoPath = '';
+    selectedRepoName = '';
     claudeArgsInput = '';
     yoloMode = false;
     continueExisting = false;
@@ -142,14 +115,7 @@
 
   export async function open(repo?: RepoInfo | null, options?: OpenSessionOptions) {
     reset();
-    activeTab = options?.tab ?? (ui.activeTab === 'repos' || ui.activeTab === 'worktrees' ? ui.activeTab : 'repos');
-
-    // Load repos fresh
-    try {
-      allRepos = await fetchRepos();
-    } catch {
-      allRepos = [];
-    }
+    activeTab = 'repos';
 
     await refreshConfig();
     selectedAgent = config.defaultAgent as AgentType;
@@ -162,35 +128,18 @@
     if (options?.yolo !== undefined) yoloMode = options.yolo;
     if (options?.useTmux !== undefined) useTmux = options.useTmux;
 
-    // Pre-select from explicit repo argument, prop, or sidebar filters
+    // Pre-select repo from explicit argument or prop
     const target = repo ?? preselectedRepo;
-    if (target?.root) {
-      selectedRoot = target.root;
-      // Wait a tick so filtered repos are derived
-      await Promise.resolve();
+    if (target) {
       selectedRepoPath = target.path;
-      await loadBranchesForRepo(target.path);
-    } else {
-      // No explicit repo — pre-fill from sidebar filters
-      if (ui.repoFilter) {
-        // Find matching repo by name (optionally scoped to root filter)
-        const matchingRepo = allRepos.find(r =>
-          r.name === ui.repoFilter && (!ui.rootFilter || r.root === ui.rootFilter)
-        );
-        if (matchingRepo?.root) {
-          selectedRoot = matchingRepo.root;
-          await Promise.resolve();
-          selectedRepoPath = matchingRepo.path;
-          if (activeTab === 'worktrees') {
-            await loadBranchesForRepo(matchingRepo.path);
-          }
-        }
-      } else if (ui.rootFilter) {
-        selectedRoot = ui.rootFilter;
+      selectedRepoName = target.name;
+      if (options?.branchName) {
+        activeTab = 'worktrees';
+        await loadBranchesForRepo(target.path);
       }
     }
 
-    // Apply pre-fill overrides for customize flow
+    // Apply pre-fill overrides
     if (options?.branchName) branchInput = options.branchName;
     if (options?.claudeArgs) claudeArgsInput = options.claudeArgs;
 
@@ -212,17 +161,18 @@
       if (activeTab === 'repos') {
         session = await createRepoSession({
           repoPath,
-          repoName: repoPath.split('/').filter(Boolean).pop(),
+          repoName: selectedRepoName || repoPath.split('/').filter(Boolean).pop(),
           continue: continueExisting,
           yolo: yoloMode,
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
           agent: selectedAgent,
           useTmux,
+          allowMultiple: true,
         });
       } else {
         session = await createSession({
           repoPath,
-          repoName: repoPath.split('/').filter(Boolean).pop(),
+          repoName: selectedRepoName || repoPath.split('/').filter(Boolean).pop(),
           branchName: branchInput.trim() || undefined,
           yolo: yoloMode,
           claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,
@@ -233,11 +183,6 @@
       dialogEl.close();
       await refreshAll();
       if (session?.id) {
-        // If backend redirected a worktree request to a repo session,
-        // switch to the repos tab so the user can see it
-        if (activeTab === 'worktrees' && session.type === 'repo') {
-          ui.activeTab = 'repos';
-        }
         onSessionCreated?.(session.id);
       }
     } catch (err: unknown) {
@@ -279,6 +224,9 @@
   <div class="dialog-content">
     <h2 class="dialog-title">
       {activeTab === 'repos' ? 'New Session' : 'New Worktree'}
+      {#if selectedRepoName}
+        <span class="dialog-title-repo">— {selectedRepoName}</span>
+      {/if}
     </h2>
 
     <!-- Tabs -->
@@ -287,48 +235,20 @@
         class="dialog-tab"
         class:active={activeTab === 'repos'}
         onclick={() => { activeTab = 'repos'; }}
-      >Repos</button>
+      >Repo Session</button>
       <button
         class="dialog-tab"
         class:active={activeTab === 'worktrees'}
-        onclick={() => { activeTab = 'worktrees'; }}
-      >Worktrees</button>
+        onclick={() => {
+          activeTab = 'worktrees';
+          if (selectedRepoPath && allBranches.length === 0) {
+            loadBranchesForRepo(selectedRepoPath);
+          }
+        }}
+      >Worktree</button>
     </div>
 
     <div class="dialog-body">
-      <!-- Root select -->
-      <div class="dialog-field">
-        <label class="dialog-label" for="ns-root">Root directory</label>
-        <select
-          id="ns-root"
-          class="dialog-select"
-          bind:value={selectedRoot}
-          onchange={onRootChange}
-        >
-          <option value="">Select a root...</option>
-          {#each roots as root (root)}
-            <option value={root}>{rootShortName(root)}</option>
-          {/each}
-        </select>
-      </div>
-
-      <!-- Repo select -->
-      <div class="dialog-field">
-        <label class="dialog-label" for="ns-repo">Repository</label>
-        <select
-          id="ns-repo"
-          class="dialog-select"
-          bind:value={selectedRepoPath}
-          onchange={onRepoChange}
-          disabled={!selectedRoot}
-        >
-          <option value="">Select a repo...</option>
-          {#each filteredRepos as repo (repo.path)}
-            <option value={repo.path}>{repo.name}</option>
-          {/each}
-        </select>
-      </div>
-
       <!-- Coding agent select -->
       <div class="dialog-field">
         <label class="dialog-label" for="ns-agent">Coding agent</label>
@@ -499,6 +419,12 @@
     margin: 0;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+  }
+
+  .dialog-title-repo {
+    font-weight: 400;
+    color: var(--text-muted);
+    font-size: 1rem;
   }
 
   .dialog-tabs {
