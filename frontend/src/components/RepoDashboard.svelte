@@ -36,15 +36,17 @@
   }
 
   function prActionForRow(pr: PullRequest) {
-    // PullRequest doesn't carry CI counts — derive with best-effort from reviewDecision
+    // Dashboard doesn't fetch CI status per-PR — derive action from PR state only.
+    // CI-aware actions (Fix Errors, Checks Running) are only shown in the PrTopBar
+    // which fetches CI data for the active session's branch.
     const prState = pr.state === 'OPEN' ? 'OPEN' : pr.state === 'MERGED' ? 'MERGED' : 'CLOSED';
     return derivePrAction({
-      commitsAhead: 1, // treat any open PR as having commits
+      commitsAhead: 1,
       prState,
-      ciPassing: pr.reviewDecision === 'APPROVED' ? 1 : 0,
-      ciFailing: pr.reviewDecision === 'CHANGES_REQUESTED' ? 1 : 0,
-      ciPending: (!pr.reviewDecision || pr.reviewDecision === 'REVIEW_REQUIRED') ? 1 : 0,
-      ciTotal: 1,
+      ciPassing: 0,
+      ciFailing: 0,
+      ciPending: 0,
+      ciTotal: 0, // No CI data → state machine returns "Code Review" for OPEN PRs
     });
   }
 
