@@ -19,3 +19,4 @@
 | [pr-dashboard-usability-bug-analysis.md](2026-03-19-pr-dashboard-usability-bug-analysis.md) | PR dashboard: no scroll, Code Review links to GitHub, no per-PR session button, no search | 2026-03-19 |
 | [tmux-underscore-rendering-bug-analysis.md](2026-03-19-tmux-underscore-rendering-bug-analysis.md) | tmux Unicode status icons render as underscores — likely caused by term.reset() wiping terminal state | 2026-03-19 |
 | [sidebar-session-model-mismatch-bug-analysis.md](2026-03-19-sidebar-session-model-mismatch-bug-analysis.md) | Sidebar shows 1 row per session instead of 1 row per folder — duplicates, no persistent repo entry, architectural mismatch | 2026-03-19 |
+| [repo-root-click-dashboard-bug-analysis.md](2026-03-19-repo-root-click-dashboard-bug-analysis.md) | Clicking inactive repo root goes to dashboard instead of creating a session — wrong click handler in persistent entry | 2026-03-19 |

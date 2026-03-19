@@ -251,7 +251,16 @@
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <li
             class="session-row inactive"
-            onclick={() => onSelectWorkspace(workspace.path)}
+            onclick={async () => {
+              try {
+                const session = await createSession({
+                  repoPath: workspace.path,
+                  repoName: workspace.name,
+                });
+                await refreshAll();
+                onSelectSession(session.id);
+              } catch { /* silent */ }
+            }}
           >
             <div class="session-row-primary">
               <span class="dot dot-inactive"></span>
