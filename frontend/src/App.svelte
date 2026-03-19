@@ -23,6 +23,7 @@
   import SettingsDialog from './components/dialogs/SettingsDialog.svelte';
   import DeleteWorktreeDialog from './components/dialogs/DeleteWorktreeDialog.svelte';
   import AddWorkspaceDialog from './components/dialogs/AddWorkspaceDialog.svelte';
+  import WorkspaceSettingsDialog from './components/dialogs/WorkspaceSettingsDialog.svelte';
   import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
 
   const queryClient = new QueryClient({
@@ -58,6 +59,7 @@
   let newSessionDialogRef = $state<NewSessionDialog | undefined>();
   let settingsDialogRef = $state<SettingsDialog | undefined>();
   let deleteWorktreeDialogRef = $state<DeleteWorktreeDialog | undefined>();
+  let workspaceSettingsDialogRef = $state<WorkspaceSettingsDialog | undefined>();
   let mainAppEl = $state<HTMLDivElement | undefined>();
 
   let keyboardOpen = $state(false);
@@ -281,12 +283,11 @@
 
   // Handlers
   function handleSelectWorkspace(path: string) {
-    ui.activeWorkspacePath = path;
-    // If workspace has sessions, select the first one
-    const sessions = getSessionsForWorkspace(path);
-    if (sessions.length > 0 && sessions[0]) {
-      sessionState.activeSessionId = sessions[0].id;
+    if (ui.activeWorkspacePath === path) {
+      // Already viewing this workspace — return to dashboard
+      sessionState.activeSessionId = null;
     } else {
+      ui.activeWorkspacePath = path;
       sessionState.activeSessionId = null;
     }
     closeSidebar();
