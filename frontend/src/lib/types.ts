@@ -1,11 +1,5 @@
 export type AgentType = 'claude' | 'codex';
 
-export interface SessionInfo {
-  type: 'session_info';
-  mode: 'pty';
-  sessionId: string;
-}
-
 export interface Workspace {
   path: string;
   name: string;

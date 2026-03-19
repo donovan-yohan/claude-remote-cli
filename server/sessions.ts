@@ -167,15 +167,13 @@ function kill(id: string): void {
   if (!session) {
     throw new Error(`Session not found: ${id}`);
   }
-  if (session.mode === 'pty') {
-    try {
-      session.pty.kill('SIGTERM');
-    } catch {
-      // PTY may already be dead (e.g. disconnected sessions) — still delete from registry
-    }
-    if (session.tmuxSessionName) {
-      execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
-    }
+  try {
+    session.pty.kill('SIGTERM');
+  } catch {
+    // PTY may already be dead (e.g. disconnected sessions) — still delete from registry
+  }
+  if (session.tmuxSessionName) {
+    execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
   }
   fireSessionEnd(id, session.repoPath, session.branchName);
   sessions.delete(id);
@@ -183,7 +181,7 @@ function kill(id: string): void {
 
 function killAllTmuxSessions(): void {
   for (const session of sessions.values()) {
-    if (session.mode === 'pty' && session.tmuxSessionName) {
+    if (session.tmuxSessionName) {
       execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
     }
   }
