@@ -72,6 +72,8 @@ export async function createSession(body: {
   yolo?: boolean | undefined;
   agent?: string | undefined;
   useTmux?: boolean | undefined;
+  cols?: number | undefined;
+  rows?: number | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions', {
     method: 'POST',
@@ -93,6 +95,8 @@ export async function createRepoSession(body: {
   yolo?: boolean | undefined;
   agent?: string | undefined;
   useTmux?: boolean | undefined;
+  cols?: number | undefined;
+  rows?: number | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions/repo', {
     method: 'POST',

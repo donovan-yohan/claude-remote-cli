@@ -13,3 +13,4 @@
 | [mobile-scroll-escape-sequences-bug-analysis.md](2026-03-16-mobile-scroll-escape-sequences-bug-analysis.md) | Mobile scroll sends SGR escape sequences to shell when mouse tracking not enabled | 2026-03-16 |
 | [non-tmux-scroll-bug-analysis.md](2026-03-17-non-tmux-scroll-bug-analysis.md) | Touch scroll sends arrow keys instead of wheel events in non-tmux alternate screen sessions | 2026-03-17 |
 | [session-persistence-across-updates-bug-analysis.md](2026-03-17-session-persistence-across-updates-bug-analysis.md) | Sessions lost after auto-update: tmux orphan cleanup race, no graceful shutdown serialization, PTY-coupled lifecycle | 2026-03-17 |
+| [first-enter-duplicate-content-bug-analysis.md](2026-03-19-first-enter-duplicate-content-bug-analysis.md) | First Enter on new session duplicates terminal content — likely conditional rendering or PTY resize | 2026-03-19 |

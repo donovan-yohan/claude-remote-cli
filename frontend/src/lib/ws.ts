@@ -12,6 +12,7 @@ export type SessionModeCallback = (mode: 'sdk' | 'pty') => void;
 
 let eventWs: WebSocket | null = null;
 let ptyWs: WebSocket | null = null;
+let pendingPtySocket: WebSocket | null = null;
 let sdkWs: WebSocket | null = null;
 const MAX_RECONNECT_ATTEMPTS = 30;
 
@@ -46,12 +47,24 @@ export function connectPtySocket(
   if (ptyReconnectTimer) { clearTimeout(ptyReconnectTimer); ptyReconnectTimer = null; }
   ptyReconnectAttempt = 0;
 
+  // Close any socket still in CONNECTING state from a previous call
+  if (pendingPtySocket) {
+    pendingPtySocket.onopen = null;
+    pendingPtySocket.onmessage = null;
+    pendingPtySocket.onclose = null;
+    pendingPtySocket.onerror = null;
+    pendingPtySocket.close();
+    pendingPtySocket = null;
+  }
+
   if (ptyWs) { ptyWs.onclose = null; ptyWs.close(); ptyWs = null; }
 
   const url = wsProtocol + '//' + location.host + '/ws/' + sessionId;
   const socket = new WebSocket(url);
+  pendingPtySocket = socket;
 
   socket.onopen = () => {
+    pendingPtySocket = null;
     ptyWs = socket;
     ptyReconnectAttempt = 0;
     onResize();
@@ -60,6 +73,8 @@ export function connectPtySocket(
   socket.onmessage = (event) => { term.write(event.data as string); };
 
   socket.onclose = (event) => {
+    // If this socket was superseded, ignore its close event
+    if (pendingPtySocket !== socket && ptyWs !== socket) return;
     if (event.code === 1000) {
       term.write('\r\n[Session ended]\r\n');
       ptyWs = null;

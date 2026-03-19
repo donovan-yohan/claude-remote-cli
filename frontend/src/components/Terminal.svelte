@@ -217,7 +217,7 @@
   // React to sessionId changes
   $effect(() => {
     if (sessionId && term && !companionMode) {
-      term.clear();
+      term.reset();
       connectPtySocket(
         sessionId,
         term,

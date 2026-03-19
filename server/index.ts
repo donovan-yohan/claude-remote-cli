@@ -698,7 +698,7 @@ async function main(): Promise<void> {
 
   // POST /sessions
   app.post('/sessions', requireAuth, async (req, res) => {
-    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux } = req.body as {
+    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux, cols, rows } = req.body as {
       repoPath?: string;
       repoName?: string;
       worktreePath?: string;
@@ -707,6 +707,8 @@ async function main(): Promise<void> {
       yolo?: boolean;
       agent?: AgentType;
       useTmux?: boolean;
+      cols?: number;
+      rows?: number;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -802,6 +804,8 @@ async function main(): Promise<void> {
                 displayName: name,
                 args: baseArgs,
                 useTmux: useTmux ?? config.launchInTmux,
+                ...(cols != null && { cols }),
+                ...(rows != null && { rows }),
               });
 
               res.status(201).json(repoSession);
@@ -828,6 +832,8 @@ async function main(): Promise<void> {
                 args,
                 configPath: CONFIG_PATH,
                 useTmux: useTmux ?? config.launchInTmux,
+                ...(cols != null && { cols }),
+                ...(rows != null && { rows }),
               });
 
               writeMeta(CONFIG_PATH, {
@@ -874,6 +880,8 @@ async function main(): Promise<void> {
       args,
       configPath: CONFIG_PATH,
       useTmux: useTmux ?? config.launchInTmux,
+      ...(cols != null && { cols }),
+      ...(rows != null && { rows }),
     });
 
     if (!worktreePath) {
@@ -890,7 +898,7 @@ async function main(): Promise<void> {
 
   // POST /sessions/repo — start a session in the repo root (no worktree)
   app.post('/sessions/repo', requireAuth, (req, res) => {
-    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux } = req.body as {
+    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux, cols, rows } = req.body as {
       repoPath?: string;
       repoName?: string;
       continue?: boolean;
@@ -898,6 +906,8 @@ async function main(): Promise<void> {
       yolo?: boolean;
       agent?: AgentType;
       useTmux?: boolean;
+      cols?: number;
+      rows?: number;
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -934,6 +944,8 @@ async function main(): Promise<void> {
       displayName: name,
       args,
       useTmux: useTmux ?? config.launchInTmux,
+      ...(cols != null && { cols }),
+      ...(rows != null && { rows }),
     });
 
     res.status(201).json(session);
