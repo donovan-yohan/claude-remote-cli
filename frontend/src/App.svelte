@@ -223,6 +223,11 @@
           navigateToSession(sessionParam, 'repo');
         }
 
+        // Auto-select if exactly one session exists and none is selected
+        if (!sessionState.activeSessionId && !sessionParam && sessionState.sessions.length === 1) {
+          handleSelectSession(sessionState.sessions[0]!.id);
+        }
+
         for (const s of sessionState.sessions) {
           initSessionNotification(s.id, configState.defaultNotifications);
         }
