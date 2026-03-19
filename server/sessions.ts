@@ -3,12 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgentType, SdkSession, Session, SessionSummary, SessionType } from './types.js';
+import type { AgentType, Session, SessionSummary, SessionType } from './types.js';
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './types.js';
 import { createPtySession } from './pty-handler.js';
 import type { CreatePtyParams } from './pty-handler.js';
-import { createSdkSession, killSdkSession, sendMessage as sdkSendMessage, handlePermission as sdkHandlePermission, serializeSdkSession, restoreSdkSession } from './sdk-handler.js';
-import type { SerializedSdkSession } from './sdk-handler.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -34,13 +32,9 @@ interface PendingSessionsFile {
   version: number;
   timestamp: string;
   sessions: SerializedPtySession[];
-  sdkSessions?: SerializedSdkSession[] | undefined;
 }
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
-const SDK_IDLE_CHECK_INTERVAL_MS = 60 * 1000; // 60 seconds
-const SDK_MAX_IDLE_MS = 30 * 60 * 1000; // 30 minutes
-const SDK_MAX_IDLE_SESSIONS = 5;
 
 type CreateParams = {
   id?: string;
@@ -98,32 +92,7 @@ function fireSessionEnd(sessionId: string, repoPath: string, branchName: string)
 function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored, needsBranchRename: paramNeedsBranchRename, branchRenamePrompt: paramBranchRenamePrompt }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
-  // Dispatch: if agent is claude, no custom command, try SDK first
-  if (agent === 'claude' && !command) {
-    const sdkResult = createSdkSession(
-      {
-        id,
-        type,
-        agent,
-        repoName,
-        repoPath,
-        cwd,
-        root,
-        worktreeName,
-        branchName,
-        displayName,
-      },
-      sessions,
-      idleChangeCallbacks,
-    );
-
-    if (!('fallback' in sdkResult)) {
-      return { ...sdkResult.result, pid: undefined, needsBranchRename: false };
-    }
-    // SDK init failed — fall through to PTY
-  }
-
-  // PTY path: codex, terminal, custom command, or SDK fallback
+  // PTY path
   const ptyParams: CreatePtyParams = {
     id,
     type,
@@ -178,10 +147,10 @@ function list(): SessionSummary[] {
       idle: s.idle,
       cwd: s.cwd,
       customCommand: s.customCommand,
-      useTmux: s.mode === 'pty' ? s.useTmux : false,
-      tmuxSessionName: s.mode === 'pty' ? s.tmuxSessionName : '',
+      useTmux: s.useTmux,
+      tmuxSessionName: s.tmuxSessionName,
       status: s.status,
-      needsBranchRename: s.mode === 'pty' ? !!s.needsBranchRename : false,
+      needsBranchRename: !!s.needsBranchRename,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
@@ -198,17 +167,13 @@ function kill(id: string): void {
   if (!session) {
     throw new Error(`Session not found: ${id}`);
   }
-  if (session.mode === 'pty') {
-    try {
-      session.pty.kill('SIGTERM');
-    } catch {
-      // PTY may already be dead (e.g. disconnected sessions) — still delete from registry
-    }
-    if (session.tmuxSessionName) {
-      execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
-    }
-  } else if (session.mode === 'sdk') {
-    killSdkSession(id);
+  try {
+    session.pty.kill('SIGTERM');
+  } catch {
+    // PTY may already be dead (e.g. disconnected sessions) — still delete from registry
+  }
+  if (session.tmuxSessionName) {
+    execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
   }
   fireSessionEnd(id, session.repoPath, session.branchName);
   sessions.delete(id);
@@ -216,7 +181,7 @@ function kill(id: string): void {
 
 function killAllTmuxSessions(): void {
   for (const session of sessions.values()) {
-    if (session.mode === 'pty' && session.tmuxSessionName) {
+    if (session.tmuxSessionName) {
       execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
     }
   }
@@ -227,10 +192,7 @@ function resize(id: string, cols: number, rows: number): void {
   if (!session) {
     throw new Error(`Session not found: ${id}`);
   }
-  if (session.mode === 'pty') {
-    session.pty.resize(cols, rows);
-  }
-  // SDK sessions don't support resize (no PTY)
+  session.pty.resize(cols, rows);
 }
 
 function write(id: string, data: string): void {
@@ -238,15 +200,7 @@ function write(id: string, data: string): void {
   if (!session) {
     throw new Error(`Session not found: ${id}`);
   }
-  if (session.mode === 'pty') {
-    session.pty.write(data);
-  } else if (session.mode === 'sdk') {
-    sdkSendMessage(id, data);
-  }
-}
-
-function handlePermission(id: string, requestId: string, approved: boolean): void {
-  sdkHandlePermission(id, requestId, approved);
+  session.pty.write(data);
 }
 
 function findRepoSession(repoPath: string): SessionSummary | undefined {
@@ -262,41 +216,35 @@ function serializeAll(configDir: string): void {
   fs.mkdirSync(scrollbackDirPath, { recursive: true });
 
   const serializedPty: SerializedPtySession[] = [];
-  const serializedSdk: SerializedSdkSession[] = [];
 
   for (const session of sessions.values()) {
-    if (session.mode === 'pty') {
-      // Write scrollback to disk
-      const scrollbackPath = path.join(scrollbackDirPath, session.id + '.buf');
-      fs.writeFileSync(scrollbackPath, session.scrollback.join(''), 'utf-8');
+    // Write scrollback to disk
+    const scrollbackPath = path.join(scrollbackDirPath, session.id + '.buf');
+    fs.writeFileSync(scrollbackPath, session.scrollback.join(''), 'utf-8');
 
-      serializedPty.push({
-        id: session.id,
-        type: session.type,
-        agent: session.agent,
-        root: session.root,
-        repoName: session.repoName,
-        repoPath: session.repoPath,
-        worktreeName: session.worktreeName,
-        branchName: session.branchName,
-        displayName: session.displayName,
-        createdAt: session.createdAt,
-        lastActivity: session.lastActivity,
-        useTmux: session.useTmux,
-        tmuxSessionName: session.tmuxSessionName,
-        customCommand: session.customCommand,
-        cwd: session.cwd,
-      });
-    } else if (session.mode === 'sdk') {
-      serializedSdk.push(serializeSdkSession(session));
-    }
+    serializedPty.push({
+      id: session.id,
+      type: session.type,
+      agent: session.agent,
+      root: session.root,
+      repoName: session.repoName,
+      repoPath: session.repoPath,
+      worktreeName: session.worktreeName,
+      branchName: session.branchName,
+      displayName: session.displayName,
+      createdAt: session.createdAt,
+      lastActivity: session.lastActivity,
+      useTmux: session.useTmux,
+      tmuxSessionName: session.tmuxSessionName,
+      customCommand: session.customCommand,
+      cwd: session.cwd,
+    });
   }
 
   const pending: PendingSessionsFile = {
     version: 1,
     timestamp: new Date().toISOString(),
     sessions: serializedPty,
-    sdkSessions: serializedSdk.length > 0 ? serializedSdk : undefined,
   };
 
   fs.writeFileSync(path.join(configDir, 'pending-sessions.json'), JSON.stringify(pending, null, 2), 'utf-8');
@@ -394,18 +342,6 @@ async function restoreFromDisk(configDir: string): Promise<number> {
     try { fs.unlinkSync(scrollbackPath); } catch { /* ignore */ }
   }
 
-  // Restore SDK sessions (as disconnected — they can't resume a live process)
-  if (pending.sdkSessions) {
-    for (const sdkData of pending.sdkSessions) {
-      try {
-        restoreSdkSession(sdkData, sessions);
-        restored++;
-      } catch {
-        console.error(`Failed to restore SDK session ${sdkData.id} (${sdkData.displayName})`);
-      }
-    }
-  }
-
   // Clean up
   try { fs.unlinkSync(pendingPath); } catch { /* ignore */ }
   try { fs.rmdirSync(path.join(configDir, 'scrollback')); } catch { /* ignore — may not be empty */ }
@@ -417,56 +353,12 @@ async function restoreFromDisk(configDir: string): Promise<number> {
 function activeTmuxSessionNames(): Set<string> {
   const names = new Set<string>();
   for (const session of sessions.values()) {
-    if (session.mode === 'pty' && session.tmuxSessionName) names.add(session.tmuxSessionName);
+    if (session.tmuxSessionName) names.add(session.tmuxSessionName);
   }
   return names;
-}
-
-// SDK idle sweep: check every 60s, terminate SDK sessions idle > 30min, max 5 idle
-let sdkIdleSweepTimer: ReturnType<typeof setInterval> | null = null;
-
-function startSdkIdleSweep(): void {
-  if (sdkIdleSweepTimer) return;
-  sdkIdleSweepTimer = setInterval(() => {
-    const now = Date.now();
-    const sdkSessions: SdkSession[] = [];
-
-    for (const session of sessions.values()) {
-      if (session.mode === 'sdk') {
-        sdkSessions.push(session);
-      }
-    }
-
-    // Terminate sessions idle > 30 minutes
-    for (const session of sdkSessions) {
-      const lastActivity = new Date(session.lastActivity).getTime();
-      if (session.idle && (now - lastActivity) > SDK_MAX_IDLE_MS) {
-        console.log(`SDK idle sweep: terminating session ${session.id} (${session.displayName}) — idle for ${Math.round((now - lastActivity) / 60000)}min`);
-        try { kill(session.id); } catch { /* already dead */ }
-      }
-    }
-
-    // LRU eviction: if more than 5 idle SDK sessions remain, evict oldest
-    const idleSdkSessions = Array.from(sessions.values())
-      .filter((s): s is SdkSession => s.mode === 'sdk' && s.idle)
-      .sort((a, b) => a.lastActivity.localeCompare(b.lastActivity));
-
-    while (idleSdkSessions.length > SDK_MAX_IDLE_SESSIONS) {
-      const oldest = idleSdkSessions.shift()!;
-      console.log(`SDK idle sweep: evicting session ${oldest.id} (${oldest.displayName}) — LRU`);
-      try { kill(oldest.id); } catch { /* already dead */ }
-    }
-  }, SDK_IDLE_CHECK_INTERVAL_MS);
-}
-
-function stopSdkIdleSweep(): void {
-  if (sdkIdleSweepTimer) {
-    clearInterval(sdkIdleSweepTimer);
-    sdkIdleSweepTimer = null;
-  }
 }
 
 // Re-export pty-handler utilities for backward compatibility
 export { generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
 
-export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, handlePermission, onIdleChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, startSdkIdleSweep, stopSdkIdleSweep, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

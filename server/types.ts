@@ -3,26 +3,9 @@ import type { IPty } from 'node-pty';
 export type SessionType = 'repo' | 'worktree' | 'terminal';
 export type AgentType = 'claude' | 'codex';
 export type SessionStatus = 'active' | 'disconnected';
-export type SessionMode = 'sdk' | 'pty';
+export type SessionMode = 'pty';
 
-// SDK event types for structured agent communication
-export type SdkEventType = 'user_message' | 'agent_message' | 'file_change' | 'tool_call' | 'reasoning' | 'error' | 'turn_started' | 'turn_completed' | 'session_started';
-
-export interface SdkEvent {
-  type: SdkEventType;
-  id?: string;
-  text?: string;
-  path?: string;
-  additions?: number;
-  deletions?: number;
-  toolName?: string;
-  toolInput?: Record<string, unknown>;
-  status?: string;
-  usage?: { input_tokens: number; output_tokens: number };
-  timestamp: string;
-}
-
-// Agent command records (shared by PTY and SDK handlers)
+// Agent command records
 export const AGENT_COMMANDS: Record<AgentType, string> = {
   claude: 'claude',
   codex: 'codex',
@@ -70,15 +53,7 @@ export interface PtySession extends BaseSession {
   branchRenamePrompt?: string;
 }
 
-export interface SdkSession extends BaseSession {
-  mode: 'sdk';
-  events: SdkEvent[];
-  sdkSessionId: string | null;
-  tokenUsage: { input: number; output: number };
-  estimatedCost: number;
-}
-
-export type Session = PtySession | SdkSession;
+export type Session = PtySession;
 
 // Summary type for REST API responses (no internal handles)
 export interface SessionSummary {

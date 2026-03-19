@@ -5,20 +5,14 @@ import { promisify } from 'node:util';
 import type { IPty } from 'node-pty';
 import * as sessions from './sessions.js';
 import { WorktreeWatcher } from './watcher.js';
-import type { Session, SdkSession } from './types.js';
-import { onSdkEvent, sendMessage as sdkSendMessage, handlePermission as sdkHandlePermission } from './sdk-handler.js';
+import type { Session } from './types.js';
 import { writeMeta } from './config.js';
 
 const execFileAsync = promisify(execFile);
 
-const BACKPRESSURE_HIGH = 1024 * 1024; // 1MB
-const BACKPRESSURE_LOW = 512 * 1024; // 512KB
-
 const BRANCH_POLL_INTERVAL_MS = 3000;
 const BRANCH_POLL_MAX_ATTEMPTS = 10;
 
-const RENAME_CORE = `rename the current git branch using \`git branch -m <new-name>\` to a short, descriptive kebab-case name based on the task I'm asking about. Do not include any ticket numbers or prefixes.`;
-const SDK_BRANCH_RENAME_INSTRUCTION = `Before responding to my message, first ${RENAME_CORE} After renaming, proceed with my request normally.\n\n`;
 
 function startBranchWatcher(
   session: Session,
@@ -108,7 +102,7 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       return;
     }
 
-    // PTY/SDK channel: /ws/:sessionId
+    // PTY channel: /ws/:sessionId
     const match = request.url && request.url.match(/^\/ws\/([a-f0-9]+)$/);
     if (!match) {
       socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
@@ -135,17 +129,6 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
   wss.on('connection', (ws: WebSocket, _request: http.IncomingMessage) => {
     const session = sessionMap.get(ws);
     if (!session) return;
-
-    if (session.mode === 'sdk') {
-      handleSdkConnection(ws, session);
-      return;
-    }
-
-    // PTY mode — existing behavior
-    if (session.mode !== 'pty') {
-      ws.close(1008, 'Session mode does not support PTY streaming');
-      return;
-    }
 
     const ptySession = session;
 
@@ -220,91 +203,6 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       if (idx !== -1) ptySession.onPtyReplacedCallbacks.splice(idx, 1);
     });
   });
-
-  function handleSdkConnection(ws: WebSocket, session: SdkSession): void {
-    // Send session info
-    const sessionInfo = JSON.stringify({
-      type: 'session_info',
-      mode: 'sdk',
-      sessionId: session.id,
-    });
-    if (ws.readyState === ws.OPEN) ws.send(sessionInfo);
-
-    // Replay stored events (send as-is — client expects raw SdkEvent shape)
-    for (const event of session.events) {
-      if (ws.readyState !== ws.OPEN) break;
-      ws.send(JSON.stringify(event));
-    }
-
-    // Subscribe to live events with backpressure
-    let paused = false;
-
-    const unsubscribe = onSdkEvent(session.id, (event) => {
-      if (ws.readyState !== ws.OPEN) return;
-
-      // Backpressure check
-      if (ws.bufferedAmount > BACKPRESSURE_HIGH) {
-        paused = true;
-        return;
-      }
-
-      ws.send(JSON.stringify(event));
-    });
-
-    // Periodically check if we can resume
-    const backpressureInterval = setInterval(() => {
-      if (paused && ws.bufferedAmount < BACKPRESSURE_LOW) {
-        paused = false;
-      }
-    }, 100);
-
-    // Handle incoming messages
-    ws.on('message', (msg) => {
-      const str = msg.toString();
-      try {
-        const parsed = JSON.parse(str) as Record<string, unknown>;
-
-        if (parsed.type === 'message' && typeof parsed.text === 'string') {
-          if (parsed.text.length > 100_000) return;
-          if (session.needsBranchRename) {
-            session.needsBranchRename = false;
-            sdkSendMessage(session.id, SDK_BRANCH_RENAME_INSTRUCTION + parsed.text);
-            if (configPath) startBranchWatcher(session, broadcastEvent, configPath);
-          } else {
-            sdkSendMessage(session.id, parsed.text);
-          }
-          return;
-        }
-
-        if (parsed.type === 'permission' && typeof parsed.requestId === 'string' && typeof parsed.approved === 'boolean') {
-          sdkHandlePermission(session.id, parsed.requestId, parsed.approved);
-          return;
-        }
-
-        if (parsed.type === 'resize' && typeof parsed.cols === 'number' && typeof parsed.rows === 'number') {
-          // TODO: wire up companion shell — currently open_companion message is unhandled server-side
-          return;
-        }
-
-        if (parsed.type === 'open_companion') {
-          // TODO: spawn companion PTY in session CWD and relay via terminal_data/terminal_exit frames
-          return;
-        }
-      } catch (_) {
-        // Not JSON — ignore for SDK sessions
-      }
-    });
-
-    ws.on('close', () => {
-      unsubscribe();
-      clearInterval(backpressureInterval);
-    });
-
-    ws.on('error', () => {
-      unsubscribe();
-      clearInterval(backpressureInterval);
-    });
-  }
 
   sessions.onIdleChange((sessionId, idle) => {
     broadcastEvent('session-idle-changed', { sessionId, idle });
