@@ -1,5 +1,5 @@
 import webpush from 'web-push';
-import type { Config } from './types.js';
+import type { Config, SdkEvent } from './types.js';
 
 interface PushSubscriptionData {
   endpoint: string;
@@ -14,6 +14,8 @@ interface SubscriptionEntry {
 let vapidPublicKey: string | null = null;
 
 const subscriptions = new Map<string, SubscriptionEntry>();
+
+const MAX_PAYLOAD_SIZE = 4 * 1024; // 4KB
 
 export function ensureVapidKeys(
   config: Config,
@@ -75,18 +77,70 @@ export function removeSession(sessionId: string): void {
   }
 }
 
+export function enrichNotification(event: SdkEvent): string {
+  try {
+    switch (event.type) {
+      case 'tool_call': {
+        const action = event.toolName || 'use a tool';
+        const target = event.path || (event.toolInput && typeof event.toolInput === 'object'
+          ? (event.toolInput.file_path as string | undefined) || (event.toolInput.command as string | undefined) || ''
+          : '');
+        const msg = target
+          ? `Claude wants to ${action} ${target}`
+          : `Claude wants to ${action}`;
+        return msg.slice(0, 200);
+      }
+      case 'turn_completed':
+        return 'Claude finished';
+      case 'error': {
+        const brief = (event.text || 'unknown error').slice(0, 150);
+        return `Claude hit an error: ${brief}`;
+      }
+      default:
+        return 'Claude is waiting for your input';
+    }
+  } catch {
+    return 'Claude is waiting for your input';
+  }
+}
+
+function truncatePayload(payload: string): string {
+  if (payload.length <= MAX_PAYLOAD_SIZE) return payload;
+  // Try to parse, truncate text fields, and re-serialize
+  try {
+    const obj = JSON.parse(payload) as Record<string, unknown>;
+    if (typeof obj.enrichedMessage === 'string' && obj.enrichedMessage.length > 100) {
+      obj.enrichedMessage = (obj.enrichedMessage as string).slice(0, 100) + '...';
+    }
+    const truncated = JSON.stringify(obj);
+    if (truncated.length <= MAX_PAYLOAD_SIZE) return truncated;
+  } catch {
+    // fall through
+  }
+  return payload.slice(0, MAX_PAYLOAD_SIZE);
+}
+
 export function notifySessionIdle(
   sessionId: string,
   session: { displayName: string; type: string },
+  sdkEvent?: SdkEvent,
 ): void {
   if (!vapidPublicKey) return;
 
-  const payload = JSON.stringify({
+  const enrichedMessage = sdkEvent ? enrichNotification(sdkEvent) : undefined;
+
+  const payloadObj: Record<string, unknown> = {
     type: 'session-attention',
     sessionId,
     displayName: session.displayName,
     sessionType: session.type,
-  });
+  };
+
+  if (enrichedMessage) {
+    payloadObj.enrichedMessage = enrichedMessage;
+  }
+
+  const payload = truncatePayload(JSON.stringify(payloadObj));
 
   for (const [endpoint, entry] of subscriptions) {
     if (!entry.sessionIds.has(sessionId)) continue;

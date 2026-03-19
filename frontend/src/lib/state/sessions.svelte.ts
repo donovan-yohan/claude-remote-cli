@@ -98,6 +98,14 @@ export function getSessionsForWorkspace(workspacePath: string): SessionSummary[]
 
 const ATTENTION_COOLDOWN_MS = 30_000;
 
+export function renameSession(sessionId: string, branchName: string, displayName: string): void {
+  const session = sessions.find(s => s.id === sessionId);
+  if (session) {
+    session.branchName = branchName;
+    session.displayName = displayName;
+  }
+}
+
 export function setAttention(sessionId: string, idle: boolean): void {
   // Update the idle flag on the session object so getSessionStatus() reflects
   // the real-time state without waiting for a full refreshAll() round-trip.

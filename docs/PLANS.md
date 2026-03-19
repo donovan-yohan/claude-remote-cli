@@ -6,6 +6,7 @@ Execution plans for active and completed work.
 
 | Plan | Created | Topic |
 |------|---------|-------|
+| `structured-agent-ui` | 2026-03-18 | Claude SDK integration + structured chat UI with rich message cards |
 | `session-persistence-fix` | 2026-03-17 | Fix sessions lost after auto-update restart |
 | `mobile-input-redesign` | 2026-02-25 | Event-intent architecture replacing value-diffing for mobile input |
 

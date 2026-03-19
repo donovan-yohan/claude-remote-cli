@@ -18,6 +18,10 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | Tmux copy-mode for mobile selection | Long-press on mobile enters tmux copy-mode (vi bindings) instead of browser-native selection. Toolbar swaps to copy-mode buttons (hjkl, w/b, Space, Copy, Exit). `mode-keys vi` set in session config. | Design doc |
 | Push notifications | Browser Notification API (desktop/open tab) + Web Push via service worker (mobile PWA). Per-session toggle in context menu, global default in settings. Server-side `push.ts` module owns `web-push` dependency and VAPID keys. | Design doc |
 | Fixture-based mobile input testing | Event-intent pipeline extracted to `server/mobile-input-pipeline.ts` for unit testing; JSON fixtures in `test/fixtures/mobile-input/` | Design doc |
+| SDK session dispatcher | `sessions.ts` routes Claude sessions to `sdk-handler.ts` (structured events), falls back to `pty-handler.ts` on failure. Codex/terminal always PTY. | Design doc |
+| SDK permission queue | `canUseTool` callback queues promises in sdk-handler runtime state. Frontend shows PermissionCard, user taps Approve/Deny, WS relays decision back to resolve promise. | Design doc |
+| SDK idle sweep | 60-second interval checks for SDK sessions idle >30min; max 5 idle SDK sessions enforced via LRU eviction | Design doc |
+| Debug event log | `--debug-log` CLI flag writes SDK events as JSONL to `~/.config/claude-remote-cli/debug/`. Async write queue, 10MB rotation, 7-day cleanup. | Design doc |
 
 ## Config Precedence (canonical)
 
@@ -40,7 +44,8 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 ## Session Types
 
 - **Repo sessions** (`POST /sessions/repo`) — The selected coding agent runs directly in the repo root. One per repo path (409 on conflict). Supports `continue: true`, which maps to agent-specific continue args.
-- **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/` and launches the selected coding agent there. Multiple per repo allowed. If a branch is already checked out (main worktree or another worktree), auto-redirects to that location instead of failing.
+- **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/` and launches the selected coding agent there. Multiple per repo allowed. If a branch is already checked out (main worktree or another worktree), auto-redirects to that location instead of failing. Default branch names cycle through mountain names (everest, kilimanjaro, denali, ...) tracked per-config via `nextMountainIndex`.
+- **Branch auto-rename** — New worktrees with mountain names get `needsBranchRename: true`. On first interaction, the rename instruction is injected: SDK mode prepends to the first user message; PTY mode sends as a standalone first message when Claude CLI goes idle. A branch watcher polls `git rev-parse --abbrev-ref HEAD` every 3s (max 10 attempts) and broadcasts `session-renamed` when the branch changes.
 - **Worktree deletion** (`DELETE /worktrees`) — Validated via `git worktree list` (supports arbitrary paths, not just `.worktrees/`). Main worktree cannot be deleted.
 
 ## Idle Detection

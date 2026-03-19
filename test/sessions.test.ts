@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import * as sessions from '../server/sessions.js';
 import { resolveTmuxSpawn, generateTmuxSessionName, serializeAll, restoreFromDisk } from '../server/sessions.js';
+import type { PtySession } from '../server/types.js';
 
 // Track created session IDs so we can clean up after each test
 const createdIds: string[] = [];
@@ -69,7 +70,8 @@ describe('sessions', () => {
     assert.ok(session, 'should return the session');
     assert.strictEqual(session.id, result.id);
     assert.strictEqual(session.repoName, 'test-repo');
-    assert.ok(session.pty, 'get should include the pty object');
+    assert.strictEqual(session.mode, 'pty');
+    assert.ok((session as PtySession).pty, 'get should include the pty object');
   });
 
   it('get returns undefined for nonexistent id', () => {
@@ -126,9 +128,11 @@ describe('sessions', () => {
 
     const session = sessions.get(result.id);
     assert.ok(session);
+    assert.strictEqual(session.mode, 'pty');
+    const ptySession = session as PtySession;
 
     let output = '';
-    session.pty.onData((data) => {
+    ptySession.pty.onData((data: string) => {
       output += data;
       if (output.includes('hello')) {
         done();
@@ -452,10 +456,12 @@ describe('sessions', () => {
 
     const session = sessions.get(result.id);
     assert.ok(session);
+    assert.strictEqual(session.mode, 'pty');
+    const ptySession = session as PtySession;
 
-    session.onPtyReplacedCallbacks.push((newPty) => {
+    ptySession.onPtyReplacedCallbacks.push((newPty) => {
       assert.ok(newPty, 'should receive new PTY');
-      assert.strictEqual(session.pty, newPty, 'session.pty should be updated to new PTY');
+      assert.strictEqual(ptySession.pty, newPty, 'session.pty should be updated to new PTY');
       done();
     });
   });
@@ -471,8 +477,10 @@ describe('sessions', () => {
 
     const session = sessions.get(result.id);
     assert.ok(session);
+    assert.strictEqual(session.mode, 'pty');
+    const ptySession = session as PtySession;
 
-    session.onPtyReplacedCallbacks.push(() => {
+    ptySession.onPtyReplacedCallbacks.push(() => {
       const stillExists = sessions.get(result.id);
       assert.ok(stillExists, 'session should still exist after retry');
       done();
@@ -490,10 +498,12 @@ describe('sessions', () => {
 
     const session = sessions.get(result.id);
     assert.ok(session);
+    assert.strictEqual(session.mode, 'pty');
+    const ptySession = session as PtySession;
 
-    session.onPtyReplacedCallbacks.push((newPty) => {
+    ptySession.onPtyReplacedCallbacks.push((newPty) => {
       assert.ok(newPty, 'should receive new PTY even with exit code 0');
-      assert.strictEqual(session.pty, newPty, 'session.pty should be updated');
+      assert.strictEqual(ptySession.pty, newPty, 'session.pty should be updated');
       const stillExists = sessions.get(result.id);
       assert.ok(stillExists, 'session should still exist after retry');
       done();
@@ -525,8 +535,9 @@ describe('sessions', () => {
     createdIds.push(result.id);
     const session = sessions.get(result.id);
     assert.ok(session);
-    assert.ok(session.scrollback.length >= 1);
-    assert.strictEqual(session.scrollback[0], 'prior output\r\n');
+    assert.strictEqual(session.mode, 'pty');
+    assert.ok((session as PtySession).scrollback.length >= 1);
+    assert.strictEqual((session as PtySession).scrollback[0], 'prior output\r\n');
   });
 });
 
@@ -562,7 +573,8 @@ describe('session persistence', () => {
     // Manually push some scrollback
     const session = sessions.get(s.id);
     assert.ok(session);
-    session.scrollback.push('hello world');
+    assert.strictEqual(session.mode, 'pty');
+    (session as PtySession).scrollback.push('hello world');
 
     serializeAll(configDir);
 
@@ -598,7 +610,8 @@ describe('session persistence', () => {
 
     const session = sessions.get(originalId);
     assert.ok(session);
-    session.scrollback.push('saved output');
+    assert.strictEqual(session.mode, 'pty');
+    (session as PtySession).scrollback.push('saved output');
 
     serializeAll(configDir);
 
@@ -617,8 +630,9 @@ describe('session persistence', () => {
     assert.strictEqual(restoredSession.displayName, 'my-session');
 
     // Scrollback should be restored
-    assert.ok(restoredSession.scrollback.length >= 1);
-    assert.strictEqual(restoredSession.scrollback[0], 'saved output');
+    assert.strictEqual(restoredSession.mode, 'pty');
+    assert.ok((restoredSession as PtySession).scrollback.length >= 1);
+    assert.strictEqual((restoredSession as PtySession).scrollback[0], 'saved output');
 
     // pending-sessions.json should be cleaned up
     assert.ok(!fs.existsSync(path.join(configDir, 'pending-sessions.json')));
@@ -689,7 +703,7 @@ describe('session persistence', () => {
         lastActivity: new Date().toISOString(),
         useTmux: true,
         tmuxSessionName: 'crc-my-session-tmux-tes',
-        customCommand: null,
+        customCommand: '/bin/cat', // Use /bin/cat to avoid spawning real claude binary in test
         cwd: '/tmp',
       }],
     };
@@ -700,7 +714,8 @@ describe('session persistence', () => {
 
     const session = sessions.get('tmux-test-id');
     assert.ok(session, 'restored session should exist');
-    assert.strictEqual(session.tmuxSessionName, 'crc-my-session-tmux-tes', 'tmuxSessionName should be preserved from serialized data');
+    assert.strictEqual(session.mode, 'pty');
+    assert.strictEqual((session as PtySession).tmuxSessionName, 'crc-my-session-tmux-tes', 'tmuxSessionName should be preserved from serialized data');
   });
 
   it('restored session remains in list after PTY exits (disconnected status)', async () => {
@@ -815,7 +830,8 @@ describe('session persistence', () => {
     // Verify tmux session name survived the round trip
     const restoredTmux = sessions.get('tmux-roundtrip-id');
     assert.ok(restoredTmux);
-    assert.strictEqual(restoredTmux.tmuxSessionName, 'crc-tmux-session-tmux-rou');
+    assert.strictEqual(restoredTmux.mode, 'pty');
+    assert.strictEqual((restoredTmux as PtySession).tmuxSessionName, 'crc-tmux-session-tmux-rou');
     assert.strictEqual(restoredTmux.displayName, 'Tmux Session');
   });
 
@@ -832,7 +848,8 @@ describe('session persistence', () => {
 
     const session = sessions.get(s.id);
     assert.ok(session);
-    session.scrollback.push('important output');
+    assert.strictEqual(session.mode, 'pty');
+    (session as PtySession).scrollback.push('important output');
 
     serializeAll(configDir);
 
