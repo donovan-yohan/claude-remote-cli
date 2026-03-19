@@ -111,9 +111,16 @@
 
     <div class="workspace-list">
       {#each sessionState.workspaces as workspace (workspace.path)}
+        {@const activeSessions = getSessionsForWorkspace(workspace.path)}
+        {@const activeWorktreePaths = new Set(activeSessions.map(s => s.repoPath))}
+        {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
+          (wt.repoPath === workspace.path || wt.repoPath.startsWith(workspace.path + '/')) &&
+          !activeWorktreePaths.has(wt.path)
+        )}
         <WorkspaceItem
           {workspace}
-          sessions={getSessionsForWorkspace(workspace.path)}
+          sessions={activeSessions}
+          {inactiveWorktrees}
           isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
           onSelectWorkspace={handleSelectWorkspace}
           {onSelectSession}

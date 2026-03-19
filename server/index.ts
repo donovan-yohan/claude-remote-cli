@@ -550,9 +550,11 @@ async function main(): Promise<void> {
     let resolvedBranch = '';
 
     if (worktreePath) {
-      // Resume existing worktree — but skip --continue for brand-new worktrees
-      // (flagged by needsBranchRename from the instant worktree creation flow)
-      args = needsBranchRename ? [...baseArgs] : [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs];
+      // Only use --continue if:
+      // 1. Not a brand-new worktree (needsBranchRename flag)
+      // 2. A prior Claude session exists in this directory (.claude/ dir present)
+      const hasPriorSession = !needsBranchRename && fs.existsSync(path.join(worktreePath, '.claude'));
+      args = hasPriorSession ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs] : [...baseArgs];
       cwd = worktreePath;
       sessionRepoPath = worktreePath;
       worktreeName = worktreePath.split('/').pop() || '';

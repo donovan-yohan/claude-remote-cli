@@ -1,13 +1,15 @@
 <script lang="ts">
-  import type { Workspace, SessionSummary } from '../lib/types.js';
+  import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
   import { getSessionStatus } from '../lib/state/sessions.svelte.js';
 
   let {
     workspace,
     sessions,
+    inactiveWorktrees = [],
     isActive,
     onSelectWorkspace,
     onSelectSession,
+    onResumeWorktree,
     onNewWorktree,
     onNewSession,
     onNewTerminal,
@@ -15,9 +17,11 @@
   }: {
     workspace: Workspace;
     sessions: SessionSummary[];
+    inactiveWorktrees?: WorktreeInfo[];
     isActive: boolean;
     onSelectWorkspace: (path: string) => void;
     onSelectSession: (id: string) => void;
+    onResumeWorktree?: (wt: WorktreeInfo) => void;
     onNewWorktree: (workspace: Workspace) => void;
     onNewSession: (workspace: Workspace) => void;
     onNewTerminal: (workspace: Workspace) => void;
@@ -103,7 +107,7 @@
     </div>
   </div>
 
-  {#if sessions.length > 0}
+  {#if sessions.length > 0 || inactiveWorktrees.length > 0}
     <ul class="session-list">
       {#each sessions as session (session.id)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -121,6 +125,18 @@
           {/if}
           <span class="session-name">{sessionDisplayName(session)}</span>
           <span class="session-status">{statusLabel(session)}</span>
+        </li>
+      {/each}
+      {#each inactiveWorktrees as wt (wt.path)}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <li
+          class="session-row inactive"
+          onclick={() => onResumeWorktree?.(wt)}
+        >
+          <span class="dot dot-inactive"></span>
+          <span class="session-name">{wt.branchName || wt.displayName || wt.name}</span>
+          <span class="session-status">inactive</span>
         </li>
       {/each}
     </ul>
@@ -266,6 +282,9 @@
 
   .status-dot--running { background: var(--status-success); }
   .status-dot--idle    { background: var(--status-info); }
+  .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+  .session-row.inactive { opacity: 0.6; }
+  .session-row.inactive:hover { opacity: 1; }
   .status-dot--attention {
     background: var(--status-warning);
     box-shadow: 0 0 5px 1px rgba(251, 191, 36, 0.45);

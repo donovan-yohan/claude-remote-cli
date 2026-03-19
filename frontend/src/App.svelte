@@ -254,7 +254,7 @@
       : undefined
   );
 
-  let workspaceSessions = $derived(
+  let allWorkspaceSessions = $derived(
     ui.activeWorkspacePath
       ? getSessionsForWorkspace(ui.activeWorkspacePath)
       : []
@@ -264,6 +264,14 @@
     sessionState.activeSessionId
       ? sessionState.sessions.find(s => s.id === sessionState.activeSessionId)
       : undefined
+  );
+
+  // Tab bar shows only sessions in the SAME worktree/directory as the active session
+  // (not all sessions across all worktrees in the workspace)
+  let workspaceSessions = $derived(
+    activeSession
+      ? allWorkspaceSessions.filter(s => s.repoPath === activeSession.repoPath)
+      : allWorkspaceSessions
   );
 
   let hasActiveSession = $derived(!!activeSession && !!ui.activeWorkspacePath && (
