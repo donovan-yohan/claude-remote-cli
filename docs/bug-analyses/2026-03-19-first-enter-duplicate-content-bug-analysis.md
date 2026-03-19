@@ -1,181 +1,81 @@
-# Bug Analysis: First Enter Key Duplicates Terminal Content
+# Bug Analysis: First Enter Modifies/Duplicates Input on New Worktree Sessions
 
-> **Status**: Investigating | **Date**: 2026-03-19
+> **Status**: Confirmed | **Date**: 2026-03-19
 > **Severity**: High
-> **Affected Area**: Terminal.svelte, App.svelte, ws.ts (frontend)
+> **Affected Area**: server/ws.ts (branch rename interception, lines 172-193)
 
 ## Symptoms
-- On desktop, creating a new session and pressing Enter for the first time causes terminal output to duplicate below the existing content
-- Sometimes previous content is removed instead
-- Happens 100% of the time on every new session
-- Did NOT happen in v2
+- On new worktree sessions (mountain-named), the first Enter press modifies the user's input
+- **Duplication variant**: Entire message appears twice (seen in `makalu` worktree)
+- **Truncation variant**: Words deleted from end of input ("being sent" → "being")
+- Happens 100% of the time on first Enter of a new mountain-named worktree session
+- Does NOT happen on subsequent Enter presses (flag is cleared after first)
 
 ## Reproduction Steps
-1. Open the web interface on desktop
-2. Create a new session (any type)
-3. Wait for the terminal to load and show initial output
-4. Press Enter
-5. Observe: terminal content appears duplicated below
+1. Open the web interface
+2. Click "New Worktree" on any workspace (creates mountain-named worktree)
+3. Wait for Claude Code to load in the terminal
+4. Type a message (e.g., "hello world")
+5. Press Enter
+6. Observe: text is duplicated or truncated
 
-## Key Code Path
+## Root Cause
+
+The branch rename interception logic in `server/ws.ts:172-193` sends user keystrokes to the PTY **twice** and relies on `\x15` (Ctrl+U) to undo the first set — but Ctrl+U doesn't work reliably in Claude Code's custom Ink/React TUI.
+
+**The code flow:**
+
 ```
-handleNewSessionCreated() [App.svelte]
-  -> sessionState.activeSessionId = sessionId
-  -> closeSidebar()
-  -> terminalRef?.focusTerm()
-
-$effect [Terminal.svelte:218-230]
-  -> term.clear()
-  -> connectPtySocket(sessionId, term, onResize, onSessionEnd)
-
-connectPtySocket [ws.ts:40-75]
-  -> new WebSocket(url)
-  -> socket.onopen: ptyWs = socket; onResize()
-  -> socket.onmessage: term.write(event.data)
-
-Server [server/ws.ts:107-126]
-  -> attachToPty(): replay scrollback, then attach onData handler
+1. User types "hello world" — each character arrives as WebSocket message
+2. Line 178-179: Character buffered AND passed through to PTY
+   → PTY echoes character → user sees it in Claude Code's input
+3. User presses Enter
+4. Line 187: \x15 (Ctrl+U) sent to PTY to "clear the input line"
+5. Line 188: renamePrompt + buffered "hello world" + \r sent to PTY
 ```
 
-## v2 vs v3 Code Differences
+**Why it fails:** Claude Code uses a custom React/Ink text input component, NOT readline. `\x15` (Ctrl+U) behavior is undefined in this context:
+- **If Ctrl+U does nothing**: passthrough text stays + replay appends → **duplication**
+- **If Ctrl+U partially clears**: some passthrough remains, replay overlaps → **truncation**
 
-Terminal.svelte changes are minimal (only `companionMode` prop added, defaults to `false`).
-
-The structural difference is in **App.svelte**:
-
-**v2**: Terminal rendered unconditionally
-```svelte
-<Terminal sessionId={sessionState.activeSessionId} ... />
-```
-
-**v3**: Terminal inside conditional block
-```svelte
-{#if activeSessionMode === 'sdk'}
-  <SessionView ... />
-{:else}
-  <Terminal sessionId={sessionState.activeSessionId} ... />
-{/if}
-```
-
-Where `activeSessionMode` is derived from the sessions list:
-```typescript
-let activeSessionMode = $derived<'sdk' | 'pty'>(
-  sessionState.sessions.find(s => s.id === sessionState.activeSessionId)?.mode ?? 'pty'
-);
-```
-
-## Hypotheses (Ranked)
-
-### H1: Conditional rendering causes Terminal remount (Most Likely)
-
-If `activeSessionMode` transiently changes during session creation, Terminal could unmount and remount. The remount creates a new xterm instance and fires `$effect` again, calling `connectPtySocket()`. If the previous WebSocket is still in `CONNECTING` state (`ptyWs` is null), the old connection is NOT closed, resulting in **two WebSocket connections** to the same session, both replaying scrollback.
-
-**Evidence supporting**: v3-specific (new conditional), explains "duplicate content" and "every time".
-
-**How this could happen**: During session creation, v3 tries SDK first (`createSdkSession`). If SDK succeeds synchronously but the session briefly appears as `mode: 'sdk'` in the sessions list before a state change, `activeSessionMode` could flicker. Alternatively, `refreshAll()` from the event socket could momentarily produce a different value.
-
-### H2: PTY dimension mismatch + resize re-render
-
-PTY created at 80x24 (server/pty-handler.ts defaults). Browser terminal has different dimensions (e.g., 120x35). On WebSocket connect, `sendPtyResize()` triggers resize. The running app (Claude CLI, shell, tmux) handles SIGWINCH and re-renders. Re-rendered output arrives after scrollback replay and appends below existing content.
-
-**Evidence supporting**: Explains "duplicate content below" and "every time" (dimensions always mismatch).
-
-**Evidence against**: Should also happen in v2 (same connectPtySocket code). Could explain if Claude CLI defers SIGWINCH re-render until first input (explaining "first Enter" trigger).
-
-### H3: Double $effect execution
-
-Svelte 5 `$effect` fires twice due to reactive dependency changes from `refreshAll()` triggered by the event socket (`worktrees-changed` broadcast). Two calls to `connectPtySocket()` create two WebSocket connections.
-
-**Evidence supporting**: `refreshAll()` is triggered asynchronously via event socket when a session is created.
-
-**Evidence against**: Terminal's `$effect` dependencies (`sessionId`, `term`, `companionMode`) should not change from `refreshAll()` updating `sessions`.
-
-## Diagnostic Plan
-
-Add temporary logging to narrow down the root cause:
-
-### 1. Track $effect execution count
-```typescript
-// Terminal.svelte
-let effectRunCount = 0;
-$effect(() => {
-  if (sessionId && term && !companionMode) {
-    effectRunCount++;
-    console.log(`[Terminal] $effect run #${effectRunCount}, sessionId=${sessionId}`);
-    term.clear();
-    connectPtySocket(sessionId, term, ...);
-  }
-});
-```
-
-### 2. Track WebSocket connections
-```typescript
-// ws.ts connectPtySocket
-let connectCount = 0;
-export function connectPtySocket(...) {
-  connectCount++;
-  const callId = connectCount;
-  console.log(`[ws] connectPtySocket #${callId}, ptyWs=${ptyWs ? 'SET' : 'NULL'}`);
-  // ... existing code ...
-  socket.onopen = () => {
-    console.log(`[ws] socket.onopen #${callId}`);
-    ptyWs = socket;
-    // ...
-  };
-  socket.onmessage = (event) => {
-    console.log(`[ws] onmessage #${callId}, len=${(event.data as string).length}`);
-    term.write(event.data as string);
-  };
-}
-```
-
-### 3. Track activeSessionMode changes
-```typescript
-// App.svelte
-$effect(() => {
-  console.log(`[App] activeSessionMode=${activeSessionMode}, activeSessionId=${sessionState.activeSessionId}`);
-});
-```
-
-### 4. Track Terminal mount/unmount
-```typescript
-// Terminal.svelte onMount
-console.log('[Terminal] mounted');
-return () => {
-  console.log('[Terminal] unmounting');
-  // ... existing cleanup
-};
-```
+## Evidence
+- `makalu` screenshot: text exactly doubled, no rename prompt visible (scrolled above)
+- `lhotse` screenshot: "being sent" → "being" — Ctrl+U partially cleared the line
+- Code at `server/ws.ts:179`: `ptySession.pty.write(str)` — passthrough sends chars to PTY during buffering
+- Code at `server/ws.ts:187-188`: `\x15` + replay sends the SAME chars again
+- `needsBranchRename` is set `true` for all mountain-named worktrees (`server/index.ts:732`)
+- Bug only on first Enter: `needsBranchRename = false` after first interception (line 189)
 
 ## Impact Assessment
-- All desktop users affected when creating new sessions
-- First interaction with new session shows broken/duplicate output
-- User must manually clear terminal or create new session to recover
+- All new worktree sessions with mountain names are affected (the primary creation flow)
+- First interaction with Claude Code sends garbled/duplicated input
+- Users must manually fix the input or start over
+- The rename prompt itself may also be malformed due to the duplication
 
 ## Recommended Fix Direction
 
-**If H1 confirmed**: Ensure `connectPtySocket` properly closes WebSockets in `CONNECTING` state (not just `OPEN`). Track the socket reference regardless of readyState:
+**Remove the passthrough-then-undo approach.** Don't send characters to the PTY during buffering — buffer silently and send only once when Enter is detected:
+
 ```typescript
-// Store socket immediately, not just on open
-let pendingSocket: WebSocket | null = null;
-export function connectPtySocket(...) {
-  if (pendingSocket) { pendingSocket.close(); pendingSocket = null; }
-  if (ptyWs) { ptyWs.onclose = null; ptyWs.close(); ptyWs = null; }
-  const socket = new WebSocket(url);
-  pendingSocket = socket;
-  socket.onopen = () => {
-    pendingSocket = null;
-    ptyWs = socket;
-    // ...
-  };
+// server/ws.ts - branch rename interception
+if (ptySession.needsBranchRename) {
+    if (!(ptySession as any)._renameBuffer) (ptySession as any)._renameBuffer = '';
+    const enterIndex = str.indexOf('\r');
+    if (enterIndex === -1) {
+        // Buffer WITHOUT passthrough — don't write to PTY
+        (ptySession as any)._renameBuffer += str;
+        return; // silent buffering, no echo until Enter
+    }
+    // Enter detected — send everything to PTY in one shot (no Ctrl+U needed)
+    const buffered: string = (ptySession as any)._renameBuffer;
+    const beforeEnter = buffered + str.slice(0, enterIndex);
+    const afterEnter = str.slice(enterIndex);
+    const renamePrompt = `Before doing anything else...`;
+    ptySession.pty.write(renamePrompt + beforeEnter + afterEnter);
+    // ... cleanup
 }
 ```
 
-**If H2 confirmed**: Pass terminal dimensions to the `createSession` API so PTY starts with correct dimensions:
-```typescript
-// api.ts createSession - add cols/rows
-// server/index.ts POST /sessions - pass to sessions.create
-// server/pty-handler.ts - use client dimensions instead of 80x24
-```
+**Trade-off**: User types "blind" (no echo) until Enter, but this is a one-time occurrence per worktree and eliminates the duplication/truncation bug entirely. The PTY will echo the full message (rename prompt + user text) after Enter.
 
-**If H3 confirmed**: Add Svelte 5 effect cleanup or debounce the connection.
+**Alternative (better UX)**: Echo characters back to the WebSocket client directly (not via PTY) during buffering, so the user sees their typing. Then on Enter, clear the client terminal and send the full message to PTY. This requires coordinating client-side clearing with server-side injection.
