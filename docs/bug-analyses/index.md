@@ -27,3 +27,4 @@
 | [branch-rename-pty-injection-bug-analysis.md](2026-03-19-branch-rename-pty-injection-bug-analysis.md) | PTY injection for branch rename is architecturally broken — vendor-extensible output parser + sideband rename needed | 2026-03-19 |
 | [default-repo-session-sidebar-bug-analysis.md](2026-03-19-default-repo-session-sidebar-bug-analysis.md) | Default repo entry: hidden when empty, wrong name, click creates worktree, missing secondary row, wrong item order, dots not right-aligned | 2026-03-19 |
 | [sidebar-ux-and-branch-pr-bugs-bug-analysis.md](2026-03-19-sidebar-ux-and-branch-pr-bugs-bug-analysis.md) | 7 issues: menu transparency, triple-dots UX, branch listener escape sequences, PR DRY violations, grab dots, bottom buttons, missing branch/activity display | 2026-03-19 |
+| [dropdown-and-tmux-resume-bug-analysis.md](2026-03-19-dropdown-and-tmux-resume-bug-analysis.md) | Dropdown menu broken by transform containing block + tmux resume missing -u flag | 2026-03-19 |

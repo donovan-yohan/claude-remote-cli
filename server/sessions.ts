@@ -315,7 +315,7 @@ async function restoreFromDisk(configDir: string): Promise<number> {
       if (tmuxAlive) {
         // Attach to surviving tmux session
         command = 'tmux';
-        args = ['attach-session', '-t', s.tmuxSessionName];
+        args = ['-u', 'attach-session', '-t', s.tmuxSessionName];
       } else {
         // Tmux session died — fall back to agent with continue args
         args = [...AGENT_CONTINUE_ARGS[s.agent]];
