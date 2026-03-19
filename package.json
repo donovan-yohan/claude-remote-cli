@@ -50,6 +50,7 @@
     "express": "^4.21.0",
     "node-pty": "^1.0.0",
     "svelte": "^5.53.3",
+    "svelte-dnd-action": "^0.9.69",
     "web-push": "^3.6.7",
     "ws": "^8.18.0"
   },
