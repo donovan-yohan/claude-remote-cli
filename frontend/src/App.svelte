@@ -7,8 +7,8 @@
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
   import { isMobileDevice } from './lib/utils.js';
-  import type { WorktreeInfo, OpenSessionOptions, Workspace } from './lib/types.js';
-  import { createWorktree, createSession } from './lib/api.js';
+  import type { WorktreeInfo, OpenSessionOptions, Workspace, PullRequest } from './lib/types.js';
+  import { createWorktree, createSession, fetchWorkspaceSettings } from './lib/api.js';
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Terminal from './components/Terminal.svelte';
@@ -363,6 +363,67 @@
     }
   }
 
+  async function handleFixConflicts(pr: PullRequest) {
+    if (!activeWorkspace) return;
+
+    const workspacePath = activeWorkspace.path;
+
+    const existingSession = sessionState.sessions.find(s => s.branchName === pr.headRefName && s.repoPath.startsWith(workspacePath));
+    const existingWorktree = sessionState.worktrees.find(w => w.branchName === pr.headRefName && w.repoPath === workspacePath);
+
+    let prompt = `Merge the branch "${pr.baseRefName}" into this branch and resolve all merge conflicts. Use \`git merge ${pr.baseRefName}\` and fix any conflicts in the working tree. After resolving, verify the build passes.`;
+    try {
+      const settings = await fetchWorkspaceSettings(workspacePath);
+      if (settings.promptFixConflicts) {
+        prompt = settings.promptFixConflicts
+          .replace(/\{baseRefName\}/g, pr.baseRefName)
+          .replace(/\{headRefName\}/g, pr.headRefName);
+      }
+    } catch {
+      // fall through with default prompt
+    }
+
+    try {
+      let worktreePath: string;
+      let branchName: string;
+
+      if (existingSession) {
+        // Active session exists in this branch's worktree — open a new tab there
+        worktreePath = existingSession.repoPath;
+        branchName = existingSession.branchName;
+      } else if (existingWorktree) {
+        // Inactive worktree exists for this branch — reuse it
+        worktreePath = existingWorktree.path;
+        branchName = existingWorktree.branchName;
+      } else {
+        // No worktree yet — create one from the existing branch
+        const wt = await createWorktree(workspacePath, pr.headRefName);
+        worktreePath = wt.worktreePath;
+        branchName = wt.branchName;
+      }
+
+      const session = await createSession({
+        repoPath: workspacePath,
+        repoName: activeWorkspace.name,
+        worktreePath,
+        branchName,
+        allowMultiple: true,
+      });
+      await refreshAll();
+      sessionState.activeSessionId = session.id;
+      ui.activeWorkspacePath = workspacePath;
+      initSessionNotification(session.id, configState.defaultNotifications);
+      closeSidebar();
+
+      // Delay sending the prompt to allow the terminal WebSocket connection to establish
+      setTimeout(() => {
+        sendPtyData(prompt + '\r');
+      }, 1500);
+    } catch (e) {
+      console.error('Failed to start conflict resolution:', e);
+    }
+  }
+
   function handleDeleteWorktree(wt: WorktreeInfo) {
     deleteWorktreeDialogRef?.open(wt);
   }
@@ -476,6 +537,7 @@
           workspaceName={activeWorkspace?.name ?? ''}
           onNewSession={() => handleOpenNewSession()}
           onNewWorktree={() => { if (activeWorkspace) handleNewWorktree(activeWorkspace); }}
+          onFixConflicts={handleFixConflicts}
         />
 
       {:else if viewMode === 'session'}
