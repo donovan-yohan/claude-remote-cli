@@ -131,6 +131,7 @@
         href={pr.url}
         target="_blank"
         rel="noopener noreferrer"
+        data-track="pr-top-bar.open-pr"
         aria-label="PR #{pr.number}: {pr.title}"
       >
         PR #{pr.number}
@@ -153,6 +154,7 @@
       {#if secondaryAction}
         <button
           class="action-btn action-btn--secondary"
+          data-track="pr-top-bar.secondary-action"
           onclick={() => handleActionClick(secondaryAction!)}
           aria-label={secondaryAction.label}
         >
@@ -165,6 +167,7 @@
           style:--action-color={actionColor}
           class:action-btn--dark-text={actionDark}
           class:action-btn--disabled={prAction.type === 'checks-running'}
+          data-track="pr-top-bar.primary-action"
           onclick={() => handleActionClick()}
           disabled={prAction.type === 'checks-running'}
           aria-label={prAction.label}

@@ -585,6 +585,7 @@
   class="terminal-wrapper"
   class:drag-over={dragOver}
   class:selection-mode={selectionMode}
+  data-track="terminal.focus"
   ontouchstart={isMobileDevice ? onTerminalTouchStart : undefined}
   ontouchend={isMobileDevice ? onTerminalTouchEnd : undefined}
 >
@@ -618,9 +619,9 @@
   {#if isMobileDevice && thumbVisible}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="scroll-fabs" onmousedown={onScrollFabMouseDown}>
-      <button class="scroll-fab" data-dir="up" aria-label="Page up">&#9650;</button>
-      <button class="scroll-fab" data-dir="down" aria-label="Page down">&#9660;</button>
-      <button class="scroll-fab scroll-fab-bottom" data-dir="bottom" aria-label="Skip to bottom">&#8615;</button>
+      <button class="scroll-fab" data-dir="up" data-track="terminal.scroll-up" aria-label="Page up">&#9650;</button>
+      <button class="scroll-fab" data-dir="down" data-track="terminal.scroll-down" aria-label="Page down">&#9660;</button>
+      <button class="scroll-fab scroll-fab-bottom" data-dir="bottom" data-track="terminal.scroll-bottom" aria-label="Skip to bottom">&#8615;</button>
     </div>
   {/if}
 </div>

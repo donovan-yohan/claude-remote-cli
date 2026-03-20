@@ -148,6 +148,7 @@
         <button
           class="tb-btn {btn.extraClass ?? ''}"
           data-key={btn.key}
+          data-track="toolbar.{btn.label.toLowerCase().replace(/[^a-z0-9]/g, '-')}"
           aria-label={btn.label}
         >
           <!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -160,6 +161,7 @@
           class="tb-btn {btn.extraClass ?? ''}"
           id={btn.id}
           data-key={btn.key}
+          data-track="toolbar.{btn.label.toLowerCase().replace(/[^a-z0-9]/g, '-')}"
           aria-label={btn.label}
         >
           <!-- eslint-disable-next-line svelte/no-at-html-tags -->

@@ -380,3 +380,12 @@ export async function fetchSessionMeta(id: string, options?: { refresh?: boolean
   const url = '/sessions/' + encodeURIComponent(id) + '/meta' + (options?.refresh ? '?refresh=true' : '');
   return json<SessionMeta>(await fetch(url));
 }
+
+export async function fetchAnalyticsSize(): Promise<{ bytes: number }> {
+  return json<{ bytes: number }>(await fetch('/analytics/size'));
+}
+
+export async function clearAnalytics(): Promise<void> {
+  const res = await fetch('/analytics/events', { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to clear analytics');
+}

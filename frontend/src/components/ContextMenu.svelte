@@ -90,6 +90,7 @@
   <button
     class="context-menu-trigger"
     bind:this={triggerEl}
+    data-track="context-menu.open"
     onclick={toggle}
     aria-label="Actions"
     aria-haspopup="true"
@@ -117,6 +118,7 @@
         class:context-menu-item--disabled={item.disabled}
         role="menuitem"
         tabindex={item.disabled ? -1 : 0}
+        data-track="context-menu.{item.label.toLowerCase().replace(/\s+/g, '-')}"
         onclick={(e) => handleItemClick(item, e)}
         onkeydown={(e) => e.key === 'Enter' && handleItemClick(item, e)}
       >

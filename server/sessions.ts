@@ -8,6 +8,7 @@ import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './types.js
 import { createPtySession } from './pty-handler.js';
 import type { CreatePtyParams } from './pty-handler.js';
 import { getPrForBranch, getWorkingTreeDiff } from './git.js';
+import { trackEvent } from './analytics.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -127,6 +128,18 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
   };
 
   const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks, stateChangeCallbacks);
+  trackEvent({
+    category: 'session',
+    action: 'created',
+    target: id,
+    properties: {
+      agent,
+      type: type ?? 'worktree',
+      workspace: root ?? repoPath,
+      mode: command ? 'terminal' : 'agent',
+    },
+    session_id: id,
+  });
   if (paramNeedsBranchRename) {
     ptySession.needsBranchRename = true;
   }
@@ -187,6 +200,19 @@ function kill(id: string): void {
   if (session.tmuxSessionName) {
     execFile('tmux', ['kill-session', '-t', session.tmuxSessionName], () => {});
   }
+  const durationS = Math.round((Date.now() - new Date(session.createdAt).getTime()) / 1000);
+  trackEvent({
+    category: 'session',
+    action: 'ended',
+    target: id,
+    properties: {
+      agent: session.agent,
+      type: session.type,
+      workspace: session.root || session.repoPath,
+      duration_s: durationS,
+    },
+    session_id: id,
+  });
   fireSessionEnd(id, session.repoPath, session.branchName);
   sessions.delete(id);
 }

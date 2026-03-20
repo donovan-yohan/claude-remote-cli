@@ -8,6 +8,7 @@ import { WorktreeWatcher } from './watcher.js';
 import type { Session } from './types.js';
 import { writeMeta } from './config.js';
 import { branchToDisplayName } from './git.js';
+import { trackEvent } from './analytics.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -256,10 +257,12 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
 
   sessions.onIdleChange((sessionId, idle) => {
     broadcastEvent('session-idle-changed', { sessionId, idle });
+    if (idle) { trackEvent({ category: 'agent', action: 'idle', target: sessionId, session_id: sessionId }); }
   });
 
   sessions.onStateChange((sessionId, state) => {
     broadcastEvent('session-state-changed', { sessionId, state });
+    if (state === 'waiting-for-input') { trackEvent({ category: 'agent', action: 'waiting-for-input', target: sessionId, session_id: sessionId }); }
   });
 
   sessions.onSessionEnd((sessionId, repoPath, branchName) => {
