@@ -20,6 +20,7 @@ import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import { listBranches, isBranchStale } from './git.js';
 import * as push from './push.js';
+import { initAnalytics, closeAnalytics, createAnalyticsRouter } from './analytics.js';
 import { createWorkspaceRouter } from './workspaces.js';
 import { createHooksRouter } from './hooks.js';
 import type { AgentType, Config } from './types.js';
@@ -169,6 +170,13 @@ async function main(): Promise<void> {
 
   push.ensureVapidKeys(config, CONFIG_PATH, saveConfig);
 
+  const configDir = path.dirname(CONFIG_PATH);
+  try {
+    initAnalytics(configDir);
+  } catch (err) {
+    console.warn('Analytics disabled: failed to initialize:', err instanceof Error ? err.message : err);
+  }
+
   if (!config.pinHash) {
     const pin = await promptPin('Set up a PIN for claude-remote-cli:');
     config.pinHash = await auth.hashPin(pin);
@@ -255,8 +263,10 @@ async function main(): Promise<void> {
   const workspaceRouter = createWorkspaceRouter({ configPath: CONFIG_PATH });
   app.use('/workspaces', requireAuth, workspaceRouter);
 
+  // Mount analytics router
+  app.use('/analytics', requireAuth, createAnalyticsRouter(configDir));
+
   // Restore sessions from a previous update restart
-  const configDir = path.dirname(CONFIG_PATH);
   const restoredCount = await restoreFromDisk(configDir);
   if (restoredCount > 0) {
     console.log(`Restored ${restoredCount} session(s) from previous update.`);
@@ -1018,6 +1028,7 @@ async function main(): Promise<void> {
   }
 
   function gracefulShutdown() {
+    closeAnalytics();
     server.close();
     // Serialize sessions to disk BEFORE killing them
     const configDir = path.dirname(CONFIG_PATH);

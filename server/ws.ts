@@ -4,6 +4,7 @@ import type { IPty } from 'node-pty';
 import * as sessions from './sessions.js';
 import { WorktreeWatcher } from './watcher.js';
 import type { Session } from './types.js';
+import { trackEvent } from './analytics.js';
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -18,7 +19,7 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   return cookies;
 }
 
-function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, watcher: WorktreeWatcher | null, configPath?: string): { wss: WebSocketServer; broadcastEvent: (type: string, data?: Record<string, unknown>) => void } {
+function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, watcher: WorktreeWatcher | null, _configPath?: string): { wss: WebSocketServer; broadcastEvent: (type: string, data?: Record<string, unknown>) => void } {
   const wss = new WebSocketServer({ noServer: true });
   const eventClients = new Set<WebSocket>();
 
@@ -136,10 +137,12 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
 
   sessions.onIdleChange((sessionId, idle) => {
     broadcastEvent('session-idle-changed', { sessionId, idle });
+    if (idle) { trackEvent({ category: 'agent', action: 'idle', target: sessionId, session_id: sessionId }); }
   });
 
   sessions.onStateChange((sessionId, state) => {
     broadcastEvent('session-state-changed', { sessionId, state });
+    if (state === 'waiting-for-input') { trackEvent({ category: 'agent', action: 'waiting-for-input', target: sessionId, session_id: sessionId }); }
   });
 
   sessions.onSessionEnd((sessionId, repoPath, branchName) => {

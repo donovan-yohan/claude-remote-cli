@@ -10,6 +10,7 @@
   import type { WorktreeInfo, OpenSessionOptions, Workspace, PullRequest } from './lib/types.js';
   import { createWorktree, createSession, fetchWorkspaceSettings, killSession, deleteWorktree } from './lib/api.js';
   import { derivePrAction, getActionPrompt } from './lib/pr-state.js';
+  import { initAnalytics, destroyAnalytics, track } from './lib/analytics.js';
   import PinGate from './components/PinGate.svelte';
   import Sidebar from './components/Sidebar.svelte';
   import Terminal from './components/Terminal.svelte';
@@ -68,6 +69,7 @@
   let keyboardOpen = $state(false);
 
   onMount(() => {
+    initAnalytics(() => sessionState.activeSessionId);
     checkExistingAuth();
 
     let cleanupViewport: (() => void) | undefined;
@@ -211,7 +213,25 @@
       cleanupKeydown?.();
       cleanupViewport?.();
       cleanupSwipe?.();
+      destroyAnalytics();
     };
+  });
+
+  let prevActiveSessionId: string | null | undefined = undefined;
+  $effect(() => {
+    const id = sessionState.activeSessionId;
+    // Skip the initial mount — only track real navigation transitions
+    if (prevActiveSessionId === undefined) {
+      prevActiveSessionId = id;
+      return;
+    }
+    if (id === prevActiveSessionId) return;
+    prevActiveSessionId = id;
+    if (id) {
+      track('navigation', 'page.view', '/terminal', undefined, id);
+    } else {
+      track('navigation', 'page.view', '/dashboard', { workspace: ui.activeWorkspacePath });
+    }
   });
 
   // Refresh when authenticated

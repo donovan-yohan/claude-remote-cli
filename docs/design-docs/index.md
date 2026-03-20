@@ -38,3 +38,4 @@
 | [2026-03-19-pr-lifecycle-top-bar-design.md](2026-03-19-pr-lifecycle-top-bar-design.md) | PR lifecycle top bar: session-end refresh, diff stats, conflicts, comments, archive flow | 2026-03-19 |
 | [2026-03-19-enriched-sidebar-sessions-design.md](2026-03-19-enriched-sidebar-sessions-design.md) | Enriched sidebar: two-line rows with relative time, worktree name, PR#, diff stats, collapsible workspaces | 2026-03-19 |
 | [2026-03-19-workspace-reorder-design.md](2026-03-19-workspace-reorder-design.md) | Drag-and-drop workspace reordering, sidebar header simplification, inactive session contrast | 2026-03-19 |
+| [2026-03-20-local-analytics-design.md](2026-03-20-local-analytics-design.md) | Local analytics & user behavior tracking with SQLite for agent-queryable usage data | 2026-03-20 |

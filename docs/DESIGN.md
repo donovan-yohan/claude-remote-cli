@@ -28,6 +28,7 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | Hooks-based state detection | Claude Code hooks (--settings injection) replace fragile regex parsing for AgentState. Parser kept as fallback with 30s reconciliation timeout. | Design doc, CEO review |
 | Hook-driven branch rename | UserPromptSubmit hook triggers claude -p for descriptive branch names, replacing ws.ts keystroke capture | CEO review override of design doc |
 | forceOutputParser config | Escape hatch to disable hooks and use parser-only mode | Eng review |
+| Local analytics | SQLite-backed event tracking (`analytics.ts` module). Auto-capture clicks via `data-track` attributes + explicit `trackEvent()` calls. Agent-queryable via direct `sqlite3` CLI access to `~/.config/claude-remote-cli/analytics.db`. Frontend batches events to `POST /analytics/events`. | Design doc |
 
 ## Config Precedence (canonical)
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate } from '../../lib/api.js';
+  import { setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate, fetchAnalyticsSize, clearAnalytics } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
 
@@ -17,6 +17,9 @@
   let updating = $state(false);
   let updateStatus = $state('');
 
+  let analyticsSize = $state<number | null>(null);
+  let clearing = $state(false);
+
   export async function open() {
     error = '';
     updateStatus = '';
@@ -26,6 +29,7 @@
     await refreshConfig();
     dialogEl.showModal();
     handleCheckVersion();
+    fetchAnalyticsSize().then(d => { analyticsSize = d.bytes; }).catch(() => {});
   }
 
   export function close() {
@@ -126,6 +130,19 @@
     window.dispatchEvent(new Event('devtools-changed'));
   }
 
+  async function handleClearAnalytics() {
+    if (!confirm('Clear all analytics data? This cannot be undone.')) return;
+    clearing = true;
+    try {
+      await clearAnalytics();
+      analyticsSize = 0;
+    } catch {
+      error = 'Failed to clear analytics.';
+    } finally {
+      clearing = false;
+    }
+  }
+
   async function handleClose() {
     dialogEl.close();
     await refreshAll();
@@ -205,6 +222,24 @@
             onchange={onDevtoolsChange}
           />
           <label for="devtools-toggle" class="devtools-label">Enable mobile debug panel</label>
+        </div>
+      </section>
+
+      <!-- Analytics section -->
+      <section class="settings-section">
+        <h3 class="section-title">Analytics</h3>
+        <div class="version-row">
+          <span class="version-current">
+            DB size: {analyticsSize !== null ? (analyticsSize / 1024 / 1024).toFixed(1) + ' MB' : '...'}
+          </span>
+          <button
+            class="btn btn-ghost btn-sm"
+            onclick={handleClearAnalytics}
+            disabled={clearing}
+            data-track="dialog.settings.clear-analytics"
+          >
+            {clearing ? 'Clearing\u2026' : 'Clear'}
+          </button>
         </div>
       </section>
 

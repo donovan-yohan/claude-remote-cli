@@ -83,6 +83,7 @@
       bind:this={inputEl}
       type="text"
       class="search-input"
+      data-track="search.input"
       placeholder="search workspaces..."
       autocomplete="off"
       spellcheck={false}
@@ -101,6 +102,7 @@
           class:focused={i === focusedIndex}
           role="option"
           aria-selected={i === focusedIndex}
+          data-track="search.select"
           onclick={() => selectMatch(workspace)}
           onmouseenter={() => { focusedIndex = i; }}
         >
