@@ -37,7 +37,7 @@ Thirteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules commun
 | `types.ts` | Shared TypeScript interfaces (discriminated union Session = PtySession \| SdkSession, Workspace, Config, PR, CI, Activity types) |
 | `output-parsers/` | Vendor-extensible terminal output parsing for semantic agent state detection (AgentState), keyed by AgentType. Contains `index.ts` (registry + dispatch), `claude-parser.ts`, `codex-parser.ts` |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler` and `sdk-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` imports `sessions`, `git`, `config`, and `push`; all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `pty-handler.ts` depends on node-pty, only `sdk-handler.ts` depends on `@anthropic-ai/claude-agent-sdk`, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and has no dependencies on other server modules except `types.ts`.
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler` and `sdk-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` consumes `sessions`, `git`, `config`, and `push` via injected dependencies (not direct imports); all other modules are self-contained. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `pty-handler.ts` depends on node-pty, only `sdk-handler.ts` depends on `@anthropic-ai/claude-agent-sdk`, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and may depend on `types.ts` only — it MUST NOT import from `utils.ts` or any other server module.
 
 ### `frontend/`
 
@@ -140,12 +140,12 @@ SDK flow:
 | `POST` | `/update` | Self-update via npm |
 | `GET` | `/config/defaultAgent` | Get default coding agent |
 | `PATCH` | `/config/defaultAgent` | Set default coding agent (`claude` or `codex`) |
-| `POST` | `/hooks/stop` | Hook callback: set session state to idle (localhost-only, no auth) |
-| `POST` | `/hooks/notification` | Hook callback: permission-prompt or waiting-for-input state |
-| `POST` | `/hooks/prompt-submit` | Hook callback: set processing state, trigger branch rename on first message |
-| `POST` | `/hooks/session-end` | Hook callback: session cleanup dedup |
-| `POST` | `/hooks/tool-use` | Hook callback: set currentActivity (tool name + detail) |
-| `POST` | `/hooks/tool-result` | Hook callback: clear currentActivity |
+| `POST` | `/hooks/stop` | Hook callback: set session state to idle (localhost-only, per-session token auth) |
+| `POST` | `/hooks/notification` | Hook callback: permission-prompt or waiting-for-input state (localhost-only, per-session token auth) |
+| `POST` | `/hooks/prompt-submit` | Hook callback: set processing state, trigger branch rename on first message (localhost-only, per-session token auth) |
+| `POST` | `/hooks/session-end` | Hook callback: session cleanup dedup (localhost-only, per-session token auth) |
+| `POST` | `/hooks/tool-use` | Hook callback: set currentActivity (tool name + detail) (localhost-only, per-session token auth) |
+| `POST` | `/hooks/tool-result` | Hook callback: clear currentActivity (localhost-only, per-session token auth) |
 
 ## WebSocket Channels
 

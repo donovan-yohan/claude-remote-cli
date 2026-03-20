@@ -35,7 +35,7 @@ export function resolveTmuxSpawn(
 
 export function generateHooksSettings(sessionId: string, port: number, token: string): string {
   const dir = path.join(os.tmpdir(), 'claude-remote-cli', sessionId);
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const filePath = path.join(dir, 'hooks-settings.json');
   const base = `http://127.0.0.1:${port}`;
   const q = `sessionId=${sessionId}&token=${token}`;
@@ -53,6 +53,7 @@ export function generateHooksSettings(sessionId: string, port: number, token: st
     },
   };
   fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');
+  fs.chmodSync(filePath, 0o600);
   return filePath;
 }
 

@@ -100,7 +100,11 @@ async function spawnBranchRename(
 
       session.branchName = branchName;
       session.displayName = branchToDisplayName(branchName);
-      deps.broadcastEvent('session-renamed', { sessionId: session.id });
+      deps.broadcastEvent('session-renamed', {
+        sessionId: session.id,
+        branchName: session.branchName,
+        displayName: session.displayName,
+      });
 
       if (deps.configPath) {
         writeMeta(deps.configPath, {
@@ -128,9 +132,6 @@ async function spawnBranchRename(
 export function createHooksRouter(deps: HookDeps): Router {
   const router = Router();
 
-  // Middleware: parse JSON with generous limit for PostToolUse payloads
-  router.use(express.json({ limit: '5mb' }));
-
   // Middleware: IP allowlist — only localhost, do NOT trust X-Forwarded-For
   router.use((req: Request, res: Response, next) => {
     const remoteAddr = req.socket.remoteAddress;
@@ -140,6 +141,9 @@ export function createHooksRouter(deps: HookDeps): Router {
     }
     next();
   });
+
+  // Middleware: parse JSON with generous limit for PostToolUse payloads
+  router.use(express.json({ limit: '5mb' }));
 
   // Middleware: token verification
   router.use((req: Request, res: Response, next) => {
@@ -216,12 +220,9 @@ export function createHooksRouter(deps: HookDeps): Router {
     res.json({ ok: true });
   });
 
-  // POST /session-end → mark cleaned up (PTY onExit handles actual cleanup)
-  router.post('/session-end', (req: Request, res: Response) => {
-    const session = (req as unknown as Record<string, unknown>)._hookSession as Session;
-    if (!session.cleanedUp) {
-      session.cleanedUp = true;
-    }
+  // POST /session-end → acknowledge hook (PTY onExit owns actual cleanup and cleanedUp flag)
+  router.post('/session-end', (_req: Request, res: Response) => {
+    // Acknowledge hook — PTY onExit owns actual cleanup and cleanedUp flag
     res.json({ ok: true });
   });
 
