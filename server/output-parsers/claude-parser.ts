@@ -1,6 +1,6 @@
 import type { OutputParser, ParseResult, AgentState } from './index.js';
 
-// Strip ANSI escape sequences (CSI, OSC, charset, mode sequences)
+// Duplicated from utils.ts to preserve output-parsers/ module boundary
 const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07|\x1b[()][AB012]|\x1b\[\?[0-9;]*[hlm]|\x1b\[[0-9]*[ABCDJKH]/g;
 
 /**

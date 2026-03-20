@@ -25,6 +25,9 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | File system browser API | `GET /workspaces/browse` returns directory entries with `isGitRepo`/`hasChildren` metadata. `POST /workspaces/bulk` for multi-add. FileBrowser.svelte provides lazy tree UI with filter, multi-select, keyboard nav. Denylist skips `node_modules`/.git/etc, 100 entry cap. | Design doc |
 | Session-end broadcast | `session-ended` event emitted via `/ws/events` on PTY exit and `kill()`. Follows `onIdleChange` callback pattern in sessions.ts. Frontend invalidates svelte-query PR/CI caches on receipt. | Design doc |
 | PR lifecycle state machine | `pr-state.ts` derives action from PR state + CI + mergeable + unresolved comments. Supports dual buttons (resolve + review). Archive flow kills session + deletes worktree. GraphQL query for unresolved review thread count. | Design doc |
+| Hooks-based state detection | Claude Code hooks (--settings injection) replace fragile regex parsing for AgentState. Parser kept as fallback with 30s reconciliation timeout. | Design doc, CEO review |
+| Hook-driven branch rename | UserPromptSubmit hook triggers claude -p for descriptive branch names, replacing ws.ts keystroke capture | CEO review override of design doc |
+| forceOutputParser config | Escape hatch to disable hooks and use parser-only mode | Eng review |
 | Local analytics | SQLite-backed event tracking (`analytics.ts` module). Auto-capture clicks via `data-track` attributes + explicit `trackEvent()` calls. Agent-queryable via direct `sqlite3` CLI access to `~/.config/claude-remote-cli/analytics.db`. Frontend batches events to `POST /analytics/events`. | Design doc |
 
 ## Config Precedence (canonical)
@@ -67,6 +70,19 @@ The `server/output-parsers/` directory implements a vendor-extensible registry f
 - **Per-vendor parsers:** `claude-parser.ts` and `codex-parser.ts` each export a stateless parse function `(chunk: string, currentState: AgentState) => AgentState`.
 - **No cross-module deps:** The `output-parsers/` module only imports from `types.ts`; it does not depend on any other server module.
 - **Extending:** To add a new agent, create `<vendor>-parser.ts` and register it in `index.ts`.
+
+## Hook System
+
+`server/hooks.ts` registers an Express Router mounted at `/hooks` in `index.ts`. Endpoints receive callbacks from Claude Code's hooks mechanism, which is injected via `--settings` when spawning PTY sessions.
+
+- **State detection:** `POST /hooks/stop` sets session state to idle; `POST /hooks/notification` sets `permission-prompt` or `waiting-for-input` based on the notification title; `POST /hooks/prompt-submit` sets state to `processing`.
+- **Activity tracking:** `POST /hooks/tool-use` sets `currentActivity` (tool name + detail); `POST /hooks/tool-result` clears it.
+- **Session cleanup:** `POST /hooks/session-end` triggers session cleanup with deduplication (ignores duplicate events within a short window).
+- **Branch rename:** `POST /hooks/prompt-submit` also triggers the branch rename flow on the first user message, replacing the previous ws.ts keystroke-capture approach.
+- **Claude-only:** Hooks are injected only for Claude PTY sessions. Codex sessions continue to use the output parser exclusively.
+- **Parser fallback:** The output parser remains active with a 30-second reconciliation timeout — if a hook-derived state has not been confirmed by a subsequent hook event within 30s, the parser state takes precedence.
+- **Restored tmux sessions:** Sessions restored after an auto-update may not have hooks re-injected; these fall back to parser-based state detection.
+- **Auth:** Endpoints are localhost-only. Each session uses a per-session token (not the user's PIN cookie) to authenticate hook callbacks.
 
 ## Clipboard Image Passthrough
 

@@ -18,10 +18,11 @@ No tech debt tracked yet.
 
 ## Completed Plans
 
-See `docs/exec-plans/completed/` for historical plans (26 completed).
+See `docs/exec-plans/completed/` for historical plans (28 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `hooks-state-detection` | 2026-03-20 | Replace output parser with Claude Code hooks for state detection + branch rename |
 | `local-analytics` | 2026-03-20 | SQLite-backed local analytics and user behavior tracking |
 | `settings-centralization` | 2026-03-19 | Centralize settings resolution server-side; fix sidebar ignoring yolo/agent/tmux defaults |
 | `sidebar-ux-and-branch-pr-bugs` | 2026-03-19 | 7 sidebar fixes: menu readability, triple-dots UX, branch listener, PR filter, grip dots, footer layout, repo branch name |

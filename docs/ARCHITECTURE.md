@@ -33,11 +33,12 @@ Fifteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules communi
 | `clipboard.ts` | System clipboard detection and image-set operations (osascript/xclip) |
 | `service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
 | `push.ts` | Web Push notification management (VAPID keys, subscription registry, SDK event enrichment) |
+| `hooks.ts` | Claude Code hook HTTP endpoints: state detection (Stop, Notification, UserPromptSubmit), activity tracking (PreToolUse, PostToolUse), session cleanup (SessionEnd), and branch rename. Localhost-only with per-session token auth. |
 | `types.ts` | Shared TypeScript interfaces (discriminated union Session = PtySession \| SdkSession, Workspace, Config, PR, CI, Activity types) |
 | `analytics.ts` | Local analytics: SQLite-backed event tracking, `trackEvent()`, batch ingest endpoint, DB size/clear endpoints |
 | `output-parsers/` | Vendor-extensible terminal output parsing for semantic agent state detection (AgentState), keyed by AgentType. Contains `index.ts` (registry + dispatch), `claude-parser.ts`, `codex-parser.ts` |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler`; `workspaces.ts` imports `git` and `config`; all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `pty-handler.ts` depends on node-pty, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and has no dependencies on other server modules except `types.ts`.
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler` and `sdk-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` consumes `sessions`, `git`, `config`, and `push` via injected dependencies (not direct imports); all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `pty-handler.ts` depends on node-pty, only `sdk-handler.ts` depends on `@anthropic-ai/claude-agent-sdk`, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and may depend on `types.ts` only — it MUST NOT import from `utils.ts` or any other server module.
 
 ### `frontend/`
 
@@ -140,6 +141,12 @@ SDK flow:
 | `POST` | `/update` | Self-update via npm |
 | `GET` | `/config/defaultAgent` | Get default coding agent |
 | `PATCH` | `/config/defaultAgent` | Set default coding agent (`claude` or `codex`) |
+| `POST` | `/hooks/stop` | Hook callback: set session state to idle (localhost-only, per-session token auth) |
+| `POST` | `/hooks/notification` | Hook callback: permission-prompt or waiting-for-input state (localhost-only, per-session token auth) |
+| `POST` | `/hooks/prompt-submit` | Hook callback: set processing state, trigger branch rename on first message (localhost-only, per-session token auth) |
+| `POST` | `/hooks/session-end` | Hook callback: session cleanup dedup (localhost-only, per-session token auth) |
+| `POST` | `/hooks/tool-use` | Hook callback: set currentActivity (tool name + detail) (localhost-only, per-session token auth) |
+| `POST` | `/hooks/tool-result` | Hook callback: clear currentActivity (localhost-only, per-session token auth) |
 
 ## WebSocket Channels
 
@@ -166,7 +173,7 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 | ADR | Topic |
 |-----|-------|
-| ADR-001 | Modular server architecture (twelve modules, composition root, dependency flow) |
+| ADR-001 | Modular server architecture (thirteen modules, composition root, dependency flow) |
 | ADR-003 | PTY session management (in-memory state, scrollback, CLAUDECODE stripping) |
 | ADR-004 | PIN authentication (bcrypt, cookie tokens, rate limiting) |
 | ADR-005 | Built-in test runner (node:test, nine test files, no external framework) |
@@ -174,4 +181,4 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 | ADR-007 | WebSocket dual channels (PTY relay + event broadcast, debounced watcher) |
 | ADR-008 | TypeScript + ESM (strict mode, .js extensions, node: prefix, Node >= 24) |
 
-> ADR-002 (vanilla JS frontend) was superseded by the Svelte 5 migration.
+> ADR-002 (vanilla JS frontend) was superseded by the Svelte 5 migration. `hooks.ts` does not yet have a dedicated ADR.

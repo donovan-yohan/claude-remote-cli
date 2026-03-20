@@ -1,104 +1,10 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'node:http';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import type { IPty } from 'node-pty';
 import * as sessions from './sessions.js';
 import { WorktreeWatcher } from './watcher.js';
 import type { Session } from './types.js';
-import { writeMeta } from './config.js';
-import { branchToDisplayName } from './git.js';
 import { trackEvent } from './analytics.js';
-
-const execFileAsync = promisify(execFile);
-
-const BRANCH_POLL_INTERVAL_MS = 3000;
-const BRANCH_POLL_MAX_ATTEMPTS = 10;
-
-
-function startBranchWatcher(
-  session: Session,
-  broadcastEvent: (type: string, data?: Record<string, unknown>) => void,
-  cfgPath: string,
-): void {
-  const originalBranch = session.branchName;
-  let attempts = 0;
-
-  const timer = setInterval(async () => {
-    attempts++;
-    if (attempts > BRANCH_POLL_MAX_ATTEMPTS) {
-      clearInterval(timer);
-      return;
-    }
-
-    try {
-      const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: session.cwd });
-      const currentBranch = stdout.trim();
-
-      if (currentBranch && currentBranch !== originalBranch) {
-        clearInterval(timer);
-        const displayName = branchToDisplayName(currentBranch);
-        session.branchName = currentBranch;
-        session.displayName = displayName;
-        broadcastEvent('session-renamed', { sessionId: session.id, branchName: currentBranch, displayName });
-        writeMeta(cfgPath, {
-          worktreePath: session.repoPath,
-          displayName,
-          lastActivity: new Date().toISOString(),
-          branchName: currentBranch,
-        });
-      }
-    } catch {
-      // git command failed — session cwd may not exist yet, retry
-    }
-  }, BRANCH_POLL_INTERVAL_MS);
-}
-
-/** Sideband branch rename: uses headless claude to generate a branch name from the first message */
-async function spawnBranchRename(
-  session: Session,
-  firstMessage: string,
-  cfgPath: string | undefined,
-  broadcastEvent: (type: string, data?: Record<string, unknown>) => void,
-): Promise<void> {
-  try {
-    const cleanMessage = firstMessage.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/[\x00-\x1f]/g, ' ').trim();
-    if (!cleanMessage) return;
-    const basePrompt = session.branchRenamePrompt
-      ?? `Output ONLY a short kebab-case git branch name (no explanation, no backticks, no prefix, just the name) that describes this task:`;
-    const prompt = `${basePrompt}\n\n${cleanMessage.slice(0, 500)}`;
-    const { stdout } = await execFileAsync('claude', ['-p', '--model', 'haiku', prompt], {
-      cwd: session.cwd,
-      timeout: 30000,
-    });
-    const branchName = stdout.trim().replace(/`/g, '').replace(/[^a-z0-9-]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 60);
-    if (!branchName) return;
-
-    await execFileAsync('git', ['branch', '-m', branchName], { cwd: session.cwd });
-
-    // Update session state
-    const displayName = branchToDisplayName(branchName);
-    session.branchName = branchName;
-    session.displayName = displayName;
-    broadcastEvent('session-renamed', {
-      sessionId: session.id,
-      branchName,
-      displayName,
-    });
-
-    if (cfgPath) {
-      writeMeta(cfgPath, {
-        worktreePath: session.repoPath,
-        displayName,
-        lastActivity: new Date().toISOString(),
-        branchName,
-      });
-    }
-  } catch {
-    // Sideband rename is best-effort — fall back to branch watcher if claude CLI isn't available
-    if (cfgPath) startBranchWatcher(session, broadcastEvent, cfgPath);
-  }
-}
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -113,7 +19,7 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
   return cookies;
 }
 
-function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, watcher: WorktreeWatcher | null, configPath?: string): { wss: WebSocketServer; broadcastEvent: (type: string, data?: Record<string, unknown>) => void } {
+function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, watcher: WorktreeWatcher | null, _configPath?: string): { wss: WebSocketServer; broadcastEvent: (type: string, data?: Record<string, unknown>) => void } {
   const wss = new WebSocketServer({ noServer: true });
   const eventClients = new Set<WebSocket>();
 
@@ -217,32 +123,6 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
           return;
         }
       } catch (_) {}
-
-      // Sideband branch rename: capture first message, pass through unmodified, rename out-of-band
-      if (ptySession.needsBranchRename && ptySession.agentState !== 'waiting-for-input') {
-        ptySession.pty.write(str);
-        return;
-      }
-      if (ptySession.needsBranchRename) {
-        if (!(ptySession as any)._renameBuffer) (ptySession as any)._renameBuffer = '';
-        const enterIndex = str.indexOf('\r');
-        if (enterIndex === -1) {
-          (ptySession as any)._renameBuffer += str;
-          ptySession.pty.write(str); // pass through to PTY normally — user sees their typing
-          return;
-        }
-        // Enter detected — pass everything through unmodified
-        const buffered: string = (ptySession as any)._renameBuffer;
-        const firstMessage = buffered + str.slice(0, enterIndex);
-        ptySession.pty.write(str); // pass through the Enter key
-        ptySession.needsBranchRename = false;
-        delete (ptySession as any)._renameBuffer;
-
-        // Sideband: spawn headless claude to generate branch name (async, non-blocking)
-        spawnBranchRename(ptySession, firstMessage, configPath, broadcastEvent);
-        return;
-      }
-
       // Use ptySession.pty dynamically so writes go to current PTY
       ptySession.pty.write(str);
     });

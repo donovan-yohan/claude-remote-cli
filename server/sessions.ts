@@ -65,6 +65,10 @@ type CreateParams = {
   needsBranchRename?: boolean;
   /** Custom prompt for branch rename (from workspace settings) */
   branchRenamePrompt?: string;
+  /** Server port for hook URL generation */
+  port?: number;
+  /** Force output parser instead of hooks */
+  forceOutputParser?: boolean;
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
@@ -74,6 +78,15 @@ const sessions = new Map<string, Session>();
 
 // Session metadata cache: session ID or worktree path -> SessionMeta
 const metaCache = new Map<string, SessionMeta>();
+
+// Module-level defaults for hooks injection (set via configure())
+let defaultPort: number | undefined;
+let defaultForceOutputParser: boolean | undefined;
+
+function configure(opts: { port?: number; forceOutputParser?: boolean }): void {
+  defaultPort = opts.port;
+  defaultForceOutputParser = opts.forceOutputParser;
+}
 
 let terminalCounter = 0;
 type IdleChangeCallback = (sessionId: string, idle: boolean) => void;
@@ -101,7 +114,11 @@ function fireSessionEnd(sessionId: string, repoPath: string, branchName: string)
   for (const cb of sessionEndCallbacks) cb(sessionId, repoPath, branchName);
 }
 
-function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored, needsBranchRename: paramNeedsBranchRename, branchRenamePrompt: paramBranchRenamePrompt }: CreateParams): CreateResult {
+export function fireStateChange(sessionId: string, state: AgentState): void {
+  for (const cb of stateChangeCallbacks) cb(sessionId, state);
+}
+
+function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored, needsBranchRename: paramNeedsBranchRename, branchRenamePrompt: paramBranchRenamePrompt, port, forceOutputParser }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
   // PTY path
@@ -125,6 +142,8 @@ function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cw
     tmuxSessionName: paramTmuxSessionName,
     initialScrollback,
     restored: paramRestored,
+    port: port ?? defaultPort,
+    forceOutputParser: forceOutputParser ?? defaultForceOutputParser,
   };
 
   const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks, stateChangeCallbacks);
@@ -176,6 +195,7 @@ function list(): SessionSummary[] {
       status: s.status,
       needsBranchRename: !!s.needsBranchRename,
       agentState: s.agentState,
+      currentActivity: s.currentActivity,
     }))
     .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 }
@@ -463,4 +483,4 @@ async function populateMetaCache(): Promise<void> {
 // Re-export pty-handler utilities for backward compatibility
 export { generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
 
-export { create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
