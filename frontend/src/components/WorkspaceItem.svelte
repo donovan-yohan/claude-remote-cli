@@ -586,7 +586,6 @@
     align-items: center;
     opacity: 0;
     transition: opacity 0.12s;
-    z-index: 2;
   }
 
   .session-row:hover .row-menu-overlay {
