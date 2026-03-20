@@ -35,6 +35,11 @@ export interface AnalyticsEvent {
 }
 
 export function initAnalytics(configDir: string): void {
+  if (db) {
+    db.close();
+    db = null;
+    insertStmt = null;
+  }
   const dbPath = path.join(configDir, 'analytics.db');
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
@@ -130,7 +135,7 @@ export function createAnalyticsRouter(configDir: string): Router {
     }
     try {
       db.exec('DELETE FROM events');
-      db.exec('VACUUM');
+      try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* best-effort */ }
       res.json({ ok: true });
     } catch {
       res.status(500).json({ error: 'Failed to clear analytics' });

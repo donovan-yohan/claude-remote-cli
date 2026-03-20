@@ -228,7 +228,7 @@
     if (id === prevActiveSessionId) return;
     prevActiveSessionId = id;
     if (id) {
-      track('navigation', 'page.view', '/terminal', { sessionId: id });
+      track('navigation', 'page.view', '/terminal', undefined, id);
     } else {
       track('navigation', 'page.view', '/dashboard', { workspace: ui.activeWorkspacePath });
     }

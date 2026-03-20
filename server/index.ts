@@ -177,7 +177,11 @@ async function main(): Promise<void> {
   push.ensureVapidKeys(config, CONFIG_PATH, saveConfig);
 
   const configDir = path.dirname(CONFIG_PATH);
-  initAnalytics(configDir);
+  try {
+    initAnalytics(configDir);
+  } catch (err) {
+    console.warn('Analytics disabled: failed to initialize:', err instanceof Error ? err.message : err);
+  }
 
   if (!config.pinHash) {
     const pin = await promptPin('Set up a PIN for claude-remote-cli:');

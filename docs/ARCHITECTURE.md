@@ -22,7 +22,7 @@ Fifteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules communi
 |--------|------|
 | `index.ts` | Composition root: Express app, REST routes, auth middleware, static serving |
 | `workspaces.ts` | Workspace CRUD (replaces roots), Express Router: dashboard, settings, CI status, branch switch, path autocomplete |
-| `sessions.ts` | Session registry + dispatcher: routes `create()` to sdk-handler or pty-handler, lifecycle ops, idle sweep |
+| `sessions.ts` | Session registry: routes `create()` to pty-handler, lifecycle ops, idle sweep |
 | `pty-handler.ts` | PTY session creation via node-pty, scrollback buffering (256KB), tmux wrapping, continue-retry |
 | `sdk-handler.ts` | Claude SDK session creation via `@anthropic-ai/claude-agent-sdk`, structured event streaming, permission queue, debug logging |
 | `git.ts` | Git/GitHub CLI integration: branches, activity feed, CI status, PR lookup, branch switch |
@@ -37,7 +37,7 @@ Fifteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules communi
 | `analytics.ts` | Local analytics: SQLite-backed event tracking, `trackEvent()`, batch ingest endpoint, DB size/clear endpoints |
 | `output-parsers/` | Vendor-extensible terminal output parsing for semantic agent state detection (AgentState), keyed by AgentType. Contains `index.ts` (registry + dispatch), `claude-parser.ts`, `codex-parser.ts` |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler` and `sdk-handler`; `workspaces.ts` imports `git` and `config`; all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `pty-handler.ts` depends on node-pty, only `sdk-handler.ts` depends on `@anthropic-ai/claude-agent-sdk`, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and has no dependencies on other server modules except `types.ts`.
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler`; `workspaces.ts` imports `git` and `config`; all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on bcrypt, only `pty-handler.ts` depends on node-pty, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and has no dependencies on other server modules except `types.ts`.
 
 ### `frontend/`
 

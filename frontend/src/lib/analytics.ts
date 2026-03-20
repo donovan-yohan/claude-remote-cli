@@ -106,11 +106,13 @@ export function initAnalytics(activeSessionIdGetter: () => string | null): void 
   flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
 
   // Flush on page hide (tab switch, close, navigation)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') {
-      flush();
-    }
-  });
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+}
+
+function handleVisibilityChange(): void {
+  if (document.visibilityState === 'hidden') {
+    flush();
+  }
 }
 
 export function destroyAnalytics(): void {
@@ -120,4 +122,5 @@ export function destroyAnalytics(): void {
     flushTimer = null;
   }
   document.removeEventListener('click', handleClick, { capture: true } as EventListenerOptions);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
 }
