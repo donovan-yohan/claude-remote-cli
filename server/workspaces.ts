@@ -8,6 +8,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
+import { trackEvent } from './analytics.js';
 import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace, WorkspaceSettings } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
@@ -179,6 +180,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
 
     saveConfig(configPath, config);
+    trackEvent({ category: 'workspace', action: 'added', target: resolved, properties: { name: path.basename(resolved) } });
 
     const workspace: Workspace = {
       path: resolved,
@@ -214,6 +216,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
 
     config.workspaces = workspaces.filter((p) => p !== resolved);
     saveConfig(configPath, config);
+    trackEvent({ category: 'workspace', action: 'removed', target: resolved });
 
     res.json({ removed: resolved });
   });

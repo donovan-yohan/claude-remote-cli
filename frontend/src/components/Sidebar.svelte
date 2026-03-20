@@ -224,11 +224,11 @@
 
     <div class="sidebar-footer-row">
       {#if !ui.reorderMode}
-        <button class="add-workspace-btn" onclick={onAddWorkspace}>
+        <button class="add-workspace-btn" data-track="sidebar.add-workspace" onclick={onAddWorkspace}>
           + Add Workspace
         </button>
       {/if}
-      <button class="settings-icon-btn" onclick={() => onOpenSettings()} aria-label="Settings">
+      <button class="settings-icon-btn" data-track="sidebar.settings" onclick={() => onOpenSettings()} aria-label="Settings">
         ⚙
       </button>
     </div>

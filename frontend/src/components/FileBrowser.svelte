@@ -269,6 +269,7 @@
           {#if node.hasChildren}
             <button
               class="expand-btn"
+              data-track="file-browser.expand"
               aria-label={node.expanded ? 'Collapse' : 'Expand'}
               onclick={() => toggleExpand(node)}
             >
@@ -285,6 +286,7 @@
           <input
             type="checkbox"
             class="node-checkbox"
+            data-track="file-browser.select"
             checked={node.selected}
             onchange={() => toggleSelect(node)}
             aria-label="Select {node.name}"

@@ -200,6 +200,7 @@
     class="workspace-header"
     class:attention={hasAttention}
     class:reorder-mode={inReorderMode}
+    data-track="sidebar.workspace.click"
     onclick={() => { if (!inReorderMode) onSelectWorkspace(workspace.path); }}
   >
     <div class="workspace-left">
@@ -249,6 +250,7 @@
             class:terminal={representative.type === 'terminal'}
             class:selected={groupSessions.some(s => sessionState.activeSessionId === s.id)}
             class:attention={groupHasAttention}
+            data-track="sidebar.session.click"
             onclick={() => onSelectSession(representative.id)}
             ontouchstart={(e) => handleRowTouchStart(representative.id, e.currentTarget as HTMLElement)}
             ontouchend={handleRowTouchEnd}
@@ -292,6 +294,7 @@
           <li
             class="session-row inactive"
             class:loading={isItemLoading(repoLoadingKey)}
+            data-track="sidebar.repo.click"
             onclick={async () => {
               if (isItemLoading(repoLoadingKey)) return;
               setLoading(repoLoadingKey);
@@ -327,6 +330,7 @@
         <li
           class="session-row inactive"
           class:loading={isItemLoading(wt.path)}
+          data-track="sidebar.worktree.click"
           onclick={async () => {
             if (isItemLoading(wt.path)) return;
             setLoading(wt.path);
@@ -377,7 +381,7 @@
   {#if !collapsed && !inReorderMode}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="add-worktree-row" class:disabled={creatingWorktree} onclick={() => { if (!creatingWorktree) onNewWorktree(workspace); }}>
+    <div class="add-worktree-row" class:disabled={creatingWorktree} data-track="sidebar.new-worktree" onclick={() => { if (!creatingWorktree) onNewWorktree(workspace); }}>
       <span class="add-worktree-btn">{creatingWorktree ? 'creating...' : '+ new worktree'}</span>
     </div>
   {/if}

@@ -246,11 +246,13 @@
       <button
         class="dialog-tab"
         class:active={activeTab === 'repos'}
+        data-track="dialog.new-session.tab.repos"
         onclick={() => { activeTab = 'repos'; }}
       >Repo Session</button>
       <button
         class="dialog-tab"
         class:active={activeTab === 'worktrees'}
+        data-track="dialog.new-session.tab.worktrees"
         onclick={() => {
           activeTab = 'worktrees';
           if (selectedRepoPath && allBranches.length === 0) {
@@ -267,6 +269,7 @@
         <select
           id="ns-agent"
           class="dialog-select"
+          data-track="dialog.new-session.agent"
           bind:value={selectedAgent}
         >
           <option value="claude">Claude</option>
@@ -392,6 +395,7 @@
       <button class="btn btn-ghost" onclick={() => dialogEl.close()} disabled={creating}>Cancel</button>
       <button
         class="btn btn-primary"
+        data-track="dialog.new-session.create"
         onclick={handleSubmit}
         disabled={!selectedRepoPath || creating}
       >

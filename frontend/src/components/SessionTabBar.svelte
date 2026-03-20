@@ -82,6 +82,7 @@
         aria-selected={isActive}
         aria-label="{session.displayName || session.id}"
         tabindex={isActive ? 0 : -1}
+        data-track="session-tab.select"
         onclick={() => onSelectSession(session.id)}
       >
         <span class="tab-icon" aria-hidden="true">{tabIcon(session)}</span>
@@ -91,6 +92,7 @@
           class="tab-close"
           role="button"
           aria-label="Close {session.displayName || session.id}"
+          data-track="session-tab.close"
           onclick={(e) => handleCloseClick(e, session.id)}
           onkeydown={(e) => handleCloseKeydown(e, session.id)}
         >×</span>
@@ -106,6 +108,7 @@
       aria-label="New session"
       aria-haspopup="menu"
       aria-expanded={newMenuOpen}
+      data-track="session-tab.new-menu"
       onclick={toggleNewMenu}
       onkeydown={onMenuKeydown}
     >+</button>
@@ -115,6 +118,7 @@
         <button
           class="new-menu-item"
           role="menuitem"
+          data-track="session-tab.new-claude"
           onclick={selectNewSession}
         >
           <span class="new-menu-icon">🤖</span>
@@ -123,6 +127,7 @@
         <button
           class="new-menu-item"
           role="menuitem"
+          data-track="session-tab.new-terminal"
           onclick={selectNewTerminal}
         >
           <span class="new-menu-icon">🖥</span>
