@@ -55,6 +55,12 @@ export interface PtySession extends BaseSession {
   restored: boolean;
   branchRenamePrompt?: string;
   outputParser: OutputParser;
+  hookToken: string;
+  hooksActive: boolean;
+  cleanedUp: boolean;
+  _lastHookTime?: number | undefined;
+  lastAttentionNotifiedAt?: number | undefined;
+  currentActivity?: { tool: string; detail?: string } | undefined;
 }
 
 export type Session = PtySession;
@@ -81,6 +87,7 @@ export interface SessionSummary {
   status: SessionStatus;
   needsBranchRename: boolean;
   agentState: AgentState;
+  currentActivity?: { tool: string; detail?: string } | undefined;
 }
 
 export interface WorktreeMetadata {
@@ -141,6 +148,7 @@ export interface Config {
   vapidPublicKey?: string | undefined;
   vapidPrivateKey?: string | undefined;
   debugLog?: boolean | undefined;
+  forceOutputParser?: boolean | undefined;
   nextMountainIndex?: number | undefined;
 }
 

@@ -21,8 +21,10 @@ import { extensionForMime, setClipboardImage } from './clipboard.js';
 import { listBranches, isBranchStale } from './git.js';
 import * as push from './push.js';
 import { createWorkspaceRouter } from './workspaces.js';
+import { createHooksRouter } from './hooks.js';
 import type { AgentType, Config } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
+import { semverLessThan } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,14 +58,6 @@ function getCurrentVersion(): string {
   return pkg.version;
 }
 
-function semverLessThan(a: string, b: string): boolean {
-  const parse = (v: string) => v.split('.').map(Number);
-  const [aMaj = 0, aMin = 0, aPat = 0] = parse(a);
-  const [bMaj = 0, bMin = 0, bPat = 0] = parse(b);
-  if (aMaj !== bMaj) return aMaj < bMaj;
-  if (aMin !== bMin) return aMin < bMin;
-  return aPat < bPat;
-}
 
 async function getLatestVersion(): Promise<string | null> {
   const now = Date.now();
@@ -244,6 +238,19 @@ async function main(): Promise<void> {
   const server = http.createServer(app);
   const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher, CONFIG_PATH);
 
+  // Configure session defaults for hooks injection
+  sessions.configure({ port: config.port, forceOutputParser: config.forceOutputParser ?? false });
+
+  // Mount hooks router BEFORE auth middleware — hook callbacks come from localhost Claude Code
+  const hooksRouter = createHooksRouter({
+    getSession: sessions.get,
+    broadcastEvent,
+    fireStateChange: sessions.fireStateChange,
+    notifySessionAttention: push.notifySessionIdle,
+    configPath: CONFIG_PATH,
+  });
+  app.use('/hooks', hooksRouter);
+
   // Mount workspace router
   const workspaceRouter = createWorkspaceRouter({ configPath: CONFIG_PATH });
   app.use('/workspaces', requireAuth, workspaceRouter);
@@ -258,11 +265,15 @@ async function main(): Promise<void> {
   // Populate session metadata cache in background (non-blocking)
   populateMetaCache().catch(() => {});
 
-  // Push notifications on session idle
+  // Push notifications on session idle (skip when hooks already sent attention notification)
   sessions.onIdleChange((sessionId, idle) => {
     if (idle) {
       const session = sessions.get(sessionId);
       if (session && session.type !== 'terminal') {
+        // Dedup: if hooks fired an attention notification within last 10s, skip
+        if (session.hooksActive && session.lastAttentionNotifiedAt && Date.now() - session.lastAttentionNotifiedAt < 10000) {
+          return;
+        }
         push.notifySessionIdle(sessionId, session);
       }
     }

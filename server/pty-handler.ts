@@ -1,4 +1,5 @@
 import pty from 'node-pty';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -32,6 +33,29 @@ export function resolveTmuxSpawn(
   };
 }
 
+export function generateHooksSettings(sessionId: string, port: number, token: string): string {
+  const dir = path.join(os.tmpdir(), 'claude-remote-cli', sessionId);
+  fs.mkdirSync(dir, { recursive: true });
+  const filePath = path.join(dir, 'hooks-settings.json');
+  const base = `http://127.0.0.1:${port}`;
+  const q = `sessionId=${sessionId}&token=${token}`;
+  const settings = {
+    hooks: {
+      Stop: [{ hooks: [{ type: 'http', url: `${base}/hooks/stop?${q}`, timeout: 5 }] }],
+      Notification: [
+        { matcher: 'permission_prompt', hooks: [{ type: 'http', url: `${base}/hooks/notification?${q}&type=permission_prompt`, timeout: 5 }] },
+        { matcher: 'idle_prompt', hooks: [{ type: 'http', url: `${base}/hooks/notification?${q}&type=idle_prompt`, timeout: 5 }] },
+      ],
+      UserPromptSubmit: [{ hooks: [{ type: 'http', url: `${base}/hooks/prompt-submit?${q}`, timeout: 5 }] }],
+      SessionEnd: [{ hooks: [{ type: 'http', url: `${base}/hooks/session-end?${q}`, timeout: 5 }] }],
+      PreToolUse: [{ hooks: [{ type: 'http', url: `${base}/hooks/tool-use?${q}`, timeout: 5 }] }],
+      PostToolUse: [{ hooks: [{ type: 'http', url: `${base}/hooks/tool-result?${q}`, timeout: 5 }] }],
+    },
+  };
+  fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8');
+  return filePath;
+}
+
 export type CreatePtyParams = {
   id: string;
   type?: SessionType | undefined;
@@ -52,6 +76,8 @@ export type CreatePtyParams = {
   tmuxSessionName?: string | undefined;
   initialScrollback?: string[] | undefined;
   restored?: boolean | undefined;
+  port?: number | undefined;
+  forceOutputParser?: boolean | undefined;
 };
 
 export type CreatePtyResult = SessionSummary & { pid: number | undefined };
@@ -74,7 +100,7 @@ export function createPtySession(
     branchName,
     displayName,
     command,
-    args = [],
+    args: rawArgs = [],
     cols = 80,
     rows = 24,
     configPath,
@@ -82,14 +108,34 @@ export function createPtySession(
     tmuxSessionName: paramTmuxSessionName,
     initialScrollback,
     restored: paramRestored,
+    port,
+    forceOutputParser,
   } = params;
 
+  let args = rawArgs;
   const createdAt = new Date().toISOString();
   const resolvedCommand = command || AGENT_COMMANDS[agent];
 
   // Strip CLAUDECODE env var to allow spawning claude inside a claude-managed server
   const env = Object.assign({}, process.env) as Record<string, string>;
   delete env.CLAUDECODE;
+
+  // Inject hooks settings when spawning a real claude agent (not custom command, not forceOutputParser)
+  let hookToken = '';
+  let hooksActive = false;
+  let settingsPath = '';
+  const shouldInjectHooks = agent === 'claude' && !command && !forceOutputParser && port !== undefined;
+  if (shouldInjectHooks) {
+    hookToken = crypto.randomBytes(32).toString('hex');
+    try {
+      settingsPath = generateHooksSettings(id, port, hookToken);
+      args = ['--settings', settingsPath, ...args];
+      hooksActive = true;
+    } catch (err) {
+      console.warn(`[pty-handler] Failed to generate hooks settings for session ${id}:`, err);
+      hooksActive = false;
+    }
+  }
 
   const useTmux = !command && !!paramUseTmux;
   let spawnCommand = resolvedCommand;
@@ -143,6 +189,10 @@ export function createPtySession(
     needsBranchRename: false,
     agentState: 'initializing',
     outputParser: parser,
+    hookToken,
+    hooksActive,
+    cleanedUp: false,
+    _lastHookTime: undefined,
   };
   sessionsMap.set(id, session);
 
@@ -198,14 +248,35 @@ export function createPtySession(
       // Vendor-specific output parsing for semantic state detection
       const parseResult = session.outputParser.onData(data, scrollback.slice(-20));
       if (parseResult && parseResult.state !== session.agentState) {
-        session.agentState = parseResult.state;
-        for (const cb of stateChangeCallbacks) cb(session.id, parseResult.state);
+        if (session.hooksActive) {
+          // Hooks are authoritative — check 30s reconciliation timeout
+          const lastHook = session._lastHookTime;
+          const sessionAge = Date.now() - new Date(session.createdAt).getTime();
+          if (lastHook && Date.now() - lastHook > 30000) {
+            // No hook for 30s and parser disagrees — parser overrides
+            session.agentState = parseResult.state;
+            for (const cb of stateChangeCallbacks) cb(session.id, parseResult.state);
+          } else if (!lastHook && sessionAge > 30000) {
+            // Hooks active but never fired in 30s — allow parser to override to prevent permanent suppression
+            session.agentState = parseResult.state;
+            for (const cb of stateChangeCallbacks) cb(session.id, parseResult.state);
+          }
+          // else: suppress parser — hooks are still fresh
+        } else {
+          // No hooks — parser is primary (current behavior)
+          session.agentState = parseResult.state;
+          for (const cb of stateChangeCallbacks) cb(session.id, parseResult.state);
+        }
       }
     });
 
     proc.onExit(() => {
       if (canRetry && (Date.now() - spawnTime) < 3000) {
-        const retryArgs = args.filter(a => !continueArgs.includes(a));
+        let retryArgs = rawArgs.filter(a => !continueArgs.includes(a));
+        // Re-inject hooks settings if active (settingsPath captured from outer scope)
+        if (session.hooksActive && settingsPath) {
+          retryArgs = ['--settings', settingsPath, ...retryArgs];
+        }
         const retryNotice = '\r\n[claude-remote-cli] --continue not available; starting new session...\r\n';
         scrollback.length = 0;
         scrollbackBytes = 0;
@@ -242,6 +313,9 @@ export function createPtySession(
         attachHandlers(retryPty, false);
         return;
       }
+
+      if (session.cleanedUp) return; // Dedup: SessionEnd hook already cleaned up
+      session.cleanedUp = true;
 
       if (restoredClearTimer) clearTimeout(restoredClearTimer);
 
