@@ -22,6 +22,35 @@
   let newMenuOpen = $state(false);
   let newMenuBtnEl = $state<HTMLButtonElement | null>(null);
 
+  // Stable tab names scoped to the provided session list. Closing a tab does not renumber others.
+  let tabNames = $state(new Map<string, string>());
+  let nextAgentIndex = $state(0);
+  let nextTerminalIndex = $state(0);
+
+  $effect(() => {
+    let updated = new Map(tabNames);
+    let changed = false;
+    for (const s of sessions) {
+      if (!updated.has(s.id)) {
+        if (s.type === 'terminal') {
+          nextTerminalIndex = nextTerminalIndex + 1;
+          updated.set(s.id, `Terminal ${nextTerminalIndex}`);
+        } else {
+          nextAgentIndex = nextAgentIndex + 1;
+          updated.set(s.id, `Agent ${nextAgentIndex}`);
+        }
+        changed = true;
+      }
+    }
+    if (changed) {
+      tabNames = updated;
+    }
+  });
+
+  function tabName(id: string): string {
+    return tabNames.get(id) ?? id;
+  }
+
   function tabIcon(session: SessionSummary): string {
     return session.type === 'terminal' ? '🖥' : '🤖';
   }
@@ -87,18 +116,18 @@
         class:tab--active={isActive}
         role="tab"
         aria-selected={isActive}
-        aria-label="{session.displayName || session.id}"
+        aria-label="{tabName(session.id)}"
         tabindex={isActive ? 0 : -1}
         data-track="session-tab.select"
         onclick={() => onSelectSession(session.id)}
       >
         <span class="tab-icon" aria-hidden="true">{tabIcon(session)}</span>
-        <span class="tab-name">{session.displayName || session.id}</span>
+        <span class="tab-name">{tabName(session.id)}</span>
         <!-- svelte-ignore a11y_interactive_supports_focus -->
         <span
           class="tab-close"
           role="button"
-          aria-label="Close {session.displayName || session.id}"
+          aria-label="Close {tabName(session.id)}"
           data-track="session-tab.close"
           onclick={(e) => handleCloseClick(e, session.id)}
           onkeydown={(e) => handleCloseKeydown(e, session.id)}
