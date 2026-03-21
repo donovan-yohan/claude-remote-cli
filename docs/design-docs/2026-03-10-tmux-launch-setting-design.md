@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-03-10
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Global Session Defaults & tmux Launch Setting Design
 
 **Date:** 2026-03-10

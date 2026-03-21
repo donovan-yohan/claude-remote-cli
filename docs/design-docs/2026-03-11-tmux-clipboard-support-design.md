@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-03-11
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Tmux Clipboard Support Design
 
 **Date:** 2026-03-11

@@ -1,3 +1,12 @@
+---
+status: superseded
+created: 2026-02-23
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Svelte Migration & Menu UI Redesign
 
 > **Status**: Approved | **Date**: 2026-02-23

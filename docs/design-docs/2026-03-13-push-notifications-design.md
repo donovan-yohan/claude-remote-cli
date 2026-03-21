@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-03-13
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Push Notifications Design
 
 **Created:** 2026-03-13

@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-23
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Worktree Sync Design
 
 > Created: 2026-02-23

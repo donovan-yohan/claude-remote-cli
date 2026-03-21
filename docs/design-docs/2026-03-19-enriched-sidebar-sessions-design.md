@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-03-19
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Design: Enriched Sidebar Session Rows
 
 > **Date**: 2026-03-19

@@ -7,10 +7,15 @@ Execution plans for active and completed work.
 | Plan | Created | Topic |
 |------|---------|-------|
 | `branch-lifecycle-fix` | 2026-03-19 | Unique branch names on worktree reuse, auto-rename on first message, display names |
-| `sdk-chat-ui-remnant` | 2026-03-19 | Remove dead SDK chat UI code — PTY-only architecture |
-| `structured-agent-ui` | 2026-03-18 | Claude SDK integration + structured chat UI with rich message cards |
 | `session-persistence-fix` | 2026-03-17 | Fix sessions lost after auto-update restart |
 | `mobile-input-redesign` | 2026-02-25 | Event-intent architecture replacing value-diffing for mobile input |
+| `enriched-sidebar-sessions` | 2026-03-19 | Two-line sidebar rows with relative time, worktree name, PR#, diff stats |
+| `filesystem-browser-api` | 2026-03-19 | File system browser API + tree UI for workspace selection with bulk import |
+| `first-enter-duplicate-content` | 2026-03-19 | Fix branch rename interception sending chars to PTY twice |
+| `pr-dashboard-usability` | 2026-03-19 | PR dashboard: scroll, links, per-PR session button, search |
+| `repo-root-click-dashboard` | 2026-03-19 | Fix clicking inactive repo root going to dashboard instead of creating session |
+| `sidebar-session-model-mismatch` | 2026-03-19 | Fix sidebar showing 1 row per session instead of 1 row per folder |
+| `workspace-reorder` | 2026-03-19 | Drag-and-drop workspace reordering, sidebar header simplification |
 
 ## Tech Debt
 
@@ -18,7 +23,7 @@ No tech debt tracked yet.
 
 ## Completed Plans
 
-See `docs/exec-plans/completed/` for historical plans (28 completed).
+See `docs/exec-plans/completed/` for historical plans (47 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|

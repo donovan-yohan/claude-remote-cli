@@ -16,7 +16,7 @@ The system has two compilation targets: a TypeScript + ESM backend (Express + no
 
 ### `server/`
 
-Fifteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
+Eighteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
 
 | Module | Role |
 |--------|------|
@@ -24,9 +24,10 @@ Fifteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules communi
 | `workspaces.ts` | Workspace CRUD (replaces roots), Express Router: dashboard, settings, CI status, branch switch, path autocomplete |
 | `sessions.ts` | Session registry: routes `create()` to pty-handler, lifecycle ops, idle sweep |
 | `pty-handler.ts` | PTY session creation via node-pty, scrollback buffering (256KB), tmux wrapping, continue-retry |
-| `sdk-handler.ts` | Claude SDK session creation via `@anthropic-ai/claude-agent-sdk`, structured event streaming, permission queue, debug logging |
 | `git.ts` | Git/GitHub CLI integration: branches, activity feed, CI status, PR lookup, branch switch |
-| `ws.ts` | WebSocket upgrade handler with protocol negotiation: JSON frames for SDK sessions, binary relay for PTY |
+| `ws.ts` | WebSocket upgrade handler: binary relay for PTY I/O + resize JSON, event broadcast channel |
+| `mobile-input-pipeline.ts` | Pure-function event-intent pipeline for mobile virtual keyboard input; unit-tested via JSON fixtures |
+| `utils.ts` | Shared server utilities |
 | `watcher.ts` | File system watching for workspace directories, debounced event emission |
 | `auth.ts` | PIN hashing (scrypt), rate limiting (5 fails = 15-min lockout), cookie tokens |
 | `config.ts` | Config loading/saving with defaults, per-workspace settings, worktree metadata |
@@ -34,11 +35,11 @@ Fifteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules communi
 | `service.ts` | Background service install/uninstall/status (launchd on macOS, systemd on Linux) |
 | `push.ts` | Web Push notification management (VAPID keys, subscription registry, SDK event enrichment) |
 | `hooks.ts` | Claude Code hook HTTP endpoints: state detection (Stop, Notification, UserPromptSubmit), activity tracking (PreToolUse, PostToolUse), session cleanup (SessionEnd), and branch rename. Localhost-only with per-session token auth. |
-| `types.ts` | Shared TypeScript interfaces (discriminated union Session = PtySession \| SdkSession, Workspace, Config, PR, CI, Activity types) |
+| `types.ts` | Shared TypeScript interfaces (Session, Workspace, Config, PR, CI, Activity types) |
 | `analytics.ts` | Local analytics: SQLite-backed event tracking, `trackEvent()`, batch ingest endpoint, DB size/clear endpoints |
 | `output-parsers/` | Vendor-extensible terminal output parsing for semantic agent state detection (AgentState), keyed by AgentType. Contains `index.ts` (registry + dispatch), `claude-parser.ts`, `codex-parser.ts` |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler` and `sdk-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` consumes `sessions`, `git`, `config`, and `push` via injected dependencies (not direct imports); all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on crypto.scrypt, only `pty-handler.ts` depends on node-pty, only `sdk-handler.ts` depends on `@anthropic-ai/claude-agent-sdk`, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and may depend on `types.ts` only — it MUST NOT import from `utils.ts` or any other server module.
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` consumes `sessions`, `git`, `config`, and `push` via injected dependencies (not direct imports); all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on crypto.scrypt, only `pty-handler.ts` depends on node-pty, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and may depend on `types.ts` only — it MUST NOT import from `utils.ts` or any other server module.
 
 ### `frontend/`
 
@@ -54,6 +55,8 @@ Svelte 5 SPA built by Vite, output to `dist/frontend/`. Express serves the compi
 | `frontend/src/lib/actions.ts` | Shared Svelte actions (scroll-on-hover, longpress-click) |
 | `frontend/src/lib/notifications.ts` | Browser Notification API wrapper, service worker registration, Web Push subscription |
 | `frontend/src/lib/utils.ts` | Shared utilities (path display, relative time formatting, device detection) |
+| `frontend/src/lib/pr-state.ts` | PR lifecycle state machine: derives action from PR state + CI + mergeable + unresolved comments |
+| `frontend/src/lib/analytics.ts` | Frontend analytics: batch event collection, `data-track` attribute integration |
 
 **Architecture Invariant:** The frontend does NOT vendor any libraries. xterm.js, xterm-addon-fit, and `@tanstack/svelte-query` are npm dependencies. State lives in `.svelte.ts` modules, not in component files (PR data is an exception — managed via svelte-query cache).
 
@@ -71,21 +74,14 @@ Unit tests using `node:test` and `node:assert`. TypeScript source compiled via `
 
 ## Data Flow
 
-**PTY mode** (codex, terminal, SDK fallback):
+**PTY relay:**
 ```
-Browser (xterm.js) <--WebSocket /ws/:id--> ws.ts <--PTY I/O--> node-pty <--spawns--> agent CLI
+Browser (xterm.js) <--WebSocket /ws/:id--> ws.ts <--PTY I/O--> node-pty <--spawns--> agent CLI / shell
                                               |
                                          scrollback buffer (in-memory, per session)
 ```
 
-**SDK mode** (claude agent, default):
-```
-Browser (ChatView) <--WebSocket /ws/:id JSON--> ws.ts <--events--> sdk-handler.ts <--SDK--> claude process
-                                                   |
-                                              events array (in-memory, 2000 max FIFO)
-```
-
-**Event channel** (both modes):
+**Event channel:**
 ```
 Browser (Svelte)   <--WebSocket /ws/events-- ws.ts <-- watcher.ts (fs.watch on .worktrees/)
                                                     <-- POST/DELETE /roots (manual broadcast)
@@ -99,14 +95,6 @@ PTY flow:
 5. xterm.js renders output in browser
 6. Resize events sent as JSON: `{type: 'resize', cols, rows}`
 
-SDK flow:
-1. User sends message via ChatInput → `{type: 'message', text}` over WebSocket
-2. ws.ts routes to sdk-handler `sendMessage()`
-3. SDK streams structured events (agent_message, file_change, tool_call, etc.)
-4. Events relayed as JSON frames to browser
-5. ChatView renders events as message cards
-6. Permission requests: server sends `tool_call` event → client shows PermissionCard → user taps Approve/Deny → `{type: 'permission', requestId, approved}` back to server
-
 ## REST API
 
 | Method | Path | Description |
@@ -118,8 +106,7 @@ SDK flow:
 | `PATCH` | `/sessions/:id` | Rename session |
 | `DELETE` | `/sessions/:id` | Terminate session |
 | `POST` | `/sessions/:id/image` | Upload clipboard image |
-| `POST` | `/sessions/:id/message` | Send message to SDK session |
-| `POST` | `/sessions/:id/permission` | Approve/deny SDK permission request |
+| `POST` | `/sessions/terminal` | Create terminal session (bare shell, optional `cwd`) |
 | `GET` | `/branches` | List local and remote branches |
 | `GET` | `/worktrees` | List inactive Claude Code worktrees |
 | `DELETE` | `/worktrees` | Remove worktree, prune refs, delete branch |
@@ -150,9 +137,7 @@ SDK flow:
 
 ## WebSocket Channels
 
-- `/ws/:sessionId` — Session relay with protocol negotiation:
-  - **SDK sessions**: First message is `{type: 'session_info', mode: 'sdk'}`. Subsequent frames are JSON (SDK events server→client, messages/permissions client→server). Backpressure pauses at 1MB buffered.
-  - **PTY sessions**: Raw binary terminal I/O + resize JSON. Close code 1000 = PTY exited.
+- `/ws/:sessionId` — PTY session relay: raw binary terminal I/O + resize JSON. Close code 1000 = PTY exited.
 - `/ws/events` — Server-to-client broadcast (`worktrees-changed`, `session-idle-changed`).
 
 Both channels require authentication via `token` cookie verified during HTTP upgrade.
@@ -163,7 +148,7 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 **Auth:** Every HTTP request (except `/auth` POST) and every WebSocket upgrade requires a valid session cookie. Rate limiting is per-IP.
 
-**Session lifecycle:** Sessions are in-memory during normal operation. Multiple sessions per directory are allowed (multi-tab support). PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction. SDK sessions cap at 2000 events with FIFO eviction. SDK sessions idle >30min are swept (max 5 idle). PTY spawns are wrapped with `trap '' PIPE; exec` to prevent SIGPIPE from killing sessions. During auto-updates, sessions are serialized to disk (`pending-sessions.json` + scrollback files) and restored on restart.
+**Session lifecycle:** Sessions are in-memory during normal operation. Multiple sessions per directory are allowed (multi-tab support). PTY exit triggers automatic cleanup. Scrollback buffers cap at 256KB with FIFO eviction. PTY spawns are wrapped with `trap '' PIPE; exec` to prevent SIGPIPE from killing sessions. During auto-updates, sessions are serialized to disk (`pending-sessions.json` + scrollback files) and restored on restart.
 
 ---
 
@@ -173,7 +158,7 @@ Both channels require authentication via `token` cookie verified during HTTP upg
 
 | ADR | Topic |
 |-----|-------|
-| ADR-001 | Modular server architecture (thirteen modules, composition root, dependency flow) |
+| ADR-001 | Modular server architecture (eighteen modules, composition root, dependency flow) |
 | ADR-003 | PTY session management (in-memory state, scrollback, CLAUDECODE stripping) |
 | ADR-004 | PIN authentication (scrypt, cookie tokens, rate limiting) |
 | ADR-005 | Built-in test runner (node:test, nine test files, no external framework) |

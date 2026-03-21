@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-26
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Handle Existing Worktrees Design
 
 **Date:** 2026-02-26

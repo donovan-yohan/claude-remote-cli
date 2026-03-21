@@ -1,3 +1,12 @@
+---
+status: current
+created: 2026-02-24
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Core Beliefs
 
 Operating principles for this project's documentation and agent workflow.

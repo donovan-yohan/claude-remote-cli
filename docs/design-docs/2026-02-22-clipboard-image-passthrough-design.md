@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-22
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Clipboard Image Passthrough Design
 
 > Allow users to paste images from their browser clipboard into a remote Claude Code CLI session.

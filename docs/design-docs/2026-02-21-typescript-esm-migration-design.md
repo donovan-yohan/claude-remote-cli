@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-21
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # TypeScript + ESM Migration Design
 
 **Date:** 2026-02-21

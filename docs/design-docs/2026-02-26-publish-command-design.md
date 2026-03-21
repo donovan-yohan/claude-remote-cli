@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-26
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # /publish Slash Command
 
 **Created:** 2026-02-26

@@ -30,20 +30,11 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `PinGate.svelte` | PIN authentication screen |
 | `ImageToast.svelte` | Clipboard image paste feedback |
 | `UpdateToast.svelte` | Version update notification |
-| `SessionView.svelte` | SDK/PTY mode container: Chat+Terminal tabs for SDK, Terminal-only for PTY |
-| `ChatView.svelte` | Scrollable message list rendering SDK events as typed cards |
-| `ChatInput.svelte` | Multi-line textarea with send button (Enter sends, Shift+Enter newline) |
-| `QuickReplies.svelte` | Horizontal scrollable context-aware suggestion buttons |
-| `PermissionCard.svelte` | SDK permission approval/deny card with Approve/Deny buttons |
-| `CostDisplay.svelte` | Token count and estimated cost display |
-| `cards/UserMessage.svelte` | User message card with --accent left border |
-| `cards/AgentMessage.svelte` | Agent message with simple markdown rendering |
-| `cards/FileChangeCard.svelte` | File change indicator (filename + ±lines) |
-| `cards/ToolCallCard.svelte` | Collapsible tool call card with status badge |
-| `cards/ReasoningPanel.svelte` | Collapsible "Thinking..." reasoning panel |
-| `cards/ErrorCard.svelte` | Error card with retry/dismiss |
-| `cards/TurnCompletedCard.svelte` | Turn separator with token/cost info |
-| `dialogs/` | New session, settings, and other modal dialogs |
+| `AgentBadge.svelte` | Agent type indicator badge (Claude/Codex) |
+| `SearchableSelect.svelte` | Searchable dropdown filter replacing native selects |
+| `SessionItem.svelte` | Session list item with status dot, context menu, metadata row |
+| `MobileInput.svelte` | Event-intent mobile keyboard input handler |
+| `dialogs/` | Session customization, settings, workspace, and worktree deletion dialogs |
 
 ## State Management
 
@@ -55,7 +46,6 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 | `config.svelte.ts` | Global session defaults (continue, yolo, tmux, agent, notifications); shared by SettingsDialog, SessionList, NewSessionDialog |
 | `auth.svelte.ts` | Authentication state (PIN check, cookie token) |
 | `ui.svelte.ts` | UI state (active tab, sidebar, filters) |
-| `sdk.svelte.ts` | Per-session SDK state: events, permissions, streaming, token usage, quick replies |
 | `sessions.svelte.ts` (agentState) | `agentState` per session (`processing` \| `idle` \| `waiting-for-input` \| `permission-prompt`) updated from `session-idle-changed` events; drives sidebar dot color and attention logic |
 
 ## Conventions
@@ -81,7 +71,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 
 ## Key Patterns
 
-- The new-session dialog is tab-aware: repo mode hides branch input and shows "Continue previous conversation" checkbox; worktree mode shows branch input; PRs tab falls back to repo mode. The `open()` method accepts `OpenSessionOptions` with `tab`, `branchName`, `agent`, and `claudeArgs` for pre-filling (used by the "Customize" context menu action)
+- **Tab bar "+" dropdown** has three options: "New Agent" (instant create with workspace defaults), "New Terminal" (instant create via `createTerminalSession()`), "Customize..." (opens `CustomizeSessionDialog` with agent options only — no repo/worktree tabs). `Cmd/Ctrl+T` triggers instant agent creation. New tabs auto-name as "Agent 1", "Terminal 1" etc. and append rightmost
 - All session/item actions are accessed via a "..." context menu button (ContextMenu component). Menu items vary by state: Active → Rename, Kill; Inactive worktree → Customize, Resume, Resume (YOLO), Delete; Idle repo → Customize, New Worktree
 - "Customize" opens NewSessionDialog pre-filled with the item's root, repo, and branch (for worktrees). Idle repo items also support direct click to create a repo session with `continue: true` via `POST /sessions/repo`
 - **Session creation API split**: `createSession()` → `POST /sessions` (creates worktrees); `createRepoSession()` → `POST /sessions/repo` (repo root, no worktree). Use the correct one based on context — calling `createSession` without `worktreePath` creates an unwanted worktree

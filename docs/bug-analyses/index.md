@@ -29,3 +29,4 @@
 | [sidebar-ux-and-branch-pr-bugs-bug-analysis.md](2026-03-19-sidebar-ux-and-branch-pr-bugs-bug-analysis.md) | 7 issues: menu transparency, triple-dots UX, branch listener escape sequences, PR DRY violations, grab dots, bottom buttons, missing branch/activity display | 2026-03-19 |
 | [dropdown-and-tmux-resume-bug-analysis.md](2026-03-19-dropdown-and-tmux-resume-bug-analysis.md) | Dropdown menu broken by transform containing block + tmux resume missing -u flag | 2026-03-19 |
 | [settings-centralization-bug-analysis.md](2026-03-19-settings-centralization-bug-analysis.md) | Sidebar clicks ignore global/workspace settings — no centralized settings resolution, no reset-to-default | 2026-03-19 |
+| [new-tab-modal-mismatch-bug-analysis.md](2026-03-21-new-tab-modal-mismatch-bug-analysis.md) | New tab dropdown uses wrong labels, terminal creation broken, modal shows irrelevant repo/worktree tabs in workspace mode | 2026-03-21 |
