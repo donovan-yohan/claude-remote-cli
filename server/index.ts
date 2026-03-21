@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -176,7 +177,14 @@ async function main(): Promise<void> {
   }
 
   if (!config.pinHash) {
-    const pin = await promptPin('Set up a PIN for claude-remote-cli:');
+    let pin: string;
+    if (process.stdin.isTTY) {
+      pin = await promptPin('Set up a PIN for claude-remote-cli:');
+    } else {
+      pin = crypto.randomInt(100000, 999999).toString();
+      console.log(`No interactive terminal detected. Generated PIN: ${pin}`);
+      console.log('Change it by deleting pinHash from your config file and restarting interactively.');
+    }
     config.pinHash = await auth.hashPin(pin);
     saveConfig(CONFIG_PATH, config);
     console.log('PIN set successfully.');
