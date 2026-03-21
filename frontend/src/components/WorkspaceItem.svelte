@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
-  import { getSessionState, getSessionStatus, refreshAll, getSessionMetaById, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, getSessionStatus, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
   import { createSession, createRepoSession } from '../lib/api.js';
@@ -241,8 +241,6 @@
         {@const hasActiveSessions = sessionCount > 0}
         {@const groupHasAttention = groupSessions.some(s => getSessionStatus(s) === 'attention')}
         {#if hasActiveSessions && representative}
-          {@const meta = getSessionMetaById(representative.id)}
-          {@const hasDiff = meta && (meta.additions > 0 || meta.deletions > 0)}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <li
@@ -266,20 +264,11 @@
               {#if sessionCount > 1}
                 <span class="session-count-badge">{sessionCount}</span>
               {/if}
-              {#if hasDiff}
-                <span class="diff-badge">
-                  <span class="diff-add">+{meta.additions}</span>
-                  <span class="diff-del">-{meta.deletions}</span>
-                </span>
-              {/if}
             </div>
             <div class="session-row-secondary">
               <span class="secondary-time">{sessionTime(representative)}</span>
               {#if representative.branchName}
                 <span class="secondary-branch">{representative.branchName}</span>
-              {/if}
-              {#if meta?.prNumber}
-                <span class="secondary-pr">PR #{meta.prNumber}</span>
               {/if}
             </div>
             <div class="row-menu-overlay">
@@ -323,8 +312,6 @@
         {/if}
       {/each}
       {#each inactiveWorktrees as wt (wt.path)}
-        {@const meta = getSessionMetaById(wt.path)}
-        {@const hasDiff = meta && (meta.additions > 0 || meta.deletions > 0)}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <li
@@ -354,20 +341,11 @@
           <div class="session-row-primary">
             <span class="dot dot-inactive"></span>
             <span class="session-name">{isItemLoading(wt.path) ? 'resuming...' : wt.branchName || wt.displayName || wt.name}</span>
-            {#if hasDiff}
-              <span class="diff-badge">
-                <span class="diff-add">+{meta.additions}</span>
-                <span class="diff-del">-{meta.deletions}</span>
-              </span>
-            {/if}
           </div>
           <div class="session-row-secondary">
             <span class="secondary-time">{worktreeTime(wt)}</span>
             {#if wt.branchName}
               <span class="secondary-branch">{wt.branchName}</span>
-            {/if}
-            {#if meta?.prNumber}
-              <span class="secondary-pr">PR #{meta.prNumber}</span>
             {/if}
           </div>
           <div class="row-menu-overlay">

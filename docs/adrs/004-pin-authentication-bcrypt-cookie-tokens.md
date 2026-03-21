@@ -1,7 +1,7 @@
 # ADR-004: PIN Authentication with Bcrypt and Cookie Tokens
 
 ## Status
-Accepted
+Accepted (amended: bcrypt replaced with scrypt — see below)
 
 ## Date
 2026-02-21
@@ -16,13 +16,13 @@ claude-remote-cli exposes Claude Code CLI sessions over HTTP/WebSocket, which me
 
 ### PIN Setup
 - On first run, the server MUST prompt the user to set a PIN via the terminal (using readline)
-- The PIN MUST be hashed using bcrypt with 10 salt rounds before storage
-- The bcrypt hash MUST be stored in the config file under the `pinHash` key
+- The PIN MUST be hashed using Node.js `crypto.scrypt` (64-byte key length, random 16-byte hex salt) before storage
+- The scrypt hash MUST be stored in the config file under the `pinHash` key in the format `scrypt:<salt>:<hex>`
 - To reset the PIN, the user MUST delete the `pinHash` field from the config file and restart the server
 
 ### PIN Verification
 - The frontend MUST present a PIN gate that blocks access to the main application until a valid PIN is submitted
-- PIN verification MUST use `bcrypt.compare` against the stored hash
+- PIN verification MUST derive the scrypt key and compare using `crypto.timingSafeEqual` against the stored hash
 - On successful verification, the server MUST generate a session token using `crypto.randomBytes(32).toString('hex')` (64-character hex string)
 - The token MUST be set as an `httpOnly`, `sameSite: strict` cookie with a configurable TTL (default: 24 hours)
 - Authenticated tokens MUST be stored in an in-memory `Set` on the server; token validity expires via `setTimeout` based on the configured `cookieTTL`
@@ -41,7 +41,7 @@ claude-remote-cli exposes Claude Code CLI sessions over HTTP/WebSocket, which me
 
 ### Positive
 - Single shared PIN is simple to set up and appropriate for a personal/small-team tool
-- Bcrypt hashing protects the PIN even if the config file is compromised
+- Scrypt hashing (Node.js built-in `crypto.scrypt`) protects the PIN even if the config file is compromised, with no native compilation dependency
 - Cookie-based tokens mean the browser automatically includes credentials on every request and WebSocket upgrade without custom client-side token management
 - Rate limiting prevents brute-force PIN guessing over the network
 

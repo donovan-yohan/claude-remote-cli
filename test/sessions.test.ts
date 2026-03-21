@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as sessions from '../server/sessions.js';
-import { resolveTmuxSpawn, generateTmuxSessionName, serializeAll, restoreFromDisk } from '../server/sessions.js';
+import { resolveTmuxSpawn, generateTmuxSessionName } from '../server/pty-handler.js';
+import { serializeAll, restoreFromDisk } from '../server/sessions.js';
 import type { PtySession } from '../server/types.js';
 
 // Track created session IDs so we can clean up after each test

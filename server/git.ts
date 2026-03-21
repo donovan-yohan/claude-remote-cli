@@ -1,6 +1,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import type { ActivityEntry, CiStatus, PrInfo } from './types.js';
+
 const execFileAsync = promisify(execFile);
 
 type ExecFileAsyncResult = {
@@ -13,37 +15,6 @@ type ExecFileAsyncLike = (
   args: string[],
   options: { cwd: string; timeout?: number },
 ) => Promise<ExecFileAsyncResult>;
-
-export interface ActivityEntry {
-  hash: string;
-  shortHash: string;
-  message: string;
-  author: string;
-  timeAgo: string;
-  branches: string[];
-}
-
-export interface CiStatus {
-  total: number;
-  passing: number;
-  failing: number;
-  pending: number;
-}
-
-export interface PrInfo {
-  number: number;
-  title: string;
-  url: string;
-  state: 'OPEN' | 'CLOSED' | 'MERGED';
-  headRefName: string;
-  baseRefName: string;
-  isDraft: boolean;
-  reviewDecision: string | null;
-  additions: number;
-  deletions: number;
-  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
-  unresolvedCommentCount: number;
-}
 
 function normalizeBranchNames(stdout: string): string[] {
   const branches = stdout

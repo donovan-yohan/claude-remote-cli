@@ -9,10 +9,12 @@ import {
   _resetForTesting,
 } from '../server/auth.js';
 
-test('hashPin returns bcrypt hash starting with $2b$', async () => {
+test('hashPin returns scrypt hash with expected format', async () => {
   _resetForTesting();
   const hash = await hashPin('1234');
-  assert.ok(hash.startsWith('$2b$'), `Expected hash to start with $2b$, got: ${hash}`);
+  assert.ok(hash.startsWith('scrypt:'), `Expected hash to start with scrypt:, got: ${hash}`);
+  const parts = hash.split(':');
+  assert.strictEqual(parts.length, 3, 'Hash should have 3 colon-separated parts');
 });
 
 test('verifyPin returns true for correct PIN', async () => {
@@ -49,6 +51,54 @@ test('rate limiter allows under threshold', () => {
   }
 
   assert.strictEqual(isRateLimited(ip), false);
+});
+
+test('verifyPin returns false for legacy bcrypt hash (requires PIN reset)', async () => {
+  _resetForTesting();
+  const legacyHash = '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012';
+  const result = await verifyPin('1234', legacyHash);
+  assert.strictEqual(result, false);
+});
+
+test('verifyPin returns false for malformed scrypt hash (missing parts)', async () => {
+  _resetForTesting();
+  const result = await verifyPin('1234', 'scrypt:saltonly');
+  assert.strictEqual(result, false);
+});
+
+test('verifyPin returns false for scrypt hash with empty salt', async () => {
+  _resetForTesting();
+  const result = await verifyPin('1234', 'scrypt::deadbeef');
+  assert.strictEqual(result, false);
+});
+
+test('verifyPin returns false for scrypt hash with wrong key length', async () => {
+  _resetForTesting();
+  // Valid hex but wrong length (should be 64 bytes = 128 hex chars)
+  const result = await verifyPin('1234', 'scrypt:abcd1234:deadbeef');
+  assert.strictEqual(result, false);
+});
+
+test('verifyPin returns false for completely empty hash', async () => {
+  _resetForTesting();
+  const result = await verifyPin('1234', '');
+  assert.strictEqual(result, false);
+});
+
+test('verifyPin returns false for garbage input', async () => {
+  _resetForTesting();
+  const result = await verifyPin('1234', 'not-a-valid-hash-at-all');
+  assert.strictEqual(result, false);
+});
+
+test('hashPin produces unique salts', async () => {
+  _resetForTesting();
+  const hash1 = await hashPin('1234');
+  const hash2 = await hashPin('1234');
+  assert.notStrictEqual(hash1, hash2, 'Two hashes of the same PIN should have different salts');
+  // But both should verify correctly
+  assert.strictEqual(await verifyPin('1234', hash1), true);
+  assert.strictEqual(await verifyPin('1234', hash2), true);
 });
 
 test('generateCookieToken returns non-empty string', () => {

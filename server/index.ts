@@ -13,7 +13,7 @@ import cookieParser from 'cookie-parser';
 import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensureMetaDir, resolveSessionSettings } from './config.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
-import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, killAllTmuxSessions, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache } from './sessions.js';
+import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, serializeAll, restoreFromDisk, activeTmuxSessionNames, populateMetaCache } from './sessions.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
@@ -31,24 +31,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
 
-// ── Signal protection ────────────────────────────────────────────────────
-// Ignore SIGPIPE: piped bash commands (e.g. `cmd | grep | tail`) generate
-// SIGPIPE when the reading end of the pipe closes before the writer finishes.
-// node-pty's native module can propagate these to PTY sessions, causing
-// unexpected "session exited" in the browser. Ignoring SIGPIPE at the server
-// level prevents this cascade.
-process.on('SIGPIPE', () => { /* intentionally ignored */ });
-
-// Ignore SIGHUP: if the controlling terminal disconnects (e.g. SSH drops),
-// keep the server and all PTY sessions alive.
-process.on('SIGHUP', () => { /* intentionally ignored */ });
-
 // When run via CLI bin, config lives in ~/.config/claude-remote-cli/
 // When run directly (development), fall back to local config.json
 const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', '..', 'config.json');
-
-// Ensure worktree metadata directory exists alongside config
-ensureMetaDir(CONFIG_PATH);
 
 const VERSION_CACHE_TTL = 5 * 60 * 1000;
 let versionCache: { latest: string; fetchedAt: number } | null = null;
@@ -156,6 +141,13 @@ function ensureGitignore(repoPath: string, entry: string): void {
 }
 
 async function main(): Promise<void> {
+  // Ignore SIGPIPE: node-pty can propagate pipe breaks causing unexpected session exits
+  process.on('SIGPIPE', () => {});
+  // Ignore SIGHUP: keep server alive if controlling terminal disconnects
+  process.on('SIGHUP', () => {});
+
+  ensureMetaDir(CONFIG_PATH);
+
   let config: Config;
   try {
     config = loadConfig(CONFIG_PATH);
@@ -254,7 +246,7 @@ async function main(): Promise<void> {
     getSession: sessions.get,
     broadcastEvent,
     fireStateChange: sessions.fireStateChange,
-    notifySessionAttention: push.notifySessionIdle,
+    notifySessionAttention: push.notifySessionAttention,
     configPath: CONFIG_PATH,
   });
   app.use('/hooks', hooksRouter);
@@ -284,7 +276,7 @@ async function main(): Promise<void> {
         if (session.hooksActive && session.lastAttentionNotifiedAt && Date.now() - session.lastAttentionNotifiedAt < 10000) {
           return;
         }
-        push.notifySessionIdle(sessionId, session);
+        push.notifySessionAttention(sessionId, session);
       }
     }
   });

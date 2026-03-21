@@ -38,37 +38,10 @@ interface PendingSessionsFile {
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
-type CreateParams = {
+type CreateParams = Omit<CreatePtyParams, 'id'> & {
   id?: string;
-  type?: SessionType;
-  agent?: AgentType;
-  repoName?: string;
-  repoPath: string;
-  cwd?: string;
-  root?: string;
-  worktreeName?: string;
-  branchName?: string;
-  displayName?: string;
-  command?: string;
-  args?: string[];
-  cols?: number;
-  rows?: number;
-  configPath?: string;
-  useTmux?: boolean;
-  /** Override for the tmux session name (used when restoring serialized sessions) */
-  tmuxSessionName?: string;
-  /** Pre-loaded scrollback for restored sessions */
-  initialScrollback?: string[];
-  /** Mark this session as a restored session (PTY exit won't delete it) */
-  restored?: boolean;
-  /** Flag to trigger branch rename on first message (worktree auto-naming) */
   needsBranchRename?: boolean;
-  /** Custom prompt for branch rename (from workspace settings) */
   branchRenamePrompt?: string;
-  /** Server port for hook URL generation */
-  port?: number;
-  /** Force output parser instead of hooks */
-  forceOutputParser?: boolean;
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
@@ -103,67 +76,56 @@ function onStateChange(cb: StateChangeCallback): void {
   stateChangeCallbacks.push(cb);
 }
 
-type SessionEndCallback = (sessionId: string, repoPath: string, branchName: string) => void;
+type SessionEndCallback = (sessionId: string, repoPath: string, branchName?: string) => void;
 const sessionEndCallbacks: SessionEndCallback[] = [];
 
 function onSessionEnd(cb: SessionEndCallback): void {
   sessionEndCallbacks.push(cb);
 }
 
-function fireSessionEnd(sessionId: string, repoPath: string, branchName: string): void {
-  for (const cb of sessionEndCallbacks) cb(sessionId, repoPath, branchName);
+function fireSessionEnd(sessionId: string, repoPath: string, branchName?: string): void {
+  for (const cb of sessionEndCallbacks) {
+    try { cb(sessionId, repoPath, branchName); }
+    catch (err) { console.error('[sessions] sessionEnd callback error:', err); }
+  }
 }
 
 export function fireStateChange(sessionId: string, state: AgentState): void {
   for (const cb of stateChangeCallbacks) cb(sessionId, state);
 }
 
-function create({ id: providedId, type, agent = 'claude', repoName, repoPath, cwd, root, worktreeName, branchName, displayName, command, args = [], cols = 80, rows = 24, configPath, useTmux: paramUseTmux, tmuxSessionName: paramTmuxSessionName, initialScrollback, restored: paramRestored, needsBranchRename: paramNeedsBranchRename, branchRenamePrompt: paramBranchRenamePrompt, port, forceOutputParser }: CreateParams): CreateResult {
+function create({ id: providedId, needsBranchRename, branchRenamePrompt, agent = 'claude', cols = 80, rows = 24, args = [], port, forceOutputParser, ...rest }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
-  // PTY path
   const ptyParams: CreatePtyParams = {
+    ...rest,
     id,
-    type,
     agent,
-    repoName,
-    repoPath,
-    cwd,
-    root,
-    worktreeName,
-    branchName,
-    displayName,
-    command,
-    args,
     cols,
     rows,
-    configPath,
-    useTmux: paramUseTmux,
-    tmuxSessionName: paramTmuxSessionName,
-    initialScrollback,
-    restored: paramRestored,
+    args,
     port: port ?? defaultPort,
     forceOutputParser: forceOutputParser ?? defaultForceOutputParser,
   };
 
-  const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks, stateChangeCallbacks);
+  const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks, stateChangeCallbacks, sessionEndCallbacks);
   trackEvent({
     category: 'session',
     action: 'created',
     target: id,
     properties: {
       agent,
-      type: type ?? 'worktree',
-      workspace: root ?? repoPath,
-      mode: command ? 'terminal' : 'agent',
+      type: rest.type ?? 'worktree',
+      workspace: rest.root ?? rest.repoPath,
+      mode: rest.command ? 'terminal' : 'agent',
     },
     session_id: id,
   });
-  if (paramNeedsBranchRename) {
+  if (needsBranchRename) {
     ptySession.needsBranchRename = true;
   }
-  if (paramBranchRenamePrompt) {
-    ptySession.branchRenamePrompt = paramBranchRenamePrompt;
+  if (branchRenamePrompt) {
+    ptySession.branchRenamePrompt = branchRenamePrompt;
   }
   return { ...result, needsBranchRename: !!ptySession.needsBranchRename };
 }
@@ -480,7 +442,4 @@ async function populateMetaCache(): Promise<void> {
   );
 }
 
-// Re-export pty-handler utilities for backward compatibility
-export { generateTmuxSessionName, resolveTmuxSpawn } from './pty-handler.js';
-
-export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionEnd, fireSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

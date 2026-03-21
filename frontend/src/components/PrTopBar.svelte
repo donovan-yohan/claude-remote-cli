@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
-  import { fetchPrForBranch, fetchCiStatus, fetchCurrentBranch } from '../lib/api.js';
+  import { fetchPrForBranchOrNull, fetchCiStatusOrNull, fetchCurrentBranch } from '../lib/api.js';
   import { sendPtyData } from '../lib/ws.js';
   import {
     derivePrAction,
@@ -42,14 +42,14 @@
 
   const prQuery = createQuery<PrInfo | null>(() => ({
     queryKey: ['pr', workspacePath, currentBranch],
-    queryFn: () => fetchPrForBranch(workspacePath, currentBranch),
+    queryFn: () => fetchPrForBranchOrNull(workspacePath, currentBranch),
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   }));
 
   const ciQuery = createQuery<CiStatus | null>(() => ({
     queryKey: ['ci-status', workspacePath, currentBranch],
-    queryFn: () => fetchCiStatus(workspacePath, currentBranch),
+    queryFn: () => fetchCiStatusOrNull(workspacePath, currentBranch),
     staleTime: 30_000,
     refetchOnWindowFocus: true,
     enabled: prQuery.data?.state === 'OPEN',

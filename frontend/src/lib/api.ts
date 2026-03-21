@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus, PullRequestsResponse, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, SessionMeta } from './types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -121,13 +121,13 @@ export async function fetchDashboard(workspacePath: string): Promise<DashboardDa
   };
 }
 
-export async function fetchCiStatus(workspacePath: string, branch: string): Promise<CiStatus | null> {
+export async function fetchCiStatusOrNull(workspacePath: string, branch: string): Promise<CiStatus | null> {
   const res = await fetch('/workspaces/ci-status?path=' + encodeURIComponent(workspacePath) + '&branch=' + encodeURIComponent(branch));
   if (!res.ok) return null;
   return res.json() as Promise<CiStatus>;
 }
 
-export async function fetchPrForBranch(workspacePath: string, branch: string): Promise<PrInfo | null> {
+export async function fetchPrForBranchOrNull(workspacePath: string, branch: string): Promise<PrInfo | null> {
   const res = await fetch('/workspaces/pr?path=' + encodeURIComponent(workspacePath) + '&branch=' + encodeURIComponent(branch));
   if (!res.ok) return null;
   return res.json() as Promise<PrInfo>;
@@ -169,16 +169,6 @@ export async function fetchBranches(repoPath: string, options: { refresh?: boole
   return json<string[]>(await fetch('/branches?' + params.toString()));
 }
 
-export async function fetchGitStatus(repoPath: string, branch: string): Promise<GitStatus> {
-  return json<GitStatus>(
-    await fetch('/git-status?repo=' + encodeURIComponent(repoPath) + '&branch=' + encodeURIComponent(branch)),
-  );
-}
-
-export async function fetchPullRequests(repoPath: string): Promise<PullRequestsResponse> {
-  return json<PullRequestsResponse>(await fetch('/pull-requests?repo=' + encodeURIComponent(repoPath)));
-}
-
 export async function createSession(body: {
   repoPath: string;
   repoName?: string | undefined;
@@ -192,7 +182,6 @@ export async function createSession(body: {
   rows?: number | undefined;
   needsBranchRename?: boolean | undefined;
   branchRenamePrompt?: string | undefined;
-  allowMultiple?: boolean | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions', {
     method: 'POST',
@@ -216,7 +205,6 @@ export async function createRepoSession(body: {
   useTmux?: boolean | undefined;
   cols?: number | undefined;
   rows?: number | undefined;
-  allowMultiple?: boolean | undefined;
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions/repo', {
     method: 'POST',
@@ -356,7 +344,7 @@ export interface MergedWorkspaceSettings {
 
 export async function fetchMergedWorkspaceSettings(workspacePath: string): Promise<MergedWorkspaceSettings> {
   return json<MergedWorkspaceSettings>(
-    await fetch('/workspaces/settings?merged=true&path=' + encodeURIComponent(workspacePath))
+    await fetch('/workspaces/settings/merged?path=' + encodeURIComponent(workspacePath))
   );
 }
 
@@ -370,15 +358,6 @@ export async function updateWorkspaceSettings(workspacePath: string, settings: W
     const data = await res.json() as { error?: string };
     throw new Error(data.error || 'Failed to update workspace settings');
   }
-}
-
-export async function fetchAllSessionMeta(): Promise<Record<string, SessionMeta>> {
-  return json<Record<string, SessionMeta>>(await fetch('/sessions/meta'));
-}
-
-export async function fetchSessionMeta(id: string, options?: { refresh?: boolean }): Promise<SessionMeta> {
-  const url = '/sessions/' + encodeURIComponent(id) + '/meta' + (options?.refresh ? '?refresh=true' : '');
-  return json<SessionMeta>(await fetch(url));
 }
 
 export async function fetchAnalyticsSize(): Promise<{ bytes: number }> {

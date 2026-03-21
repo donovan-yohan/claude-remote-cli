@@ -10,7 +10,7 @@ import type { Request, Response } from 'express';
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
 import { trackEvent } from './analytics.js';
 import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch } from './git.js';
-import type { Config, PullRequest, PullRequestsResponse, Workspace, WorkspaceSettings } from './types.js';
+import type { Config, PullRequest, PullRequestsResponse, Workspace } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -22,9 +22,7 @@ const BROWSE_DENYLIST = new Set([
 const BROWSE_MAX_ENTRIES = 100;
 const BULK_MAX_PATHS = 50;
 
-// ---------------------------------------------------------------------------
 // Deps type
-// ---------------------------------------------------------------------------
 
 export interface WorkspaceDeps {
   configPath: string;
@@ -32,9 +30,7 @@ export interface WorkspaceDeps {
   execAsync?: typeof execFileAsync;
 }
 
-// ---------------------------------------------------------------------------
 // Exported helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Resolves and validates a raw workspace path string.
@@ -99,9 +95,7 @@ export async function detectGitRepo(
   return { isGitRepo: true, defaultBranch };
 }
 
-// ---------------------------------------------------------------------------
 // Router factory
-// ---------------------------------------------------------------------------
 
 /**
  * Creates and returns an Express Router that handles all /workspaces routes.
@@ -120,9 +114,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     return loadConfig(configPath);
   }
 
-  // -------------------------------------------------------------------------
   // GET /workspaces — list all workspaces with git info
-  // -------------------------------------------------------------------------
   router.get('/', async (_req: Request, res: Response) => {
     const config = getConfig();
     const workspacePaths = config.workspaces ?? [];
@@ -138,9 +130,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     res.json({ workspaces: results });
   });
 
-  // -------------------------------------------------------------------------
   // POST /workspaces — add a workspace
-  // -------------------------------------------------------------------------
   router.post('/', async (req: Request, res: Response) => {
     const body = req.body as Record<string, unknown>;
     const rawPath = body.path;
@@ -192,9 +182,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     res.status(201).json(workspace);
   });
 
-  // -------------------------------------------------------------------------
   // DELETE /workspaces — remove a workspace
-  // -------------------------------------------------------------------------
   router.delete('/', async (req: Request, res: Response) => {
     const body = req.body as Record<string, unknown>;
     const rawPath = body.path;
@@ -221,9 +209,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     res.json({ removed: resolved });
   });
 
-  // -------------------------------------------------------------------------
   // PUT /workspaces/reorder — reorder workspaces
-  // -------------------------------------------------------------------------
   router.put('/reorder', async (req: Request, res: Response) => {
     const body = req.body as Record<string, unknown>;
     const rawPaths = body.paths;
@@ -264,9 +250,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     res.json({ workspaces: results });
   });
 
-  // -------------------------------------------------------------------------
   // POST /workspaces/bulk — add multiple workspaces at once
-  // -------------------------------------------------------------------------
   router.post('/bulk', async (req: Request, res: Response) => {
     const body = req.body as Record<string, unknown>;
     const rawPaths = body.paths;
@@ -328,9 +312,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     res.status(201).json({ added, errors });
   });
 
-  // -------------------------------------------------------------------------
   // GET /workspaces/dashboard — aggregated PR + activity data for a workspace
-  // -------------------------------------------------------------------------
   router.get('/dashboard', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
 
@@ -423,38 +405,46 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // GET /workspaces/settings — per-workspace settings
-  // -------------------------------------------------------------------------
+  function buildMergedSettings(config: Config, workspacePath: string): { settings: ReturnType<typeof getWorkspaceSettings>; overridden: string[] } {
+    const resolved = path.resolve(workspacePath);
+    const wsOverrides = config.workspaceSettings?.[resolved] ?? {};
+    const effective = getWorkspaceSettings(config, resolved);
+    const overridden: string[] = [];
+    for (const key of ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'] as const) {
+      if (wsOverrides[key] !== undefined) overridden.push(key);
+    }
+    return { settings: effective, overridden };
+  }
+
+  // GET /workspaces/settings — per-workspace overrides only
   router.get('/settings', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
-    const merged = req.query.merged === 'true';
-
     if (!workspacePath) {
       res.status(400).json({ error: 'path query parameter is required' });
       return;
     }
-
+    // Backward compat: handle merged=true inline (same logic as /settings/merged)
+    if (req.query.merged === 'true') {
+      res.json(buildMergedSettings(getConfig(), workspacePath));
+      return;
+    }
     const config = getConfig();
     const resolved = path.resolve(workspacePath);
-
-    if (merged) {
-      const wsOverrides = config.workspaceSettings?.[resolved] ?? {};
-      const effective = getWorkspaceSettings(config, resolved);
-      const overridden: string[] = [];
-      for (const key of ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'] as const) {
-        if (wsOverrides[key] !== undefined) overridden.push(key);
-      }
-      res.json({ settings: effective, overridden });
-    } else {
-      const settings = config.workspaceSettings?.[resolved] ?? {};
-      res.json(settings);
-    }
+    const settings = config.workspaceSettings?.[resolved] ?? {};
+    res.json(settings);
   });
 
-  // -------------------------------------------------------------------------
+  // GET /workspaces/settings/merged — effective settings with override tracking
+  router.get('/settings/merged', async (req: Request, res: Response) => {
+    const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
+    if (!workspacePath) {
+      res.status(400).json({ error: 'path query parameter is required' });
+      return;
+    }
+    res.json(buildMergedSettings(getConfig(), workspacePath));
+  });
+
   // PATCH /workspaces/settings — update per-workspace settings
-  // -------------------------------------------------------------------------
   router.patch('/settings', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
 
@@ -494,9 +484,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     res.json(final);
   });
 
-  // -------------------------------------------------------------------------
   // GET /workspaces/pr — PR info for a specific branch
-  // -------------------------------------------------------------------------
   router.get('/pr', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
     const branch = typeof req.query.branch === 'string' ? req.query.branch : undefined;
@@ -523,9 +511,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
   });
 
-  // -------------------------------------------------------------------------
   // GET /workspaces/ci-status — CI check results for a workspace + branch
-  // -------------------------------------------------------------------------
   router.get('/ci-status', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
     const branch = typeof req.query.branch === 'string' ? req.query.branch : undefined;
@@ -543,9 +529,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
   });
 
-  // -------------------------------------------------------------------------
   // POST /workspaces/branch — switch branch for a workspace
-  // -------------------------------------------------------------------------
   router.post('/branch', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
 
@@ -570,9 +554,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
   });
 
-  // -------------------------------------------------------------------------
   // POST /workspaces/worktree — create a new worktree with the next mountain name
-  // -------------------------------------------------------------------------
   router.post('/worktree', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
 
@@ -643,9 +625,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     res.json({ branchName, mountainName, worktreePath });
   });
 
-  // -------------------------------------------------------------------------
   // GET /workspaces/current-branch — current checked-out branch for a path
-  // -------------------------------------------------------------------------
   router.get('/current-branch', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
     if (!workspacePath) {
@@ -656,9 +636,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     res.json({ branch });
   });
 
-  // -------------------------------------------------------------------------
   // GET /workspaces/browse — browse filesystem directories for tree UI
-  // -------------------------------------------------------------------------
   router.get('/browse', async (req: Request, res: Response) => {
     const rawPath = typeof req.query.path === 'string' ? req.query.path : '~';
     const prefix = typeof req.query.prefix === 'string' ? req.query.prefix : '';
@@ -670,7 +648,6 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       : rawPath;
     const resolved = path.resolve(expanded);
 
-    // Validate path
     let stat: fs.Stats;
     try {
       stat = await fs.promises.stat(resolved);
@@ -689,7 +666,6 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
-    // Read directory entries
     let dirents: fs.Dirent[];
     try {
       dirents = await fs.promises.readdir(resolved, { withFileTypes: true });
@@ -709,7 +685,6 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return true;
     });
 
-    // Sort alphabetically case-insensitive
     dirs.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
 
     const total = dirs.length;
@@ -721,7 +696,6 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       dirs.map(async (d) => {
         const entryPath = path.join(resolved, d.name);
 
-        // Check for .git directory (isGitRepo)
         let isGitRepo = false;
         try {
           const gitStat = await fs.promises.stat(path.join(entryPath, '.git'));
@@ -730,7 +704,6 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
           // not a git repo
         }
 
-        // Check if has at least one subdirectory child (hasChildren)
         let hasChildren = false;
         try {
           const children = await fs.promises.readdir(entryPath, { withFileTypes: true });
@@ -751,9 +724,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     res.json({ resolved, entries, truncated, total });
   });
 
-  // -------------------------------------------------------------------------
   // GET /workspaces/autocomplete — path prefix autocomplete
-  // -------------------------------------------------------------------------
   router.get('/autocomplete', async (req: Request, res: Response) => {
     const prefix = typeof req.query.prefix === 'string' ? req.query.prefix : '';
 

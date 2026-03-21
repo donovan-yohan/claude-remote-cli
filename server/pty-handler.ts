@@ -6,7 +6,7 @@ import path from 'node:path';
 import type { AgentType, AgentState, PtySession, SessionStatus, SessionSummary, SessionType } from './types.js';
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS } from './types.js';
 import { readMeta, writeMeta } from './config.js';
-import { fireSessionEnd } from './sessions.js';
+import { cleanEnv } from './utils.js';
 import { outputParsers } from './output-parsers/index.js';
 
 const IDLE_TIMEOUT_MS = 5000;
@@ -33,7 +33,7 @@ export function resolveTmuxSpawn(
   };
 }
 
-export function generateHooksSettings(sessionId: string, port: number, token: string): string {
+function writeHooksSettingsFile(sessionId: string, port: number, token: string): string {
   const dir = path.join(os.tmpdir(), 'claude-remote-cli', sessionId);
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const filePath = path.join(dir, 'hooks-settings.json');
@@ -88,6 +88,7 @@ export function createPtySession(
   sessionsMap: Map<string, import('./types.js').Session>,
   idleChangeCallbacks: Array<(sessionId: string, idle: boolean) => void>,
   stateChangeCallbacks: Array<(sessionId: string, state: AgentState) => void> = [],
+  sessionEndCallbacks: Array<(sessionId: string, repoPath: string, branchName?: string) => void> = [],
 ): { session: PtySession; result: CreatePtyResult } {
   const {
     id,
@@ -117,9 +118,7 @@ export function createPtySession(
   const createdAt = new Date().toISOString();
   const resolvedCommand = command || AGENT_COMMANDS[agent];
 
-  // Strip CLAUDECODE env var to allow spawning claude inside a claude-managed server
-  const env = Object.assign({}, process.env) as Record<string, string>;
-  delete env.CLAUDECODE;
+  const env = cleanEnv();
 
   // Inject hooks settings when spawning a real claude agent (not custom command, not forceOutputParser)
   let hookToken = '';
@@ -129,7 +128,7 @@ export function createPtySession(
   if (shouldInjectHooks) {
     hookToken = crypto.randomBytes(32).toString('hex');
     try {
-      settingsPath = generateHooksSettings(id, port, hookToken);
+      settingsPath = writeHooksSettingsFile(id, port, hookToken);
       args = ['--settings', settingsPath, ...args];
       hooksActive = true;
     } catch (err) {
@@ -334,7 +333,10 @@ export function createPtySession(
       if (configPath && worktreeName) {
         writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
       }
-      fireSessionEnd(id, repoPath, session.branchName);
+      for (const cb of sessionEndCallbacks) {
+        try { cb(id, repoPath, session.branchName); }
+        catch (err) { console.error('[pty-handler] sessionEnd callback error:', err); }
+      }
       sessionsMap.delete(id);
       const tmpDir = path.join(os.tmpdir(), 'claude-remote-cli', id);
       fs.rm(tmpDir, { recursive: true, force: true }, () => {});
