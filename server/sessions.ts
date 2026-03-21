@@ -371,6 +371,14 @@ async function restoreFromDisk(configDir: string): Promise<number> {
   try { fs.unlinkSync(pendingPath); } catch { /* ignore */ }
   try { fs.rmdirSync(path.join(configDir, 'scrollback')); } catch { /* ignore — may not be empty */ }
 
+  // Sync counters to avoid duplicate display names after restore
+  for (const s of sessions.values()) {
+    const agentMatch = s.displayName?.match(/^Agent (\d+)$/);
+    if (agentMatch) agentCounter = Math.max(agentCounter, parseInt(agentMatch[1]!, 10));
+    const termMatch = s.displayName?.match(/^Terminal (\d+)$/);
+    if (termMatch) terminalCounter = Math.max(terminalCounter, parseInt(termMatch[1]!, 10));
+  }
+
   return restored;
 }
 

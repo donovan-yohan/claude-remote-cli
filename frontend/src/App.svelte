@@ -6,7 +6,7 @@
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
-  import { isMobileDevice } from './lib/utils.js';
+  import { isMobileDevice, estimateTerminalDimensions } from './lib/utils.js';
   import type { WorktreeInfo, Workspace, PullRequest } from './lib/types.js';
   import { createWorktree, createSession, createRepoSession, createTerminalSession, fetchWorkspaceSettings, killSession, deleteWorktree } from './lib/api.js';
   import { derivePrAction, getActionPrompt } from './lib/pr-state.js';
@@ -307,11 +307,13 @@
   );
 
   // Tab bar shows only sessions in the SAME worktree/directory as the active session
-  // (not all sessions across all worktrees in the workspace)
+  // (not all sessions across all worktrees in the workspace).
+  // Sorted by createdAt so new tabs always appear rightmost.
   let workspaceSessions = $derived(
-    activeSession
+    (activeSession
       ? allWorkspaceSessions.filter(s => s.repoPath === activeSession.repoPath)
       : allWorkspaceSessions
+    ).toSorted((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   );
 
   let hasActiveSession = $derived(!!activeSession && !!ui.activeWorkspacePath && (
@@ -361,8 +363,7 @@
 
   async function handleQuickAgent() {
     if (!activeWorkspace) return;
-    const cols = Math.max(80, Math.floor((window.innerWidth - 60) / 8));
-    const rows = Math.max(24, Math.floor((window.innerHeight - 120) / 17));
+    const { cols, rows } = estimateTerminalDimensions();
     try {
       const session = await createRepoSession({
         repoPath: activeWorkspace.path,
@@ -386,6 +387,8 @@
         if (conflictErr.sessionId) {
           sessionState.activeSessionId = conflictErr.sessionId;
         }
+      } else {
+        console.error('Failed to create agent session:', err);
       }
     }
   }
@@ -397,8 +400,11 @@
       await refreshAll();
       if (session?.id) {
         sessionState.activeSessionId = session.id;
+        initSessionNotification(session.id, configState.defaultNotifications);
       }
-    } catch { /* non-fatal */ }
+    } catch (err) {
+      console.error('Failed to create terminal session:', err);
+    }
   }
 
   function handleCustomize() {

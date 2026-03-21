@@ -879,16 +879,23 @@ async function main(): Promise<void> {
     res.status(201).json(session);
   });
 
-  // POST /sessions/terminal — start a bare shell session (no agent)
+  // POST /sessions/terminal — start a bare shell session (no agent), optional cwd in body
   app.post('/sessions/terminal', requireAuth, (req, res) => {
     const shell = process.env.SHELL || '/bin/sh';
     const displayName = sessions.nextTerminalName();
-    const cwd = (req.body as Record<string, unknown>)?.cwd as string | undefined;
-    const startDir = cwd && cwd.trim() ? cwd.trim() : os.homedir();
+    const rawCwd = (req.body as Record<string, unknown>)?.cwd;
+    const startDir = typeof rawCwd === 'string' && rawCwd.trim()
+      ? rawCwd.trim()
+      : os.homedir();
+
+    if (!fs.existsSync(startDir) || !fs.statSync(startDir).isDirectory()) {
+      res.status(400).json({ error: `Directory does not exist: ${startDir}` });
+      return;
+    }
 
     const session = sessions.create({
       type: 'terminal',
-      agent: 'claude', // placeholder — not used for terminal sessions
+      agent: 'claude', // required by CreateParams but unused for terminal sessions
       repoPath: startDir,
       cwd: startDir,
       displayName,

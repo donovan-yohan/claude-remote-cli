@@ -1,8 +1,9 @@
 <script lang="ts">
   import { createRepoSession } from '../../lib/api.js';
+  import { estimateTerminalDimensions } from '../../lib/utils.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
-  import type { AgentType } from '../../lib/types.js';
+  import type { AgentType, Workspace } from '../../lib/types.js';
 
   let {
     onSessionCreated,
@@ -33,7 +34,7 @@
     useTmux = false;
   }
 
-  export async function open(workspace: { name: string; path: string }) {
+  export async function open(workspace: Pick<Workspace, 'name' | 'path'>) {
     reset();
     workspacePath = workspace.path;
     workspaceName = workspace.name;
@@ -56,8 +57,7 @@
     creating = true;
 
     const claudeArgs = claudeArgsInput.trim().split(/\s+/).filter(Boolean);
-    const cols = Math.max(80, Math.floor((window.innerWidth - 60) / 8));
-    const rows = Math.max(24, Math.floor((window.innerHeight - 120) / 17));
+    const { cols, rows } = estimateTerminalDimensions();
 
     try {
       const session = await createRepoSession({

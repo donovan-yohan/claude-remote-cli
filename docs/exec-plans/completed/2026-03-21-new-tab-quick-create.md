@@ -1,20 +1,20 @@
 # Execution Plan: New Tab Quick-Create & Customize Redesign
 
-> **Status**: Active | **Created**: 2026-03-21
+> **Status**: Completed | **Created**: 2026-03-21
 > **Design**: `docs/design-docs/2026-03-21-new-tab-quick-create-design.md`
 > **Branch**: `new-agent-quick-open`
 
 ## Progress
 
-- [ ] Task 1: Update backend `POST /sessions/terminal` to accept `cwd`
-- [ ] Task 2: Update `createTerminalSession()` in `api.ts` to accept `cwd`
-- [ ] Task 3: Rename `NewSessionDialog.svelte` → `CustomizeSessionDialog.svelte` and strip it down
-- [ ] Task 4: Update `SessionTabBar.svelte` with 3-option dropdown
-- [ ] Task 5: Update `App.svelte` — new handlers, wire callbacks, update Cmd+T
-- [ ] Task 6: Fix tab ordering — sort by `createdAt` ascending in `sessions.svelte.ts`
-- [ ] Task 7: Auto-name tabs — assign "Agent N" / "Terminal N" display names
-- [ ] Task 8: Update all references to `NewSessionDialog` across codebase
-- [ ] Task 9: Build verification
+- [x] Task 1: Update backend `POST /sessions/terminal` to accept `cwd`
+- [x] Task 2: Update `createTerminalSession()` in `api.ts` to accept `cwd`
+- [x] Task 3: Rename `NewSessionDialog.svelte` → `CustomizeSessionDialog.svelte` and strip it down
+- [x] Task 4: Update `SessionTabBar.svelte` with 3-option dropdown
+- [x] Task 5: Update `App.svelte` — new handlers, wire callbacks, update Cmd+T
+- [x] Task 6: Fix tab ordering — sort by `createdAt` ascending in `sessions.svelte.ts`
+- [x] Task 7: Auto-name tabs — assign "Agent N" / "Terminal N" display names
+- [x] Task 8: Update all references to `NewSessionDialog` across codebase
+- [x] Task 9: Build verification
 
 ---
 
