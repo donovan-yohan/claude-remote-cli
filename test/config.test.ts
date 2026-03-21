@@ -251,3 +251,64 @@ test('deleteWorkspaceSettingKeys is no-op for nonexistent workspace', () => {
   fs.writeFileSync(configPath, JSON.stringify(config), 'utf8');
   assert.doesNotThrow(() => deleteWorkspaceSettingKeys(configPath, config, '/no/such/repo', ['defaultYolo']));
 });
+
+test('workspaceGroups with valid paths loads cleanly', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({
+    workspaces: ['/a/repo', '/b/repo'],
+    workspaceGroups: {
+      'Group A': ['/a/repo'],
+      'Group B': ['/b/repo'],
+    },
+  }), 'utf8');
+  const config = loadConfig(configPath);
+  assert.deepEqual(config.workspaceGroups!['Group A'], ['/a/repo']);
+  assert.deepEqual(config.workspaceGroups!['Group B'], ['/b/repo']);
+});
+
+test('workspaceGroups with invalid path filters it out', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({
+    workspaces: ['/valid/repo'],
+    workspaceGroups: {
+      'My Group': ['/valid/repo', '/not/in/workspaces'],
+    },
+  }), 'utf8');
+  const config = loadConfig(configPath);
+  assert.deepEqual(config.workspaceGroups!['My Group'], ['/valid/repo']);
+});
+
+test('workspaceGroups with duplicate path keeps first-group winner', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({
+    workspaces: ['/shared/repo'],
+    workspaceGroups: {
+      'First': ['/shared/repo'],
+      'Second': ['/shared/repo'],
+    },
+  }), 'utf8');
+  const config = loadConfig(configPath);
+  assert.deepEqual(config.workspaceGroups!['First'], ['/shared/repo']);
+  assert.equal(config.workspaceGroups!['Second'], undefined);
+});
+
+test('workspaceGroups undefined produces no errors', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({
+    workspaces: ['/some/repo'],
+  }), 'utf8');
+  const config = loadConfig(configPath);
+  assert.equal(config.workspaceGroups, undefined);
+});
+
+test('workspaceGroups with all-invalid paths removes empty group', () => {
+  const configPath = path.join(tmpDir, 'config.json');
+  fs.writeFileSync(configPath, JSON.stringify({
+    workspaces: ['/valid/repo'],
+    workspaceGroups: {
+      'Ghost Group': ['/not/here', '/also/not/here'],
+    },
+  }), 'utf8');
+  const config = loadConfig(configPath);
+  assert.equal(config.workspaceGroups!['Ghost Group'], undefined);
+});

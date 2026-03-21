@@ -151,6 +151,7 @@ export interface Config {
   debugLog?: boolean | undefined;
   forceOutputParser?: boolean | undefined;
   nextMountainIndex?: number | undefined;
+  workspaceGroups?: Record<string, string[]> | undefined;
 }
 
 export interface ServicePaths {
@@ -186,6 +187,8 @@ export interface PullRequest {
   deletions: number;
   reviewDecision: string | null;
   mergeable: string | null;
+  repoName?: string | undefined;
+  repoPath?: string | undefined;
 }
 
 export interface PullRequestsResponse {

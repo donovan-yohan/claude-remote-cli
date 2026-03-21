@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import {
     getUi,
     closeSidebar,
@@ -13,6 +14,7 @@
   } from '../lib/state/ui.svelte.js';
   import { getSessionState, getSessionsForWorkspace, reorderWorkspaces } from '../lib/state/sessions.svelte.js';
   import type { Workspace, WorktreeInfo } from '../lib/types.js';
+  import { fetchWorkspaceGroups } from '../lib/api.js';
   import { dndzone } from 'svelte-dnd-action';
   import WorkspaceItem from './WorkspaceItem.svelte';
   import SmartSearch from './SmartSearch.svelte';
@@ -110,6 +112,35 @@
     exitReorderMode();
   }
 
+  // ── Workspace groups ──
+  let workspaceGroups = $state<Record<string, string[]>>({});
+
+  onMount(() => {
+    fetchWorkspaceGroups().then(groups => { workspaceGroups = groups; }).catch(() => {});
+  });
+
+  // Build group → workspace list mapping for rendering
+  let groupedWorkspaces = $derived.by((): Array<{ groupName: string | null; items: Array<{ id: string; workspace: Workspace }> }> => {
+    if (ui.reorderMode || Object.keys(workspaceGroups).length === 0) {
+      return [{ groupName: null, items: localDndItems }];
+    }
+    // Build reverse map: path → group name
+    const pathToGroup = new Map<string, string>();
+    for (const [groupName, paths] of Object.entries(workspaceGroups)) {
+      for (const p of paths) pathToGroup.set(p, groupName);
+    }
+    const groups: Array<{ groupName: string | null; items: Array<{ id: string; workspace: Workspace }> }> = [];
+    const groupOrder = Object.keys(workspaceGroups);
+    for (const groupName of groupOrder) {
+      const items = localDndItems.filter(item => pathToGroup.get(item.id) === groupName);
+      if (items.length > 0) groups.push({ groupName, items });
+    }
+    // Ungrouped at the bottom
+    const ungrouped = localDndItems.filter(item => !pathToGroup.has(item.id));
+    if (ungrouped.length > 0) groups.push({ groupName: null, items: ungrouped });
+    return groups;
+  });
+
   // ── Mobile long-press to enter reorder mode ──
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -157,6 +188,22 @@
   </div>
 
   {#if !ui.sidebarCollapsed}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="home-btn"
+      class:home-btn--active={ui.activeWorkspacePath === null && !sessionState.activeSessionId}
+      data-track="sidebar.home"
+      onclick={() => {
+        ui.activeWorkspacePath = null;
+        sessionState.activeSessionId = null;
+        closeSidebar();
+      }}
+    >
+      <span class="home-icon">⌂</span>
+      <span class="home-label">Home</span>
+    </div>
+
     {#if !ui.reorderMode}
       <SmartSearch
         workspaces={sessionState.workspaces}
@@ -174,40 +221,82 @@
       ontouchend={handleTouchEnd}
       ontouchmove={handleTouchMove}
     >
-      {#each localDndItems as item (item.id)}
-        {@const workspace = item.workspace}
-        {@const activeSessions = getSessionsForWorkspace(workspace.path)}
-        {@const activeWorktreePaths = new Set(activeSessions.map(s => s.repoPath))}
-        {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
-          wt.repoPath === workspace.path &&
-          wt.path.startsWith(workspace.path + '/') &&
-          !activeWorktreePaths.has(wt.path)
-        )}
-        {@const groupedByPath = (() => {
-          const groups = new Map<string, typeof activeSessions>();
-          groups.set(workspace.path, []);
-          for (const s of activeSessions) {
-            const existing = groups.get(s.repoPath);
-            if (existing) existing.push(s);
-            else groups.set(s.repoPath, [s]);
-          }
-          return groups;
-        })()}
-        <div>
-          <WorkspaceItem
-            {workspace}
-            sessionGroups={groupedByPath}
-            {inactiveWorktrees}
-            isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
-            onSelectWorkspace={handleSelectWorkspace}
-            {onSelectSession}
-            onNewWorktree={onNewWorktree}
-            onOpenSettings={(ws) => onOpenSettings(ws)}
-            onDeleteSession={(id) => onDeleteSession?.(id)}
-            onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
-          />
-        </div>
-      {/each}
+      {#if ui.reorderMode}
+        {#each localDndItems as item (item.id)}
+          {@const workspace = item.workspace}
+          {@const activeSessions = getSessionsForWorkspace(workspace.path)}
+          {@const activeWorktreePaths = new Set(activeSessions.map(s => s.repoPath))}
+          {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
+            wt.repoPath === workspace.path &&
+            wt.path.startsWith(workspace.path + '/') &&
+            !activeWorktreePaths.has(wt.path)
+          )}
+          {@const groupedByPath = (() => {
+            const groups = new Map<string, typeof activeSessions>();
+            groups.set(workspace.path, []);
+            for (const s of activeSessions) {
+              const existing = groups.get(s.repoPath);
+              if (existing) existing.push(s);
+              else groups.set(s.repoPath, [s]);
+            }
+            return groups;
+          })()}
+          <div>
+            <WorkspaceItem
+              {workspace}
+              sessionGroups={groupedByPath}
+              {inactiveWorktrees}
+              isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
+              onSelectWorkspace={handleSelectWorkspace}
+              {onSelectSession}
+              onNewWorktree={onNewWorktree}
+              onOpenSettings={(ws) => onOpenSettings(ws)}
+              onDeleteSession={(id) => onDeleteSession?.(id)}
+              onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
+            />
+          </div>
+        {/each}
+      {:else}
+        {#each groupedWorkspaces as group (group.groupName ?? '__ungrouped__')}
+          {#if group.groupName}
+            <div class="group-header">{group.groupName}</div>
+          {/if}
+          {#each group.items as item (item.id)}
+            {@const workspace = item.workspace}
+            {@const activeSessions = getSessionsForWorkspace(workspace.path)}
+            {@const activeWorktreePaths = new Set(activeSessions.map(s => s.repoPath))}
+            {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
+              wt.repoPath === workspace.path &&
+              wt.path.startsWith(workspace.path + '/') &&
+              !activeWorktreePaths.has(wt.path)
+            )}
+            {@const groupedByPath = (() => {
+              const groups = new Map<string, typeof activeSessions>();
+              groups.set(workspace.path, []);
+              for (const s of activeSessions) {
+                const existing = groups.get(s.repoPath);
+                if (existing) existing.push(s);
+                else groups.set(s.repoPath, [s]);
+              }
+              return groups;
+            })()}
+            <div>
+              <WorkspaceItem
+                {workspace}
+                sessionGroups={groupedByPath}
+                {inactiveWorktrees}
+                isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
+                onSelectWorkspace={handleSelectWorkspace}
+                {onSelectSession}
+                onNewWorktree={onNewWorktree}
+                onOpenSettings={(ws) => onOpenSettings(ws)}
+                onDeleteSession={(id) => onDeleteSession?.(id)}
+                onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
+              />
+            </div>
+          {/each}
+        {/each}
+      {/if}
 
       {#if sessionState.workspaces.length === 0}
         <div class="empty-state">
@@ -328,6 +417,52 @@
 
   .icon-btn:active {
     background: var(--border);
+  }
+
+  /* Home button */
+  .home-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    min-height: 44px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 0.12s, border-color 0.12s;
+    flex-shrink: 0;
+  }
+
+  .home-btn:hover {
+    background: var(--surface-hover);
+  }
+
+  .home-btn--active {
+    border-left-color: var(--accent);
+    background: var(--surface-hover);
+  }
+
+  .home-icon {
+    font-size: 1rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .home-label {
+    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  /* Group headers */
+  .group-header {
+    padding: 10px 10px 4px 10px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
   }
 
   /* Workspace list */

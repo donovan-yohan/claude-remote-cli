@@ -78,12 +78,17 @@ export interface PullRequest {
   deletions: number;
   reviewDecision: string | null;
   mergeable: string | null;
+  repoName?: string;
+  repoPath?: string;
 }
 
 export interface PullRequestsResponse {
   prs: PullRequest[];
   error?: string | undefined;
 }
+
+/** Alias for PullRequestsResponse — used by OrgDashboard API responses. */
+export type OrgPrsResponse = PullRequestsResponse;
 
 export interface ActivityEntry {
   hash: string;

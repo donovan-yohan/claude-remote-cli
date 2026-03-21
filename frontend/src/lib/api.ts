@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings } from './types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -362,6 +362,16 @@ export async function updateWorkspaceSettings(workspacePath: string, settings: W
     const data = await res.json() as { error?: string };
     throw new Error(data.error || 'Failed to update workspace settings');
   }
+}
+
+export async function fetchOrgPrs(): Promise<OrgPrsResponse> {
+  const res = await fetch('/org-dashboard/prs');
+  return json<OrgPrsResponse>(res);
+}
+
+export async function fetchWorkspaceGroups(): Promise<Record<string, string[]>> {
+  const data = await json<{ groups: Record<string, string[]> }>(await fetch('/config/workspace-groups'));
+  return data.groups;
 }
 
 export async function fetchAnalyticsSize(): Promise<{ bytes: number }> {

@@ -36,3 +36,21 @@ When a mobile browser backgrounds an app, the OS silently kills TCP connections 
 When migrating from a selection-based model (user picks repo/worktree at creation time) to a context-driven model (workspace already knows its folder), audit ALL UI entry points that create entities. Leftover modals, tabs, and labels that reference the old model become broken flows — not just cosmetic debt. In this case, the "New Terminal" button opened a repo-selection modal instead of calling the existing `createTerminalSession()` API, making terminal creation impossible. Always grep for API functions that become unreachable after an architecture change.
 
 ---
+
+### L-004: Check `err.code` not `err.message` for Node.js execFile errors
+- status: active
+- category: debugging
+- source: /harness:loop Phase 1 org-dashboard 2026-03-21
+
+Node.js `child_process.execFile` throws with `code: 'ENOENT'` and message `'spawn <cmd> ENOENT'` when a binary isn't in PATH. String-matching the message (`'command not found'`, `'not found'`) fails because the actual message format is `'spawn gh ENOENT'`. Always check `(err as NodeJS.ErrnoException).code === 'ENOENT'` instead.
+
+---
+
+### L-005: GitHub Search API returns issues AND PRs — filter on `pull_request` field
+- status: active
+- category: patterns
+- source: /harness:loop Phase 1 org-dashboard 2026-03-21
+
+`gh api search/issues?q=is:pr+is:open+involves:@me` can return non-PR issues that match on `involves:@me`. The `pull_request` field on each item is the discriminator — skip items where it's absent.
+
+---

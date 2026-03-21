@@ -22,6 +22,7 @@ import { listBranches, isBranchStale } from './git.js';
 import * as push from './push.js';
 import { initAnalytics, closeAnalytics, createAnalyticsRouter } from './analytics.js';
 import { createWorkspaceRouter } from './workspaces.js';
+import { createOrgDashboardRouter } from './org-dashboard.js';
 import { createHooksRouter } from './hooks.js';
 import type { AgentType, Config } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
@@ -265,6 +266,10 @@ async function main(): Promise<void> {
   const workspaceRouter = createWorkspaceRouter({ configPath: CONFIG_PATH });
   app.use('/workspaces', requireAuth, workspaceRouter);
 
+  // Mount org dashboard router
+  const orgDashboardRouter = createOrgDashboardRouter({ configPath: CONFIG_PATH });
+  app.use('/org-dashboard', requireAuth, orgDashboardRouter);
+
   // Mount analytics router
   app.use('/analytics', requireAuth, createAnalyticsRouter(configDir));
 
@@ -484,6 +489,11 @@ async function main(): Promise<void> {
     await execFileAsync('tmux', ['-V']);
   });
   boolConfigEndpoints('defaultNotifications', true);
+
+  // GET /config/workspace-groups — return workspace group configuration
+  app.get('/config/workspace-groups', requireAuth, (_req, res) => {
+    res.json({ groups: config.workspaceGroups ?? {} });
+  });
 
   // GET /push/vapid-key
   app.get('/push/vapid-key', requireAuth, (_req, res) => {

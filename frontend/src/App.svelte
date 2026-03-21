@@ -17,6 +17,7 @@
   import PrTopBar from './components/PrTopBar.svelte';
   import SessionTabBar from './components/SessionTabBar.svelte';
   import RepoDashboard from './components/RepoDashboard.svelte';
+  import OrgDashboard from './components/OrgDashboard.svelte';
   import EmptyState from './components/EmptyState.svelte';
   import Toolbar from './components/Toolbar.svelte';
   import MobileHeader from './components/MobileHeader.svelte';
@@ -328,8 +329,9 @@
   let copyModeActive = $state(false);
 
   // View state: which main area content to show
-  let viewMode = $derived<'empty' | 'dashboard' | 'session'>(
-    !activeWorkspace ? 'empty' :
+  let viewMode = $derived<'empty' | 'org' | 'dashboard' | 'session'>(
+    !sessionState.workspaces.length ? 'empty' :
+    !ui.activeWorkspacePath ? 'org' :
     !hasActiveSession ? 'dashboard' :
     'session'
   );
@@ -709,6 +711,11 @@
           description="Point to any folder on your machine. Git repos get PR tracking and branch management."
           actionLabel="+ Add Workspace"
           onAction={handleAddWorkspace}
+        />
+
+      {:else if viewMode === 'org'}
+        <OrgDashboard
+          onOpenWorkspace={(path) => { ui.activeWorkspacePath = path; sessionState.activeSessionId = null; }}
         />
 
       {:else if viewMode === 'dashboard'}
