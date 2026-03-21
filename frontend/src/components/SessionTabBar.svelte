@@ -22,6 +22,25 @@
   let newMenuOpen = $state(false);
   let newMenuBtnEl = $state<HTMLButtonElement | null>(null);
 
+  // Tab names are "Agent 1", "Agent 2", "Terminal 1", etc., scoped to this workspace.
+  let tabNames = $derived.by(() => {
+    const names = new Map<string, string>();
+    let agentN = 0;
+    let terminalN = 0;
+    for (const s of sessions) {
+      if (s.type === 'terminal') {
+        names.set(s.id, `Terminal ${++terminalN}`);
+      } else {
+        names.set(s.id, `Agent ${++agentN}`);
+      }
+    }
+    return names;
+  });
+
+  function tabName(id: string): string {
+    return tabNames.get(id) ?? id;
+  }
+
   function tabIcon(session: SessionSummary): string {
     return session.type === 'terminal' ? '🖥' : '🤖';
   }
@@ -87,18 +106,18 @@
         class:tab--active={isActive}
         role="tab"
         aria-selected={isActive}
-        aria-label="{session.displayName || session.id}"
+        aria-label="{tabName(session.id)}"
         tabindex={isActive ? 0 : -1}
         data-track="session-tab.select"
         onclick={() => onSelectSession(session.id)}
       >
         <span class="tab-icon" aria-hidden="true">{tabIcon(session)}</span>
-        <span class="tab-name">{session.displayName || session.id}</span>
+        <span class="tab-name">{tabName(session.id)}</span>
         <!-- svelte-ignore a11y_interactive_supports_focus -->
         <span
           class="tab-close"
           role="button"
-          aria-label="Close {session.displayName || session.id}"
+          aria-label="Close {tabName(session.id)}"
           data-track="session-tab.close"
           onclick={(e) => handleCloseClick(e, session.id)}
           onkeydown={(e) => handleCloseKeydown(e, session.id)}
