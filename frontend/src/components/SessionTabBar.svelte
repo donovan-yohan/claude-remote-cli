@@ -22,19 +22,29 @@
   let newMenuOpen = $state(false);
   let newMenuBtnEl = $state<HTMLButtonElement | null>(null);
 
-  // Tab names are "Agent 1", "Agent 2", "Terminal 1", etc., scoped to this workspace.
-  let tabNames = $derived.by(() => {
-    const names = new Map<string, string>();
-    let agentN = 0;
-    let terminalN = 0;
+  // Stable tab names scoped to the provided session list. Closing a tab does not renumber others.
+  let tabNames = $state(new Map<string, string>());
+  let nextAgentIndex = $state(0);
+  let nextTerminalIndex = $state(0);
+
+  $effect(() => {
+    let updated = new Map(tabNames);
+    let changed = false;
     for (const s of sessions) {
-      if (s.type === 'terminal') {
-        names.set(s.id, `Terminal ${++terminalN}`);
-      } else {
-        names.set(s.id, `Agent ${++agentN}`);
+      if (!updated.has(s.id)) {
+        if (s.type === 'terminal') {
+          nextTerminalIndex = nextTerminalIndex + 1;
+          updated.set(s.id, `Terminal ${nextTerminalIndex}`);
+        } else {
+          nextAgentIndex = nextAgentIndex + 1;
+          updated.set(s.id, `Agent ${nextAgentIndex}`);
+        }
+        changed = true;
       }
     }
-    return names;
+    if (changed) {
+      tabNames = updated;
+    }
   });
 
   function tabName(id: string): string {
