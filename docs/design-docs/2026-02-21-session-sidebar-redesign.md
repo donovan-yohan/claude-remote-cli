@@ -1,3 +1,12 @@
+---
+status: superseded
+created: 2026-02-21
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Session Sidebar Redesign — Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.

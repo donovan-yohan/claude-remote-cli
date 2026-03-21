@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-03-16
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Session Persistence Across Updates
 
 **Created:** 2026-03-16

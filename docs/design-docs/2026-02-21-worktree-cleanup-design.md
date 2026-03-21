@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-21
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Worktree Cleanup from UI
 
 ## Problem

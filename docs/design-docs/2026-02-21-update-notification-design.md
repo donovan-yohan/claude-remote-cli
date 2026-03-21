@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-21
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Update Notification Feature Design
 
 > One-click update notification and self-update for claude-remote-cli.

@@ -1,3 +1,12 @@
+---
+status: superseded
+created: 2026-02-24
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Session Card Action Buttons — Design
 
 **Date:** 2026-02-24

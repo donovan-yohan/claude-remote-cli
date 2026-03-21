@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-23
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Branch-Aware Session Creation (v2.0)
 
 > Replace `claude --worktree` with manual `git worktree add` + plain `claude`, move worktrees from `.claude/worktrees/` to `.worktrees/`, and add a type-to-search branch picker to the New Session dialog.

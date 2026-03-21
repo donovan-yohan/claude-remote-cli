@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-03-05
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Multi-Agent CLI Support
 
 **Date:** 2026-03-05

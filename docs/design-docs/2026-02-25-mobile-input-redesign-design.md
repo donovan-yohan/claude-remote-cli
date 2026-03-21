@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-25
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Mobile Input Redesign — Event-Intent Architecture
 
 **Date:** 2026-02-25

@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-03-19
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Workspace Reorder & Sidebar Polish
 
 **Created:** 2026-03-19

@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-22
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Mobile UX Enhancements Design
 
 **Date:** 2026-02-22

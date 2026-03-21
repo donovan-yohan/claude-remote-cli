@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-02-26
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Session Item Loading Shimmer
 
 **Created:** 2026-02-26

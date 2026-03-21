@@ -719,7 +719,7 @@ async function main(): Promise<void> {
                 repoPath,
                 cwd: repoPath,
                 root,
-                displayName: name,
+                displayName: sessions.nextAgentName(),
                 args: baseArgs,
                 useTmux: resolved.useTmux,
                 ...(safeCols != null && { cols: safeCols }),
@@ -735,7 +735,7 @@ async function main(): Promise<void> {
               worktreeName = existingWt.path.split('/').pop() || '';
               args = [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs];
 
-              const displayNameVal = branchName || worktreeName;
+              const displayNameVal = sessions.nextAgentName();
 
               const session = sessions.create({
                 type: 'worktree',
@@ -783,7 +783,7 @@ async function main(): Promise<void> {
       args = [...baseArgs];
     }
 
-    const displayName = branchName || worktreeName;
+    const displayName = sessions.nextAgentName();
 
     const session = sessions.create({
       type: 'worktree',
@@ -868,7 +868,7 @@ async function main(): Promise<void> {
       repoPath,
       cwd: repoPath,
       root,
-      displayName: name,
+      displayName: sessions.nextAgentName(),
       args,
       branchName,
       useTmux: resolved.useTmux,
@@ -879,16 +879,25 @@ async function main(): Promise<void> {
     res.status(201).json(session);
   });
 
-  // POST /sessions/terminal — start a bare shell session (no agent)
-  app.post('/sessions/terminal', requireAuth, (_req, res) => {
+  // POST /sessions/terminal — start a bare shell session (no agent), optional cwd in body
+  app.post('/sessions/terminal', requireAuth, (req, res) => {
     const shell = process.env.SHELL || '/bin/sh';
     const displayName = sessions.nextTerminalName();
+    const rawCwd = (req.body as Record<string, unknown>)?.cwd;
+    const startDir = typeof rawCwd === 'string' && rawCwd.trim()
+      ? rawCwd.trim()
+      : os.homedir();
+
+    if (!fs.existsSync(startDir) || !fs.statSync(startDir).isDirectory()) {
+      res.status(400).json({ error: `Directory does not exist: ${startDir}` });
+      return;
+    }
 
     const session = sessions.create({
       type: 'terminal',
-      agent: 'claude', // placeholder — not used for terminal sessions
-      repoPath: os.homedir(),
-      cwd: os.homedir(),
+      agent: 'claude', // required by CreateParams but unused for terminal sessions
+      repoPath: startDir,
+      cwd: startDir,
       displayName,
       command: shell,
       args: [],

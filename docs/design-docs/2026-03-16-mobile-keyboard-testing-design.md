@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-03-16
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Mobile Keyboard Testing — Fixture-Based Pipeline Validation
 
 **Date:** 2026-03-16

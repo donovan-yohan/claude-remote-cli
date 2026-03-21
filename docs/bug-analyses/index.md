@@ -31,3 +31,4 @@
 | [settings-centralization-bug-analysis.md](2026-03-19-settings-centralization-bug-analysis.md) | Sidebar clicks ignore global/workspace settings — no centralized settings resolution, no reset-to-default | 2026-03-19 |
 | [non-tmux-scroll-during-streaming-bug-analysis.md](2026-03-20-non-tmux-scroll-during-streaming-bug-analysis.md) | Non-tmux sessions can't scroll during streaming — no viewport freeze layer, TUI re-render overrides scroll position | 2026-03-20 |
 | [mobile-wake-reconnection-bug-analysis.md](2026-03-21-mobile-wake-reconnection-bug-analysis.md) | Mobile sessions stuck on "Reconnecting" after sleep — no visibilitychange listener, no heartbeat, zombie WebSocket detection relies solely on onclose | 2026-03-21 |
+| [new-tab-modal-mismatch-bug-analysis.md](2026-03-21-new-tab-modal-mismatch-bug-analysis.md) | New tab dropdown uses wrong labels, terminal creation broken, modal shows irrelevant repo/worktree tabs in workspace mode | 2026-03-21 |

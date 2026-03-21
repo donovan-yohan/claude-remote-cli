@@ -41,3 +41,10 @@ export const isMobileDevice =
   typeof window !== 'undefined' &&
   'ontouchstart' in window &&
   /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+export function estimateTerminalDimensions(): { cols: number; rows: number } {
+  return {
+    cols: Math.max(80, Math.floor((window.innerWidth - 60) / 8)),
+    rows: Math.max(24, Math.floor((window.innerHeight - 120) / 17)),
+  };
+}

@@ -1,3 +1,12 @@
+---
+status: implemented
+created: 2026-03-17
+branch: master
+supersedes:
+implemented-by:
+consulted-learnings: []
+---
+
 # Mobile UX Fixes (Android Keyboard, Autocorrect, Debug Tools)
 
 **Created:** 2026-03-17
