@@ -333,7 +333,10 @@ export function createPtySession(
       if (configPath && worktreeName) {
         writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
       }
-      for (const cb of sessionEndCallbacks) cb(id, repoPath, session.branchName);
+      for (const cb of sessionEndCallbacks) {
+        try { cb(id, repoPath, session.branchName); }
+        catch (err) { console.error('[pty-handler] sessionEnd callback error:', err); }
+      }
       sessionsMap.delete(id);
       const tmpDir = path.join(os.tmpdir(), 'claude-remote-cli', id);
       fs.rm(tmpDir, { recursive: true, force: true }, () => {});

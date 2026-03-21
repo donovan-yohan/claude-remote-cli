@@ -21,13 +21,19 @@ export async function hashPin(pin: string): Promise<string> {
 
 export async function verifyPin(pin: string, hash: string): Promise<boolean> {
   if (hash.startsWith('scrypt:')) {
-    const parts = hash.split(':');
-    const salt = parts[1]!;
-    const storedHash = parts[2]!;
-    const derived = await scrypt(pin, salt, SCRYPT_KEYLEN) as Buffer;
-    return crypto.timingSafeEqual(Buffer.from(storedHash, 'hex'), derived);
+    const [, salt, storedHashHex] = hash.split(':');
+    if (!salt || !storedHashHex) return false;
+    try {
+      const storedBuf = Buffer.from(storedHashHex, 'hex');
+      if (storedBuf.length !== SCRYPT_KEYLEN) return false;
+      const derived = await scrypt(pin, salt, SCRYPT_KEYLEN) as Buffer;
+      return crypto.timingSafeEqual(storedBuf, derived);
+    } catch {
+      return false;
+    }
   }
   // Legacy bcrypt hashes: require PIN reset
+  console.warn('[auth] Legacy bcrypt PIN hash detected. Delete pinHash from config and restart to set a new PIN.');
   return false;
 }
 

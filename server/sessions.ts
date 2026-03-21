@@ -84,7 +84,10 @@ function onSessionEnd(cb: SessionEndCallback): void {
 }
 
 function fireSessionEnd(sessionId: string, repoPath: string, branchName?: string): void {
-  for (const cb of sessionEndCallbacks) cb(sessionId, repoPath, branchName);
+  for (const cb of sessionEndCallbacks) {
+    try { cb(sessionId, repoPath, branchName); }
+    catch (err) { console.error('[sessions] sessionEnd callback error:', err); }
+  }
 }
 
 export function fireStateChange(sessionId: string, state: AgentState): void {

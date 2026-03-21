@@ -405,6 +405,17 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     });
   });
 
+  function buildMergedSettings(config: Config, workspacePath: string): { settings: ReturnType<typeof getWorkspaceSettings>; overridden: string[] } {
+    const resolved = path.resolve(workspacePath);
+    const wsOverrides = config.workspaceSettings?.[resolved] ?? {};
+    const effective = getWorkspaceSettings(config, resolved);
+    const overridden: string[] = [];
+    for (const key of ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'] as const) {
+      if (wsOverrides[key] !== undefined) overridden.push(key);
+    }
+    return { settings: effective, overridden };
+  }
+
   // GET /workspaces/settings — per-workspace overrides only
   router.get('/settings', async (req: Request, res: Response) => {
     const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
@@ -412,17 +423,9 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       res.status(400).json({ error: 'path query parameter is required' });
       return;
     }
-    // Backward compat: redirect merged=true to the dedicated route
+    // Backward compat: handle merged=true inline (same logic as /settings/merged)
     if (req.query.merged === 'true') {
-      const config = getConfig();
-      const resolved = path.resolve(workspacePath);
-      const wsOverrides = config.workspaceSettings?.[resolved] ?? {};
-      const effective = getWorkspaceSettings(config, resolved);
-      const overridden: string[] = [];
-      for (const key of ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'] as const) {
-        if (wsOverrides[key] !== undefined) overridden.push(key);
-      }
-      res.json({ settings: effective, overridden });
+      res.json(buildMergedSettings(getConfig(), workspacePath));
       return;
     }
     const config = getConfig();
@@ -438,15 +441,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       res.status(400).json({ error: 'path query parameter is required' });
       return;
     }
-    const config = getConfig();
-    const resolved = path.resolve(workspacePath);
-    const wsOverrides = config.workspaceSettings?.[resolved] ?? {};
-    const effective = getWorkspaceSettings(config, resolved);
-    const overridden: string[] = [];
-    for (const key of ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'] as const) {
-      if (wsOverrides[key] !== undefined) overridden.push(key);
-    }
-    res.json({ settings: effective, overridden });
+    res.json(buildMergedSettings(getConfig(), workspacePath));
   });
 
   // PATCH /workspaces/settings — update per-workspace settings

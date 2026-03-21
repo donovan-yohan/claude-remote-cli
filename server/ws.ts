@@ -82,13 +82,13 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
   const sessionMap = new WeakMap<WebSocket, Session>();
 
   wss.on('connection', (ws: WebSocket, _request: http.IncomingMessage) => {
-    const session = sessionMap.get(ws)!;
+    const session = sessionMap.get(ws);
     if (!session) return;
 
     let dataDisposable: { dispose(): void } | null = null;
     let exitDisposable: { dispose(): void } | null = null;
 
-    function attachToPty(ptyProcess: IPty): void {
+    const attachToPty = (ptyProcess: IPty): void => {
       // Dispose previous handlers
       dataDisposable?.dispose();
       exitDisposable?.dispose();

@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, Workspace, SessionMeta, AgentState } from '../types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, AgentState } from '../types.js';
 import { fireNotification, shouldFireNotification } from '../notifications.js';
 import * as api from '../api.js';
 
@@ -24,7 +24,6 @@ let activeSessionId = $state<string | null>(loadActiveSessionId());
 let attentionSessions = $state<Record<string, boolean>>({});
 let dismissedSessions = $state<Record<string, number>>({});
 let loadingItems = $state<Record<string, boolean>>({});
-let sessionMeta = $state<Map<string, SessionMeta>>(new Map());
 let notificationSessions = $state<Record<string, boolean>>({});
 
 function loadNotificationPrefs(): void {
@@ -202,11 +201,6 @@ export function clearLoading(key: string): void {
 export function isItemLoading(key: string): boolean {
   return !!loadingItems[key];
 }
-
-export function getSessionMetaById(id: string): SessionMeta | undefined {
-  return sessionMeta.get(id);
-}
-
 
 export async function reorderWorkspaces(paths: string[]): Promise<void> {
   const updated = await api.reorderWorkspaces(paths);

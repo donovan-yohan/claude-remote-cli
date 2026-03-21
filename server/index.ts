@@ -31,8 +31,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
 
-// ── Signal protection ────────────────────────────────────────────────────
-// Ignore SIGPIPE: piped bash commands (e.g. `cmd | grep | tail`) generate
 // When run via CLI bin, config lives in ~/.config/claude-remote-cli/
 // When run directly (development), fall back to local config.json
 const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', '..', 'config.json');
