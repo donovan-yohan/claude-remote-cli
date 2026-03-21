@@ -62,6 +62,7 @@ function configure(opts: { port?: number; forceOutputParser?: boolean }): void {
 }
 
 let terminalCounter = 0;
+let agentCounter = 0;
 type IdleChangeCallback = (sessionId: string, idle: boolean) => void;
 const idleChangeCallbacks: IdleChangeCallback[] = [];
 
@@ -229,6 +230,10 @@ function findRepoSession(repoPath: string): SessionSummary | undefined {
 
 function nextTerminalName(): string {
   return `Terminal ${++terminalCounter}`;
+}
+
+function nextAgentName(): string {
+  return `Agent ${++agentCounter}`;
 }
 
 function serializeAll(configDir: string): void {
@@ -442,4 +447,4 @@ async function populateMetaCache(): Promise<void> {
   );
 }
 
-export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionEnd, findRepoSession, nextTerminalName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionEnd, findRepoSession, nextTerminalName, nextAgentName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

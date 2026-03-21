@@ -64,7 +64,7 @@ export async function refreshAll(): Promise<void> {
       api.fetchWorktrees(),
       api.fetchWorkspaces(),
     ]);
-    sessions = s;
+    sessions = s.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     worktrees = w;
     workspaces = ws;
 

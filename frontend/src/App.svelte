@@ -7,8 +7,8 @@
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
   import { isMobileDevice } from './lib/utils.js';
-  import type { WorktreeInfo, OpenSessionOptions, Workspace, PullRequest } from './lib/types.js';
-  import { createWorktree, createSession, fetchWorkspaceSettings, killSession, deleteWorktree } from './lib/api.js';
+  import type { WorktreeInfo, Workspace, PullRequest } from './lib/types.js';
+  import { createWorktree, createSession, createRepoSession, createTerminalSession, fetchWorkspaceSettings, killSession, deleteWorktree } from './lib/api.js';
   import { derivePrAction, getActionPrompt } from './lib/pr-state.js';
   import { initAnalytics, destroyAnalytics, track } from './lib/analytics.js';
   import PinGate from './components/PinGate.svelte';
@@ -22,7 +22,7 @@
   import MobileHeader from './components/MobileHeader.svelte';
   import UpdateToast from './components/UpdateToast.svelte';
   import ImageToast from './components/ImageToast.svelte';
-  import NewSessionDialog from './components/dialogs/NewSessionDialog.svelte';
+  import CustomizeSessionDialog from './components/dialogs/CustomizeSessionDialog.svelte';
   import SettingsDialog from './components/dialogs/SettingsDialog.svelte';
   import DeleteWorktreeDialog from './components/dialogs/DeleteWorktreeDialog.svelte';
   import AddWorkspaceDialog from './components/dialogs/AddWorkspaceDialog.svelte';
@@ -60,7 +60,7 @@
   // Component refs — must be $state() so $effect can track bind:this assignments
   let terminalRef = $state<Terminal | undefined>();
   let imageToastRef = $state<ImageToast | undefined>();
-  let newSessionDialogRef = $state<NewSessionDialog | undefined>();
+  let customizeDialogRef = $state<CustomizeSessionDialog | undefined>();
   let settingsDialogRef = $state<SettingsDialog | undefined>();
   let deleteWorktreeDialogRef = $state<DeleteWorktreeDialog | undefined>();
   let workspaceSettingsDialogRef = $state<WorkspaceSettingsDialog | undefined>();
@@ -110,10 +110,10 @@
         const mod = isMac ? e.metaKey : e.ctrlKey;
         if (!mod) return;
 
-        // Cmd/Ctrl+T — new session tab
+        // Cmd/Ctrl+T — quick new agent session
         if (e.key === 't' && !e.shiftKey) {
           e.preventDefault();
-          handleOpenNewSession();
+          handleQuickAgent();
           return;
         }
 
@@ -359,13 +359,51 @@
     terminalRef?.focusTerm();
   }
 
-  function handleOpenNewSession(workspace?: Workspace, options?: OpenSessionOptions) {
-    if (workspace) {
-      newSessionDialogRef?.open({ name: workspace.name, path: workspace.path, root: '' }, options);
-    } else if (activeWorkspace) {
-      newSessionDialogRef?.open({ name: activeWorkspace.name, path: activeWorkspace.path, root: '' }, options);
-    } else {
-      newSessionDialogRef?.open(undefined, options);
+  async function handleQuickAgent() {
+    if (!activeWorkspace) return;
+    const cols = Math.max(80, Math.floor((window.innerWidth - 60) / 8));
+    const rows = Math.max(24, Math.floor((window.innerHeight - 120) / 17));
+    try {
+      const session = await createRepoSession({
+        repoPath: activeWorkspace.path,
+        repoName: activeWorkspace.name,
+        continue: configState.defaultContinue,
+        yolo: configState.defaultYolo,
+        agent: configState.defaultAgent,
+        useTmux: configState.launchInTmux,
+        cols,
+        rows,
+      });
+      await refreshAll();
+      if (session?.id) {
+        sessionState.activeSessionId = session.id;
+        initSessionNotification(session.id, configState.defaultNotifications);
+      }
+    } catch (err: unknown) {
+      if (err instanceof Error && 'sessionId' in err) {
+        const conflictErr = err as Error & { sessionId?: string };
+        await refreshAll();
+        if (conflictErr.sessionId) {
+          sessionState.activeSessionId = conflictErr.sessionId;
+        }
+      }
+    }
+  }
+
+  async function handleQuickTerminal() {
+    if (!activeWorkspace) return;
+    try {
+      const session = await createTerminalSession(activeWorkspace.path);
+      await refreshAll();
+      if (session?.id) {
+        sessionState.activeSessionId = session.id;
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  function handleCustomize() {
+    if (activeWorkspace) {
+      customizeDialogRef?.open({ name: activeWorkspace.name, path: activeWorkspace.path });
     }
   }
 
@@ -402,7 +440,7 @@
       terminalRef?.focusTerm();
     } catch (e) {
       // Fall back to dialog on error
-      newSessionDialogRef?.open({ name: workspace.name, path: workspace.path, root: '' });
+      customizeDialogRef?.open({ name: workspace.name, path: workspace.path });
     } finally {
       clearLoading(loadingKey);
     }
@@ -672,7 +710,7 @@
           workspacePath={ui.activeWorkspacePath ?? ''}
           workspaceName={activeWorkspace?.name ?? ''}
           creatingWorktree={isItemLoading(`new-worktree:${ui.activeWorkspacePath ?? ''}`)}
-          onNewSession={() => handleOpenNewSession()}
+          onNewSession={() => handleQuickAgent()}
           onNewWorktree={() => { if (activeWorkspace) handleNewWorktree(activeWorkspace); }}
           onFixConflicts={handleFixConflicts}
           onPrAction={handlePrAction}
@@ -692,8 +730,9 @@
           activeSessionId={sessionState.activeSessionId}
           onSelectSession={handleSelectSession}
           onCloseSession={handleCloseSession}
-          onNewSession={() => handleOpenNewSession()}
-          onNewTerminal={() => handleOpenNewSession(undefined, { agent: 'claude' })}
+          onNewAgent={() => handleQuickAgent()}
+          onNewTerminal={() => handleQuickTerminal()}
+          onCustomize={() => handleCustomize()}
         />
 
         <Terminal
@@ -719,8 +758,8 @@
   </div>
 
   <!-- Dialogs & overlays -->
-  <NewSessionDialog
-    bind:this={newSessionDialogRef}
+  <CustomizeSessionDialog
+    bind:this={customizeDialogRef}
     onSessionCreated={handleNewSessionCreated}
   />
   <SettingsDialog bind:this={settingsDialogRef} />

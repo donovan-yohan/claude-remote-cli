@@ -719,7 +719,7 @@ async function main(): Promise<void> {
                 repoPath,
                 cwd: repoPath,
                 root,
-                displayName: name,
+                displayName: sessions.nextAgentName(),
                 args: baseArgs,
                 useTmux: resolved.useTmux,
                 ...(safeCols != null && { cols: safeCols }),
@@ -735,7 +735,7 @@ async function main(): Promise<void> {
               worktreeName = existingWt.path.split('/').pop() || '';
               args = [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs];
 
-              const displayNameVal = branchName || worktreeName;
+              const displayNameVal = sessions.nextAgentName();
 
               const session = sessions.create({
                 type: 'worktree',
@@ -783,7 +783,7 @@ async function main(): Promise<void> {
       args = [...baseArgs];
     }
 
-    const displayName = branchName || worktreeName;
+    const displayName = sessions.nextAgentName();
 
     const session = sessions.create({
       type: 'worktree',
@@ -868,7 +868,7 @@ async function main(): Promise<void> {
       repoPath,
       cwd: repoPath,
       root,
-      displayName: name,
+      displayName: sessions.nextAgentName(),
       args,
       branchName,
       useTmux: resolved.useTmux,
@@ -880,15 +880,17 @@ async function main(): Promise<void> {
   });
 
   // POST /sessions/terminal — start a bare shell session (no agent)
-  app.post('/sessions/terminal', requireAuth, (_req, res) => {
+  app.post('/sessions/terminal', requireAuth, (req, res) => {
     const shell = process.env.SHELL || '/bin/sh';
     const displayName = sessions.nextTerminalName();
+    const cwd = (req.body as Record<string, unknown>)?.cwd as string | undefined;
+    const startDir = cwd && cwd.trim() ? cwd.trim() : os.homedir();
 
     const session = sessions.create({
       type: 'terminal',
       agent: 'claude', // placeholder — not used for terminal sessions
-      repoPath: os.homedir(),
-      cwd: os.homedir(),
+      repoPath: startDir,
+      cwd: startDir,
       displayName,
       command: shell,
       args: [],

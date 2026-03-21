@@ -6,15 +6,17 @@
     activeSessionId,
     onSelectSession,
     onCloseSession,
-    onNewSession,
+    onNewAgent,
     onNewTerminal,
+    onCustomize,
   }: {
     sessions: SessionSummary[];
     activeSessionId: string | null;
     onSelectSession: (id: string) => void;
     onCloseSession: (id: string) => void;
-    onNewSession: () => void;
+    onNewAgent: () => void;
     onNewTerminal: () => void;
+    onCustomize: () => void;
   } = $props();
 
   let newMenuOpen = $state(false);
@@ -40,14 +42,19 @@
     newMenuOpen = !newMenuOpen;
   }
 
-  function selectNewSession() {
+  function selectNewAgent() {
     newMenuOpen = false;
-    onNewSession();
+    onNewAgent();
   }
 
   function selectNewTerminal() {
     newMenuOpen = false;
     onNewTerminal();
+  }
+
+  function selectCustomize() {
+    newMenuOpen = false;
+    onCustomize();
   }
 
   function onWindowClick(e: MouseEvent) {
@@ -86,7 +93,7 @@
         onclick={() => onSelectSession(session.id)}
       >
         <span class="tab-icon" aria-hidden="true">{tabIcon(session)}</span>
-        <span class="tab-name">{session.displayName || session.repoName || session.id}</span>
+        <span class="tab-name">{session.displayName || session.id}</span>
         <!-- svelte-ignore a11y_interactive_supports_focus -->
         <span
           class="tab-close"
@@ -118,11 +125,11 @@
         <button
           class="new-menu-item"
           role="menuitem"
-          data-track="session-tab.new-claude"
-          onclick={selectNewSession}
+          data-track="session-tab.new-agent"
+          onclick={selectNewAgent}
         >
           <span class="new-menu-icon">🤖</span>
-          New Claude Session
+          New Agent
         </button>
         <button
           class="new-menu-item"
@@ -132,6 +139,16 @@
         >
           <span class="new-menu-icon">🖥</span>
           New Terminal
+        </button>
+        <div class="new-menu-divider"></div>
+        <button
+          class="new-menu-item"
+          role="menuitem"
+          data-track="session-tab.customize"
+          onclick={selectCustomize}
+        >
+          <span class="new-menu-icon">⚙</span>
+          Customize...
         </button>
       </div>
     {/if}
@@ -325,6 +342,12 @@
   .new-menu-icon {
     font-size: 0.75rem;
     flex-shrink: 0;
+  }
+
+  .new-menu-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0;
   }
 
   /* ── Mobile: bigger touch targets, always-visible close ─── */
