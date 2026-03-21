@@ -1,5 +1,5 @@
 ---
-status: current
+status: implemented
 created: 2026-03-21
 branch: new-agent-quick-open
 supersedes: 2026-03-06-customize-session-flow-design.md

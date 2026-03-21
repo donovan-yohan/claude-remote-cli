@@ -39,4 +39,4 @@
 | [2026-03-19-enriched-sidebar-sessions-design.md](2026-03-19-enriched-sidebar-sessions-design.md) | Enriched sidebar: two-line rows with relative time, worktree name, PR#, diff stats, collapsible workspaces | 2026-03-19 | implemented |
 | [2026-03-19-workspace-reorder-design.md](2026-03-19-workspace-reorder-design.md) | Drag-and-drop workspace reordering, sidebar header simplification, inactive session contrast | 2026-03-19 | implemented |
 | [2026-03-20-local-analytics-design.md](2026-03-20-local-analytics-design.md) | Local analytics & user behavior tracking with SQLite for agent-queryable usage data | 2026-03-20 | implemented |
-| [2026-03-21-new-tab-quick-create-design.md](2026-03-21-new-tab-quick-create-design.md) | Redesign tab bar "+" dropdown: instant agent/terminal creation, simplified Customize modal, auto-named tabs | 2026-03-21 | current |
+| [2026-03-21-new-tab-quick-create-design.md](2026-03-21-new-tab-quick-create-design.md) | Redesign tab bar "+" dropdown: instant agent/terminal creation, simplified Customize modal, auto-named tabs | 2026-03-21 | implemented |
