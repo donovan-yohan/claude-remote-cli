@@ -6,6 +6,10 @@ import { WorktreeWatcher } from './watcher.js';
 import type { Session } from './types.js';
 import { trackEvent } from './analytics.js';
 
+function replyPing(ws: WebSocket): void {
+  if (ws.readyState === ws.OPEN) ws.send('{"type":"pong"}');
+}
+
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
   if (!cookieHeader) return cookies;
@@ -51,6 +55,12 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       wss.handleUpgrade(request, socket, head, (ws) => {
         const cleanup = () => { eventClients.delete(ws); };
         eventClients.add(ws);
+        ws.on('message', (msg) => {
+          try {
+            const parsed = JSON.parse(msg.toString());
+            if (parsed.type === 'ping') replyPing(ws);
+          } catch { /* ignore */ }
+        });
         ws.on('close', cleanup);
         ws.on('error', cleanup);
       });
@@ -116,6 +126,10 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       const str = msg.toString();
       try {
         const parsed = JSON.parse(str);
+        if (parsed.type === 'ping') {
+          replyPing(ws);
+          return;
+        }
         if (parsed.type === 'resize' && parsed.cols && parsed.rows) {
           sessions.resize(session.id, parsed.cols, parsed.rows);
           return;

@@ -495,11 +495,31 @@
   function onScrollFabMouseDown(e: MouseEvent) {
     e.preventDefault();
     const btn = (e.target as HTMLElement).closest('button');
-    if (!btn) return;
+    if (!btn || !term) return;
     const dir = btn.dataset['dir'];
-    if (dir === 'up') term?.scrollPages(-1);
-    else if (dir === 'down') term?.scrollPages(1);
-    else if (dir === 'bottom') term?.scrollToBottom();
+
+    if (term.buffer.active.type === 'alternate') {
+      // Alternate screen (Claude Code, vim, tmux): send SGR mouse wheel sequences
+      // scrollPages/scrollToBottom are no-ops here since baseY=0
+      const col = Math.max(1, Math.round(term.cols / 2));
+      const row = Math.max(1, Math.round(term.rows / 2));
+      if (dir === 'up' || dir === 'down') {
+        const button = dir === 'down' ? 65 : 64;
+        const seq = `\x1b[<${button};${col};${row}M`;
+        // Send enough wheel events to approximate a page scroll
+        const count = Math.max(1, Math.round(term.rows / 2));
+        for (let i = 0; i < count; i++) sendPtyData(seq);
+      } else if (dir === 'bottom') {
+        // Send a burst of wheel-down events to jump to bottom
+        const seq = `\x1b[<65;${col};${row}M`;
+        for (let i = 0; i < term.rows; i++) sendPtyData(seq);
+      }
+    } else {
+      // Normal screen: use xterm.js scrollback
+      if (dir === 'up') term.scrollPages(-1);
+      else if (dir === 'down') term.scrollPages(1);
+      else if (dir === 'bottom') term.scrollToBottom();
+    }
   }
 
   let scrollbarEl: HTMLDivElement;
@@ -572,6 +592,7 @@
     if (scrollbarDragging) return;
     if (contentTouchMoved) return;
     if ((e.target as HTMLElement).closest('.terminal-scrollbar')) return;
+    if ((e.target as HTMLElement).closest('.scroll-fabs')) return;
     if (selectionMode) return;
     term?.focus();
     // Suppress synthetic mousedown/click that Android fires after touchend —
