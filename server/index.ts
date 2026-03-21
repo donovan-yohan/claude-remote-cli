@@ -169,6 +169,12 @@ async function main(): Promise<void> {
     console.warn('Analytics disabled: failed to initialize:', err instanceof Error ? err.message : err);
   }
 
+  if (config.pinHash && auth.isLegacyHash(config.pinHash)) {
+    console.log('Migrating legacy PIN hash to scrypt. You will need to set a new PIN.');
+    delete config.pinHash;
+    saveConfig(CONFIG_PATH, config);
+  }
+
   if (!config.pinHash) {
     const pin = await promptPin('Set up a PIN for claude-remote-cli:');
     config.pinHash = await auth.hashPin(pin);

@@ -32,8 +32,7 @@ export async function verifyPin(pin: string, hash: string): Promise<boolean> {
       return false;
     }
   }
-  // Legacy bcrypt hashes: require PIN reset
-  console.warn('[auth] Legacy bcrypt PIN hash detected. Delete pinHash from config and restart to set a new PIN.');
+  // Legacy bcrypt hashes are migrated at startup; if one reaches here, reject it
   return false;
 }
 
@@ -68,6 +67,10 @@ export function clearRateLimit(ip: string): void {
 
 export function generateCookieToken(): string {
   return crypto.randomBytes(32).toString('hex');
+}
+
+export function isLegacyHash(hash: string): boolean {
+  return !!hash && !hash.startsWith('scrypt:');
 }
 
 export function _resetForTesting(): void {

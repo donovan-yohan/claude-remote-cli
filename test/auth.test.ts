@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import {
   hashPin,
   verifyPin,
+  isLegacyHash,
   isRateLimited,
   recordFailedAttempt,
   generateCookieToken,
@@ -99,6 +100,20 @@ test('hashPin produces unique salts', async () => {
   // But both should verify correctly
   assert.strictEqual(await verifyPin('1234', hash1), true);
   assert.strictEqual(await verifyPin('1234', hash2), true);
+});
+
+test('isLegacyHash returns true for bcrypt hashes', () => {
+  assert.strictEqual(isLegacyHash('$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012'), true);
+  assert.strictEqual(isLegacyHash('$2a$10$someotherbcrypthashvalue'), true);
+});
+
+test('isLegacyHash returns false for scrypt hashes', async () => {
+  const hash = await hashPin('1234');
+  assert.strictEqual(isLegacyHash(hash), false);
+});
+
+test('isLegacyHash returns false for empty string', () => {
+  assert.strictEqual(isLegacyHash(''), false);
 });
 
 test('generateCookieToken returns non-empty string', () => {
