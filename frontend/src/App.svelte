@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll, setAttention, setAgentState, clearAttention, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, refreshSessionMeta, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, setAttention, setAgentState, clearAttention, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
@@ -357,7 +357,6 @@
     clearAttention(id);
     closeSidebar();
     terminalRef?.focusTerm();
-    refreshSessionMeta(id);
   }
 
   function handleOpenNewSession(workspace?: Workspace, options?: OpenSessionOptions) {
@@ -453,7 +452,6 @@
         repoName: activeWorkspace.name,
         worktreePath,
         branchName,
-        allowMultiple: true,
       });
       await refreshAll();
       sessionState.activeSessionId = session.id;
@@ -498,7 +496,6 @@
         repoName: activeWorkspace.name,
         worktreePath,
         branchName,
-        allowMultiple: true,
       });
       await refreshAll();
       sessionState.activeSessionId = session.id;

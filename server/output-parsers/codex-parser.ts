@@ -12,7 +12,5 @@ export class CodexOutputParser implements OutputParser {
     return null;
   }
 
-  reset(): void {
-    // No state to reset
-  }
+  reset(): void {}
 }

@@ -9,10 +9,12 @@ import {
   _resetForTesting,
 } from '../server/auth.js';
 
-test('hashPin returns bcrypt hash starting with $2b$', async () => {
+test('hashPin returns scrypt hash with expected format', async () => {
   _resetForTesting();
   const hash = await hashPin('1234');
-  assert.ok(hash.startsWith('$2b$'), `Expected hash to start with $2b$, got: ${hash}`);
+  assert.ok(hash.startsWith('scrypt:'), `Expected hash to start with scrypt:, got: ${hash}`);
+  const parts = hash.split(':');
+  assert.strictEqual(parts.length, 3, 'Hash should have 3 colon-separated parts');
 });
 
 test('verifyPin returns true for correct PIN', async () => {

@@ -1,7 +1,8 @@
-import bcrypt from 'bcrypt';
 import crypto from 'node:crypto';
+import { promisify } from 'node:util';
 
-const SALT_ROUNDS = 10;
+const scrypt = promisify(crypto.scrypt);
+const SCRYPT_KEYLEN = 64;
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -13,11 +14,21 @@ interface AttemptEntry {
 const attemptMap = new Map<string, AttemptEntry>();
 
 export async function hashPin(pin: string): Promise<string> {
-  return bcrypt.hash(pin, SALT_ROUNDS);
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = await scrypt(pin, salt, SCRYPT_KEYLEN) as Buffer;
+  return `scrypt:${salt}:${derived.toString('hex')}`;
 }
 
 export async function verifyPin(pin: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(pin, hash);
+  if (hash.startsWith('scrypt:')) {
+    const parts = hash.split(':');
+    const salt = parts[1]!;
+    const storedHash = parts[2]!;
+    const derived = await scrypt(pin, salt, SCRYPT_KEYLEN) as Buffer;
+    return crypto.timingSafeEqual(Buffer.from(storedHash, 'hex'), derived);
+  }
+  // Legacy bcrypt hashes: require PIN reset
+  return false;
 }
 
 export function isRateLimited(ip: string): boolean {

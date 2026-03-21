@@ -1,6 +1,7 @@
 import type { IPty } from 'node-pty';
-export type { AgentState } from './output-parsers/index.js';
-import type { AgentState, OutputParser } from './output-parsers/index.js';
+import type { OutputParser } from './output-parsers/index.js';
+
+export type AgentState = 'initializing' | 'waiting-for-input' | 'processing' | 'permission-prompt' | 'error' | 'idle';
 
 export type SessionType = 'repo' | 'worktree' | 'terminal';
 export type AgentType = 'claude' | 'codex';

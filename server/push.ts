@@ -93,7 +93,7 @@ function truncatePayload(payload: string): string {
   return payload.slice(0, MAX_PAYLOAD_SIZE);
 }
 
-export function notifySessionIdle(
+export function notifySessionAttention(
   sessionId: string,
   session: { displayName: string; type: string },
 ): void {

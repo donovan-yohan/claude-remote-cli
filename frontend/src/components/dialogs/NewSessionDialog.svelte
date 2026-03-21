@@ -175,7 +175,6 @@
           useTmux,
           cols,
           rows,
-          allowMultiple: true,
         });
       } else {
         session = await createSession({

@@ -82,10 +82,8 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
   const sessionMap = new WeakMap<WebSocket, Session>();
 
   wss.on('connection', (ws: WebSocket, _request: http.IncomingMessage) => {
-    const session = sessionMap.get(ws);
+    const session = sessionMap.get(ws)!;
     if (!session) return;
-
-    const ptySession = session;
 
     let dataDisposable: { dispose(): void } | null = null;
     let exitDisposable: { dispose(): void } | null = null;
@@ -96,7 +94,7 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       exitDisposable?.dispose();
 
       // Replay scrollback
-      for (const chunk of ptySession.scrollback) {
+      for (const chunk of session.scrollback) {
         if (ws.readyState === ws.OPEN) ws.send(chunk);
       }
 
@@ -109,29 +107,29 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
       });
     }
 
-    attachToPty(ptySession.pty);
+    attachToPty(session.pty);
 
     const ptyReplacedHandler = (newPty: IPty) => attachToPty(newPty);
-    ptySession.onPtyReplacedCallbacks.push(ptyReplacedHandler);
+    session.onPtyReplacedCallbacks.push(ptyReplacedHandler);
 
     ws.on('message', (msg) => {
       const str = msg.toString();
       try {
         const parsed = JSON.parse(str);
         if (parsed.type === 'resize' && parsed.cols && parsed.rows) {
-          sessions.resize(ptySession.id, parsed.cols, parsed.rows);
+          sessions.resize(session.id, parsed.cols, parsed.rows);
           return;
         }
       } catch (_) {}
-      // Use ptySession.pty dynamically so writes go to current PTY
-      ptySession.pty.write(str);
+      // Use session.pty dynamically so writes go to current PTY
+      session.pty.write(str);
     });
 
     ws.on('close', () => {
       dataDisposable?.dispose();
       exitDisposable?.dispose();
-      const idx = ptySession.onPtyReplacedCallbacks.indexOf(ptyReplacedHandler);
-      if (idx !== -1) ptySession.onPtyReplacedCallbacks.splice(idx, 1);
+      const idx = session.onPtyReplacedCallbacks.indexOf(ptyReplacedHandler);
+      if (idx !== -1) session.onPtyReplacedCallbacks.splice(idx, 1);
     });
   });
 
