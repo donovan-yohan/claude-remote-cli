@@ -17,6 +17,8 @@ let ptyPingTimer: ReturnType<typeof setInterval> | null = null;
 let ptyPongPending = false;
 let ptyPongTimeout: ReturnType<typeof setTimeout> | null = null;
 let eventPingTimer: ReturnType<typeof setInterval> | null = null;
+let eventPongPending = false;
+let eventPongTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // Track last-known connection params for visibilitychange reconnection
 let lastPtySessionId: string | null = null;
@@ -31,7 +33,8 @@ const PING_MSG = '{"type":"ping"}';
 const PONG_MSG = '{"type":"pong"}';
 
 export function connectEventSocket(onMessage: EventCallback): void {
-  if (eventWs) { eventWs.close(); eventWs = null; }
+  // Null onclose before close to prevent old socket from scheduling a reconnect
+  if (eventWs) { eventWs.onclose = null; eventWs.close(); eventWs = null; }
   lastEventOnMessage = onMessage;
   clearEventPing();
 
@@ -44,7 +47,9 @@ export function connectEventSocket(onMessage: EventCallback): void {
 
   eventWs.onmessage = (event) => {
     const str = event.data as string;
-    // Handle pong responses
+    // Any message clears pong pending state
+    if (eventPongPending) clearEventPongTimeout();
+    // Handle pong responses silently
     if (str === PONG_MSG) return;
     try { onMessage(JSON.parse(str)); } catch { /* ignore parse errors */ }
   };
@@ -160,7 +165,6 @@ function scheduleReconnect(
 // ── Ping/pong heartbeat ──────────────────────────────────────────────────────
 
 // Send a ping to the PTY socket and schedule a reconnect if no pong arrives.
-// Used both by the periodic heartbeat and by the visibility-change probe.
 function sendPtyPing(): void {
   if (!ptyWs || ptyWs.readyState !== WebSocket.OPEN) return;
   ptyPongPending = true;
@@ -200,19 +204,41 @@ function forceReconnectPty(): void {
   }
 }
 
+// Send a ping to the event socket and schedule a reconnect if no pong arrives.
+function sendEventPing(): void {
+  if (!eventWs || eventWs.readyState !== WebSocket.OPEN) return;
+  eventPongPending = true;
+  try {
+    eventWs.send(PING_MSG);
+  } catch {
+    forceReconnectEvent();
+    return;
+  }
+  if (eventPongTimeout) { clearTimeout(eventPongTimeout); eventPongTimeout = null; }
+  eventPongTimeout = setTimeout(() => {
+    eventPongPending = false;
+    forceReconnectEvent();
+  }, PONG_TIMEOUT);
+}
+
+function forceReconnectEvent(): void {
+  clearEventPing();
+  if (eventWs) { eventWs.onclose = null; eventWs.close(); eventWs = null; }
+  if (lastEventOnMessage) connectEventSocket(lastEventOnMessage);
+}
+
 function startEventPing(): void {
-  eventPingTimer = setInterval(() => {
-    if (!eventWs || eventWs.readyState !== WebSocket.OPEN) return;
-    try {
-      eventWs.send(PING_MSG);
-    } catch {
-      eventWs.close();
-    }
-  }, PING_INTERVAL);
+  eventPingTimer = setInterval(sendEventPing, PING_INTERVAL);
 }
 
 function clearEventPing(): void {
   if (eventPingTimer) { clearInterval(eventPingTimer); eventPingTimer = null; }
+  clearEventPongTimeout();
+}
+
+function clearEventPongTimeout(): void {
+  eventPongPending = false;
+  if (eventPongTimeout) { clearTimeout(eventPongTimeout); eventPongTimeout = null; }
 }
 
 // ── Visibility change — proactive reconnection on mobile wake ────────────────
@@ -227,15 +253,11 @@ document.addEventListener('visibilitychange', () => {
     sendPtyPing();
   }
 
-  // Event socket: if dead, reconnect; if alive, probe with a ping
+  // Event socket: if dead, force reconnect; if alive, probe with a ping
   if (eventWs && eventWs.readyState !== WebSocket.OPEN) {
-    if (lastEventOnMessage) connectEventSocket(lastEventOnMessage);
-  } else if (eventWs && lastEventOnMessage) {
-    try {
-      eventWs.send(PING_MSG);
-    } catch {
-      connectEventSocket(lastEventOnMessage);
-    }
+    forceReconnectEvent();
+  } else if (eventWs) {
+    sendEventPing();
   }
 });
 
