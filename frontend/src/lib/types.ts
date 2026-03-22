@@ -233,3 +233,10 @@ export interface WorkspaceSettings {
   promptStartWork?: string;
   nextMountainIndex?: number;
 }
+
+export interface AutomationSettings {
+  autoCheckoutReviewRequests?: boolean;
+  autoReviewOnCheckout?: boolean;
+  pollIntervalMs?: number;
+  lastPollTimestamp?: string;
+}

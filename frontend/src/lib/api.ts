@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, LinearIssuesResponse, JiraStatus, LinearState } from './types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, LinearIssuesResponse, JiraStatus, LinearState, AutomationSettings } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -430,4 +430,18 @@ export async function fetchAnalyticsSize(): Promise<{ bytes: number }> {
 export async function clearAnalytics(): Promise<void> {
   const res = await fetch('/analytics/events', { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to clear analytics');
+}
+
+export async function fetchAutomations(): Promise<AutomationSettings> {
+  return json<AutomationSettings>(await fetch('/config/automations', { credentials: 'include' }));
+}
+
+export async function updateAutomations(settings: Partial<AutomationSettings>): Promise<AutomationSettings> {
+  const res = await fetch('/config/automations', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(settings),
+  });
+  return json<AutomationSettings>(res);
 }

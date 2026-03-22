@@ -159,6 +159,14 @@ export interface Config {
     jira?: { projectKey?: string; statusMappings?: Partial<Record<TransitionState, string>> };
     linear?: { teamId?: string; statusMappings?: Partial<Record<TransitionState, string>> };
   } | undefined;
+  automations?: AutomationSettings | undefined;
+}
+
+export interface AutomationSettings {
+  autoCheckoutReviewRequests?: boolean;
+  autoReviewOnCheckout?: boolean;
+  pollIntervalMs?: number;
+  lastPollTimestamp?: string;
 }
 
 export interface ServicePaths {

@@ -6,6 +6,7 @@
   import type { AnyIssue, PullRequest, OrgPrsResponse, BranchLinksResponse } from '../lib/types.js';
   import TicketsPanel from './TicketsPanel.svelte';
   import StartWorkModal from './StartWorkModal.svelte';
+  import AutomationPanel from './AutomationPanel.svelte';
 
   let { onOpenWorkspace, onOpenSession }: {
     onOpenWorkspace: (path: string) => void;
@@ -259,6 +260,8 @@
   {:else}
     <!-- future tabs -->
   {/if}
+
+  <AutomationPanel />
 
   {#if startWorkIssue}
     <StartWorkModal

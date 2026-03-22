@@ -29,7 +29,8 @@ import { createHooksRouter } from './hooks.js';
 import { createTicketTransitionsRouter } from './ticket-transitions.js';
 import { createIntegrationJiraRouter } from './integration-jira.js';
 import { createIntegrationLinearRouter } from './integration-linear.js';
-import type { AgentType, Config } from './types.js';
+import { startPolling, stopPolling } from './review-poller.js';
+import type { AgentType, AutomationSettings, Config } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 import { semverLessThan } from './utils.js';
 
@@ -322,6 +323,44 @@ async function main(): Promise<void> {
   // Populate session metadata cache in background (non-blocking)
   populateMetaCache().catch(() => {});
 
+  // Build shared deps for review poller
+  function buildPollerDeps() {
+    return {
+      configPath: CONFIG_PATH,
+      getWorkspacePaths: () => config.workspaces ?? [],
+      getWorkspaceSettings: (wsPath: string) => config.workspaceSettings?.[wsPath],
+      createSession: async (opts: { repoPath: string; worktreePath: string; branchName: string; initialPrompt?: string }) => {
+        const resolved = resolveSessionSettings(config, opts.repoPath, {});
+        const roots = config.rootDirs || [];
+        const root = roots.find((r) => opts.repoPath.startsWith(r)) || '';
+        const repoName = opts.repoPath.split('/').filter(Boolean).pop() || 'session';
+        const worktreeName = opts.worktreePath.split('/').pop() || '';
+        const displayName = sessions.nextAgentName();
+        sessions.create({
+          type: 'worktree',
+          agent: resolved.agent,
+          repoName,
+          repoPath: opts.worktreePath,
+          cwd: opts.worktreePath,
+          root,
+          worktreeName,
+          branchName: opts.branchName,
+          displayName,
+          args: [...resolved.claudeArgs, ...(resolved.yolo ? AGENT_YOLO_ARGS[resolved.agent] : [])],
+          configPath: CONFIG_PATH,
+          useTmux: resolved.useTmux,
+          ...(opts.initialPrompt != null && { initialPrompt: opts.initialPrompt }),
+        });
+      },
+      broadcastEvent,
+    };
+  }
+
+  // Start review request poller if enabled
+  if (config.automations?.autoCheckoutReviewRequests) {
+    startPolling(buildPollerDeps());
+  }
+
   // Invalidate branch linker cache on session lifecycle changes
   sessions.onSessionCreate(() => { invalidateBranchLinkerCache(); });
   sessions.onSessionEnd(() => { invalidateBranchLinkerCache(); });
@@ -533,6 +572,46 @@ async function main(): Promise<void> {
     await execFileAsync('tmux', ['-V']);
   });
   boolConfigEndpoints('defaultNotifications', true);
+
+  // GET /config/automations — get automation settings
+  app.get('/config/automations', requireAuth, (_req: express.Request, res: express.Response) => {
+    res.json(config.automations ?? {});
+  });
+
+  // PATCH /config/automations — update automation settings and start/stop poller
+  app.patch('/config/automations', requireAuth, (req: express.Request, res: express.Response) => {
+    const body = req.body as Partial<AutomationSettings>;
+    const prev = config.automations ?? {};
+    const next: AutomationSettings = { ...prev };
+
+    if (typeof body.autoCheckoutReviewRequests === 'boolean') {
+      next.autoCheckoutReviewRequests = body.autoCheckoutReviewRequests;
+    }
+    if (typeof body.autoReviewOnCheckout === 'boolean') {
+      next.autoReviewOnCheckout = body.autoReviewOnCheckout;
+    }
+    if (typeof body.pollIntervalMs === 'number' && body.pollIntervalMs >= 60000) {
+      next.pollIntervalMs = body.pollIntervalMs;
+    }
+
+    // Enforce: auto-review requires auto-checkout
+    if (!next.autoCheckoutReviewRequests) {
+      next.autoReviewOnCheckout = false;
+    }
+
+    config.automations = next;
+    saveConfig(CONFIG_PATH, config);
+
+    // Start or stop poller based on new setting
+    if (next.autoCheckoutReviewRequests) {
+      stopPolling();
+      startPolling(buildPollerDeps());
+    } else {
+      stopPolling();
+    }
+
+    res.json(next);
+  });
 
   // GET /config/workspace-groups — return workspace group configuration
   app.get('/config/workspace-groups', requireAuth, (_req, res) => {
