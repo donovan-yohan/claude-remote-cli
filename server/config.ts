@@ -33,6 +33,10 @@ export function loadConfig(configPath: string): Config {
     const cleaned: Record<string, string[]> = {};
 
     for (const [groupName, paths] of Object.entries(config.workspaceGroups)) {
+      if (!Array.isArray(paths)) {
+        console.warn(`workspaceGroups: group "${groupName}" value is not an array, skipping`);
+        continue;
+      }
       const filteredPaths: string[] = [];
       for (const p of paths) {
         if (!validPaths.has(p)) {
