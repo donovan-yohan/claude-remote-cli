@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, LinearIssuesResponse, JiraStatus, LinearState, AutomationSettings } from './types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, JiraStatus, AutomationSettings } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -187,7 +187,7 @@ export async function createSession(body: {
     title: string;
     description?: string;
     url: string;
-    source: 'github' | 'jira' | 'linear';
+    source: 'github' | 'jira';
     repoPath: string;
     repoName: string;
   };
@@ -393,29 +393,9 @@ export async function fetchJiraIssues(): Promise<JiraIssuesResponse> {
   return json<JiraIssuesResponse>(res);
 }
 
-export async function fetchJiraConfigured(): Promise<boolean> {
-  const data = await json<{ configured: boolean }>(await fetch('/integration-jira/configured'));
-  return data.configured;
-}
-
 export async function fetchJiraStatuses(projectKey: string): Promise<JiraStatus[]> {
   const data = await json<{ statuses: JiraStatus[] }>(await fetch('/integration-jira/statuses?projectKey=' + encodeURIComponent(projectKey)));
   return data.statuses;
-}
-
-export async function fetchLinearIssues(): Promise<LinearIssuesResponse> {
-  const res = await fetch('/integration-linear/issues');
-  return json<LinearIssuesResponse>(res);
-}
-
-export async function fetchLinearConfigured(): Promise<boolean> {
-  const data = await json<{ configured: boolean }>(await fetch('/integration-linear/configured'));
-  return data.configured;
-}
-
-export async function fetchLinearStates(teamId: string): Promise<LinearState[]> {
-  const data = await json<{ states: LinearState[] }>(await fetch('/integration-linear/states?teamId=' + encodeURIComponent(teamId)));
-  return data.states;
 }
 
 export async function fetchWorkspaceGroups(): Promise<Record<string, string[]>> {

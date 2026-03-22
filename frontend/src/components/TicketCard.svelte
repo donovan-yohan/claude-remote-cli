@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { GitHubIssue, JiraIssue, LinearIssue, AnyIssue, BranchLink } from '../lib/types.js';
+  import type { GitHubIssue, JiraIssue, AnyIssue, BranchLink } from '../lib/types.js';
 
   let { issue, source, branchLinks = [], onStartWork }: {
     issue: AnyIssue;
-    source: 'github' | 'jira' | 'linear';
+    source: 'github' | 'jira';
     branchLinks?: BranchLink[];
     onStartWork?: (issue: AnyIssue) => void;
   } = $props();
@@ -29,14 +29,13 @@
 
   function isGitHub(i: AnyIssue): i is GitHubIssue { return source === 'github'; }
   function isJira(i: AnyIssue): i is JiraIssue { return source === 'jira'; }
-  function isLinear(i: AnyIssue): i is LinearIssue { return source === 'linear'; }
 
   let linkedBranch = $derived(
     branchLinks.length > 0 ? branchLinks[0] : null
   );
   let hasActiveSession = $derived(linkedBranch?.hasActiveSession ?? false);
 
-  // Priority colors for Jira/Linear
+  // Priority colors for Jira
   const PRIORITY_COLORS: Record<string, string> = {
     'Highest': '#ff5630',
     'High': '#ff7452',
@@ -45,13 +44,7 @@
     'Lowest': '#6b778c',
   };
 
-  const LINEAR_PRIORITY_COLORS: Record<number, string> = {
-    0: '#6b778c', // No priority
-    1: '#ff5630', // Urgent
-    2: '#ff7452', // High
-    3: '#ffab00', // Medium
-    4: '#36b37e', // Low
-  };
+
 </script>
 
 <div class="ticket-card">
@@ -60,8 +53,6 @@
       {#if isGitHub(issue)}
         <span class="dot {issue.state === 'OPEN' ? 'dot-success' : 'dot-muted'}"></span>
       {:else if isJira(issue)}
-        <span class="dot dot-info"></span>
-      {:else if isLinear(issue)}
         <span class="dot dot-info"></span>
       {/if}
       <a class="ticket-title-link" href={issue.url} target="_blank" rel="noopener noreferrer">
@@ -97,22 +88,6 @@
         {#if issue.storyPoints != null}
           <span class="ticket-sep">·</span>
           <span class="points-badge">{issue.storyPoints}pt</span>
-        {/if}
-      {:else if isLinear(issue)}
-        <span class="ticket-key">{issue.identifier}</span>
-        <span class="ticket-sep">·</span>
-        <span class="status-badge">{issue.state}</span>
-        {#if issue.priority > 0}
-          <span class="ticket-sep">·</span>
-          <span class="priority-badge" style:color={LINEAR_PRIORITY_COLORS[issue.priority] ?? 'var(--text-muted)'}>{issue.priorityLabel}</span>
-        {/if}
-        {#if issue.cycle}
-          <span class="ticket-sep">·</span>
-          <span class="sprint-chip">{issue.cycle}</span>
-        {/if}
-        {#if issue.estimate != null}
-          <span class="ticket-sep">·</span>
-          <span class="points-badge">{issue.estimate}pt</span>
         {/if}
       {/if}
       {#if linkedBranch}

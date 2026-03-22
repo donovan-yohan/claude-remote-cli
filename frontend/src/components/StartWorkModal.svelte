@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { GitHubIssue, JiraIssue, LinearIssue, AnyIssue, Workspace } from '../lib/types.js';
+  import type { GitHubIssue, JiraIssue, AnyIssue, Workspace } from '../lib/types.js';
   import { createSession, ConflictError, fetchWorkspaces } from '../lib/api.js';
 
   let {
@@ -14,27 +14,24 @@
     onSessionCreated: (sessionId: string) => void;
   } = $props();
 
-  function detectSource(i: AnyIssue): 'github' | 'jira' | 'linear' {
+  function detectSource(i: AnyIssue): 'github' | 'jira' {
     if ('number' in i && 'labels' in i) return 'github';
-    if ('key' in i && 'projectKey' in i) return 'jira';
-    return 'linear';
+    return 'jira';
   }
 
   let source = $derived(detectSource(issue));
 
   let ticketDisplay = $derived(
     source === 'github' ? `#${(issue as GitHubIssue).number} — ${issue.title}` :
-    source === 'jira' ? `${(issue as JiraIssue).key} — ${issue.title}` :
-    `${(issue as LinearIssue).identifier} — ${issue.title}`
+    `${(issue as JiraIssue).key} — ${issue.title}`
   );
 
   let defaultBranch = $derived(
     source === 'github' ? `gh-${(issue as GitHubIssue).number}` :
-    source === 'jira' ? (issue as JiraIssue).key.toLowerCase() :
-    (issue as LinearIssue).identifier.toLowerCase()
+    (issue as JiraIssue).key.toLowerCase()
   );
 
-  // For Jira/Linear, user selects a workspace since issues are cross-repo
+  // For Jira, user selects a workspace since issues are cross-repo
   let workspaces = $state<Workspace[]>([]);
   let selectedWorkspacePath = $state('');
 
@@ -51,7 +48,7 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
 
-  // Load workspaces for Jira/Linear, and initialize branch name
+  // Load workspaces for Jira, and initialize branch name
   let branchInitialized = false;
   $effect(() => {
     if (open && !branchInitialized) {
@@ -82,23 +79,13 @@
         repoPath: gh.repoPath,
         repoName: gh.repoName,
       };
-    } else if (source === 'jira') {
+    } else {
       const jira = issue as JiraIssue;
       return {
         ticketId: jira.key,
         title: jira.title,
         url: jira.url,
         source: 'jira' as const,
-        repoPath: repoPath,
-        repoName: repoName,
-      };
-    } else {
-      const linear = issue as LinearIssue;
-      return {
-        ticketId: linear.identifier,
-        title: linear.title,
-        url: linear.url,
-        source: 'linear' as const,
         repoPath: repoPath,
         repoName: repoName,
       };
@@ -109,7 +96,7 @@
     if (loading) return;
 
     if (!repoPath) {
-      error = 'No workspace selected. Jira/Linear tickets require a workspace context.';
+      error = 'No workspace selected. Jira tickets require a workspace context.';
       return;
     }
 

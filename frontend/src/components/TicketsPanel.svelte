@@ -1,25 +1,12 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
-  import { fetchGithubIssues, fetchBranchLinks, fetchJiraIssues, fetchJiraConfigured, fetchLinearIssues, fetchLinearConfigured } from '../lib/api.js';
-  import type { GitHubIssuesResponse, JiraIssuesResponse, LinearIssuesResponse, BranchLinksResponse, BranchLink, AnyIssue } from '../lib/types.js';
+  import { fetchGithubIssues, fetchBranchLinks, fetchJiraIssues } from '../lib/api.js';
+  import type { GitHubIssuesResponse, JiraIssuesResponse, BranchLinksResponse, BranchLink, AnyIssue } from '../lib/types.js';
   import TicketCard from './TicketCard.svelte';
 
   let { onStartWork }: { onStartWork?: (issue: AnyIssue) => void } = $props();
 
-  let activeTab = $state<'github' | 'jira' | 'linear'>('github');
-
-  // Config queries — check which integrations are configured
-  const jiraConfigQuery = createQuery<boolean>(() => ({
-    queryKey: ['jira-configured'],
-    queryFn: fetchJiraConfigured,
-    staleTime: 300_000,
-  }));
-
-  const linearConfigQuery = createQuery<boolean>(() => ({
-    queryKey: ['linear-configured'],
-    queryFn: fetchLinearConfigured,
-    staleTime: 300_000,
-  }));
+  let activeTab = $state<'github' | 'jira'>('github');
 
   // Issue queries
   const githubIssuesQuery = createQuery<GitHubIssuesResponse>(() => ({
@@ -34,15 +21,6 @@
     queryFn: fetchJiraIssues,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
-    enabled: jiraConfigQuery.data === true,
-  }));
-
-  const linearIssuesQuery = createQuery<LinearIssuesResponse>(() => ({
-    queryKey: ['linear-issues'],
-    queryFn: fetchLinearIssues,
-    staleTime: 60_000,
-    refetchOnWindowFocus: true,
-    enabled: linearConfigQuery.data === true,
   }));
 
   const branchLinksQuery = createQuery<BranchLinksResponse>(() => ({
@@ -51,9 +29,6 @@
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   }));
-
-  let jiraConfigured = $derived(jiraConfigQuery.data === true);
-  let linearConfigured = $derived(linearConfigQuery.data === true);
 
   let branchLinksData = $derived(branchLinksQuery.data ?? {});
 
@@ -66,43 +41,32 @@
   let jiraIssuesData = $derived(jiraIssuesQuery.data);
   let jiraIssues = $derived(jiraIssuesData?.issues ?? []);
 
-  // Linear derived
-  let linearIssuesData = $derived(linearIssuesQuery.data);
-  let linearIssues = $derived(linearIssuesData?.issues ?? []);
-
   function getBranchLinksForTicket(ticketId: string): BranchLink[] {
     return branchLinksData[ticketId] ?? [];
   }
 
   // Active tab state helpers
   let activeQuery = $derived(
-    activeTab === 'github' ? githubIssuesQuery :
-    activeTab === 'jira' ? jiraIssuesQuery :
-    linearIssuesQuery
+    activeTab === 'github' ? githubIssuesQuery : jiraIssuesQuery
   );
 
   let activeIssues = $derived(
-    activeTab === 'github' ? githubIssues :
-    activeTab === 'jira' ? jiraIssues :
-    linearIssues
+    activeTab === 'github' ? githubIssues : jiraIssues
   );
 
   let activeError = $derived(
-    activeTab === 'github' ? githubIssuesData?.error :
-    activeTab === 'jira' ? jiraIssuesData?.error :
-    linearIssuesData?.error
+    activeTab === 'github' ? githubIssuesData?.error : jiraIssuesData?.error
   );
 
   let countLabel = $derived(
-    activeTab === 'github' ? `${githubOpenCount} open issue${githubOpenCount === 1 ? '' : 's'}` :
-    activeTab === 'jira' ? `${jiraIssues.length} issue${jiraIssues.length === 1 ? '' : 's'}` :
-    `${linearIssues.length} issue${linearIssues.length === 1 ? '' : 's'}`
+    activeTab === 'github'
+      ? `${githubOpenCount} open issue${githubOpenCount === 1 ? '' : 's'}`
+      : `${jiraIssues.length} issue${jiraIssues.length === 1 ? '' : 's'}`
   );
 
   function getTicketId(issue: AnyIssue): string {
     if ('number' in issue) return `GH-${issue.number}`;
-    if ('key' in issue) return issue.key;
-    return issue.identifier;
+    return issue.key;
   }
 </script>
 
@@ -116,24 +80,13 @@
     >
       GitHub Issues
     </button>
-    {#if jiraConfigured}
-      <button
-        class="tab-btn"
-        class:tab-btn--active={activeTab === 'jira'}
-        onclick={() => { activeTab = 'jira'; }}
-      >
-        Jira
-      </button>
-    {/if}
-    {#if linearConfigured}
-      <button
-        class="tab-btn"
-        class:tab-btn--active={activeTab === 'linear'}
-        onclick={() => { activeTab = 'linear'; }}
-      >
-        Linear
-      </button>
-    {/if}
+    <button
+      class="tab-btn"
+      class:tab-btn--active={activeTab === 'jira'}
+      onclick={() => { activeTab = 'jira'; }}
+    >
+      Jira
+    </button>
   </div>
 
   <!-- Panel header -->
@@ -174,24 +127,14 @@
       Run <code>gh auth login</code> to connect GitHub.
     </div>
 
-  {:else if activeTab === 'jira' && activeError === 'jira_not_configured'}
+  {:else if activeTab === 'jira' && activeError === 'acli_not_in_path'}
     <div class="state-message state-message--info">
-      Set <code>JIRA_BASE_URL</code>, <code>JIRA_EMAIL</code>, and <code>JIRA_API_TOKEN</code> env vars to connect Jira.
+      Install the Atlassian CLI to see your Jira tickets: <code>brew install acli</code> then <code>acli jira auth login --web</code>
     </div>
 
-  {:else if activeTab === 'jira' && activeError === 'jira_auth_failed'}
+  {:else if activeTab === 'jira' && activeError === 'acli_not_authenticated'}
     <div class="state-message state-message--info">
-      Jira authentication failed. Check your <code>JIRA_API_TOKEN</code> and <code>JIRA_EMAIL</code>.
-    </div>
-
-  {:else if activeTab === 'linear' && activeError === 'linear_not_configured'}
-    <div class="state-message state-message--info">
-      Set <code>LINEAR_API_KEY</code> env var to connect Linear.
-    </div>
-
-  {:else if activeTab === 'linear' && activeError === 'linear_auth_failed'}
-    <div class="state-message state-message--info">
-      Linear authentication failed. Check your <code>LINEAR_API_KEY</code>.
+      Run <code>acli jira auth login --web</code> to connect your Jira account.
     </div>
 
   {:else if activeError}
@@ -203,8 +146,7 @@
   {:else if activeIssues.length === 0}
     <div class="state-message">
       {#if activeTab === 'github'}No open issues assigned to you. Enjoy the quiet.
-      {:else if activeTab === 'jira'}No active Jira issues assigned to you.
-      {:else}No active Linear issues assigned to you.
+      {:else}No active Jira issues assigned to you.
       {/if}
     </div>
 

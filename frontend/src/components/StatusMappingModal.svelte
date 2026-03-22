@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { fetchJiraStatuses, fetchLinearStates } from '../lib/api.js';
-  import type { JiraStatus, LinearState } from '../lib/types.js';
+  import { fetchJiraStatuses } from '../lib/api.js';
+  import type { JiraStatus } from '../lib/types.js';
 
   let {
     provider,
@@ -8,14 +8,12 @@
     onClose,
     onSave,
     projectKey,
-    teamId,
   }: {
-    provider: 'jira' | 'linear';
+    provider: 'jira';
     open: boolean;
     onClose: () => void;
     onSave: (mappings: Record<string, string>) => void;
     projectKey?: string;
-    teamId?: string;
   } = $props();
 
   let statuses = $state<Array<{ id: string; name: string }>>([]);
@@ -34,39 +32,21 @@
     error = null;
     statuses = [];
 
-    if (provider === 'jira') {
-      const key = projectKey ?? '';
-      if (!key) {
-        error = 'Configure a Jira project key first (set integrations.jira.projectKey in config).';
-        loading = false;
-        return;
-      }
-      fetchJiraStatuses(key)
-        .then((result: JiraStatus[]) => {
-          statuses = result;
-          loading = false;
-        })
-        .catch((err: unknown) => {
-          error = err instanceof Error ? err.message : 'Failed to load Jira statuses';
-          loading = false;
-        });
-    } else {
-      const id = teamId ?? '';
-      if (!id) {
-        error = 'Configure a Linear team ID first (set integrations.linear.teamId in config).';
-        loading = false;
-        return;
-      }
-      fetchLinearStates(id)
-        .then((result: LinearState[]) => {
-          statuses = result;
-          loading = false;
-        })
-        .catch((err: unknown) => {
-          error = err instanceof Error ? err.message : 'Failed to load Linear states';
-          loading = false;
-        });
+    const key = projectKey ?? '';
+    if (!key) {
+      error = 'Configure a Jira project key first (set integrations.jira.projectKey in config).';
+      loading = false;
+      return;
     }
+    fetchJiraStatuses(key)
+      .then((result: JiraStatus[]) => {
+        statuses = result;
+        loading = false;
+      })
+      .catch((err: unknown) => {
+        error = err instanceof Error ? err.message : 'Failed to load Jira statuses';
+        loading = false;
+      });
   });
 
   function handleSave() {
@@ -78,7 +58,7 @@
     if (open && e.key === 'Escape') onClose();
   }
 
-  const providerLabel = $derived(provider === 'jira' ? 'Jira' : 'Linear');
+  const providerLabel = 'Jira';
 
   const fieldRows: Array<{ key: string; label: string }> = [
     { key: 'in-progress', label: 'In Progress' },
@@ -116,7 +96,7 @@
               >
                 <option value="">Not mapped</option>
                 {#each statuses as status (status.id)}
-                  <option value={status.id}>{status.name}</option>
+                  <option value={status.name}>{status.name}</option>
                 {/each}
               </select>
             </div>
