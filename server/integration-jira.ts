@@ -36,7 +36,7 @@ interface JiraSearchResult {
 }
 
 /**
- * Creates and returns an Express Router that handles all /integrations/jira routes.
+ * Creates and returns an Express Router that handles all /integration-jira routes.
  *
  * Caller is responsible for mounting and applying auth middleware:
  *   app.use('/integration-jira', requireAuth, createIntegrationJiraRouter({ configPath }));

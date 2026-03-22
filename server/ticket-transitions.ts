@@ -159,16 +159,17 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
     const current = transitionMap.get(ctx.ticketId);
     if (current && current !== 'none') return;
 
-    transitionMap.set(ctx.ticketId, 'in-progress');
-
     if (ctx.source === 'github') {
       const issueNum = ghIssueNumber(ctx.ticketId);
       if (!issueNum) return;
+      transitionMap.set(ctx.ticketId, 'in-progress');
       await addLabel(exec, ctx.repoPath, issueNum, 'in-progress');
     } else if (ctx.source === 'jira') {
+      transitionMap.set(ctx.ticketId, 'in-progress');
       const transitionId = getStatusMapping('jira', 'in-progress');
       if (transitionId) await jiraTransition(ctx.ticketId, transitionId);
     } else if (ctx.source === 'linear') {
+      transitionMap.set(ctx.ticketId, 'in-progress');
       const stateId = getStatusMapping('linear', 'in-progress');
       if (stateId) await linearStateUpdate(ctx.ticketId, stateId);
     }
@@ -187,36 +188,38 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
         const source = detectTicketSource(ticketId);
 
         if (pr.state === 'OPEN' && current !== 'code-review' && current !== 'ready-for-qa') {
-          transitionMap.set(ticketId, 'code-review');
-
           if (source === 'github') {
             const issueNum = ghIssueNumber(ticketId);
             if (!issueNum) continue;
             const repoPath = links[0]?.repoPath;
             if (!repoPath) continue;
+            transitionMap.set(ticketId, 'code-review');
             await removeLabel(exec, repoPath, issueNum, 'in-progress');
             await addLabel(exec, repoPath, issueNum, 'code-review');
           } else if (source === 'jira') {
+            transitionMap.set(ticketId, 'code-review');
             const transitionId = getStatusMapping('jira', 'code-review');
             if (transitionId) await jiraTransition(ticketId, transitionId);
           } else if (source === 'linear') {
+            transitionMap.set(ticketId, 'code-review');
             const stateId = getStatusMapping('linear', 'code-review');
             if (stateId) await linearStateUpdate(ticketId, stateId);
           }
         } else if (pr.state === 'MERGED' && current !== 'ready-for-qa') {
-          transitionMap.set(ticketId, 'ready-for-qa');
-
           if (source === 'github') {
             const issueNum = ghIssueNumber(ticketId);
             if (!issueNum) continue;
             const repoPath = links[0]?.repoPath;
             if (!repoPath) continue;
+            transitionMap.set(ticketId, 'ready-for-qa');
             await removeLabel(exec, repoPath, issueNum, 'code-review');
             await addLabel(exec, repoPath, issueNum, 'ready-for-qa');
           } else if (source === 'jira') {
+            transitionMap.set(ticketId, 'ready-for-qa');
             const transitionId = getStatusMapping('jira', 'ready-for-qa');
             if (transitionId) await jiraTransition(ticketId, transitionId);
           } else if (source === 'linear') {
+            transitionMap.set(ticketId, 'ready-for-qa');
             const stateId = getStatusMapping('linear', 'ready-for-qa');
             if (stateId) await linearStateUpdate(ticketId, stateId);
           }

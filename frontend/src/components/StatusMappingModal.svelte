@@ -75,7 +75,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') onClose();
+    if (open && e.key === 'Escape') onClose();
   }
 
   const providerLabel = $derived(provider === 'jira' ? 'Jira' : 'Linear');
@@ -87,9 +87,11 @@
   ];
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 {#if open}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="modal-backdrop" onkeydown={handleKeydown} onclick={onClose}>
+  <div class="modal-backdrop" onclick={onClose}>
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="modal" onclick={(e) => e.stopPropagation()}>

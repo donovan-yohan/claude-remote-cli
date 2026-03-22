@@ -52,8 +52,15 @@
   let error = $state<string | null>(null);
 
   // Load workspaces for Jira/Linear, and initialize branch name
+  let branchInitialized = false;
   $effect(() => {
-    branchName = defaultBranch;
+    if (open && !branchInitialized) {
+      branchName = defaultBranch;
+      branchInitialized = true;
+    }
+    if (!open) {
+      branchInitialized = false;
+    }
     if (source !== 'github' && open) {
       fetchWorkspaces().then(ws => {
         workspaces = ws;

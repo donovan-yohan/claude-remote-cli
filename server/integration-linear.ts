@@ -19,7 +19,7 @@ interface IssuesCacheEntry {
 }
 
 /**
- * Creates and returns an Express Router that handles all /integrations/linear routes.
+ * Creates and returns an Express Router that handles all /integration-linear routes.
  *
  * Caller is responsible for mounting and applying auth middleware:
  *   app.use('/integration-linear', requireAuth, createIntegrationLinearRouter({ configPath }));
@@ -93,6 +93,11 @@ export function createIntegrationLinearRouter(_deps: IntegrationLinearDeps): Rou
 
       if (fetchRes.status === 401 || fetchRes.status === 403) {
         const response: LinearIssuesResponse = { issues: [], error: 'linear_auth_failed' };
+        res.json(response);
+        return;
+      }
+      if (!fetchRes.ok) {
+        const response: LinearIssuesResponse = { issues: [], error: 'linear_fetch_failed' };
         res.json(response);
         return;
       }
@@ -200,6 +205,10 @@ export function createIntegrationLinearRouter(_deps: IntegrationLinearDeps): Rou
 
       if (fetchRes.status === 401 || fetchRes.status === 403) {
         res.json({ states: [], error: 'linear_auth_failed' });
+        return;
+      }
+      if (!fetchRes.ok) {
+        res.json({ states: [], error: 'linear_fetch_failed' });
         return;
       }
 
