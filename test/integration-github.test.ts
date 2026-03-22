@@ -81,7 +81,7 @@ function startServer(execAsyncFn: MockExec): Promise<void> {
     const app = express();
     app.use(express.json());
     const deps = { configPath, execAsync: execAsyncFn } as unknown as IntegrationGitHubDeps;
-    app.use('/integrations/github', createIntegrationGitHubRouter(deps));
+    app.use('/integration-github', createIntegrationGitHubRouter(deps));
     server = app.listen(0, '127.0.0.1', () => {
       const addr = server.address();
       if (typeof addr === 'object' && addr) {
@@ -100,7 +100,7 @@ function stopServer(): Promise<void> {
 }
 
 async function getIssues(): Promise<GitHubIssuesResponse> {
-  const res = await fetch(`${baseUrl}/integrations/github/issues`);
+  const res = await fetch(`${baseUrl}/integration-github/issues`);
   return res.json() as Promise<GitHubIssuesResponse>;
 }
 

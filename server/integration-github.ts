@@ -40,10 +40,10 @@ interface GhIssueItem {
 }
 
 /**
- * Creates and returns an Express Router that handles all /integrations/github routes.
+ * Creates and returns an Express Router that handles all /integration-github routes.
  *
  * Caller is responsible for mounting and applying auth middleware:
- *   app.use('/integrations/github', requireAuth, createIntegrationGitHubRouter({ configPath }));
+ *   app.use('/integration-github', requireAuth, createIntegrationGitHubRouter({ configPath }));
  */
 export function createIntegrationGitHubRouter(deps: IntegrationGitHubDeps): Router {
   const { configPath } = deps;

@@ -143,9 +143,8 @@ test('extracts GH issue IDs from gh-N branches', async () => {
   const data = await getLinks();
   assert.ok('GH-42' in data, 'Should extract GH-42 from branch name');
   const links = data['GH-42']!;
-  // Both the Jira regex (gh matches [A-Z]{2,} case-insensitively) and the GH regex
-  // fire on this branch — so we get 2 BranchLink entries for the same branch.
-  // Verify all links point to the correct branch and repo.
+  // Only the GH regex matches this branch — the Jira regex explicitly excludes 'GH'
+  // to avoid double-matching. Verify all links point to the correct branch and repo.
   assert.ok(links.length >= 1, 'Should have at least one GH-42 link');
   assert.ok(
     links.every((l) => l.branchName === 'gh-42-login-fix'),
