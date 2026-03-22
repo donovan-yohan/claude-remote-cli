@@ -206,35 +206,22 @@ describe('ticket-transitions', () => {
   });
 });
 
-// ─── Jira / Linear transition tests ─────────────────────────────────────────
+// ─── Jira transition tests ────────────────────────────────────────────────────
 
-describe('ticket-transitions (Jira/Linear)', () => {
+describe('ticket-transitions (Jira)', () => {
   let tmpDir: string;
   let configPath: string;
-  const origFetch = globalThis.fetch;
-  const origEnv: Record<string, string | undefined> = {};
 
   before(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-jira-linear-'));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-jira-'));
     configPath = path.join(tmpDir, 'config.json');
-
-    // Save env vars
-    for (const key of ['JIRA_API_TOKEN', 'JIRA_EMAIL', 'JIRA_BASE_URL', 'LINEAR_API_KEY']) {
-      origEnv[key] = process.env[key];
-    }
   });
 
   after(() => {
-    globalThis.fetch = origFetch;
-    // Restore env vars
-    for (const [key, val] of Object.entries(origEnv)) {
-      if (val === undefined) delete process.env[key];
-      else process.env[key] = val;
-    }
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function writeConfig(mappings: { jira?: Record<string, string>; linear?: Record<string, string> }) {
+  function writeJiraConfig(statusMappings: Record<string, string>) {
     const config = {
       host: '0.0.0.0',
       port: 3456,
@@ -248,33 +235,29 @@ describe('ticket-transitions (Jira/Linear)', () => {
       launchInTmux: false,
       defaultNotifications: true,
       integrations: {
-        ...(mappings.jira ? { jira: { projectKey: 'PROJ', statusMappings: mappings.jira } } : {}),
-        ...(mappings.linear ? { linear: { teamId: 'TEAM', statusMappings: mappings.linear } } : {}),
+        jira: { projectKey: 'PROJ', statusMappings },
       },
     };
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
   }
 
-  function makeJiraLinearApp() {
+  function makeJiraApp(execOverride?: MockExec) {
     const { exec } = makeExecMock();
-    const deps = { configPath, execAsync: exec } as unknown as TicketTransitionsDeps;
+    const effectiveExec = execOverride ?? exec;
+    const deps = { configPath, execAsync: effectiveExec } as unknown as TicketTransitionsDeps;
     return createTicketTransitionsRouter(deps);
   }
 
-  test('detectTicketSource returns jira for PROJ-123 when JIRA_API_TOKEN is set', async () => {
-    process.env.JIRA_API_TOKEN = 'fake-token';
-    process.env.JIRA_EMAIL = 'test@test.com';
-    process.env.JIRA_BASE_URL = 'https://test.atlassian.net';
-    delete process.env.LINEAR_API_KEY;
+  test('transitionOnSessionCreate calls acli jira workitem transition for Jira ticket', async () => {
+    writeJiraConfig({ 'in-progress': 'In Progress' });
 
-    writeConfig({ jira: { 'in-progress': '21' } });
-    const { transitionOnSessionCreate } = makeJiraLinearApp();
+    const acliCalls: Array<{ cmd: string; args: string[] }> = [];
+    const trackingExec: MockExec = async (cmd: unknown, args: unknown) => {
+      acliCalls.push({ cmd: cmd as string, args: args as string[] });
+      return { stdout: '', stderr: '' };
+    };
 
-    const fetchCalls: string[] = [];
-    globalThis.fetch = (async (input: unknown) => {
-      fetchCalls.push(String(input));
-      return { ok: true, status: 200, json: async () => ({}) };
-    }) as unknown as typeof globalThis.fetch;
+    const { transitionOnSessionCreate } = makeJiraApp(trackingExec);
 
     const ctx: TicketContext = {
       ticketId: 'PROJ-123',
@@ -286,61 +269,23 @@ describe('ticket-transitions (Jira/Linear)', () => {
     };
     await transitionOnSessionCreate(ctx);
 
-    assert.ok(
-      fetchCalls.some((u) => u.includes('/rest/api/3/issue/PROJ-123/transitions')),
-      `Expected Jira transition call, got: ${fetchCalls.join(', ')}`,
+    const transitionCall = acliCalls.find(
+      (c) => c.cmd === 'acli' && c.args.includes('transition') && c.args.includes('PROJ-123'),
     );
+    assert.ok(transitionCall, `Expected acli jira workitem transition call, got: ${JSON.stringify(acliCalls)}`);
+    assert.ok(transitionCall.args.includes('In Progress'), 'Should pass the mapped status name');
   });
 
-  test('detectTicketSource returns linear for TEAM-42 when LINEAR_API_KEY is set', async () => {
-    delete process.env.JIRA_API_TOKEN;
-    delete process.env.JIRA_EMAIL;
-    delete process.env.JIRA_BASE_URL;
-    process.env.LINEAR_API_KEY = 'fake-linear-key';
+  test('transitionOnSessionCreate skips when no status mapping configured', async () => {
+    writeJiraConfig({}); // Empty mappings — no 'in-progress' key
 
-    writeConfig({ linear: { 'in-progress': 'state-in-progress-id' } });
-    const { transitionOnSessionCreate } = makeJiraLinearApp();
-
-    const fetchCalls: string[] = [];
-    globalThis.fetch = (async (input: unknown) => {
-      fetchCalls.push(String(input));
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ data: { issues: { nodes: [{ id: 'issue-uuid' }] } } }),
-      };
-    }) as unknown as typeof globalThis.fetch;
-
-    const ctx: TicketContext = {
-      ticketId: 'TEAM-42',
-      title: 'Test',
-      url: 'https://linear.app/team/issue/TEAM-42',
-      source: 'linear',
-      repoPath: '/fake/repo',
-      repoName: 'repo',
+    const acliCalls: Array<{ cmd: string; args: string[] }> = [];
+    const trackingExec: MockExec = async (cmd: unknown, args: unknown) => {
+      acliCalls.push({ cmd: cmd as string, args: args as string[] });
+      return { stdout: '', stderr: '' };
     };
-    await transitionOnSessionCreate(ctx);
 
-    assert.ok(
-      fetchCalls.some((u) => u.includes('linear.app/graphql')),
-      `Expected Linear GraphQL call, got: ${fetchCalls.join(', ')}`,
-    );
-  });
-
-  test('skips transition when no status mapping configured', async () => {
-    process.env.JIRA_API_TOKEN = 'fake-token';
-    process.env.JIRA_EMAIL = 'test@test.com';
-    process.env.JIRA_BASE_URL = 'https://test.atlassian.net';
-
-    // Config with empty mappings — no 'in-progress' mapping
-    writeConfig({ jira: {} });
-    const { transitionOnSessionCreate } = makeJiraLinearApp();
-
-    const fetchCalls: string[] = [];
-    globalThis.fetch = (async (input: unknown) => {
-      fetchCalls.push(String(input));
-      return { ok: true, status: 200, json: async () => ({}) };
-    }) as unknown as typeof globalThis.fetch;
+    const { transitionOnSessionCreate } = makeJiraApp(trackingExec);
 
     const ctx: TicketContext = {
       ticketId: 'PROJ-456',
@@ -352,24 +297,48 @@ describe('ticket-transitions (Jira/Linear)', () => {
     };
     await transitionOnSessionCreate(ctx);
 
-    assert.equal(fetchCalls.length, 0, 'Should not call fetch when no status mapping exists');
+    assert.equal(acliCalls.length, 0, 'Should not call acli when no status mapping exists');
   });
 
-  test('checkPrTransitions calls Jira transition for OPEN PR with mapped ticket', async () => {
-    process.env.JIRA_API_TOKEN = 'fake-token';
-    process.env.JIRA_EMAIL = 'test@test.com';
-    process.env.JIRA_BASE_URL = 'https://test.atlassian.net';
-    delete process.env.LINEAR_API_KEY;
+  test('transitionOnSessionCreate is idempotent — second call blocked after success', async () => {
+    writeJiraConfig({ 'in-progress': 'In Progress' });
 
-    writeConfig({ jira: { 'code-review': '31', 'ready-for-qa': '41' } });
-    const { checkPrTransitions } = makeJiraLinearApp();
+    const acliCalls: Array<{ cmd: string; args: string[] }> = [];
+    const trackingExec: MockExec = async (cmd: unknown, args: unknown) => {
+      acliCalls.push({ cmd: cmd as string, args: args as string[] });
+      return { stdout: '', stderr: '' };
+    };
 
-    const fetchCalls: Array<{ url: string; body: string }> = [];
-    globalThis.fetch = (async (input: unknown, init: unknown) => {
-      const reqInit = init as { body?: string } | undefined;
-      fetchCalls.push({ url: String(input), body: reqInit?.body ?? '' });
-      return { ok: true, status: 200, json: async () => ({}) };
-    }) as unknown as typeof globalThis.fetch;
+    const { transitionOnSessionCreate } = makeJiraApp(trackingExec);
+
+    const ctx: TicketContext = {
+      ticketId: 'PROJ-55',
+      title: 'Jira test issue',
+      url: 'https://jira.example.com/browse/PROJ-55',
+      source: 'jira',
+      repoPath: '/fake/repo',
+      repoName: 'repo',
+    };
+
+    await transitionOnSessionCreate(ctx);
+    const firstCallCount = acliCalls.length;
+    assert.ok(firstCallCount > 0, 'First call should trigger acli');
+
+    // Second call — should be blocked by idempotency guard
+    await transitionOnSessionCreate(ctx);
+    assert.equal(acliCalls.length, firstCallCount, 'Second call should be blocked by idempotency guard after success');
+  });
+
+  test('checkPrTransitions calls acli jira workitem transition for OPEN PR with mapped Jira ticket', async () => {
+    writeJiraConfig({ 'code-review': 'Code Review', 'ready-for-qa': 'Ready for QA' });
+
+    const acliCalls: Array<{ cmd: string; args: string[] }> = [];
+    const trackingExec: MockExec = async (cmd: unknown, args: unknown) => {
+      acliCalls.push({ cmd: cmd as string, args: args as string[] });
+      return { stdout: '', stderr: '' };
+    };
+
+    const { checkPrTransitions } = makeJiraApp(trackingExec);
 
     const prs = [{ number: 10, headRefName: 'feat/jira-pr', state: 'OPEN' as const }];
     const branchLinks: Record<string, BranchLink[]> = {
@@ -378,233 +347,10 @@ describe('ticket-transitions (Jira/Linear)', () => {
 
     await checkPrTransitions(prs, branchLinks);
 
-    const transitionCall = fetchCalls.find((c) => c.url.includes('/transitions'));
-    assert.ok(transitionCall, `Expected Jira transition call, got: ${fetchCalls.map((c) => c.url).join(', ')}`);
-    assert.ok(transitionCall.body.includes('"31"'), 'Should use code-review transition ID 31');
-  });
-
-  // ── New tests ────────────────────────────────────────────────────────────
-
-  test('Jira transitionOnSessionCreate — correct URL and transitionId, transitionMap updated only on success', async () => {
-    process.env.JIRA_API_TOKEN = 'fake-token';
-    process.env.JIRA_EMAIL = 'test@test.com';
-    process.env.JIRA_BASE_URL = 'https://my-org.atlassian.net';
-    delete process.env.LINEAR_API_KEY;
-
-    writeConfig({ jira: { 'in-progress': '21', 'code-review': '31' } });
-    const { transitionOnSessionCreate } = makeJiraLinearApp();
-
-    const fetchCalls: Array<{ url: string; body: string }> = [];
-    globalThis.fetch = (async (input: unknown, init: unknown) => {
-      const reqInit = init as { body?: string } | undefined;
-      fetchCalls.push({ url: String(input), body: reqInit?.body ?? '' });
-      return { ok: true, status: 204, json: async () => ({}) };
-    }) as unknown as typeof globalThis.fetch;
-
-    const ctx: TicketContext = {
-      ticketId: 'MYPROJ-55',
-      title: 'Jira test issue',
-      url: 'https://my-org.atlassian.net/browse/MYPROJ-55',
-      source: 'jira',
-      repoPath: '/fake/repo',
-      repoName: 'repo',
-    };
-
-    await transitionOnSessionCreate(ctx);
-
-    assert.equal(fetchCalls.length, 1, 'Should make exactly one fetch call');
-    assert.ok(
-      fetchCalls[0]!.url.includes('/rest/api/3/issue/MYPROJ-55/transitions'),
-      `Expected Jira transition URL, got: ${fetchCalls[0]!.url}`,
+    const transitionCall = acliCalls.find(
+      (c) => c.cmd === 'acli' && c.args.includes('transition') && c.args.includes('PROJ-789'),
     );
-    assert.ok(fetchCalls[0]!.body.includes('"21"'), 'Should pass in-progress transition ID 21');
-
-    // Verify idempotency — second call should be blocked because transitionMap was updated
-    fetchCalls.length = 0;
-    await transitionOnSessionCreate(ctx);
-    assert.equal(fetchCalls.length, 0, 'Second call should be blocked by idempotency guard after success');
-  });
-
-  test('Linear transitionOnSessionCreate — calls issue lookup then state update mutation', async () => {
-    delete process.env.JIRA_API_TOKEN;
-    delete process.env.JIRA_EMAIL;
-    delete process.env.JIRA_BASE_URL;
-    process.env.LINEAR_API_KEY = 'lin_api_fake';
-
-    writeConfig({ linear: { 'in-progress': 'state-id-1', 'code-review': 'state-id-2' } });
-    const { transitionOnSessionCreate } = makeJiraLinearApp();
-
-    let callCount = 0;
-    const fetchCalls: Array<{ url: string; body: string }> = [];
-    globalThis.fetch = (async (input: unknown, init: unknown) => {
-      const reqInit = init as { body?: string } | undefined;
-      fetchCalls.push({ url: String(input), body: reqInit?.body ?? '' });
-      callCount++;
-      // First call: issue lookup — return issue UUID
-      if (callCount === 1) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ data: { issues: { nodes: [{ id: 'issue-uuid-abc' }] } } }),
-        };
-      }
-      // Second call: state update mutation
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ data: { issueUpdate: { success: true } } }),
-      };
-    }) as unknown as typeof globalThis.fetch;
-
-    const ctx: TicketContext = {
-      ticketId: 'ENG-77',
-      title: 'Linear test issue',
-      url: 'https://linear.app/eng/issue/ENG-77',
-      source: 'linear',
-      repoPath: '/fake/repo',
-      repoName: 'repo',
-    };
-
-    await transitionOnSessionCreate(ctx);
-
-    assert.equal(fetchCalls.length, 2, 'Should make two fetch calls — one lookup, one update');
-    assert.ok(
-      fetchCalls.every((c) => c.url.includes('linear.app/graphql')),
-      'Both calls should target the Linear GraphQL endpoint',
-    );
-    // First call: issue lookup query
-    assert.ok(fetchCalls[0]!.body.includes('ENG-77'), 'Lookup should reference the ticket identifier');
-    // Second call: mutation with resolved issue UUID and target state ID
-    assert.ok(fetchCalls[1]!.body.includes('issue-uuid-abc'), 'Update mutation should use resolved issue UUID');
-    assert.ok(fetchCalls[1]!.body.includes('state-id-1'), 'Update mutation should pass in-progress state ID');
-
-    // Verify idempotency after success
-    fetchCalls.length = 0;
-    callCount = 0;
-    await transitionOnSessionCreate(ctx);
-    assert.equal(fetchCalls.length, 0, 'Second call should be blocked by idempotency guard after success');
-  });
-
-  test('F5 premature idempotency — failed fetch does not update transitionMap, second call retries', async () => {
-    process.env.JIRA_API_TOKEN = 'fake-token';
-    process.env.JIRA_EMAIL = 'test@test.com';
-    process.env.JIRA_BASE_URL = 'https://my-org.atlassian.net';
-    delete process.env.LINEAR_API_KEY;
-
-    writeConfig({ jira: { 'in-progress': '21', 'code-review': '31' } });
-    const { transitionOnSessionCreate } = makeJiraLinearApp();
-
-    const fetchCalls: string[] = [];
-
-    // First attempt: server returns 500
-    globalThis.fetch = (async (input: unknown) => {
-      fetchCalls.push(String(input));
-      return { ok: false, status: 500, json: async () => ({}) };
-    }) as unknown as typeof globalThis.fetch;
-
-    const ctx: TicketContext = {
-      ticketId: 'FAIL-99',
-      title: 'Failing ticket',
-      url: 'https://my-org.atlassian.net/browse/FAIL-99',
-      source: 'jira',
-      repoPath: '/fake/repo',
-      repoName: 'repo',
-    };
-
-    await transitionOnSessionCreate(ctx);
-    assert.equal(fetchCalls.length, 1, 'First call should attempt fetch');
-
-    // Second attempt after failure: transitionMap should NOT have been updated,
-    // so the guard should not block this retry
-    const fetchCallsBeforeRetry = fetchCalls.length;
-    globalThis.fetch = (async (input: unknown) => {
-      fetchCalls.push(String(input));
-      return { ok: true, status: 204, json: async () => ({}) };
-    }) as unknown as typeof globalThis.fetch;
-
-    await transitionOnSessionCreate(ctx);
-    assert.ok(
-      fetchCalls.length > fetchCallsBeforeRetry,
-      'Second call should NOT be blocked — failed remote call must not update transitionMap',
-    );
-  });
-
-  test('Source detection via BranchLink source field — jira source overrides env-var heuristic', async () => {
-    // Set up env so that env-var heuristic would pick linear (if source field were ignored)
-    delete process.env.JIRA_API_TOKEN;
-    delete process.env.JIRA_EMAIL;
-    delete process.env.JIRA_BASE_URL;
-    process.env.LINEAR_API_KEY = 'lin_api_fake';
-
-    // But also set Jira env so jiraTransition can actually run
-    process.env.JIRA_API_TOKEN = 'fake-token';
-    process.env.JIRA_EMAIL = 'test@test.com';
-    process.env.JIRA_BASE_URL = 'https://my-org.atlassian.net';
-
-    writeConfig({ jira: { 'code-review': '31' }, linear: { 'code-review': 'state-id-2' } });
-    const { checkPrTransitions } = makeJiraLinearApp();
-
-    const fetchCalls: Array<{ url: string; body: string }> = [];
-    globalThis.fetch = (async (input: unknown, init: unknown) => {
-      const reqInit = init as { body?: string } | undefined;
-      fetchCalls.push({ url: String(input), body: reqInit?.body ?? '' });
-      return { ok: true, status: 200, json: async () => ({}) };
-    }) as unknown as typeof globalThis.fetch;
-
-    const prs = [{ number: 20, headRefName: 'feat/via-branch-link', state: 'OPEN' as const }];
-    // BranchLink explicitly declares source: 'jira'
-    const branchLinks: Record<string, BranchLink[]> = {
-      'XPROJ-10': [
-        {
-          repoPath: '/fake/repo',
-          repoName: 'repo',
-          branchName: 'feat/via-branch-link',
-          hasActiveSession: true,
-          source: 'jira',
-        },
-      ],
-    };
-
-    await checkPrTransitions(prs, branchLinks);
-
-    const jiraCall = fetchCalls.find((c) => c.url.includes('/rest/api/3/issue/XPROJ-10/transitions'));
-    assert.ok(
-      jiraCall,
-      `Expected Jira transition call (source from BranchLink), got: ${fetchCalls.map((c) => c.url).join(', ')}`,
-    );
-    assert.ok(jiraCall.body.includes('"31"'), 'Should use code-review Jira transition ID');
-
-    const linearCall = fetchCalls.find((c) => c.url.includes('linear.app/graphql'));
-    assert.equal(linearCall, undefined, 'Should NOT call Linear when BranchLink.source is jira');
-  });
-
-  test('Jira URL validation — http non-localhost URL is rejected without making a fetch', async () => {
-    process.env.JIRA_API_TOKEN = 'fake-token';
-    process.env.JIRA_EMAIL = 'test@test.com';
-    // Insecure non-localhost URL — should be rejected
-    process.env.JIRA_BASE_URL = 'http://evil.com';
-    delete process.env.LINEAR_API_KEY;
-
-    writeConfig({ jira: { 'in-progress': '21' } });
-    const { transitionOnSessionCreate } = makeJiraLinearApp();
-
-    const fetchCalls: string[] = [];
-    globalThis.fetch = (async (input: unknown) => {
-      fetchCalls.push(String(input));
-      return { ok: true, status: 200, json: async () => ({}) };
-    }) as unknown as typeof globalThis.fetch;
-
-    const ctx: TicketContext = {
-      ticketId: 'EVIL-1',
-      title: 'Evil ticket',
-      url: 'http://evil.com/browse/EVIL-1',
-      source: 'jira',
-      repoPath: '/fake/repo',
-      repoName: 'repo',
-    };
-
-    await transitionOnSessionCreate(ctx);
-
-    assert.equal(fetchCalls.length, 0, 'Should not make any fetch call when JIRA_BASE_URL is http non-localhost');
+    assert.ok(transitionCall, `Expected acli jira workitem transition call, got: ${JSON.stringify(acliCalls)}`);
+    assert.ok(transitionCall.args.includes('Code Review'), 'Should use code-review status name');
   });
 });

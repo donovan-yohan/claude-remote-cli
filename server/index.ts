@@ -28,7 +28,6 @@ import { createBranchLinkerRouter, invalidateBranchLinkerCache } from './branch-
 import { createHooksRouter } from './hooks.js';
 import { createTicketTransitionsRouter } from './ticket-transitions.js';
 import { createIntegrationJiraRouter } from './integration-jira.js';
-import { createIntegrationLinearRouter } from './integration-linear.js';
 import { startPolling, stopPolling } from './review-poller.js';
 import type { AgentType, AutomationSettings, Config } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
@@ -300,10 +299,6 @@ async function main(): Promise<void> {
   // Mount Jira integration router
   const integrationJiraRouter = createIntegrationJiraRouter({ configPath: CONFIG_PATH });
   app.use('/integration-jira', requireAuth, integrationJiraRouter);
-
-  // Mount Linear integration router
-  const integrationLinearRouter = createIntegrationLinearRouter({ configPath: CONFIG_PATH });
-  app.use('/integration-linear', requireAuth, integrationLinearRouter);
 
   // Mount branch linker router
   const branchLinkerRouter = createBranchLinkerRouter({
@@ -795,7 +790,7 @@ async function main(): Promise<void> {
       rows?: number;
       needsBranchRename?: boolean;
       branchRenamePrompt?: string;
-      ticketContext?: { ticketId: string; title: string; description?: string; url: string; source: 'github' | 'jira' | 'linear'; repoPath: string; repoName: string };
+      ticketContext?: { ticketId: string; title: string; description?: string; url: string; source: 'github' | 'jira'; repoPath: string; repoName: string };
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -817,8 +812,8 @@ async function main(): Promise<void> {
     }
     if (ticketContext) {
       // Validate source is a known integration
-      if (ticketContext.source !== 'github' && ticketContext.source !== 'jira' && ticketContext.source !== 'linear') {
-        res.status(400).json({ error: "ticketContext.source must be 'github', 'jira', or 'linear'" });
+      if (ticketContext.source !== 'github' && ticketContext.source !== 'jira') {
+        res.status(400).json({ error: "ticketContext.source must be 'github' or 'jira'" });
         return;
       }
       // Validate repoPath is a configured workspace
@@ -827,24 +822,14 @@ async function main(): Promise<void> {
         res.status(400).json({ error: 'ticketContext.repoPath is not a configured workspace' });
         return;
       }
-      // Validate integration is configured for the claimed source
-      if (ticketContext.source === 'jira') {
-        if (!process.env['JIRA_API_TOKEN'] || !process.env['JIRA_EMAIL'] || !process.env['JIRA_BASE_URL']) {
-          res.status(400).json({ error: 'Jira integration is not configured' });
-          return;
-        }
-      } else if (ticketContext.source === 'linear') {
-        if (!process.env['LINEAR_API_KEY']) {
-          res.status(400).json({ error: 'Linear integration is not configured' });
-          return;
-        }
-      }
+      // Jira integration is configured via acli CLI — no env var check needed.
+      // Auth validation happens when acli commands are actually called.
       // Validate ticket ID format per source
       if (ticketContext.source === 'github' && !/^GH-\d+$/.test(ticketContext.ticketId)) {
         res.status(400).json({ error: 'ticketContext.ticketId for github must match GH-<number>' });
         return;
       }
-      if ((ticketContext.source === 'jira' || ticketContext.source === 'linear') && !/^[A-Z]+-\d+$/.test(ticketContext.ticketId)) {
+      if (ticketContext.source === 'jira' && !/^[A-Z]+-\d+$/.test(ticketContext.ticketId)) {
         res.status(400).json({ error: 'ticketContext.ticketId must match <PROJECT>-<number>' });
         return;
       }

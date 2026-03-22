@@ -43,7 +43,7 @@ export function invalidateBranchLinkerCache(): void {
 function extractTicketIds(branchName: string): string[] {
   const ids: string[] = [];
 
-  // Jira/Linear style: PROJECT-123 (2+ uppercase letters, dash, digits)
+  // Jira style: PROJECT-123 (2+ uppercase letters, dash, digits)
   // Skip "GH" prefix — that's our GitHub Issues namespace, handled separately below.
   const jiraRegex = /([A-Z]{2,}-\d+)/gi;
   let match: RegExpExecArray | null;
@@ -123,13 +123,12 @@ export function createBranchLinkerRouter(deps: BranchLinkerDeps): Router & { fet
           const ticketIds = extractTicketIds(branchName);
           for (const ticketId of ticketIds) {
             // Infer ticket source from ID pattern
-            let source: 'github' | 'jira' | 'linear' | undefined;
+            let source: 'github' | 'jira' | undefined;
             if (ticketId.startsWith('GH-')) {
               source = 'github';
-            } else if (process.env.JIRA_API_TOKEN) {
+            } else {
+              // Non-GH ticket IDs (e.g., PROJ-123) assumed to be Jira
               source = 'jira';
-            } else if (process.env.LINEAR_API_KEY) {
-              source = 'linear';
             }
             links.push({
               ticketId,

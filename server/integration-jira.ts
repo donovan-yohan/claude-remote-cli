@@ -1,8 +1,14 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
 import type { JiraIssue, JiraIssuesResponse, JiraStatus } from './types.js';
 
+const execFileAsync = promisify(execFile);
+
+const JIRA_TIMEOUT_MS = 10_000;
 const CACHE_TTL_MS = 60_000;
 const JIRA_ISSUES_CACHE_KEY = 'jira_issues';
 
@@ -10,6 +16,8 @@ const JIRA_ISSUES_CACHE_KEY = 'jira_issues';
 
 export interface IntegrationJiraDeps {
   configPath: string;
+  /** Injected so tests can override execFile calls */
+  execAsync?: typeof execFileAsync;
 }
 
 // In-memory cache (single key since Jira is cross-workspace)
@@ -18,21 +26,15 @@ interface CacheEntry {
   fetchedAt: number;
 }
 
-// Raw shape returned by Jira REST API /rest/api/3/search
-interface JiraSearchResult {
-  issues: Array<{
-    key: string;
-    fields: {
-      summary: string;
-      status: { name: string };
-      priority: { name: string } | null;
-      customfield_10016: number | null; // story points
-      customfield_10020: Array<{ name: string }> | null; // sprint
-      assignee: { displayName: string } | null;
-      updated: string;
-    };
-    self: string;
-  }>;
+// Raw shape returned by acli jira workitem search --json
+interface AcliWorkItem {
+  key: string;
+  fields: {
+    summary: string;
+    status: { id: string; name: string };
+    priority?: { name: string } | null;
+    assignee?: { displayName: string } | null;
+  };
 }
 
 /**
@@ -41,51 +43,31 @@ interface JiraSearchResult {
  * Caller is responsible for mounting and applying auth middleware:
  *   app.use('/integration-jira', requireAuth, createIntegrationJiraRouter({ configPath }));
  */
-export function createIntegrationJiraRouter(_deps: IntegrationJiraDeps): Router {
+export function createIntegrationJiraRouter(deps: IntegrationJiraDeps): Router {
+  const exec = deps.execAsync ?? execFileAsync;
+
   const router = Router();
 
   // Single 60s in-memory cache (Jira is cross-workspace, not per-repo)
   const issuesCache = new Map<string, CacheEntry>();
 
-  function getEnvVars(): { token: string; email: string; baseUrl: string } | null {
-    const token = process.env.JIRA_API_TOKEN;
-    const email = process.env.JIRA_EMAIL;
-    const baseUrl = process.env.JIRA_BASE_URL;
-    if (!token || !email || !baseUrl) return null;
-    try {
-      const parsed = new URL(baseUrl);
-      const isHttps = parsed.protocol === 'https:';
-      const isLocalHttp = parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
-      if (!isHttps && !isLocalHttp) {
-        console.warn('[integration-jira] JIRA_BASE_URL failed validation (must be https or http://localhost), treating as unconfigured');
-        return null;
-      }
-    } catch {
-      console.warn('[integration-jira] JIRA_BASE_URL is not a valid URL, treating as unconfigured');
-      return null;
+  // Cached site URL — resolved once per server lifetime
+  let cachedSiteUrl: string | null = null;
+
+  async function getSiteUrl(): Promise<string> {
+    if (cachedSiteUrl !== null) return cachedSiteUrl;
+
+    const { stdout } = await exec('acli', ['jira', 'auth', 'status'], { timeout: JIRA_TIMEOUT_MS });
+    const match = /Site:\s*([\w-]+\.atlassian\.net)/.exec(stdout);
+    if (!match || !match[1]) {
+      throw new Error('Could not parse site URL from acli jira auth status output');
     }
-    return { token, email, baseUrl };
+    cachedSiteUrl = match[1];
+    return cachedSiteUrl;
   }
-
-  function buildAuthHeader(email: string, token: string): string {
-    return `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`;
-  }
-
-  // GET /integrations/jira/configured — returns whether env vars are set
-  router.get('/configured', (_req: Request, res: Response) => {
-    const env = getEnvVars();
-    res.json({ configured: env !== null });
-  });
 
   // GET /integrations/jira/issues — search issues assigned to currentUser
   router.get('/issues', async (_req: Request, res: Response) => {
-    const env = getEnvVars();
-    if (!env) {
-      const response: JiraIssuesResponse = { issues: [], error: 'jira_not_configured' };
-      res.json(response);
-      return;
-    }
-
     const now = Date.now();
 
     // Return cached result if still fresh
@@ -96,68 +78,78 @@ export function createIntegrationJiraRouter(_deps: IntegrationJiraDeps): Router 
       return;
     }
 
-    const jql = 'assignee=currentUser() AND status NOT IN (Done, Closed) ORDER BY updated DESC';
-    const fields = 'summary,status,priority,customfield_10016,customfield_10020,assignee,updated';
-    const url = `${env.baseUrl}/rest/api/3/search?jql=${encodeURIComponent(jql)}&fields=${encodeURIComponent(fields)}&maxResults=50`;
-
-    let data: JiraSearchResult;
+    let siteUrl: string;
     try {
-      const fetchResult = await Promise.allSettled([
-        fetch(url, {
-          headers: {
-            Authorization: buildAuthHeader(env.email, env.token),
-            Accept: 'application/json',
-          },
-        }),
-      ]);
-
-      const settled = fetchResult[0];
-      if (settled.status === 'rejected') {
-        const response: JiraIssuesResponse = { issues: [], error: 'jira_fetch_failed' };
+      siteUrl = await getSiteUrl();
+    } catch (err) {
+      const errCode = (err as NodeJS.ErrnoException).code;
+      if (errCode === 'ENOENT') {
+        const response: JiraIssuesResponse = { issues: [], error: 'acli_not_in_path' };
         res.json(response);
         return;
       }
-
-      const httpRes = settled.value;
-      if (httpRes.status === 401 || httpRes.status === 403) {
-        const response: JiraIssuesResponse = { issues: [], error: 'jira_auth_failed' };
+      const stderr = (err as { stderr?: string }).stderr ?? '';
+      if (stderr.includes('not logged') || stderr.includes('auth') || stderr.includes('unauthorized')) {
+        const response: JiraIssuesResponse = { issues: [], error: 'acli_not_authenticated' };
         res.json(response);
         return;
       }
-      if (!httpRes.ok) {
-        const response: JiraIssuesResponse = { issues: [], error: 'jira_fetch_failed' };
+      const response: JiraIssuesResponse = { issues: [], error: 'jira_fetch_failed' };
+      res.json(response);
+      return;
+    }
+
+    let stdout: string;
+    try {
+      ({ stdout } = await exec(
+        'acli',
+        [
+          'jira', 'workitem', 'search',
+          '--jql', 'assignee=currentUser() AND status NOT IN (Done, Closed) ORDER BY updated DESC',
+          '--json',
+          '--limit', '50',
+        ],
+        { timeout: JIRA_TIMEOUT_MS },
+      ));
+    } catch (err) {
+      const errCode = (err as NodeJS.ErrnoException).code;
+      if (errCode === 'ENOENT') {
+        const response: JiraIssuesResponse = { issues: [], error: 'acli_not_in_path' };
         res.json(response);
         return;
       }
+      const stderr = (err as { stderr?: string }).stderr ?? '';
+      if (stderr.includes('not logged') || stderr.includes('auth') || stderr.includes('unauthorized')) {
+        const response: JiraIssuesResponse = { issues: [], error: 'acli_not_authenticated' };
+        res.json(response);
+        return;
+      }
+      const response: JiraIssuesResponse = { issues: [], error: 'jira_fetch_failed' };
+      res.json(response);
+      return;
+    }
 
-      data = (await httpRes.json()) as JiraSearchResult;
+    let items: AcliWorkItem[];
+    try {
+      items = JSON.parse(stdout) as AcliWorkItem[];
     } catch {
       const response: JiraIssuesResponse = { issues: [], error: 'jira_fetch_failed' };
       res.json(response);
       return;
     }
 
-    const issues: JiraIssue[] = data.issues.map((item) => {
-      const projectKey = item.key.split('-')[0] ?? item.key;
-      const sprint = item.fields.customfield_10020;
-      const latestSprint = sprint && sprint.length > 0 ? sprint[sprint.length - 1]?.name ?? null : null;
-
-      return {
-        key: item.key,
-        title: item.fields.summary,
-        url: `${env.baseUrl}/browse/${item.key}`,
-        status: item.fields.status.name,
-        priority: item.fields.priority?.name ?? null,
-        sprint: latestSprint,
-        storyPoints: item.fields.customfield_10016,
-        assignee: item.fields.assignee?.displayName ?? null,
-        updatedAt: item.fields.updated,
-        projectKey,
-      };
-    });
-
-    // Sort by updatedAt descending
-    issues.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    const issues: JiraIssue[] = items.map((item) => ({
+      key: item.key,
+      title: item.fields.summary,
+      url: `https://${siteUrl}/browse/${item.key}`,
+      status: item.fields.status.name,
+      priority: item.fields.priority?.name ?? null,
+      assignee: item.fields.assignee?.displayName ?? null,
+      projectKey: item.key.split('-')[0] ?? item.key,
+      updatedAt: '',
+      sprint: null,
+      storyPoints: null,
+    }));
 
     // Update cache
     issuesCache.set(JIRA_ISSUES_CACHE_KEY, { issues, fetchedAt: now });
@@ -166,64 +158,64 @@ export function createIntegrationJiraRouter(_deps: IntegrationJiraDeps): Router 
     res.json(response);
   });
 
-  // GET /integrations/jira/statuses?projectKey=X — fetch project statuses
+  // GET /integrations/jira/statuses?projectKey=X — fetch unique statuses for a project
   router.get('/statuses', async (req: Request, res: Response) => {
-    const env = getEnvVars();
-    if (!env) {
-      res.json({ statuses: [], error: 'jira_not_configured' });
-      return;
-    }
-
     const projectKey = req.query['projectKey'];
     if (!projectKey || typeof projectKey !== 'string') {
       res.status(400).json({ statuses: [], error: 'missing_project_key' });
       return;
     }
 
-    const url = `${env.baseUrl}/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`;
+    // Sanitize: only allow [A-Z0-9]+ to prevent command injection
+    if (!/^[A-Z0-9]+$/.test(projectKey)) {
+      res.status(400).json({ statuses: [], error: 'invalid_project_key' });
+      return;
+    }
 
-    let rawData: Array<{ statuses: Array<{ id: string; name: string }> }>;
+    let stdout: string;
     try {
-      const fetchResults = await Promise.allSettled([
-        fetch(url, {
-          headers: {
-            Authorization: buildAuthHeader(env.email, env.token),
-            Accept: 'application/json',
-          },
-        }),
-      ]);
-
-      const settled = fetchResults[0];
-      if (settled.status === 'rejected') {
-        res.json({ statuses: [], error: 'jira_fetch_failed' });
+      ({ stdout } = await exec(
+        'acli',
+        [
+          'jira', 'workitem', 'search',
+          '--jql', `project = ${projectKey}`,
+          '--fields', 'status',
+          '--json',
+          '--limit', '50',
+        ],
+        { timeout: JIRA_TIMEOUT_MS },
+      ));
+    } catch (err) {
+      const errCode = (err as NodeJS.ErrnoException).code;
+      if (errCode === 'ENOENT') {
+        res.json({ statuses: [], error: 'acli_not_in_path' });
         return;
       }
-
-      const httpRes = settled.value;
-      if (httpRes.status === 401 || httpRes.status === 403) {
-        res.json({ statuses: [], error: 'jira_auth_failed' });
+      const stderr = (err as { stderr?: string }).stderr ?? '';
+      if (stderr.includes('not logged') || stderr.includes('auth') || stderr.includes('unauthorized')) {
+        res.json({ statuses: [], error: 'acli_not_authenticated' });
         return;
       }
-      if (!httpRes.ok) {
-        res.json({ statuses: [], error: 'jira_fetch_failed' });
-        return;
-      }
+      res.json({ statuses: [], error: 'jira_fetch_failed' });
+      return;
+    }
 
-      rawData = (await httpRes.json()) as Array<{ statuses: Array<{ id: string; name: string }> }>;
+    let items: AcliWorkItem[];
+    try {
+      items = JSON.parse(stdout) as AcliWorkItem[];
     } catch {
       res.json({ statuses: [], error: 'jira_fetch_failed' });
       return;
     }
 
-    // Flatten statuses across all issue types and deduplicate by id
+    // Deduplicate statuses by id
     const seen = new Set<string>();
     const statuses: JiraStatus[] = [];
-    for (const issueType of rawData) {
-      for (const s of issueType.statuses) {
-        if (!seen.has(s.id)) {
-          seen.add(s.id);
-          statuses.push({ id: s.id, name: s.name });
-        }
+    for (const item of items) {
+      const { id, name } = item.fields.status;
+      if (!seen.has(id)) {
+        seen.add(id);
+        statuses.push({ id, name });
       }
     }
 
