@@ -15,7 +15,7 @@ import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, serializeAll, restoreFromDisk, activeTmuxSessionNames, populateMetaCache } from './sessions.js';
 import { setupWebSocket } from './ws.js';
-import { WorktreeWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
+import { WorktreeWatcher, BranchWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import { listBranches, isBranchStale } from './git.js';
@@ -248,6 +248,24 @@ async function main(): Promise<void> {
   const server = http.createServer(app);
   const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher, CONFIG_PATH);
 
+  // Watch .git/HEAD files for branch changes and update active sessions
+  const branchWatcher = new BranchWatcher((cwdPath, newBranch) => {
+    for (const session of sessions.list()) {
+      if (session.repoPath === cwdPath || session.cwd === cwdPath) {
+        const raw = sessions.get(session.id);
+        if (raw) {
+          raw.branchName = newBranch;
+          broadcastEvent('session-renamed', {
+            sessionId: session.id,
+            branchName: newBranch,
+            displayName: raw.displayName,
+          });
+        }
+      }
+    }
+  });
+  branchWatcher.rebuild(config.workspaces || []);
+
   // Configure session defaults for hooks injection
   sessions.configure({ port: config.port, forceOutputParser: config.forceOutputParser ?? false });
 
@@ -328,9 +346,30 @@ async function main(): Promise<void> {
     res.json({ ok: true });
   });
 
-  // GET /sessions
-  app.get('/sessions', requireAuth, (_req, res) => {
-    res.json(sessions.list());
+  // GET /sessions — enrich with live branch from git (rate-limited to avoid spawning git on every poll)
+  const branchRefreshCache = new Map<string, number>(); // sessionId -> last refresh timestamp
+  const BRANCH_REFRESH_INTERVAL_MS = 10_000;
+  app.get('/sessions', requireAuth, async (_req, res) => {
+    const allSessions = sessions.list();
+    const now = Date.now();
+    await Promise.all(allSessions.map(async (s) => {
+      if (!s.repoPath) return;
+      const lastRefresh = branchRefreshCache.get(s.id) ?? 0;
+      if (now - lastRefresh < BRANCH_REFRESH_INTERVAL_MS) return;
+      const cwd = s.type === 'repo' ? s.repoPath : s.cwd;
+      if (!cwd) return;
+      branchRefreshCache.set(s.id, now);
+      try {
+        const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd });
+        const liveBranch = stdout.trim();
+        if (liveBranch && liveBranch !== s.branchName) {
+          s.branchName = liveBranch;
+          const raw = sessions.get(s.id);
+          if (raw) raw.branchName = liveBranch;
+        }
+      } catch { /* non-fatal */ }
+    }));
+    res.json(allSessions);
   });
 
   // GET /repos — scan root dirs for repos
@@ -1040,6 +1079,7 @@ async function main(): Promise<void> {
 
   function gracefulShutdown() {
     closeAnalytics();
+    branchWatcher.close();
     server.close();
     // Serialize sessions to disk BEFORE killing them
     const configDir = path.dirname(CONFIG_PATH);

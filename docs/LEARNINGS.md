@@ -36,3 +36,13 @@ When a mobile browser backgrounds an app, the OS silently kills TCP connections 
 When migrating from a selection-based model (user picks repo/worktree at creation time) to a context-driven model (workspace already knows its folder), audit ALL UI entry points that create entities. Leftover modals, tabs, and labels that reference the old model become broken flows — not just cosmetic debt. In this case, the "New Terminal" button opened a repo-selection modal instead of calling the existing `createTerminalSession()` API, making terminal creation impossible. Always grep for API functions that become unreachable after an architecture change.
 
 ---
+
+### L-004: Session state derived from external systems (git, filesystem) must have a refresh mechanism — snapshot-at-creation is insufficient
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-22
+- branch: mont-blanc
+
+When storing state that mirrors an external system (e.g., `session.branchName` from `git rev-parse`), always implement a refresh mechanism — either a filesystem watcher on the source of truth (`.git/HEAD`), periodic polling, or re-reading on API requests. Snapshot-at-creation creates a hidden staleness contract that users don't expect. In this project, the `WorktreeWatcher` watches directory structure but not `.git/HEAD`, so branch checkouts are invisible. When adding any external-system-derived field to a long-lived object, ask: "what watches for changes to this value?"
+
+---

@@ -49,6 +49,7 @@ Both `build` and `test` fail on type errors. CI runs both via `npm run build && 
 | `test/hooks.test.ts` | stripAnsi utility, semverLessThan with pre-release, cleanEnv, fireStateChange callbacks |
 | `test/analytics.test.ts` | Analytics DB init, trackEvent insertion, optional null fields, idempotency, DB size, Express router endpoints |
 | `test/branch-rename.test.ts` | Branch auto-rename flow, sideband `claude -p` invocation, branch watcher polling |
+| `test/branch-watcher.test.ts` | BranchWatcher: detects HEAD file changes, no false positives on unchanged branch |
 | `test/fs-browse.test.ts` | Filesystem browser API: directory listing, git repo detection, denylist filtering |
 | `test/git.test.ts` | Git operations: branch listing, activity feed, CI status parsing |
 | `test/pr-state.test.ts` | PR lifecycle state machine: action derivation from PR state + CI + mergeable + comments |
