@@ -42,3 +42,4 @@
 | [2026-03-21-new-tab-quick-create-design.md](2026-03-21-new-tab-quick-create-design.md) | Redesign tab bar "+" dropdown: instant agent/terminal creation, simplified Customize modal, auto-named tabs | 2026-03-21 | implemented |
 | [2026-03-21-org-dashboard-phase4-design.md](2026-03-21-org-dashboard-phase4-design.md) | Jira + Linear integrations with native metadata and StatusMappingModal | 2026-03-21 | implemented |
 | [2026-03-21-org-dashboard-phase5-design.md](2026-03-21-org-dashboard-phase5-design.md) | PR review automation: auto-checkout review requests, auto-review with code review prompt | 2026-03-21 | implemented |
+| [2026-03-22-org-dashboard-cleanup-design.md](2026-03-22-org-dashboard-cleanup-design.md) | Org dashboard cleanup: tests, dead code, perf fix, API limitation docs | 2026-03-22 | implemented |

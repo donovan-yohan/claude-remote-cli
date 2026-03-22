@@ -155,7 +155,6 @@ export interface Config {
   nextMountainIndex?: number | undefined;
   workspaceGroups?: Record<string, string[]> | undefined;
   integrations?: {
-    github?: { enableIssues?: boolean };
     jira?: { projectKey?: string; statusMappings?: Partial<Record<TransitionState, string>> };
     linear?: { teamId?: string; statusMappings?: Partial<Record<TransitionState, string>> };
   } | undefined;

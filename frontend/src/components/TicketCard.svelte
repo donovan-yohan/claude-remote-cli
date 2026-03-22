@@ -31,12 +31,6 @@
   function isJira(i: AnyIssue): i is JiraIssue { return source === 'jira'; }
   function isLinear(i: AnyIssue): i is LinearIssue { return source === 'linear'; }
 
-  let ticketId = $derived(
-    isGitHub(issue) ? `GH-${issue.number}` :
-    isJira(issue) ? issue.key :
-    isLinear(issue) ? issue.identifier : ''
-  );
-
   let linkedBranch = $derived(
     branchLinks.length > 0 ? branchLinks[0] : null
   );

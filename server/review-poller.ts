@@ -45,6 +45,7 @@ interface GhNotification {
 
 let timer: ReturnType<typeof setInterval> | null = null;
 let ghMissingWarned = false;
+let pollInFlight = false;
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -118,162 +119,169 @@ async function findWorkspaceForRepo(
 // ─── Core poll logic ──────────────────────────────────────────────────────────
 
 async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
-  const exec = deps.execAsync ?? execFileAsync;
+  if (pollInFlight) return;
+  pollInFlight = true;
 
-  let config: Config;
   try {
-    config = loadConfig(deps.configPath);
-  } catch (err) {
-    console.warn('[review-poller] Failed to load config:', err);
-    return;
-  }
+    const exec = deps.execAsync ?? execFileAsync;
 
-  if (!config.automations?.autoCheckoutReviewRequests) return;
+    let config: Config;
+    try {
+      config = loadConfig(deps.configPath);
+    } catch (err) {
+      console.warn('[review-poller] Failed to load config:', err);
+      return;
+    }
 
-  // Default to "now" on first run to avoid processing all historical notifications
-  const lastPollTimestamp = config.automations?.lastPollTimestamp ?? new Date().toISOString();
+    if (!config.automations?.autoCheckoutReviewRequests) return;
 
-  // Fetch review_requested notifications from GitHub
-  let notifications: GhNotification[];
-  try {
-    const { stdout } = await exec(
-      'gh',
-      [
-        'api',
-        '/notifications',
-        '--jq',
-        '.[] | select(.reason == "review_requested") | {id, reason, subject, repository, updated_at}',
-      ],
-      { timeout: GH_TIMEOUT_MS },
+    // Default to "now" on first run to avoid processing all historical notifications
+    const lastPollTimestamp = config.automations?.lastPollTimestamp ?? new Date().toISOString();
+
+    // Fetch review_requested notifications from GitHub
+    let notifications: GhNotification[];
+    try {
+      const { stdout } = await exec(
+        'gh',
+        [
+          'api',
+          '/notifications',
+          '--jq',
+          '.[] | select(.reason == "review_requested") | {id, reason, subject, repository, updated_at}',
+        ],
+        { timeout: GH_TIMEOUT_MS },
+      );
+
+      // gh --jq with select returns newline-delimited JSON objects
+      const lines = stdout.trim().split('\n').filter(Boolean);
+      notifications = [];
+      for (const line of lines) {
+        try {
+          notifications.push(JSON.parse(line) as GhNotification);
+        } catch {
+          // gh may output non-JSON warnings mixed with results — skip
+        }
+      }
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException & { killed?: boolean };
+      if (error.code === 'ENOENT') {
+        if (!ghMissingWarned) {
+          console.warn('[review-poller] gh CLI not found — stopping poller');
+          ghMissingWarned = true;
+        }
+        stopPolling();
+        return;
+      }
+      if (error.killed) {
+        console.warn('[review-poller] gh notifications timed out, skipping cycle');
+        return;
+      }
+      // Auth failures and other gh errors come through stderr in the error message
+      console.warn('[review-poller] gh notifications failed, skipping cycle:', error.message);
+      return;
+    }
+
+    // Filter to notifications newer than the last poll
+    const newNotifications = notifications.filter(
+      (n) => new Date(n.updated_at) > new Date(lastPollTimestamp),
     );
 
-    // gh --jq with select returns newline-delimited JSON objects
-    const lines = stdout.trim().split('\n').filter(Boolean);
-    notifications = [];
-    for (const line of lines) {
-      try {
-        notifications.push(JSON.parse(line) as GhNotification);
-      } catch {
-        // gh may output non-JSON warnings mixed with results — skip
-      }
-    }
-  } catch (err) {
-    const error = err as NodeJS.ErrnoException & { killed?: boolean };
-    if (error.code === 'ENOENT') {
-      if (!ghMissingWarned) {
-        console.warn('[review-poller] gh CLI not found — stopping poller');
-        ghMissingWarned = true;
-      }
-      stopPolling();
-      return;
-    }
-    if (error.killed) {
-      console.warn('[review-poller] gh notifications timed out, skipping cycle');
-      return;
-    }
-    // Auth failures and other gh errors come through stderr in the error message
-    console.warn('[review-poller] gh notifications failed, skipping cycle:', error.message);
-    return;
-  }
+    const workspacePaths = deps.getWorkspacePaths();
 
-  // Filter to notifications newer than the last poll
-  const newNotifications = notifications.filter(
-    (n) => new Date(n.updated_at) > new Date(lastPollTimestamp),
-  );
+    for (const notification of newNotifications) {
+      if (notification.subject.type !== 'PullRequest') continue;
 
-  const workspacePaths = deps.getWorkspacePaths();
-
-  for (const notification of newNotifications) {
-    if (notification.subject.type !== 'PullRequest') continue;
-
-    const prNumber = extractPrNumber(notification.subject.url);
-    if (prNumber === null) {
-      console.warn('[review-poller] Could not extract PR number from:', notification.subject.url);
-      continue;
-    }
-
-    const ownerRepo = notification.repository.full_name;
-
-    let workspacePath: string | null;
-    try {
-      workspacePath = await findWorkspaceForRepo(ownerRepo, workspacePaths, exec);
-    } catch (err) {
-      console.warn('[review-poller] Error finding workspace for', ownerRepo, ':', err);
-      continue;
-    }
-
-    if (workspacePath === null) {
-      // No local workspace for this repo — skip silently
-      continue;
-    }
-
-    const localBranch = `review-pr-${prNumber}`;
-    const worktreePath = path.join(workspacePath, '.worktrees', localBranch);
-
-    // Skip if worktree already exists (e.g., from a previous poll)
-    if (fs.existsSync(worktreePath)) {
-      continue;
-    }
-
-    // Fetch the PR's head ref into a local branch, then create worktree from it
-    try {
-      await exec(
-        'git',
-        ['fetch', 'origin', `pull/${prNumber}/head:${localBranch}`],
-        { cwd: workspacePath, timeout: GH_TIMEOUT_MS },
-      );
-    } catch (err) {
-      // Branch may already exist from a prior fetch — continue to worktree add
-      const errMsg = (err as Error).message ?? '';
-      if (!errMsg.includes('already exists')) {
-        console.warn(`[review-poller] Failed to fetch PR #${prNumber}:`, err);
+      const prNumber = extractPrNumber(notification.subject.url);
+      if (prNumber === null) {
+        console.warn('[review-poller] Could not extract PR number from:', notification.subject.url);
         continue;
       }
-    }
 
-    try {
-      await exec(
-        'git',
-        ['worktree', 'add', worktreePath, localBranch],
-        { cwd: workspacePath, timeout: GH_TIMEOUT_MS },
-      );
-    } catch (err) {
-      console.warn(`[review-poller] Failed to create worktree for PR #${prNumber}:`, err);
-      continue;
-    }
+      const ownerRepo = notification.repository.full_name;
 
-    // Optionally start a review session
-    const settings = deps.getWorkspaceSettings(workspacePath);
-    if (config.automations?.autoReviewOnCheckout && settings?.promptCodeReview) {
+      let workspacePath: string | null;
       try {
-        await deps.createSession({
-          repoPath: workspacePath,
-          worktreePath,
-          branchName: localBranch,
-          initialPrompt: settings.promptCodeReview,
-        });
+        workspacePath = await findWorkspaceForRepo(ownerRepo, workspacePaths, exec);
       } catch (err) {
-        console.warn(`[review-poller] Failed to create review session for PR #${prNumber}:`, err);
+        console.warn('[review-poller] Error finding workspace for', ownerRepo, ':', err);
+        continue;
       }
+
+      if (workspacePath === null) {
+        // No local workspace for this repo — skip silently
+        continue;
+      }
+
+      const localBranch = `review-pr-${prNumber}`;
+      const worktreePath = path.join(workspacePath, '.worktrees', localBranch);
+
+      // Skip if worktree already exists (e.g., from a previous poll)
+      if (fs.existsSync(worktreePath)) {
+        continue;
+      }
+
+      // Fetch the PR's head ref into a local branch, then create worktree from it
+      try {
+        await exec(
+          'git',
+          ['fetch', 'origin', `pull/${prNumber}/head:${localBranch}`],
+          { cwd: workspacePath, timeout: GH_TIMEOUT_MS },
+        );
+      } catch (err) {
+        // Branch may already exist from a prior fetch — continue to worktree add
+        const errMsg = (err as Error).message ?? '';
+        if (!errMsg.includes('already exists')) {
+          console.warn(`[review-poller] Failed to fetch PR #${prNumber}:`, err);
+          continue;
+        }
+      }
+
+      try {
+        await exec(
+          'git',
+          ['worktree', 'add', worktreePath, localBranch],
+          { cwd: workspacePath, timeout: GH_TIMEOUT_MS },
+        );
+      } catch (err) {
+        console.warn(`[review-poller] Failed to create worktree for PR #${prNumber}:`, err);
+        continue;
+      }
+
+      // Optionally start a review session
+      const settings = deps.getWorkspaceSettings(workspacePath);
+      if (config.automations?.autoReviewOnCheckout && settings?.promptCodeReview) {
+        try {
+          await deps.createSession({
+            repoPath: workspacePath,
+            worktreePath,
+            branchName: localBranch,
+            initialPrompt: settings.promptCodeReview,
+          });
+        } catch (err) {
+          console.warn(`[review-poller] Failed to create review session for PR #${prNumber}:`, err);
+        }
+      }
+
+      deps.broadcastEvent('review-checkout', {
+        prNumber,
+        ownerRepo,
+        worktreePath,
+        branchName: localBranch,
+        title: notification.subject.title,
+      });
     }
 
-    deps.broadcastEvent('review-checkout', {
-      prNumber,
-      ownerRepo,
-      worktreePath,
-      branchName: localBranch,
-      title: notification.subject.title,
-    });
-  }
-
-  // Update lastPollTimestamp
-  config.automations = {
-    ...config.automations,
-    lastPollTimestamp: new Date().toISOString(),
-  };
-  try {
-    saveConfig(deps.configPath, config);
-  } catch (err) {
-    console.warn('[review-poller] Failed to save config after poll:', err);
+    // Update lastPollTimestamp
+    config.automations = {
+      ...config.automations,
+      lastPollTimestamp: new Date().toISOString(),
+    };
+    try {
+      saveConfig(deps.configPath, config);
+    } catch (err) {
+      console.warn('[review-poller] Failed to save config after poll:', err);
+    }
+  } finally {
+    pollInFlight = false;
   }
 }

@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { Router } from 'express';
 
 import { loadConfig } from './config.js';
-import type { TicketContext, TransitionState, BranchLink } from './types.js';
+import type { Config, TicketContext, TransitionState, BranchLink } from './types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -149,8 +149,7 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
   const router = Router();
 
   /** Get status mapping for a transition state from config */
-  function getStatusMapping(source: 'jira' | 'linear', state: TransitionState): string | undefined {
-    const config = loadConfig(configPath);
+  function getStatusMapping(config: Config, source: 'jira' | 'linear', state: TransitionState): string | undefined {
     if (source === 'jira') return config.integrations?.jira?.statusMappings?.[state];
     return config.integrations?.linear?.statusMappings?.[state];
   }
@@ -166,11 +165,13 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
       await addLabel(exec, ctx.repoPath, issueNum, 'in-progress');
     } else if (ctx.source === 'jira') {
       transitionMap.set(ctx.ticketId, 'in-progress');
-      const transitionId = getStatusMapping('jira', 'in-progress');
+      const config = loadConfig(configPath);
+      const transitionId = getStatusMapping(config, 'jira', 'in-progress');
       if (transitionId) await jiraTransition(ctx.ticketId, transitionId);
     } else if (ctx.source === 'linear') {
       transitionMap.set(ctx.ticketId, 'in-progress');
-      const stateId = getStatusMapping('linear', 'in-progress');
+      const config = loadConfig(configPath);
+      const stateId = getStatusMapping(config, 'linear', 'in-progress');
       if (stateId) await linearStateUpdate(ctx.ticketId, stateId);
     }
   }
@@ -179,6 +180,7 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
     prs: PrForTransition[],
     branchLinks: Record<string, BranchLink[]>,
   ): Promise<void> {
+    const config = loadConfig(configPath);
     for (const pr of prs) {
       for (const [ticketId, links] of Object.entries(branchLinks)) {
         const linked = links.some((l) => l.branchName === pr.headRefName);
@@ -198,11 +200,11 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
             await addLabel(exec, repoPath, issueNum, 'code-review');
           } else if (source === 'jira') {
             transitionMap.set(ticketId, 'code-review');
-            const transitionId = getStatusMapping('jira', 'code-review');
+            const transitionId = getStatusMapping(config, 'jira', 'code-review');
             if (transitionId) await jiraTransition(ticketId, transitionId);
           } else if (source === 'linear') {
             transitionMap.set(ticketId, 'code-review');
-            const stateId = getStatusMapping('linear', 'code-review');
+            const stateId = getStatusMapping(config, 'linear', 'code-review');
             if (stateId) await linearStateUpdate(ticketId, stateId);
           }
         } else if (pr.state === 'MERGED' && current !== 'ready-for-qa') {
@@ -216,11 +218,11 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
             await addLabel(exec, repoPath, issueNum, 'ready-for-qa');
           } else if (source === 'jira') {
             transitionMap.set(ticketId, 'ready-for-qa');
-            const transitionId = getStatusMapping('jira', 'ready-for-qa');
+            const transitionId = getStatusMapping(config, 'jira', 'ready-for-qa');
             if (transitionId) await jiraTransition(ticketId, transitionId);
           } else if (source === 'linear') {
             transitionMap.set(ticketId, 'ready-for-qa');
-            const stateId = getStatusMapping('linear', 'ready-for-qa');
+            const stateId = getStatusMapping(config, 'linear', 'ready-for-qa');
             if (stateId) await linearStateUpdate(ticketId, stateId);
           }
         }

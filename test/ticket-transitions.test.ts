@@ -1,5 +1,8 @@
-import { test, describe } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { createTicketTransitionsRouter, type TicketTransitionsDeps } from '../server/ticket-transitions.js';
 import type { TicketContext, BranchLink } from '../server/types.js';
@@ -12,6 +15,26 @@ interface ExecCall {
   args: string[];
   cwd: string | undefined;
 }
+
+// Shared temp config for all tests (checkPrTransitions calls loadConfig)
+let sharedTmpDir: string;
+let sharedConfigPath: string;
+
+before(() => {
+  sharedTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-'));
+  sharedConfigPath = path.join(sharedTmpDir, 'config.json');
+  const minimalConfig = {
+    host: '0.0.0.0', port: 3456, cookieTTL: '24h', repos: [],
+    claudeCommand: 'claude', claudeArgs: [], defaultAgent: 'claude',
+    defaultContinue: true, defaultYolo: false, launchInTmux: false,
+    defaultNotifications: true,
+  };
+  fs.writeFileSync(sharedConfigPath, JSON.stringify(minimalConfig, null, 2));
+});
+
+after(() => {
+  fs.rmSync(sharedTmpDir, { recursive: true, force: true });
+});
 
 function makeExecMock(opts: { shouldThrow?: boolean } = {}): {
   exec: MockExec;
@@ -32,9 +55,7 @@ function makeExecMock(opts: { shouldThrow?: boolean } = {}): {
 }
 
 function makeApp(execMock: MockExec) {
-  // Use a dummy config path — GitHub transitions don't read config, and
-  // Jira/Linear transitions only read mappings (which default to undefined).
-  const deps = { configPath: '/tmp/test-config-not-found.json', execAsync: execMock } as unknown as TicketTransitionsDeps;
+  const deps = { configPath: sharedConfigPath, execAsync: execMock } as unknown as TicketTransitionsDeps;
   return createTicketTransitionsRouter(deps);
 }
 
@@ -182,5 +203,183 @@ describe('ticket-transitions', () => {
         'checkPrTransitions should not throw when gh CLI errors',
       );
     });
+  });
+});
+
+// ─── Jira / Linear transition tests ─────────────────────────────────────────
+
+describe('ticket-transitions (Jira/Linear)', () => {
+  let tmpDir: string;
+  let configPath: string;
+  const origFetch = globalThis.fetch;
+  const origEnv: Record<string, string | undefined> = {};
+
+  before(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tt-jira-linear-'));
+    configPath = path.join(tmpDir, 'config.json');
+
+    // Save env vars
+    for (const key of ['JIRA_API_TOKEN', 'JIRA_EMAIL', 'JIRA_BASE_URL', 'LINEAR_API_KEY']) {
+      origEnv[key] = process.env[key];
+    }
+  });
+
+  after(() => {
+    globalThis.fetch = origFetch;
+    // Restore env vars
+    for (const [key, val] of Object.entries(origEnv)) {
+      if (val === undefined) delete process.env[key];
+      else process.env[key] = val;
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function writeConfig(mappings: { jira?: Record<string, string>; linear?: Record<string, string> }) {
+    const config = {
+      host: '0.0.0.0',
+      port: 3456,
+      cookieTTL: '24h',
+      repos: [],
+      claudeCommand: 'claude',
+      claudeArgs: [],
+      defaultAgent: 'claude',
+      defaultContinue: true,
+      defaultYolo: false,
+      launchInTmux: false,
+      defaultNotifications: true,
+      integrations: {
+        ...(mappings.jira ? { jira: { projectKey: 'PROJ', statusMappings: mappings.jira } } : {}),
+        ...(mappings.linear ? { linear: { teamId: 'TEAM', statusMappings: mappings.linear } } : {}),
+      },
+    };
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+  }
+
+  function makeJiraLinearApp() {
+    const { exec } = makeExecMock();
+    const deps = { configPath, execAsync: exec } as unknown as TicketTransitionsDeps;
+    return createTicketTransitionsRouter(deps);
+  }
+
+  test('detectTicketSource returns jira for PROJ-123 when JIRA_API_TOKEN is set', async () => {
+    process.env.JIRA_API_TOKEN = 'fake-token';
+    process.env.JIRA_EMAIL = 'test@test.com';
+    process.env.JIRA_BASE_URL = 'https://test.atlassian.net';
+    delete process.env.LINEAR_API_KEY;
+
+    writeConfig({ jira: { 'in-progress': '21' } });
+    const { transitionOnSessionCreate } = makeJiraLinearApp();
+
+    const fetchCalls: string[] = [];
+    globalThis.fetch = (async (input: unknown) => {
+      fetchCalls.push(String(input));
+      return { ok: true, status: 200, json: async () => ({}) };
+    }) as unknown as typeof globalThis.fetch;
+
+    const ctx: TicketContext = {
+      ticketId: 'PROJ-123',
+      title: 'Test',
+      url: 'https://jira.example.com/browse/PROJ-123',
+      source: 'jira',
+      repoPath: '/fake/repo',
+      repoName: 'repo',
+    };
+    await transitionOnSessionCreate(ctx);
+
+    assert.ok(
+      fetchCalls.some((u) => u.includes('/rest/api/3/issue/PROJ-123/transitions')),
+      `Expected Jira transition call, got: ${fetchCalls.join(', ')}`,
+    );
+  });
+
+  test('detectTicketSource returns linear for TEAM-42 when LINEAR_API_KEY is set', async () => {
+    delete process.env.JIRA_API_TOKEN;
+    delete process.env.JIRA_EMAIL;
+    delete process.env.JIRA_BASE_URL;
+    process.env.LINEAR_API_KEY = 'fake-linear-key';
+
+    writeConfig({ linear: { 'in-progress': 'state-in-progress-id' } });
+    const { transitionOnSessionCreate } = makeJiraLinearApp();
+
+    const fetchCalls: string[] = [];
+    globalThis.fetch = (async (input: unknown) => {
+      fetchCalls.push(String(input));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { issues: { nodes: [{ id: 'issue-uuid' }] } } }),
+      };
+    }) as unknown as typeof globalThis.fetch;
+
+    const ctx: TicketContext = {
+      ticketId: 'TEAM-42',
+      title: 'Test',
+      url: 'https://linear.app/team/issue/TEAM-42',
+      source: 'linear',
+      repoPath: '/fake/repo',
+      repoName: 'repo',
+    };
+    await transitionOnSessionCreate(ctx);
+
+    assert.ok(
+      fetchCalls.some((u) => u.includes('linear.app/graphql')),
+      `Expected Linear GraphQL call, got: ${fetchCalls.join(', ')}`,
+    );
+  });
+
+  test('skips transition when no status mapping configured', async () => {
+    process.env.JIRA_API_TOKEN = 'fake-token';
+    process.env.JIRA_EMAIL = 'test@test.com';
+    process.env.JIRA_BASE_URL = 'https://test.atlassian.net';
+
+    // Config with empty mappings — no 'in-progress' mapping
+    writeConfig({ jira: {} });
+    const { transitionOnSessionCreate } = makeJiraLinearApp();
+
+    const fetchCalls: string[] = [];
+    globalThis.fetch = (async (input: unknown) => {
+      fetchCalls.push(String(input));
+      return { ok: true, status: 200, json: async () => ({}) };
+    }) as unknown as typeof globalThis.fetch;
+
+    const ctx: TicketContext = {
+      ticketId: 'PROJ-456',
+      title: 'Test',
+      url: 'https://jira.example.com/browse/PROJ-456',
+      source: 'jira',
+      repoPath: '/fake/repo',
+      repoName: 'repo',
+    };
+    await transitionOnSessionCreate(ctx);
+
+    assert.equal(fetchCalls.length, 0, 'Should not call fetch when no status mapping exists');
+  });
+
+  test('checkPrTransitions calls Jira transition for OPEN PR with mapped ticket', async () => {
+    process.env.JIRA_API_TOKEN = 'fake-token';
+    process.env.JIRA_EMAIL = 'test@test.com';
+    process.env.JIRA_BASE_URL = 'https://test.atlassian.net';
+    delete process.env.LINEAR_API_KEY;
+
+    writeConfig({ jira: { 'code-review': '31', 'ready-for-qa': '41' } });
+    const { checkPrTransitions } = makeJiraLinearApp();
+
+    const fetchCalls: Array<{ url: string; body: string }> = [];
+    globalThis.fetch = (async (input: unknown, init: unknown) => {
+      const reqInit = init as { body?: string } | undefined;
+      fetchCalls.push({ url: String(input), body: reqInit?.body ?? '' });
+      return { ok: true, status: 200, json: async () => ({}) };
+    }) as unknown as typeof globalThis.fetch;
+
+    const prs = [{ number: 10, headRefName: 'feat/jira-pr', state: 'OPEN' as const }];
+    const branchLinks: Record<string, BranchLink[]> = {
+      'PROJ-789': [{ repoPath: '/fake/repo', repoName: 'repo', branchName: 'feat/jira-pr', hasActiveSession: true }],
+    };
+
+    await checkPrTransitions(prs, branchLinks);
+
+    const transitionCall = fetchCalls.find((c) => c.url.includes('/transitions'));
+    assert.ok(transitionCall, `Expected Jira transition call, got: ${fetchCalls.map((c) => c.url).join(', ')}`);
+    assert.ok(transitionCall.body.includes('"31"'), 'Should use code-review transition ID 31');
   });
 });
