@@ -76,6 +76,28 @@
     return session.displayName || session.branchName || session.repoName || session.id;
   }
 
+  // Group identity: name derived from worktree/branch, not individual tab
+  function groupDisplayName(groupPath: string, sessions: SessionSummary[]): string {
+    const isRepoRoot = groupPath === workspace.path;
+    if (isRepoRoot) return 'default';
+    // All sessions in a worktree group share the same branch — use any
+    const branch = sessions.find(s => s.branchName)?.branchName;
+    return branch || sessions[0]?.worktreeName || sessions[0]?.repoName || 'unknown';
+  }
+
+  // Aggregate status across all sessions in a group (priority: attention > permission-prompt > running > idle)
+  function groupStatusDotClass(sessions: SessionSummary[]): string {
+    const STATUS_PRIORITY: Record<string, number> = { attention: 4, 'permission-prompt': 3, running: 2, idle: 1 };
+    let best = 'idle';
+    let bestPriority = 0;
+    for (const s of sessions) {
+      const st = getSessionStatus(s);
+      const p = STATUS_PRIORITY[st] ?? 0;
+      if (p > bestPriority) { best = st; bestPriority = p; }
+    }
+    return 'status-dot status-dot--' + best;
+  }
+
   let hasAttention = $derived(allSessions.some(s => getSessionStatus(s) === 'attention'));
   let creatingWorktree = $derived(isItemLoading(`new-worktree:${workspace.path}`));
   let inReorderMode = $derived(ui.reorderMode);
@@ -245,7 +267,6 @@
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <li
             class="session-row"
-            class:terminal={representative.type === 'terminal'}
             class:selected={groupSessions.some(s => sessionState.activeSessionId === s.id)}
             class:attention={groupHasAttention}
             data-track="sidebar.session.click"
@@ -255,12 +276,8 @@
             ontouchmove={handleRowTouchMove}
           >
             <div class="session-row-primary">
-              {#if representative.type === 'terminal'}
-                <span class="terminal-icon">&gt;_</span>
-              {:else}
-                <span class={statusDotClass(representative)}></span>
-              {/if}
-              <span class="session-name" class:bold={groupHasAttention}>{sessionDisplayName(representative)}</span>
+              <span class={groupStatusDotClass(groupSessions)}></span>
+              <span class="session-name" class:bold={groupHasAttention}>{groupDisplayName(groupPath, groupSessions)}</span>
               {#if sessionCount > 1}
                 <span class="session-count-badge">{sessionCount}</span>
               {/if}
@@ -646,16 +663,6 @@
   @keyframes attention-glow {
     0%, 100% { box-shadow: 0 0 3px 1px rgba(251, 191, 36, 0.3); }
     50%       { box-shadow: 0 0 7px 2px rgba(251, 191, 36, 0.6); }
-  }
-
-  /* Terminal icon */
-  .terminal-icon {
-    font-size: 0.6rem;
-    font-weight: 700;
-    color: var(--text-muted);
-    flex-shrink: 0;
-    font-family: var(--font-mono);
-    line-height: 1;
   }
 
   .session-name {

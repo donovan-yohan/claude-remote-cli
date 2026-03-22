@@ -33,3 +33,4 @@
 | [mobile-wake-reconnection-bug-analysis.md](2026-03-21-mobile-wake-reconnection-bug-analysis.md) | Mobile sessions stuck on "Reconnecting" after sleep — no visibilitychange listener, no heartbeat, zombie WebSocket detection relies solely on onclose | 2026-03-21 |
 | [new-tab-modal-mismatch-bug-analysis.md](2026-03-21-new-tab-modal-mismatch-bug-analysis.md) | New tab dropdown uses wrong labels, terminal creation broken, modal shows irrelevant repo/worktree tabs in workspace mode | 2026-03-21 |
 | [stale-session-branch-name-bug-analysis.md](2026-03-22-stale-session-branch-name-bug-analysis.md) | Session branch name frozen at creation time — no `.git/HEAD` watcher, no polling, no refresh mechanism | 2026-03-22 |
+| [sidenav-tab-leak-bug-analysis.md](2026-03-22-sidenav-tab-leak-bug-analysis.md) | Sidenav entry name/icon changes when adding new tab — representative session leaks tab identity into sidebar | 2026-03-22 |
