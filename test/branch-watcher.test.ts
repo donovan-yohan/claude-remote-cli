@@ -10,7 +10,7 @@ function makeTempGitRepo(): string {
   // Resolve symlinks (macOS /var → /private/var) so paths match git output
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'branch-watcher-test-')));
   execFileSync('git', ['init', '-b', 'main'], { cwd: dir });
-  execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: dir });
+  execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@test.com', 'commit', '--allow-empty', '-m', 'init'], { cwd: dir });
   return dir;
 }
 

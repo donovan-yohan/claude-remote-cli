@@ -265,6 +265,9 @@ async function main(): Promise<void> {
     }
   });
   branchWatcher.rebuild(config.workspaces || []);
+  watcher.on('worktrees-changed', () => {
+    branchWatcher.rebuild(config.workspaces || []);
+  });
 
   // Configure session defaults for hooks injection
   sessions.configure({ port: config.port, forceOutputParser: config.forceOutputParser ?? false });
@@ -352,7 +355,15 @@ async function main(): Promise<void> {
   app.get('/sessions', requireAuth, async (_req, res) => {
     const allSessions = sessions.list();
     const now = Date.now();
+
+    // Prune cache entries for sessions that no longer exist
+    const activeIds = new Set(allSessions.map((s) => s.id));
+    for (const sessionId of branchRefreshCache.keys()) {
+      if (!activeIds.has(sessionId)) branchRefreshCache.delete(sessionId);
+    }
+
     await Promise.all(allSessions.map(async (s) => {
+      if (s.type !== 'repo' && s.type !== 'worktree') return;
       if (!s.repoPath) return;
       const lastRefresh = branchRefreshCache.get(s.id) ?? 0;
       if (now - lastRefresh < BRANCH_REFRESH_INTERVAL_MS) return;
