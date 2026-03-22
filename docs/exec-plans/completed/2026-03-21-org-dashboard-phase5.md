@@ -68,7 +68,7 @@ Auto-detect GitHub review requests, create worktrees, and optionally run the use
 
 - Polling module follows single-concern pattern (like `org-dashboard.ts`, `branch-linker.ts`)
 - Uses `gh api /notifications` with client-side `reason === "review_requested"` filter (GitHub API doesn't support server-side reason filtering)
-- Worktree creation reuses `gh pr checkout <number>` which handles forked PRs correctly
+- Worktree creation uses `git fetch origin pull/N/head:<branch>` + `git worktree add` (handles forked PRs via GitHub's `pull/N/head` refspec)
 - `promptCodeReview` already exists in `WorkspaceSettings` — no new prompt field needed
 - Both toggles default OFF; auto-review depends on auto-checkout being enabled
 - `lastPollTimestamp` persists in config to survive restarts

@@ -16,6 +16,9 @@
     onSuccess: (data) => {
       queryClient.setQueryData(['automations'], data);
     },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: ['automations'] });
+    },
   }));
 
   let settings = $derived(automationQuery.data ?? {});
@@ -76,6 +79,12 @@
         </div>
       </label>
     </div>
+    {#if mutation.isError}
+      <div class="panel-error">
+        <span>Failed to update settings.</span>
+        <button class="retry-btn" onclick={() => mutation.reset()}>Dismiss</button>
+      </div>
+    {/if}
   {/if}
 </div>
 

@@ -600,14 +600,19 @@ async function main(): Promise<void> {
     }
 
     config.automations = next;
-    saveConfig(CONFIG_PATH, config);
+    try {
+      saveConfig(CONFIG_PATH, config);
+    } catch (err) {
+      config.automations = prev;
+      console.error('[config] Failed to save automation settings:', err);
+      res.status(500).json({ error: 'Failed to save settings' });
+      return;
+    }
 
     // Start or stop poller based on new setting
+    stopPolling();
     if (next.autoCheckoutReviewRequests) {
-      stopPolling();
       startPolling(buildPollerDeps());
-    } else {
-      stopPolling();
     }
 
     res.json(next);

@@ -55,6 +55,7 @@ export function startPolling(deps: ReviewPollerDeps): void {
   const config = loadConfig(deps.configPath);
   const intervalMs = config.automations?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 
+  void pollOnce(deps); // immediate first poll
   timer = setInterval(() => {
     void pollOnce(deps);
   }, intervalMs);
@@ -65,6 +66,7 @@ export function stopPolling(): void {
     clearInterval(timer);
     timer = null;
   }
+  ghMissingWarned = false;
 }
 
 export function isPolling(): boolean {
@@ -109,8 +111,12 @@ async function findWorkspaceForRepo(
       if (remoteOwnerRepo && remoteOwnerRepo.toLowerCase() === ownerRepo.toLowerCase()) {
         return workspacePath;
       }
-    } catch {
-      // Not a git repo or no remote — skip
+    } catch (err) {
+      // Not a git repo, no remote, or timed out — skip this workspace
+      const error = err as NodeJS.ErrnoException;
+      if (error.code && error.code !== 'ENOENT') {
+        console.warn(`[review-poller] Error checking remote for ${workspacePath}:`, error.message);
+      }
     }
   }
   return null;
@@ -135,7 +141,9 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
 
     if (!config.automations?.autoCheckoutReviewRequests) return;
 
-    // Default to "now" on first run to avoid processing all historical notifications
+    // First run: default to "now" so we skip all historical notifications.
+    // The first poll cycle always produces zero checkouts — only notifications
+    // arriving after this timestamp will be processed.
     const lastPollTimestamp = config.automations?.lastPollTimestamp ?? new Date().toISOString();
 
     // Fetch review_requested notifications from GitHub
@@ -155,12 +163,16 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
       // gh --jq with select returns newline-delimited JSON objects
       const lines = stdout.trim().split('\n').filter(Boolean);
       notifications = [];
+      let parseFailures = 0;
       for (const line of lines) {
         try {
           notifications.push(JSON.parse(line) as GhNotification);
         } catch {
-          // gh may output non-JSON warnings mixed with results — skip
+          parseFailures++;
         }
+      }
+      if (parseFailures > 0 && notifications.length === 0) {
+        console.warn(`[review-poller] All ${parseFailures} notification lines failed to parse — gh output format may have changed`);
       }
     } catch (err) {
       const error = err as NodeJS.ErrnoException & { killed?: boolean };
@@ -271,13 +283,14 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
       });
     }
 
-    // Update lastPollTimestamp
-    config.automations = {
-      ...config.automations,
-      lastPollTimestamp: new Date().toISOString(),
-    };
+    // Update lastPollTimestamp — re-read config to avoid overwriting concurrent changes
     try {
-      saveConfig(deps.configPath, config);
+      const freshConfig = loadConfig(deps.configPath);
+      freshConfig.automations = {
+        ...freshConfig.automations,
+        lastPollTimestamp: new Date().toISOString(),
+      };
+      saveConfig(deps.configPath, freshConfig);
     } catch (err) {
       console.warn('[review-poller] Failed to save config after poll:', err);
     }
