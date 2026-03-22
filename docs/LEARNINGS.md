@@ -46,3 +46,48 @@ When migrating from a selection-based model (user picks repo/worktree at creatio
 When storing state that mirrors an external system (e.g., `session.branchName` from `git rev-parse`), always implement a refresh mechanism — either a filesystem watcher on the source of truth (`.git/HEAD`), periodic polling, or re-reading on API requests. Snapshot-at-creation creates a hidden staleness contract that users don't expect. In this project, the `WorktreeWatcher` watches directory structure but not `.git/HEAD`, so branch checkouts are invisible. When adding any external-system-derived field to a long-lived object, ask: "what watches for changes to this value?"
 
 ---
+
+### L-005: Check `err.code` not `err.message` for Node.js execFile errors
+- status: active
+- category: debugging
+- source: /harness:loop Phase 1 org-dashboard 2026-03-21
+
+Node.js `child_process.execFile` throws with `code: 'ENOENT'` and message `'spawn <cmd> ENOENT'` when a binary isn't in PATH. String-matching the message (`'command not found'`, `'not found'`) fails because the actual message format is `'spawn gh ENOENT'`. Always check `(err as NodeJS.ErrnoException).code === 'ENOENT'` instead.
+
+---
+
+### L-006: GitHub Search API returns issues AND PRs — filter on `pull_request` field
+- status: active
+- category: patterns
+- source: /harness:loop Phase 1 org-dashboard 2026-03-21
+
+`gh api search/issues?q=is:pr+is:open+involves:@me` can return non-PR issues that match on `involves:@me`. The `pull_request` field on each item is the discriminator — skip items where it's absent.
+
+---
+
+### L-007: GitHub Search API does not return `requested_reviewers` — reviewer detection is best-effort
+- status: active
+- category: patterns
+- source: PR #38 review (org-dashboard Phase 1)
+
+The `search/issues` endpoint returns a subset of PR metadata. Notably, `requested_reviewers` is not included — it's only available via the per-PR endpoint (`/repos/{owner}/{repo}/pulls/{number}`). The org dashboard's reviewer detection (`role: 'reviewer'`) is therefore best-effort; PRs where the user is a requested reviewer may display as `role: 'author'` or be filtered out entirely.
+
+---
+
+### L-008: GitHub Search API does not return `reviewDecision` — PR status dot defaults to success
+- status: active
+- category: patterns
+- source: PR #38 review (org-dashboard Phase 1)
+
+The `search/issues` endpoint does not include `reviewDecision` (APPROVED, CHANGES_REQUESTED, etc.). The org dashboard's PR status dot (`prStatusDotClass`) falls through to `dot-success` for all open PRs since `reviewDecision` is always null. To show accurate review status, each PR would need a separate API call to the pulls endpoint.
+
+---
+
+### L-009: Org dashboard "All" filter operates on `is:open` backend data — cannot show closed PRs
+- status: active
+- category: patterns
+- source: PR #38 review (org-dashboard Phase 1)
+
+The org dashboard backend queries `is:open` in its GitHub search. The frontend "All" filter operates on the returned dataset, not a separate query — switching from "Open" to "All" shows the same PRs. To support closed/merged PR display, the backend would need a second query or the existing query would need to drop `is:open` (which would increase response size significantly).
+
+---

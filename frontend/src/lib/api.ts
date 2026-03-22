@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings } from './types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, LinearIssuesResponse, JiraStatus, LinearState, AutomationSettings } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -182,6 +182,15 @@ export async function createSession(body: {
   rows?: number | undefined;
   needsBranchRename?: boolean | undefined;
   branchRenamePrompt?: string | undefined;
+  ticketContext?: {
+    ticketId: string;
+    title: string;
+    description?: string;
+    url: string;
+    source: 'github' | 'jira' | 'linear';
+    repoPath: string;
+    repoName: string;
+  };
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions', {
     method: 'POST',
@@ -364,6 +373,56 @@ export async function updateWorkspaceSettings(workspacePath: string, settings: W
   }
 }
 
+export async function fetchOrgPrs(): Promise<OrgPrsResponse> {
+  const res = await fetch('/org-dashboard/prs');
+  return json<OrgPrsResponse>(res);
+}
+
+export async function fetchGithubIssues(): Promise<GitHubIssuesResponse> {
+  const res = await fetch('/integration-github/issues');
+  return json<GitHubIssuesResponse>(res);
+}
+
+export async function fetchBranchLinks(): Promise<BranchLinksResponse> {
+  const res = await fetch('/branch-linker/links');
+  return json<BranchLinksResponse>(res);
+}
+
+export async function fetchJiraIssues(): Promise<JiraIssuesResponse> {
+  const res = await fetch('/integration-jira/issues');
+  return json<JiraIssuesResponse>(res);
+}
+
+export async function fetchJiraConfigured(): Promise<boolean> {
+  const data = await json<{ configured: boolean }>(await fetch('/integration-jira/configured'));
+  return data.configured;
+}
+
+export async function fetchJiraStatuses(projectKey: string): Promise<JiraStatus[]> {
+  const data = await json<{ statuses: JiraStatus[] }>(await fetch('/integration-jira/statuses?projectKey=' + encodeURIComponent(projectKey)));
+  return data.statuses;
+}
+
+export async function fetchLinearIssues(): Promise<LinearIssuesResponse> {
+  const res = await fetch('/integration-linear/issues');
+  return json<LinearIssuesResponse>(res);
+}
+
+export async function fetchLinearConfigured(): Promise<boolean> {
+  const data = await json<{ configured: boolean }>(await fetch('/integration-linear/configured'));
+  return data.configured;
+}
+
+export async function fetchLinearStates(teamId: string): Promise<LinearState[]> {
+  const data = await json<{ states: LinearState[] }>(await fetch('/integration-linear/states?teamId=' + encodeURIComponent(teamId)));
+  return data.states;
+}
+
+export async function fetchWorkspaceGroups(): Promise<Record<string, string[]>> {
+  const data = await json<{ groups: Record<string, string[]> }>(await fetch('/config/workspace-groups'));
+  return data.groups;
+}
+
 export async function fetchAnalyticsSize(): Promise<{ bytes: number }> {
   return json<{ bytes: number }>(await fetch('/analytics/size'));
 }
@@ -371,4 +430,18 @@ export async function fetchAnalyticsSize(): Promise<{ bytes: number }> {
 export async function clearAnalytics(): Promise<void> {
   const res = await fetch('/analytics/events', { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to clear analytics');
+}
+
+export async function fetchAutomations(): Promise<AutomationSettings> {
+  return json<AutomationSettings>(await fetch('/config/automations', { credentials: 'include' }));
+}
+
+export async function updateAutomations(settings: Partial<AutomationSettings>): Promise<AutomationSettings> {
+  const res = await fetch('/config/automations', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(settings),
+  });
+  return json<AutomationSettings>(res);
 }

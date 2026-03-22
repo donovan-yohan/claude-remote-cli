@@ -55,6 +55,7 @@ export interface PtySession extends BaseSession {
   onPtyReplacedCallbacks: Array<(newPty: IPty) => void>;
   restored: boolean;
   branchRenamePrompt?: string;
+  initialPrompt?: string | undefined;
   outputParser: OutputParser;
   hookToken: string;
   hooksActive: boolean;
@@ -117,6 +118,7 @@ export interface WorkspaceSettings {
   promptBranchRename?: string;
   promptGeneral?: string;
   promptFixConflicts?: string;
+  promptStartWork?: string;
 
   // Worktree naming — mountains theme
   nextMountainIndex?: number;
@@ -151,6 +153,19 @@ export interface Config {
   debugLog?: boolean | undefined;
   forceOutputParser?: boolean | undefined;
   nextMountainIndex?: number | undefined;
+  workspaceGroups?: Record<string, string[]> | undefined;
+  integrations?: {
+    jira?: { projectKey?: string; statusMappings?: Partial<Record<TransitionState, string>> };
+    linear?: { teamId?: string; statusMappings?: Partial<Record<TransitionState, string>> };
+  } | undefined;
+  automations?: AutomationSettings | undefined;
+}
+
+export interface AutomationSettings {
+  autoCheckoutReviewRequests?: boolean;
+  autoReviewOnCheckout?: boolean;
+  pollIntervalMs?: number;
+  lastPollTimestamp?: string;
 }
 
 export interface ServicePaths {
@@ -186,12 +201,102 @@ export interface PullRequest {
   deletions: number;
   reviewDecision: string | null;
   mergeable: string | null;
+  repoName?: string | undefined;
+  repoPath?: string | undefined;
 }
 
 export interface PullRequestsResponse {
   prs: PullRequest[];
   error?: string | undefined;
 }
+
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  url: string;
+  state: 'OPEN' | 'CLOSED';
+  labels: Array<{ name: string; color: string }>;
+  assignees: Array<{ login: string }>;
+  createdAt: string;
+  updatedAt: string;
+  repoName: string;
+  repoPath: string;
+}
+
+export interface GitHubIssuesResponse {
+  issues: GitHubIssue[];
+  error?: string | undefined;
+}
+
+export interface JiraIssue {
+  key: string;
+  title: string;
+  url: string;
+  status: string;
+  priority: string | null;
+  sprint: string | null;
+  storyPoints: number | null;
+  assignee: string | null;
+  updatedAt: string;
+  projectKey: string;
+}
+
+export interface JiraIssuesResponse {
+  issues: JiraIssue[];
+  error?: string | undefined;
+}
+
+export interface JiraStatus {
+  id: string;
+  name: string;
+}
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
+  state: string;
+  priority: number;
+  priorityLabel: string;
+  cycle: string | null;
+  estimate: number | null;
+  assignee: string | null;
+  updatedAt: string;
+  teamId: string;
+}
+
+export interface LinearIssuesResponse {
+  issues: LinearIssue[];
+  error?: string | undefined;
+}
+
+export interface LinearState {
+  id: string;
+  name: string;
+}
+
+export interface BranchLink {
+  repoPath: string;
+  repoName: string;
+  branchName: string;
+  hasActiveSession: boolean;
+  source?: 'github' | 'jira' | 'linear' | undefined;
+}
+
+export type BranchLinksResponse = Record<string, BranchLink[]>;
+
+export interface TicketContext {
+  ticketId: string;
+  title: string;
+  description?: string;
+  url: string;
+  source: 'github' | 'jira' | 'linear';
+  repoPath: string;
+  repoName: string;
+}
+
+export type TransitionState = 'none' | 'in-progress' | 'code-review' | 'ready-for-qa';
 
 export interface ActivityEntry {
   hash: string;

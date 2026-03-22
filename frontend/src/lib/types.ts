@@ -78,11 +78,104 @@ export interface PullRequest {
   deletions: number;
   reviewDecision: string | null;
   mergeable: string | null;
+  repoName?: string;
+  repoPath?: string;
 }
 
 export interface PullRequestsResponse {
   prs: PullRequest[];
   error?: string | undefined;
+}
+
+/** Alias for PullRequestsResponse — used by OrgDashboard API responses. */
+export type OrgPrsResponse = PullRequestsResponse;
+
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  url: string;
+  state: 'OPEN' | 'CLOSED';
+  labels: Array<{ name: string; color: string }>;
+  assignees: Array<{ login: string }>;
+  createdAt: string;
+  updatedAt: string;
+  repoName: string;
+  repoPath: string;
+}
+
+export interface GitHubIssuesResponse {
+  issues: GitHubIssue[];
+  error?: string | undefined;
+}
+
+export interface JiraIssue {
+  key: string;
+  title: string;
+  url: string;
+  status: string;
+  priority: string | null;
+  sprint: string | null;
+  storyPoints: number | null;
+  assignee: string | null;
+  updatedAt: string;
+  projectKey: string;
+}
+
+export interface JiraIssuesResponse {
+  issues: JiraIssue[];
+  error?: string | undefined;
+}
+
+export interface JiraStatus {
+  id: string;
+  name: string;
+}
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
+  state: string;
+  priority: number;
+  priorityLabel: string;
+  cycle: string | null;
+  estimate: number | null;
+  assignee: string | null;
+  updatedAt: string;
+  teamId: string;
+}
+
+export interface LinearIssuesResponse {
+  issues: LinearIssue[];
+  error?: string | undefined;
+}
+
+export interface LinearState {
+  id: string;
+  name: string;
+}
+
+export type AnyIssue = GitHubIssue | JiraIssue | LinearIssue;
+
+export interface BranchLink {
+  repoPath: string;
+  repoName: string;
+  branchName: string;
+  hasActiveSession: boolean;
+  source?: 'github' | 'jira' | 'linear' | undefined;
+}
+
+export type BranchLinksResponse = Record<string, BranchLink[]>;
+
+export interface TicketContext {
+  ticketId: string;
+  title: string;
+  description?: string;
+  url: string;
+  source: 'github' | 'jira' | 'linear';
+  repoPath: string;
+  repoName: string;
 }
 
 export interface ActivityEntry {
@@ -138,5 +231,13 @@ export interface WorkspaceSettings {
   promptBranchRename?: string;
   promptGeneral?: string;
   promptFixConflicts?: string;
+  promptStartWork?: string;
   nextMountainIndex?: number;
+}
+
+export interface AutomationSettings {
+  autoCheckoutReviewRequests?: boolean;
+  autoReviewOnCheckout?: boolean;
+  pollIntervalMs?: number;
+  lastPollTimestamp?: string;
 }

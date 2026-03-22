@@ -24,7 +24,41 @@ export function loadConfig(configPath: string): Config {
   }
   const raw = fs.readFileSync(configPath, 'utf8');
   const parsed = JSON.parse(raw) as Partial<Config>;
-  return { ...DEFAULTS, ...parsed };
+  const config: Config = { ...DEFAULTS, ...parsed };
+
+  // Validate and clean workspaceGroups
+  if (config.workspaceGroups != null) {
+    const validPaths = new Set(config.workspaces ?? []);
+    const seenPaths = new Set<string>();
+    const cleaned: Record<string, string[]> = {};
+
+    for (const [groupName, paths] of Object.entries(config.workspaceGroups)) {
+      if (!Array.isArray(paths)) {
+        console.warn(`workspaceGroups: group "${groupName}" value is not an array, skipping`);
+        continue;
+      }
+      const filteredPaths: string[] = [];
+      for (const p of paths) {
+        if (!validPaths.has(p)) {
+          console.warn(`workspaceGroups: path "${p}" in group "${groupName}" is not in workspaces[], skipping`);
+          continue;
+        }
+        if (seenPaths.has(p)) {
+          console.warn(`workspaceGroups: path "${p}" in group "${groupName}" is already assigned to another group, skipping`);
+          continue;
+        }
+        seenPaths.add(p);
+        filteredPaths.push(p);
+      }
+      if (filteredPaths.length > 0) {
+        cleaned[groupName] = filteredPaths;
+      }
+    }
+
+    config.workspaceGroups = cleaned;
+  }
+
+  return config;
 }
 
 export function saveConfig(configPath: string, config: Config): void {

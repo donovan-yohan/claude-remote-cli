@@ -16,7 +16,7 @@ The system has two compilation targets: a TypeScript + ESM backend (Express + no
 
 ### `server/`
 
-Eighteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
+Twenty-one TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
 
 | Module | Role |
 |--------|------|
@@ -37,6 +37,7 @@ Eighteen TypeScript modules compiled to `dist/server/` via `tsc`. Modules commun
 | `hooks.ts` | Claude Code hook HTTP endpoints: state detection (Stop, Notification, UserPromptSubmit), activity tracking (PreToolUse, PostToolUse), session cleanup (SessionEnd), and branch rename. Localhost-only with per-session token auth. |
 | `types.ts` | Shared TypeScript interfaces (Session, Workspace, Config, PR, CI, Activity types) |
 | `analytics.ts` | Local analytics: SQLite-backed event tracking, `trackEvent()`, batch ingest endpoint, DB size/clear endpoints |
+| `review-poller.ts` | PR review automation: polls GitHub notifications for review requests, creates worktrees, optionally starts review sessions |
 | `output-parsers/` | Vendor-extensible terminal output parsing for semantic agent state detection (AgentState), keyed by AgentType. Contains `index.ts` (registry + dispatch), `claude-parser.ts`, `codex-parser.ts` |
 
 **Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` consumes `sessions`, `git`, `config`, and `push` via injected dependencies (not direct imports); all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on crypto.scrypt, only `pty-handler.ts` depends on node-pty, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and may depend on `types.ts` only — it MUST NOT import from `utils.ts` or any other server module.
