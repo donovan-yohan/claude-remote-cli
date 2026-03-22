@@ -23,6 +23,8 @@ import * as push from './push.js';
 import { initAnalytics, closeAnalytics, createAnalyticsRouter } from './analytics.js';
 import { createWorkspaceRouter } from './workspaces.js';
 import { createOrgDashboardRouter } from './org-dashboard.js';
+import { createIntegrationGitHubRouter } from './integration-github.js';
+import { createBranchLinkerRouter, invalidateBranchLinkerCache } from './branch-linker.js';
 import { createHooksRouter } from './hooks.js';
 import type { AgentType, Config } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
@@ -270,6 +272,29 @@ async function main(): Promise<void> {
   const orgDashboardRouter = createOrgDashboardRouter({ configPath: CONFIG_PATH });
   app.use('/org-dashboard', requireAuth, orgDashboardRouter);
 
+  // Mount GitHub integration router
+  const integrationGitHubRouter = createIntegrationGitHubRouter({ configPath: CONFIG_PATH });
+  app.use('/integration-github', requireAuth, integrationGitHubRouter);
+
+  // Mount branch linker router
+  const branchLinkerRouter = createBranchLinkerRouter({
+    configPath: CONFIG_PATH,
+    getActiveBranchNames: () => {
+      const map = new Map<string, Set<string>>();
+      for (const s of sessions.list()) {
+        if (!s.branchName) continue;
+        const existing = map.get(s.repoPath);
+        if (existing) {
+          existing.add(s.branchName);
+        } else {
+          map.set(s.repoPath, new Set([s.branchName]));
+        }
+      }
+      return map;
+    },
+  });
+  app.use('/branch-linker', requireAuth, branchLinkerRouter);
+
   // Mount analytics router
   app.use('/analytics', requireAuth, createAnalyticsRouter(configDir));
 
@@ -281,6 +306,10 @@ async function main(): Promise<void> {
 
   // Populate session metadata cache in background (non-blocking)
   populateMetaCache().catch(() => {});
+
+  // Invalidate branch linker cache on session lifecycle changes
+  sessions.onSessionCreate(() => { invalidateBranchLinkerCache(); });
+  sessions.onSessionEnd(() => { invalidateBranchLinkerCache(); });
 
   // Push notifications on session idle (skip when hooks already sent attention notification)
   sessions.onIdleChange((sessionId, idle) => {

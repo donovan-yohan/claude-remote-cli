@@ -1,15 +1,25 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
-  import { fetchOrgPrs } from '../lib/api.js';
+  import { fetchOrgPrs, fetchBranchLinks } from '../lib/api.js';
   import { derivePrAction, getStatusCssVar, shouldUseDarkText } from '../lib/pr-state.js';
   import { formatRelativeTime } from '../lib/utils.js';
-  import type { PullRequest, OrgPrsResponse } from '../lib/types.js';
+  import type { PullRequest, OrgPrsResponse, BranchLinksResponse } from '../lib/types.js';
+  import TicketsPanel from './TicketsPanel.svelte';
 
   let { onOpenWorkspace }: { onOpenWorkspace: (path: string) => void } = $props();
+
+  let activeTab = $state<'prs' | 'tickets'>('prs');
 
   const orgQuery = createQuery<OrgPrsResponse>(() => ({
     queryKey: ['org-prs'],
     queryFn: fetchOrgPrs,
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
+  }));
+
+  const branchLinksQuery = createQuery<BranchLinksResponse>(() => ({
+    queryKey: ['branch-links'],
+    queryFn: fetchBranchLinks,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   }));
@@ -84,121 +94,165 @@
   });
 
   let openCount = $derived(allPrs.filter(pr => pr.state === 'OPEN').length);
+
+  let branchLinksData = $derived(branchLinksQuery.data ?? {});
+
+  // Extract ticket ID from a branch name by looking up branch-links data.
+  // Returns the issue number string (e.g. "123") if a match is found.
+  function getTicketIdForPr(headRefName: string): string | null {
+    for (const [issueNumber, links] of Object.entries(branchLinksData)) {
+      for (const link of links) {
+        if (link.branchName === headRefName) {
+          return issueNumber;
+        }
+      }
+    }
+    return null;
+  }
 </script>
 
 <div class="org-dashboard">
   <div class="org-header">
     <span class="org-title">All Workspaces</span>
-    {#if !isLoading && !isError && !data?.error}
+    {#if activeTab === 'prs' && !isLoading && !isError && !data?.error}
       <span class="org-subtitle">
         {#if openCount === 1}1 open PR{:else}{openCount} open PRs{/if}
       </span>
     {/if}
   </div>
 
-  {#if !isLoading && !isError && !data?.error && allPrs.length > 0}
-    <div class="filter-bar">
-      <select class="filter-select" bind:value={stateFilter}>
-        <option value="open">Open</option>
-        <option value="all">All</option>
-      </select>
-      <select class="filter-select" bind:value={sortBy}>
-        <option value="updated">Sort: Updated</option>
-        <option value="title">Sort: Title</option>
-        <option value="repo">Sort: Repo</option>
-      </select>
-    </div>
-  {/if}
+  <!-- Tab strip -->
+  <div class="tab-strip">
+    <button
+      class="tab-btn"
+      class:tab-btn--active={activeTab === 'prs'}
+      onclick={() => { activeTab = 'prs'; }}
+    >
+      PRs
+    </button>
+    <button
+      class="tab-btn"
+      class:tab-btn--active={activeTab === 'tickets'}
+      onclick={() => { activeTab = 'tickets'; }}
+    >
+      Tickets
+    </button>
+  </div>
 
-  {#if isLoading}
-    <div class="pr-list">
-      {#each [1, 2, 3] as _}
-        <div class="pr-row skeleton">
-          <div class="skeleton-line skeleton-title"></div>
-          <div class="skeleton-line skeleton-meta"></div>
-        </div>
-      {/each}
-    </div>
+  {#if activeTab === 'prs'}
+    {#if !isLoading && !isError && !data?.error && allPrs.length > 0}
+      <div class="filter-bar">
+        <select class="filter-select" bind:value={stateFilter}>
+          <option value="open">Open</option>
+          <option value="all">All</option>
+        </select>
+        <select class="filter-select" bind:value={sortBy}>
+          <option value="updated">Sort: Updated</option>
+          <option value="title">Sort: Title</option>
+          <option value="repo">Sort: Repo</option>
+        </select>
+      </div>
+    {/if}
 
-  {:else if isError}
-    <div class="state-message state-message--error">
-      <span>Failed to load pull requests.</span>
-      <button class="retry-btn" onclick={() => orgQuery.refetch()}>Retry</button>
-    </div>
+    {#if isLoading}
+      <div class="pr-list">
+        {#each [1, 2, 3] as _}
+          <div class="pr-row skeleton">
+            <div class="skeleton-line skeleton-title"></div>
+            <div class="skeleton-line skeleton-meta"></div>
+          </div>
+        {/each}
+      </div>
 
-  {:else if data?.error === 'gh_not_in_path'}
-    <div class="state-message state-message--info">
-      Install GitHub CLI for PR tracking —
-      <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer">cli.github.com</a>
-    </div>
+    {:else if isError}
+      <div class="state-message state-message--error">
+        <span>Failed to load pull requests.</span>
+        <button class="retry-btn" onclick={() => orgQuery.refetch()}>Retry</button>
+      </div>
 
-  {:else if data?.error === 'gh_not_authenticated'}
-    <div class="state-message state-message--info">
-      Run <code>gh auth login</code> to connect GitHub.
-    </div>
+    {:else if data?.error === 'gh_not_in_path'}
+      <div class="state-message state-message--info">
+        Install GitHub CLI for PR tracking —
+        <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer">cli.github.com</a>
+      </div>
 
-  {:else if data?.error === 'gh_timeout'}
-    <div class="state-message state-message--error">
-      <span>GitHub is taking too long. Try again.</span>
-      <button class="retry-btn" onclick={() => orgQuery.refetch()}>Retry</button>
-    </div>
+    {:else if data?.error === 'gh_not_authenticated'}
+      <div class="state-message state-message--info">
+        Run <code>gh auth login</code> to connect GitHub.
+      </div>
 
-  {:else if data?.error === 'no_workspaces'}
-    <!-- App.svelte handles the no_workspaces case -->
+    {:else if data?.error === 'gh_timeout'}
+      <div class="state-message state-message--error">
+        <span>GitHub is taking too long. Try again.</span>
+        <button class="retry-btn" onclick={() => orgQuery.refetch()}>Retry</button>
+      </div>
 
-  {:else if filteredPrs.length === 0}
-    <div class="state-message">
-      {#if stateFilter === 'open'}No open PRs across your repos. Great work!{:else}No pull requests found.{/if}
-    </div>
+    {:else if data?.error === 'no_workspaces'}
+      <!-- App.svelte handles the no_workspaces case -->
 
-  {:else}
-    <div class="pr-list">
-      {#each filteredPrs as pr (`${pr.repoPath ?? ''}:${pr.number}`)}
-        {@const action = prActionForRow(pr)}
-        {@const actionColor = getStatusCssVar(action.color)}
-        {@const darkText = shouldUseDarkText(action.color)}
-        {@const repoName = pr.repoName ?? ''}
-        {@const chipColor = deriveColor(repoName)}
-        <div class="pr-row">
-          <div class="pr-row-left">
-            <div class="pr-row-title-line">
-              <span class={prStatusDotClass(pr)}></span>
-              <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
-                {pr.title}
-              </a>
-            </div>
-            <div class="pr-row-meta">
-              {#if repoName}
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <span
-                  class="repo-chip"
-                  style:background={chipColor}
-                  title={pr.repoPath ?? repoName}
-                  onclick={() => { if (pr.repoPath) onOpenWorkspace(pr.repoPath); }}
-                >{repoName}</span>
+    {:else if filteredPrs.length === 0}
+      <div class="state-message">
+        {#if stateFilter === 'open'}No open PRs across your repos. Great work!{:else}No pull requests found.{/if}
+      </div>
+
+    {:else}
+      <div class="pr-list">
+        {#each filteredPrs as pr (`${pr.repoPath ?? ''}:${pr.number}`)}
+          {@const action = prActionForRow(pr)}
+          {@const actionColor = getStatusCssVar(action.color)}
+          {@const darkText = shouldUseDarkText(action.color)}
+          {@const repoName = pr.repoName ?? ''}
+          {@const chipColor = deriveColor(repoName)}
+          {@const ticketId = getTicketIdForPr(pr.headRefName)}
+          <div class="pr-row">
+            <div class="pr-row-left">
+              <div class="pr-row-title-line">
+                <span class={prStatusDotClass(pr)}></span>
+                <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
+                  {pr.title}
+                </a>
+              </div>
+              <div class="pr-row-meta">
+                {#if repoName}
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <span
+                    class="repo-chip"
+                    style:background={chipColor}
+                    title={pr.repoPath ?? repoName}
+                    onclick={() => { if (pr.repoPath) onOpenWorkspace(pr.repoPath); }}
+                  >{repoName}</span>
+                  <span class="pr-sep">·</span>
+                {/if}
+                {#if ticketId}
+                  <span class="ticket-chip">{ticketId}</span>
+                  <span class="pr-sep">·</span>
+                {/if}
+                <span class="pr-role">{prRoleLabel(pr)}</span>
                 <span class="pr-sep">·</span>
+                <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
+              </div>
+            </div>
+            <div class="pr-row-actions">
+              {#if action.type !== 'none' && action.label}
+                <button
+                  class="pr-action-pill"
+                  style:--pill-color={actionColor}
+                  class:dark-text={darkText}
+                  title={action.label}
+                >
+                  {action.label}
+                </button>
               {/if}
-              <span class="pr-role">{prRoleLabel(pr)}</span>
-              <span class="pr-sep">·</span>
-              <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
             </div>
           </div>
-          <div class="pr-row-actions">
-            {#if action.type !== 'none' && action.label}
-              <button
-                class="pr-action-pill"
-                style:--pill-color={actionColor}
-                class:dark-text={darkText}
-                title={action.label}
-              >
-                {action.label}
-              </button>
-            {/if}
-          </div>
-        </div>
-      {/each}
-    </div>
+        {/each}
+      </div>
+    {/if}
+  {:else if activeTab === 'tickets'}
+    <TicketsPanel />
+  {:else}
+    <!-- future tabs -->
   {/if}
 </div>
 
@@ -238,6 +292,41 @@
     font-family: var(--font-mono);
     color: var(--text-muted);
     opacity: 0.7;
+  }
+
+  /* ── Tab strip ── */
+  .tab-strip {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    margin-top: -4px;
+  }
+
+  .tab-btn {
+    padding: 6px 14px;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    margin-bottom: -1px;
+    transition: color 0.12s, border-color 0.12s;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .tab-btn:hover {
+    color: var(--text);
+  }
+
+  .tab-btn--active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
   }
 
   /* ── Filter bar ── */
@@ -403,6 +492,22 @@
 
   .repo-chip:hover {
     opacity: 0.8;
+  }
+
+  /* Ticket chip */
+  .ticket-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    line-height: 1.4;
   }
 
   /* Status dot */

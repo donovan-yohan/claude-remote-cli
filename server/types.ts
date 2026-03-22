@@ -152,6 +152,7 @@ export interface Config {
   forceOutputParser?: boolean | undefined;
   nextMountainIndex?: number | undefined;
   workspaceGroups?: Record<string, string[]> | undefined;
+  integrations?: { github?: { enableIssues?: boolean } } | undefined;
 }
 
 export interface ServicePaths {
@@ -195,6 +196,33 @@ export interface PullRequestsResponse {
   prs: PullRequest[];
   error?: string | undefined;
 }
+
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  url: string;
+  state: 'OPEN' | 'CLOSED';
+  labels: Array<{ name: string; color: string }>;
+  assignees: Array<{ login: string }>;
+  createdAt: string;
+  updatedAt: string;
+  repoName: string;
+  repoPath: string;
+}
+
+export interface GitHubIssuesResponse {
+  issues: GitHubIssue[];
+  error?: string | undefined;
+}
+
+export interface BranchLink {
+  repoPath: string;
+  repoName: string;
+  branchName: string;
+  hasActiveSession: boolean;
+}
+
+export type BranchLinksResponse = Record<string, BranchLink[]>;
 
 export interface ActivityEntry {
   hash: string;

@@ -77,6 +77,20 @@ function onStateChange(cb: StateChangeCallback): void {
   stateChangeCallbacks.push(cb);
 }
 
+type SessionCreateCallback = (sessionId: string, repoPath: string, branchName?: string) => void;
+const sessionCreateCallbacks: SessionCreateCallback[] = [];
+
+function onSessionCreate(cb: SessionCreateCallback): void {
+  sessionCreateCallbacks.push(cb);
+}
+
+function fireSessionCreate(sessionId: string, repoPath: string, branchName?: string): void {
+  for (const cb of sessionCreateCallbacks) {
+    try { cb(sessionId, repoPath, branchName); }
+    catch (err) { console.error('[sessions] sessionCreate callback error:', err); }
+  }
+}
+
 type SessionEndCallback = (sessionId: string, repoPath: string, branchName?: string) => void;
 const sessionEndCallbacks: SessionEndCallback[] = [];
 
@@ -128,6 +142,7 @@ function create({ id: providedId, needsBranchRename, branchRenamePrompt, agent =
   if (branchRenamePrompt) {
     ptySession.branchRenamePrompt = branchRenamePrompt;
   }
+  fireSessionCreate(id, ptySession.repoPath, ptySession.branchName);
   return { ...result, needsBranchRename: !!ptySession.needsBranchRename };
 }
 
@@ -455,4 +470,4 @@ async function populateMetaCache(): Promise<void> {
   );
 }
 
-export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionEnd, findRepoSession, nextTerminalName, nextAgentName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionCreate, onSessionEnd, findRepoSession, nextTerminalName, nextAgentName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

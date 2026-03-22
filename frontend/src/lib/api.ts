@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse } from './types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -367,6 +367,16 @@ export async function updateWorkspaceSettings(workspacePath: string, settings: W
 export async function fetchOrgPrs(): Promise<OrgPrsResponse> {
   const res = await fetch('/org-dashboard/prs');
   return json<OrgPrsResponse>(res);
+}
+
+export async function fetchGithubIssues(): Promise<GitHubIssuesResponse> {
+  const res = await fetch('/integration-github/issues');
+  return json<GitHubIssuesResponse>(res);
+}
+
+export async function fetchBranchLinks(): Promise<BranchLinksResponse> {
+  const res = await fetch('/branch-linker/links');
+  return json<BranchLinksResponse>(res);
 }
 
 export async function fetchWorkspaceGroups(): Promise<Record<string, string[]>> {
