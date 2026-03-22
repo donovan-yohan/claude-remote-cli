@@ -127,12 +127,12 @@
       Run <code>gh auth login</code> to connect GitHub.
     </div>
 
-  {:else if activeTab === 'jira' && (activeError === 'jira_not_configured' || activeError === 'acli_not_in_path')}
+  {:else if activeTab === 'jira' && activeError === 'acli_not_in_path'}
     <div class="state-message state-message--info">
       Install the Atlassian CLI to see your Jira tickets: <code>brew install acli</code> then <code>acli jira auth login --web</code>
     </div>
 
-  {:else if activeTab === 'jira' && (activeError === 'acli_not_authenticated' || activeError === 'jira_auth_failed')}
+  {:else if activeTab === 'jira' && activeError === 'acli_not_authenticated'}
     <div class="state-message state-message--info">
       Run <code>acli jira auth login --web</code> to connect your Jira account.
     </div>

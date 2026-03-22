@@ -829,7 +829,7 @@ async function main(): Promise<void> {
         res.status(400).json({ error: 'ticketContext.ticketId for github must match GH-<number>' });
         return;
       }
-      if (ticketContext.source === 'jira' && !/^[A-Z]+-\d+$/.test(ticketContext.ticketId)) {
+      if (ticketContext.source === 'jira' && !/^[A-Z][A-Z0-9]*-\d+$/.test(ticketContext.ticketId)) {
         res.status(400).json({ error: 'ticketContext.ticketId must match <PROJECT>-<number>' });
         return;
       }

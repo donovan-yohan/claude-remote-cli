@@ -96,10 +96,9 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
   const { configPath } = deps;
   const router = Router();
 
-  /** Get status mapping for a transition state from config */
-  function getStatusMapping(config: Config, source: 'jira', state: TransitionState): string | undefined {
-    if (source === 'jira') return config.integrations?.jira?.statusMappings?.[state];
-    return undefined;
+  /** Get Jira status mapping for a transition state from config */
+  function getJiraStatusMapping(config: Config, state: TransitionState): string | undefined {
+    return config.integrations?.jira?.statusMappings?.[state];
   }
 
   async function transitionOnSessionCreate(ctx: TicketContext): Promise<void> {
@@ -113,7 +112,7 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
       if (ok) transitionMap.set(ctx.ticketId, 'in-progress');
     } else if (ctx.source === 'jira') {
       const config = loadConfig(configPath);
-      const transitionName = getStatusMapping(config, 'jira', 'in-progress');
+      const transitionName = getJiraStatusMapping(config, 'in-progress');
       if (transitionName) {
         const ok = await jiraTransition(exec, ctx.ticketId, transitionName);
         if (ok) transitionMap.set(ctx.ticketId, 'in-progress');
@@ -144,7 +143,7 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
             const ok = await addLabel(exec, repoPath, issueNum, 'code-review');
             if (ok) transitionMap.set(ticketId, 'code-review');
           } else if (source === 'jira') {
-            const transitionName = getStatusMapping(config, 'jira', 'code-review');
+            const transitionName = getJiraStatusMapping(config, 'code-review');
             if (transitionName) {
               const ok = await jiraTransition(exec, ticketId, transitionName);
               if (ok) transitionMap.set(ticketId, 'code-review');
@@ -160,7 +159,7 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
             const ok = await addLabel(exec, repoPath, issueNum, 'ready-for-qa');
             if (ok) transitionMap.set(ticketId, 'ready-for-qa');
           } else if (source === 'jira') {
-            const transitionName = getStatusMapping(config, 'jira', 'ready-for-qa');
+            const transitionName = getJiraStatusMapping(config, 'ready-for-qa');
             if (transitionName) {
               const ok = await jiraTransition(exec, ticketId, transitionName);
               if (ok) transitionMap.set(ticketId, 'ready-for-qa');

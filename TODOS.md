@@ -2,14 +2,14 @@
 
 ## Linear CLI Integration — Proper Ticket Source Tracking
 
-**What:** When re-adding Linear integration via CLI, implement proper ticket source detection using `BranchLink.source` field instead of the prefix length heuristic.
+**What:** When re-adding Linear integration via CLI, ensure ticket source detection is driven by the `BranchLink.source` field and extended to support a `'linear'` source, without reintroducing the old prefix-length heuristic.
 
-**Why:** The current prefix heuristic in `detectTicketSource()` (`server/ticket-transitions.ts`) uses character count to distinguish Jira (3+ chars before dash) from Linear (2 chars). This is fragile and can misidentify tickets when both integrations are active. The `BranchLink.source` field already exists in `server/types.ts` but isn't always populated during branch scanning.
+**Why:** As of the Jira-only rewrite, `detectTicketSource()` (`server/ticket-transitions.ts`) no longer uses the Jira-vs-Linear prefix-length heuristic, `BranchLink.source` (`server/types.ts`) does not include `'linear'`, and `server/branch-linker.ts` always sets a concrete source (currently Jira) for extracted IDs. This TODO documents the work required to cleanly support Linear again without relying on fragile prefix rules.
 
 **What needs to happen:**
-1. `server/branch-linker.ts` should set `source: 'linear'` or `source: 'jira'` on branch links during scanning, based on which CLI is available/authenticated
-2. `detectTicketSource()` in `server/ticket-transitions.ts` should prefer the explicit `BranchLink.source` over the prefix heuristic
-3. The heuristic should only be the fallback when `source` is undefined (e.g., branches created outside claude-remote-cli)
+1. Re-introduce `'linear'` as an allowed value for `BranchLink.source` and extend `server/branch-linker.ts` to set `source: 'linear'` (or `'jira'`) during scanning, based on which CLI is available/authenticated when both integrations exist.
+2. Update `detectTicketSource()` in `server/ticket-transitions.ts` to handle `'linear'` via the explicit `BranchLink.source` value (no prefix-length heuristic).
+3. If we later support branches created outside our tooling and without a `source`, introduce a new, well-tested fallback heuristic that is explicitly Jira/Linear-aware; for now, no heuristic is required because `branch-linker` always sets `source`.
 
 **Depends on:** Linear CLI (`schpet/linear-cli`) getting `--json` support on `linear issue list` (upstream issue #127).
 
