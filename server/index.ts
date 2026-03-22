@@ -1208,6 +1208,7 @@ async function main(): Promise<void> {
   }
 
   function gracefulShutdown() {
+    stopPolling();
     closeAnalytics();
     server.close();
     // Serialize sessions to disk BEFORE killing them

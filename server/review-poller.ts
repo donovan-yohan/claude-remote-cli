@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -129,7 +130,8 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
 
   if (!config.automations?.autoCheckoutReviewRequests) return;
 
-  const lastPollTimestamp = config.automations?.lastPollTimestamp ?? new Date(0).toISOString();
+  // Default to "now" on first run to avoid processing all historical notifications
+  const lastPollTimestamp = config.automations?.lastPollTimestamp ?? new Date().toISOString();
 
   // Fetch review_requested notifications from GitHub
   let notifications: GhNotification[];
@@ -147,7 +149,14 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
 
     // gh --jq with select returns newline-delimited JSON objects
     const lines = stdout.trim().split('\n').filter(Boolean);
-    notifications = lines.map((line) => JSON.parse(line) as GhNotification);
+    notifications = [];
+    for (const line of lines) {
+      try {
+        notifications.push(JSON.parse(line) as GhNotification);
+      } catch {
+        // gh may output non-JSON warnings mixed with results — skip
+      }
+    }
   } catch (err) {
     const error = err as NodeJS.ErrnoException & { killed?: boolean };
     if (error.code === 'ENOENT') {
@@ -201,6 +210,11 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
     const localBranch = `review-pr-${prNumber}`;
     const worktreePath = path.join(workspacePath, '.worktrees', localBranch);
 
+    // Skip if worktree already exists (e.g., from a previous poll)
+    if (fs.existsSync(worktreePath)) {
+      continue;
+    }
+
     // Fetch the PR's head ref into a local branch, then create worktree from it
     try {
       await exec(
@@ -209,8 +223,12 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
         { cwd: workspacePath, timeout: GH_TIMEOUT_MS },
       );
     } catch (err) {
-      console.warn(`[review-poller] Failed to fetch PR #${prNumber}:`, err);
-      continue;
+      // Branch may already exist from a prior fetch — continue to worktree add
+      const errMsg = (err as Error).message ?? '';
+      if (!errMsg.includes('already exists')) {
+        console.warn(`[review-poller] Failed to fetch PR #${prNumber}:`, err);
+        continue;
+      }
     }
 
     try {
