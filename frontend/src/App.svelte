@@ -716,6 +716,7 @@
       {:else if viewMode === 'org'}
         <OrgDashboard
           onOpenWorkspace={(path) => { ui.activeWorkspacePath = path; sessionState.activeSessionId = null; }}
+          onOpenSession={(id) => { sessionState.activeSessionId = id; }}
         />
 
       {:else if viewMode === 'dashboard'}

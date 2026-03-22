@@ -182,6 +182,15 @@ export async function createSession(body: {
   rows?: number | undefined;
   needsBranchRename?: boolean | undefined;
   branchRenamePrompt?: string | undefined;
+  ticketContext?: {
+    ticketId: string;
+    title: string;
+    description?: string;
+    url: string;
+    source: 'github';
+    repoPath: string;
+    repoName: string;
+  };
 }): Promise<SessionSummary> {
   const res = await fetch('/sessions', {
     method: 'POST',

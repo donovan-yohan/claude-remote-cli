@@ -68,7 +68,7 @@ function extractTicketIds(branchName: string): string[] {
  * Caller is responsible for mounting and applying auth middleware:
  *   app.use('/branch-linker', requireAuth, createBranchLinkerRouter({ configPath }));
  */
-export function createBranchLinkerRouter(deps: BranchLinkerDeps): Router {
+export function createBranchLinkerRouter(deps: BranchLinkerDeps): Router & { fetchLinks: () => Promise<BranchLinksResponse> } {
   const { configPath } = deps;
   const exec = deps.execAsync ?? execFileAsync;
   const getActiveBranchNames = deps.getActiveBranchNames ?? (() => new Map<string, Set<string>>());
@@ -79,23 +79,20 @@ export function createBranchLinkerRouter(deps: BranchLinkerDeps): Router {
     return loadConfig(configPath);
   }
 
-  // GET /branch-linker/links — map of ticketId -> BranchLink[]
-  router.get('/links', async (_req: Request, res: Response) => {
+  /** Core link-building logic, usable both from the HTTP handler and internal callers. */
+  async function fetchLinks(): Promise<BranchLinksResponse> {
     const config = getConfig();
     const workspacePaths = config.workspaces ?? [];
 
     if (workspacePaths.length === 0) {
-      const response: BranchLinksResponse = {};
-      res.json(response);
-      return;
+      return {};
     }
 
     const now = Date.now();
 
     // Return cached result if still fresh
     if (cache && now - cache.fetchedAt < CACHE_TTL_MS) {
-      res.json(cache.links);
-      return;
+      return cache.links;
     }
 
     // Get active branch names per repo from sessions
@@ -166,8 +163,14 @@ export function createBranchLinkerRouter(deps: BranchLinkerDeps): Router {
     // Update module-level cache
     cache = { links: response, fetchedAt: now };
 
+    return response;
+  }
+
+  // GET /branch-linker/links — map of ticketId -> BranchLink[]
+  router.get('/links', async (_req: Request, res: Response) => {
+    const response = await fetchLinks();
     res.json(response);
   });
 
-  return router;
+  return Object.assign(router, { fetchLinks });
 }

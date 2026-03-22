@@ -55,6 +55,7 @@ export interface PtySession extends BaseSession {
   onPtyReplacedCallbacks: Array<(newPty: IPty) => void>;
   restored: boolean;
   branchRenamePrompt?: string;
+  initialPrompt?: string | undefined;
   outputParser: OutputParser;
   hookToken: string;
   hooksActive: boolean;
@@ -117,6 +118,7 @@ export interface WorkspaceSettings {
   promptBranchRename?: string;
   promptGeneral?: string;
   promptFixConflicts?: string;
+  promptStartWork?: string;
 
   // Worktree naming — mountains theme
   nextMountainIndex?: number;
@@ -223,6 +225,18 @@ export interface BranchLink {
 }
 
 export type BranchLinksResponse = Record<string, BranchLink[]>;
+
+export interface TicketContext {
+  ticketId: string;
+  title: string;
+  description?: string;
+  url: string;
+  source: 'github';
+  repoPath: string;
+  repoName: string;
+}
+
+export type TransitionState = 'none' | 'in-progress' | 'code-review' | 'ready-for-qa';
 
 export interface ActivityEntry {
   hash: string;

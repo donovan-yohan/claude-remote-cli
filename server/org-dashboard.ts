@@ -19,6 +19,11 @@ export interface OrgDashboardDeps {
   configPath: string;
   /** Injected so tests can override execFile calls */
   execAsync?: typeof execFileAsync;
+  checkPrTransitions?: (
+    prs: Array<{ number: number; headRefName: string; state: 'OPEN' | 'CLOSED' | 'MERGED'; repoPath?: string | undefined }>,
+    branchLinks: Record<string, Array<{ repoPath: string; repoName: string; branchName: string; hasActiveSession: boolean }>>,
+  ) => Promise<void>;
+  getBranchLinks?: () => Promise<Record<string, Array<{ repoPath: string; repoName: string; branchName: string; hasActiveSession: boolean }>>>;
 }
 
 // In-memory cache for search results
@@ -251,6 +256,13 @@ export function createOrgDashboardRouter(deps: OrgDashboardDeps): Router {
 
     // Update cache
     cache = { prs, fetchedAt: now };
+
+    // Fire ticket transitions check (best-effort, don't block response)
+    if (deps.checkPrTransitions && deps.getBranchLinks) {
+      deps.getBranchLinks()
+        .then((links) => deps.checkPrTransitions!(prs, links))
+        .catch(() => {});
+    }
 
     const response: PullRequestsResponse = { prs };
     res.json(response);

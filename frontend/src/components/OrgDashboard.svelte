@@ -3,12 +3,17 @@
   import { fetchOrgPrs, fetchBranchLinks } from '../lib/api.js';
   import { derivePrAction, getStatusCssVar, shouldUseDarkText } from '../lib/pr-state.js';
   import { formatRelativeTime } from '../lib/utils.js';
-  import type { PullRequest, OrgPrsResponse, BranchLinksResponse } from '../lib/types.js';
+  import type { GitHubIssue, PullRequest, OrgPrsResponse, BranchLinksResponse } from '../lib/types.js';
   import TicketsPanel from './TicketsPanel.svelte';
+  import StartWorkModal from './StartWorkModal.svelte';
 
-  let { onOpenWorkspace }: { onOpenWorkspace: (path: string) => void } = $props();
+  let { onOpenWorkspace, onOpenSession }: {
+    onOpenWorkspace: (path: string) => void;
+    onOpenSession?: (sessionId: string) => void;
+  } = $props();
 
   let activeTab = $state<'prs' | 'tickets'>('prs');
+  let startWorkIssue = $state<GitHubIssue | null>(null);
 
   const orgQuery = createQuery<OrgPrsResponse>(() => ({
     queryKey: ['org-prs'],
@@ -156,7 +161,7 @@
 
     {#if isLoading}
       <div class="pr-list">
-        {#each [1, 2, 3] as _}
+        {#each [1, 2, 3] as _ (_.toString())}
           <div class="pr-row skeleton">
             <div class="skeleton-line skeleton-title"></div>
             <div class="skeleton-line skeleton-meta"></div>
@@ -250,9 +255,18 @@
       </div>
     {/if}
   {:else if activeTab === 'tickets'}
-    <TicketsPanel />
+    <TicketsPanel onStartWork={(issue) => { startWorkIssue = issue; }} />
   {:else}
     <!-- future tabs -->
+  {/if}
+
+  {#if startWorkIssue}
+    <StartWorkModal
+      issue={startWorkIssue}
+      open={true}
+      onClose={() => { startWorkIssue = null; }}
+      onSessionCreated={(id) => { startWorkIssue = null; onOpenSession?.(id); }}
+    />
   {/if}
 </div>
 

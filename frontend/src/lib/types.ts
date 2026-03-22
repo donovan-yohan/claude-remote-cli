@@ -117,6 +117,16 @@ export interface BranchLink {
 
 export type BranchLinksResponse = Record<string, BranchLink[]>;
 
+export interface TicketContext {
+  ticketId: string;
+  title: string;
+  description?: string;
+  url: string;
+  source: 'github';
+  repoPath: string;
+  repoName: string;
+}
+
 export interface ActivityEntry {
   hash: string;
   shortHash: string;
@@ -170,5 +180,6 @@ export interface WorkspaceSettings {
   promptBranchRename?: string;
   promptGeneral?: string;
   promptFixConflicts?: string;
+  promptStartWork?: string;
   nextMountainIndex?: number;
 }

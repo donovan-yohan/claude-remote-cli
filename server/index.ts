@@ -26,6 +26,7 @@ import { createOrgDashboardRouter } from './org-dashboard.js';
 import { createIntegrationGitHubRouter } from './integration-github.js';
 import { createBranchLinkerRouter, invalidateBranchLinkerCache } from './branch-linker.js';
 import { createHooksRouter } from './hooks.js';
+import { createTicketTransitionsRouter } from './ticket-transitions.js';
 import type { AgentType, Config } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 import { semverLessThan } from './utils.js';
@@ -268,10 +269,6 @@ async function main(): Promise<void> {
   const workspaceRouter = createWorkspaceRouter({ configPath: CONFIG_PATH });
   app.use('/workspaces', requireAuth, workspaceRouter);
 
-  // Mount org dashboard router
-  const orgDashboardRouter = createOrgDashboardRouter({ configPath: CONFIG_PATH });
-  app.use('/org-dashboard', requireAuth, orgDashboardRouter);
-
   // Mount GitHub integration router
   const integrationGitHubRouter = createIntegrationGitHubRouter({ configPath: CONFIG_PATH });
   app.use('/integration-github', requireAuth, integrationGitHubRouter);
@@ -294,6 +291,14 @@ async function main(): Promise<void> {
     },
   });
   app.use('/branch-linker', requireAuth, branchLinkerRouter);
+
+  // Mount ticket transitions router
+  const { router: ticketTransitionsRouter, transitionOnSessionCreate, checkPrTransitions } = createTicketTransitionsRouter({});
+  app.use('/ticket-transitions', requireAuth, ticketTransitionsRouter);
+
+  // Mount org dashboard router — use branchLinkerRouter.fetchLinks() directly (no loopback HTTP)
+  const orgDashboardRouter = createOrgDashboardRouter({ configPath: CONFIG_PATH, checkPrTransitions, getBranchLinks: () => branchLinkerRouter.fetchLinks() });
+  app.use('/org-dashboard', requireAuth, orgDashboardRouter);
 
   // Mount analytics router
   app.use('/analytics', requireAuth, createAnalyticsRouter(configDir));
@@ -628,7 +633,7 @@ async function main(): Promise<void> {
 
   // POST /sessions
   app.post('/sessions', requireAuth, async (req, res) => {
-    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux, cols, rows, needsBranchRename, branchRenamePrompt } = req.body as {
+    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux, cols, rows, needsBranchRename, branchRenamePrompt, ticketContext } = req.body as {
       repoPath?: string;
       repoName?: string;
       worktreePath?: string;
@@ -641,6 +646,7 @@ async function main(): Promise<void> {
       rows?: number;
       needsBranchRename?: boolean;
       branchRenamePrompt?: string;
+      ticketContext?: { ticketId: string; title: string; description?: string; url: string; source: 'github'; repoPath: string; repoName: string };
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -654,6 +660,23 @@ async function main(): Promise<void> {
     const resolved = resolveSessionSettings(config, repoPath, { agent, yolo, useTmux, claudeArgs });
     const resolvedAgent = resolved.agent;
     const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
+
+    let initialPrompt: string | undefined;
+    if (ticketContext && (typeof ticketContext.ticketId !== 'string' || typeof ticketContext.title !== 'string' || typeof ticketContext.url !== 'string')) {
+      res.status(400).json({ error: 'ticketContext requires string ticketId, title, and url' });
+      return;
+    }
+    if (ticketContext) {
+      // Use ticketContext.repoPath (workspace root) for settings lookup
+      const settings = config.workspaceSettings?.[ticketContext.repoPath];
+      const template = settings?.promptStartWork ??
+        'You are working on ticket {ticketId}: {title}\n\nTicket URL: {ticketUrl}\n\nPlease start by understanding the issue and proposing an approach.';
+      initialPrompt = template
+        .replace(/\{ticketId\}/g, ticketContext.ticketId)
+        .replace(/\{title\}/g, ticketContext.title)
+        .replace(/\{ticketUrl\}/g, ticketContext.url)
+        .replace(/\{description\}/g, ticketContext.description ?? '');
+    }
     const baseArgs = [
       ...(resolved.claudeArgs),
       ...(resolved.yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
@@ -773,8 +796,14 @@ async function main(): Promise<void> {
                 useTmux: resolved.useTmux,
                 ...(safeCols != null && { cols: safeCols }),
                 ...(safeRows != null && { rows: safeRows }),
+                ...(initialPrompt != null && { initialPrompt }),
               });
 
+              if (ticketContext) {
+                transitionOnSessionCreate(ticketContext).catch((err: unknown) => {
+                  console.error('[index] transition on session create failed:', err);
+                });
+              }
               res.status(201).json(repoSession);
               return;
             } else {
@@ -801,6 +830,7 @@ async function main(): Promise<void> {
                 useTmux: resolved.useTmux,
                 ...(safeCols != null && { cols: safeCols }),
                 ...(safeRows != null && { rows: safeRows }),
+                ...(initialPrompt != null && { initialPrompt }),
               });
 
               writeMeta(CONFIG_PATH, {
@@ -810,6 +840,11 @@ async function main(): Promise<void> {
                 branchName: branchName || worktreeName,
               });
 
+              if (ticketContext) {
+                transitionOnSessionCreate(ticketContext).catch((err: unknown) => {
+                  console.error('[index] transition on session create failed:', err);
+                });
+              }
               res.status(201).json(session);
               return;
             }
@@ -851,6 +886,7 @@ async function main(): Promise<void> {
       ...(safeRows != null && { rows: safeRows }),
       needsBranchRename: isMountainName || (needsBranchRename ?? false),
       branchRenamePrompt: branchRenamePrompt ?? '',
+      ...(initialPrompt != null && { initialPrompt }),
     });
 
     if (!worktreePath) {
@@ -862,6 +898,11 @@ async function main(): Promise<void> {
       });
     }
 
+    if (ticketContext) {
+      transitionOnSessionCreate(ticketContext).catch((err: unknown) => {
+        console.error('[index] transition on session create failed:', err);
+      });
+    }
     res.status(201).json(session);
   });
 

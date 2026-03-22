@@ -42,6 +42,7 @@ type CreateParams = Omit<CreatePtyParams, 'id'> & {
   id?: string;
   needsBranchRename?: boolean;
   branchRenamePrompt?: string;
+  initialPrompt?: string | undefined;
 };
 
 type CreateResult = SessionSummary & { pid: number | undefined };
@@ -106,10 +107,10 @@ function fireSessionEnd(sessionId: string, repoPath: string, branchName?: string
 }
 
 export function fireStateChange(sessionId: string, state: AgentState): void {
-  for (const cb of stateChangeCallbacks) cb(sessionId, state);
+  for (const cb of [...stateChangeCallbacks]) cb(sessionId, state);
 }
 
-function create({ id: providedId, needsBranchRename, branchRenamePrompt, agent = 'claude', cols = 80, rows = 24, args = [], port, forceOutputParser, ...rest }: CreateParams): CreateResult {
+function create({ id: providedId, needsBranchRename, branchRenamePrompt, initialPrompt, agent = 'claude', cols = 80, rows = 24, args = [], port, forceOutputParser, ...rest }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
   const ptyParams: CreatePtyParams = {
@@ -142,7 +143,27 @@ function create({ id: providedId, needsBranchRename, branchRenamePrompt, agent =
   if (branchRenamePrompt) {
     ptySession.branchRenamePrompt = branchRenamePrompt;
   }
+  if (initialPrompt) {
+    ptySession.initialPrompt = initialPrompt;
+  }
   fireSessionCreate(id, ptySession.repoPath, ptySession.branchName);
+  if (initialPrompt) {
+    const promptHandler = (changedId: string, state: AgentState) => {
+      if (changedId === id && state === 'waiting-for-input' && ptySession.initialPrompt) {
+        const prompt = ptySession.initialPrompt;
+        ptySession.initialPrompt = undefined; // one-shot
+        // Small delay to ensure the agent's input handler is ready
+        setTimeout(() => {
+          try { ptySession.pty.write(prompt + '\n'); }
+          catch (err) { console.error('[sessions] Failed to inject initial prompt:', err); }
+        }, 500);
+        // Remove this handler after firing
+        const idx = stateChangeCallbacks.indexOf(promptHandler);
+        if (idx !== -1) stateChangeCallbacks.splice(idx, 1);
+      }
+    };
+    stateChangeCallbacks.push(promptHandler);
+  }
   return { ...result, needsBranchRename: !!ptySession.needsBranchRename };
 }
 

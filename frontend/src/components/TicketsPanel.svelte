@@ -1,8 +1,10 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { fetchGithubIssues, fetchBranchLinks } from '../lib/api.js';
-  import type { GitHubIssuesResponse, BranchLinksResponse, BranchLink } from '../lib/types.js';
+  import type { GitHubIssue, GitHubIssuesResponse, BranchLinksResponse, BranchLink } from '../lib/types.js';
   import TicketCard from './TicketCard.svelte';
+
+  let { onStartWork }: { onStartWork?: (issue: GitHubIssue) => void } = $props();
 
   const issuesQuery = createQuery<GitHubIssuesResponse>(() => ({
     queryKey: ['github-issues'],
@@ -60,7 +62,7 @@
   <!-- Content -->
   {#if isLoading}
     <div class="ticket-list">
-      {#each [1, 2, 3] as _}
+      {#each [1, 2, 3] as _ (_.toString())}
         <div class="ticket-skeleton">
           <div class="skeleton-line skeleton-title"></div>
           <div class="skeleton-line skeleton-meta"></div>
@@ -93,7 +95,7 @@
   {:else}
     <div class="ticket-list">
       {#each allIssues as issue (`${issue.repoPath}:${issue.number}`)}
-        <TicketCard {issue} branchLinks={getBranchLinksForIssue(issue.number)} />
+        <TicketCard {issue} branchLinks={getBranchLinksForIssue(issue.number)} {...(onStartWork != null && { onStartWork })} />
       {/each}
     </div>
   {/if}

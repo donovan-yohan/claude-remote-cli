@@ -34,6 +34,10 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `SearchableSelect.svelte` | Searchable dropdown filter replacing native selects |
 | `SessionItem.svelte` | Session list item with status dot, context menu, metadata row |
 | `MobileInput.svelte` | Event-intent mobile keyboard input handler |
+| `OrgDashboard.svelte` | Cross-repo PR list and tickets panel with tab navigation |
+| `TicketsPanel.svelte` | GitHub Issues list with skeleton loading and branch link indicators |
+| `TicketCard.svelte` | Individual ticket row: status dot, repo chip, labels, branch link, Start Work button |
+| `StartWorkModal.svelte` | Start Work modal: ticket info, branch name input, creates worktree session with ticket context |
 | `dialogs/` | Session customization, settings, workspace, and worktree deletion dialogs |
 
 ## State Management

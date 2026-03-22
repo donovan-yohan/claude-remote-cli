@@ -16,6 +16,7 @@ Execution plans for active and completed work.
 | `repo-root-click-dashboard` | 2026-03-19 | Fix clicking inactive repo root going to dashboard instead of creating session |
 | `sidebar-session-model-mismatch` | 2026-03-19 | Fix sidebar showing 1 row per session instead of 1 row per folder |
 | `workspace-reorder` | 2026-03-19 | Drag-and-drop workspace reordering, sidebar header simplification |
+| `org-dashboard-phase3` | 2026-03-21 | Start Work flow + ticket status transitions (Phase 3 of org dashboard) |
 
 ## Tech Debt
 

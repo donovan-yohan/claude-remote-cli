@@ -1,7 +1,11 @@
 <script lang="ts">
   import type { GitHubIssue, BranchLink } from '../lib/types.js';
 
-  let { issue, branchLinks = [] }: { issue: GitHubIssue; branchLinks?: BranchLink[] } = $props();
+  let { issue, branchLinks = [], onStartWork }: {
+    issue: GitHubIssue;
+    branchLinks?: BranchLink[];
+    onStartWork?: (issue: GitHubIssue) => void;
+  } = $props();
 
   const INITIAL_COLORS = [
     '#d97757',
@@ -44,7 +48,7 @@
       >{issue.repoName}</span>
       <span class="ticket-sep">·</span>
       <span class="ticket-number">#{issue.number}</span>
-      {#each visibleLabels as label}
+      {#each visibleLabels as label (label.name)}
         <span class="label-chip" style:background={'#' + label.color} title={label.name}>
           {label.name}
         </span>
@@ -61,7 +65,12 @@
     </div>
   </div>
   <div class="ticket-actions">
-    <button class="start-work-btn" disabled title="Coming in Phase 3">
+    <button
+      class="start-work-btn"
+      class:start-work-btn--active={!!onStartWork}
+      onclick={() => onStartWork?.(issue)}
+      disabled={!onStartWork}
+    >
       Start Work
     </button>
   </div>
@@ -211,7 +220,17 @@
     cursor: not-allowed;
     opacity: 0.45;
     white-space: nowrap;
-    transition: border-color 0.12s, color 0.12s;
+    transition: border-color 0.12s, color 0.12s, opacity 0.12s;
+  }
+
+  .start-work-btn--active {
+    cursor: pointer;
+    opacity: 1;
+  }
+
+  .start-work-btn--active:hover {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   /* Mobile: card layout */
