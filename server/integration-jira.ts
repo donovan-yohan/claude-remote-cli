@@ -52,6 +52,18 @@ export function createIntegrationJiraRouter(_deps: IntegrationJiraDeps): Router 
     const email = process.env.JIRA_EMAIL;
     const baseUrl = process.env.JIRA_BASE_URL;
     if (!token || !email || !baseUrl) return null;
+    try {
+      const parsed = new URL(baseUrl);
+      const isHttps = parsed.protocol === 'https:';
+      const isLocalHttp = parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
+      if (!isHttps && !isLocalHttp) {
+        console.warn('[integration-jira] JIRA_BASE_URL failed validation (must be https or http://localhost), treating as unconfigured');
+        return null;
+      }
+    } catch {
+      console.warn('[integration-jira] JIRA_BASE_URL is not a valid URL, treating as unconfigured');
+      return null;
+    }
     return { token, email, baseUrl };
   }
 

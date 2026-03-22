@@ -258,9 +258,49 @@ export function createOrgDashboardRouter(deps: OrgDashboardDeps): Router {
     cache = { prs, fetchedAt: now };
 
     // Fire ticket transitions check (best-effort, don't block response)
+    // Include recently merged PRs for MERGED->ready-for-qa transitions
     if (deps.checkPrTransitions && deps.getBranchLinks) {
+      const transitionPrs = [...prs];
+
+      // Fetch recently merged PRs (last 7 days) for transition checks
+      try {
+        const mergedSince = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const { stdout: mergedStdout } = await exec(
+          'gh',
+          ['api', `search/issues?q=is:pr+is:merged+merged:>=${mergedSince}+involves:@me&per_page=50`],
+          { timeout: GH_TIMEOUT_MS },
+        );
+        const mergedResponse = JSON.parse(mergedStdout) as GhSearchResponse;
+        for (const item of mergedResponse.items ?? []) {
+          if (!item.pull_request) continue;
+          const ownerRepo = repoFromApiUrl(item.repository_url);
+          if (!ownerRepo) continue;
+          const wsPath = repoMap.get(ownerRepo.toLowerCase());
+          if (!wsPath) continue;
+          transitionPrs.push({
+            number: item.number,
+            title: item.title,
+            url: item.html_url,
+            headRefName: item.pull_request?.head?.ref ?? '',
+            baseRefName: item.pull_request?.base?.ref ?? '',
+            state: 'MERGED',
+            author: item.user.login,
+            role: 'author',
+            updatedAt: item.updated_at,
+            additions: 0,
+            deletions: 0,
+            reviewDecision: null,
+            mergeable: null,
+            repoName: path.basename(wsPath),
+            repoPath: wsPath,
+          });
+        }
+      } catch {
+        // Merged PR fetch is best-effort — don't block transitions
+      }
+
       deps.getBranchLinks()
-        .then((links) => deps.checkPrTransitions!(prs, links))
+        .then((links) => deps.checkPrTransitions!(transitionPrs, links))
         .catch(() => {});
     }
 

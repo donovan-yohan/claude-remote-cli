@@ -122,6 +122,15 @@ export function createBranchLinkerRouter(deps: BranchLinkerDeps): Router & { fet
         for (const branchName of branchNames) {
           const ticketIds = extractTicketIds(branchName);
           for (const ticketId of ticketIds) {
+            // Infer ticket source from ID pattern
+            let source: 'github' | 'jira' | 'linear' | undefined;
+            if (ticketId.startsWith('GH-')) {
+              source = 'github';
+            } else if (process.env.JIRA_API_TOKEN) {
+              source = 'jira';
+            } else if (process.env.LINEAR_API_KEY) {
+              source = 'linear';
+            }
             links.push({
               ticketId,
               link: {
@@ -129,6 +138,7 @@ export function createBranchLinkerRouter(deps: BranchLinkerDeps): Router & { fet
                 repoName,
                 branchName,
                 hasActiveSession: activeInRepo.has(branchName),
+                source,
               },
             });
           }

@@ -33,14 +33,16 @@ async function addLabel(
   repoPath: string,
   issueNumber: string,
   label: string,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await exec('gh', ['issue', 'edit', issueNumber, '--add-label', label], {
       cwd: repoPath,
       timeout: GH_TIMEOUT_MS,
     });
+    return true;
   } catch (err) {
     console.error(`[ticket-transitions] Failed to add label "${label}" to #${issueNumber}:`, err);
+    return false;
   }
 }
 
@@ -60,12 +62,29 @@ async function removeLabel(
   }
 }
 
-/** Call a Jira transition by ID. Non-fatal on error. */
-async function jiraTransition(ticketId: string, transitionId: string): Promise<void> {
+/** Returns true if the URL is safe to use as a Jira base URL. */
+function isValidJiraUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'https:') return true;
+    if (parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** Call a Jira transition by ID. Returns true on success, false on failure. */
+async function jiraTransition(ticketId: string, transitionId: string): Promise<boolean> {
   const baseUrl = process.env.JIRA_BASE_URL;
   const email = process.env.JIRA_EMAIL;
   const token = process.env.JIRA_API_TOKEN;
-  if (!baseUrl || !email || !token) return;
+  if (!baseUrl || !email || !token) return false;
+
+  if (!isValidJiraUrl(baseUrl)) {
+    console.warn(`[ticket-transitions] JIRA_BASE_URL failed validation, skipping transition for ${ticketId}`);
+    return false;
+  }
 
   try {
     const res = await fetch(`${baseUrl}/rest/api/3/issue/${encodeURIComponent(ticketId)}/transitions`, {
@@ -78,16 +97,19 @@ async function jiraTransition(ticketId: string, transitionId: string): Promise<v
     });
     if (!res.ok) {
       console.error(`[ticket-transitions] Jira transition returned ${res.status} for ${ticketId}`);
+      return false;
     }
+    return true;
   } catch (err) {
     console.error(`[ticket-transitions] Jira transition failed for ${ticketId}:`, err);
+    return false;
   }
 }
 
-/** Update a Linear issue state. Non-fatal on error. */
-async function linearStateUpdate(ticketIdentifier: string, stateId: string): Promise<void> {
+/** Update a Linear issue state. Returns true on success, false on failure. */
+async function linearStateUpdate(ticketIdentifier: string, stateId: string): Promise<boolean> {
   const apiKey = process.env.LINEAR_API_KEY;
-  if (!apiKey) return;
+  if (!apiKey) return false;
 
   // Linear mutations need the issue ID, but we only have the identifier (e.g. "TEAM-123").
   // Resolve the issue ID by identifier, then update state.
@@ -102,11 +124,11 @@ async function linearStateUpdate(ticketIdentifier: string, stateId: string): Pro
     });
     if (!searchRes.ok) {
       console.error(`[ticket-transitions] Linear issue lookup returned ${searchRes.status} for ${ticketIdentifier}`);
-      return;
+      return false;
     }
     const searchData = (await searchRes.json()) as { data?: { issues?: { nodes?: Array<{ id: string }> } } };
     const issueId = searchData.data?.issues?.nodes?.[0]?.id;
-    if (!issueId) return;
+    if (!issueId) return false;
 
     const updateRes = await fetch('https://api.linear.app/graphql', {
       method: 'POST',
@@ -118,9 +140,12 @@ async function linearStateUpdate(ticketIdentifier: string, stateId: string): Pro
     });
     if (!updateRes.ok) {
       console.error(`[ticket-transitions] Linear state update returned ${updateRes.status} for ${ticketIdentifier}`);
+      return false;
     }
+    return true;
   } catch (err) {
     console.error(`[ticket-transitions] Linear state update failed for ${ticketIdentifier}:`, err);
+    return false;
   }
 }
 
@@ -130,7 +155,12 @@ async function linearStateUpdate(ticketIdentifier: string, stateId: string): Pro
  * are matched by whichever env var is present. This is imperfect — a future
  * improvement would persist the source alongside branch links.
  */
-function detectTicketSource(ticketId: string): 'github' | 'jira' | 'linear' {
+function detectTicketSource(ticketId: string, links?: BranchLink[]): 'github' | 'jira' | 'linear' {
+  // Use explicit source from branch link if available
+  if (links) {
+    const linkWithSource = links.find((l) => l.source);
+    if (linkWithSource?.source) return linkWithSource.source;
+  }
   if (ticketId.startsWith('GH-')) return 'github';
   // Prefer Jira for PROJECT-style keys (>= 3 uppercase letters before dash)
   // since Jira project keys are typically longer than Linear team keys (2-3 chars).
@@ -161,18 +191,22 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
     if (ctx.source === 'github') {
       const issueNum = ghIssueNumber(ctx.ticketId);
       if (!issueNum) return;
-      transitionMap.set(ctx.ticketId, 'in-progress');
-      await addLabel(exec, ctx.repoPath, issueNum, 'in-progress');
+      const ok = await addLabel(exec, ctx.repoPath, issueNum, 'in-progress');
+      if (ok) transitionMap.set(ctx.ticketId, 'in-progress');
     } else if (ctx.source === 'jira') {
-      transitionMap.set(ctx.ticketId, 'in-progress');
       const config = loadConfig(configPath);
       const transitionId = getStatusMapping(config, 'jira', 'in-progress');
-      if (transitionId) await jiraTransition(ctx.ticketId, transitionId);
+      if (transitionId) {
+        const ok = await jiraTransition(ctx.ticketId, transitionId);
+        if (ok) transitionMap.set(ctx.ticketId, 'in-progress');
+      }
     } else if (ctx.source === 'linear') {
-      transitionMap.set(ctx.ticketId, 'in-progress');
       const config = loadConfig(configPath);
       const stateId = getStatusMapping(config, 'linear', 'in-progress');
-      if (stateId) await linearStateUpdate(ctx.ticketId, stateId);
+      if (stateId) {
+        const ok = await linearStateUpdate(ctx.ticketId, stateId);
+        if (ok) transitionMap.set(ctx.ticketId, 'in-progress');
+      }
     }
   }
 
@@ -187,7 +221,7 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
         if (!linked) continue;
 
         const current = transitionMap.get(ticketId);
-        const source = detectTicketSource(ticketId);
+        const source = detectTicketSource(ticketId, links);
 
         if (pr.state === 'OPEN' && current !== 'code-review' && current !== 'ready-for-qa') {
           if (source === 'github') {
@@ -195,17 +229,21 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
             if (!issueNum) continue;
             const repoPath = links[0]?.repoPath;
             if (!repoPath) continue;
-            transitionMap.set(ticketId, 'code-review');
             await removeLabel(exec, repoPath, issueNum, 'in-progress');
-            await addLabel(exec, repoPath, issueNum, 'code-review');
+            const ok = await addLabel(exec, repoPath, issueNum, 'code-review');
+            if (ok) transitionMap.set(ticketId, 'code-review');
           } else if (source === 'jira') {
-            transitionMap.set(ticketId, 'code-review');
             const transitionId = getStatusMapping(config, 'jira', 'code-review');
-            if (transitionId) await jiraTransition(ticketId, transitionId);
+            if (transitionId) {
+              const ok = await jiraTransition(ticketId, transitionId);
+              if (ok) transitionMap.set(ticketId, 'code-review');
+            }
           } else if (source === 'linear') {
-            transitionMap.set(ticketId, 'code-review');
             const stateId = getStatusMapping(config, 'linear', 'code-review');
-            if (stateId) await linearStateUpdate(ticketId, stateId);
+            if (stateId) {
+              const ok = await linearStateUpdate(ticketId, stateId);
+              if (ok) transitionMap.set(ticketId, 'code-review');
+            }
           }
         } else if (pr.state === 'MERGED' && current !== 'ready-for-qa') {
           if (source === 'github') {
@@ -213,17 +251,21 @@ export function createTicketTransitionsRouter(deps: TicketTransitionsDeps) {
             if (!issueNum) continue;
             const repoPath = links[0]?.repoPath;
             if (!repoPath) continue;
-            transitionMap.set(ticketId, 'ready-for-qa');
             await removeLabel(exec, repoPath, issueNum, 'code-review');
-            await addLabel(exec, repoPath, issueNum, 'ready-for-qa');
+            const ok = await addLabel(exec, repoPath, issueNum, 'ready-for-qa');
+            if (ok) transitionMap.set(ticketId, 'ready-for-qa');
           } else if (source === 'jira') {
-            transitionMap.set(ticketId, 'ready-for-qa');
             const transitionId = getStatusMapping(config, 'jira', 'ready-for-qa');
-            if (transitionId) await jiraTransition(ticketId, transitionId);
+            if (transitionId) {
+              const ok = await jiraTransition(ticketId, transitionId);
+              if (ok) transitionMap.set(ticketId, 'ready-for-qa');
+            }
           } else if (source === 'linear') {
-            transitionMap.set(ticketId, 'ready-for-qa');
             const stateId = getStatusMapping(config, 'linear', 'ready-for-qa');
-            if (stateId) await linearStateUpdate(ticketId, stateId);
+            if (stateId) {
+              const ok = await linearStateUpdate(ticketId, stateId);
+              if (ok) transitionMap.set(ticketId, 'ready-for-qa');
+            }
           }
         }
       }

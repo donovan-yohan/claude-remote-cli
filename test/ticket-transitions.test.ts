@@ -382,4 +382,229 @@ describe('ticket-transitions (Jira/Linear)', () => {
     assert.ok(transitionCall, `Expected Jira transition call, got: ${fetchCalls.map((c) => c.url).join(', ')}`);
     assert.ok(transitionCall.body.includes('"31"'), 'Should use code-review transition ID 31');
   });
+
+  // ── New tests ────────────────────────────────────────────────────────────
+
+  test('Jira transitionOnSessionCreate — correct URL and transitionId, transitionMap updated only on success', async () => {
+    process.env.JIRA_API_TOKEN = 'fake-token';
+    process.env.JIRA_EMAIL = 'test@test.com';
+    process.env.JIRA_BASE_URL = 'https://my-org.atlassian.net';
+    delete process.env.LINEAR_API_KEY;
+
+    writeConfig({ jira: { 'in-progress': '21', 'code-review': '31' } });
+    const { transitionOnSessionCreate } = makeJiraLinearApp();
+
+    const fetchCalls: Array<{ url: string; body: string }> = [];
+    globalThis.fetch = (async (input: unknown, init: unknown) => {
+      const reqInit = init as { body?: string } | undefined;
+      fetchCalls.push({ url: String(input), body: reqInit?.body ?? '' });
+      return { ok: true, status: 204, json: async () => ({}) };
+    }) as unknown as typeof globalThis.fetch;
+
+    const ctx: TicketContext = {
+      ticketId: 'MYPROJ-55',
+      title: 'Jira test issue',
+      url: 'https://my-org.atlassian.net/browse/MYPROJ-55',
+      source: 'jira',
+      repoPath: '/fake/repo',
+      repoName: 'repo',
+    };
+
+    await transitionOnSessionCreate(ctx);
+
+    assert.equal(fetchCalls.length, 1, 'Should make exactly one fetch call');
+    assert.ok(
+      fetchCalls[0]!.url.includes('/rest/api/3/issue/MYPROJ-55/transitions'),
+      `Expected Jira transition URL, got: ${fetchCalls[0]!.url}`,
+    );
+    assert.ok(fetchCalls[0]!.body.includes('"21"'), 'Should pass in-progress transition ID 21');
+
+    // Verify idempotency — second call should be blocked because transitionMap was updated
+    fetchCalls.length = 0;
+    await transitionOnSessionCreate(ctx);
+    assert.equal(fetchCalls.length, 0, 'Second call should be blocked by idempotency guard after success');
+  });
+
+  test('Linear transitionOnSessionCreate — calls issue lookup then state update mutation', async () => {
+    delete process.env.JIRA_API_TOKEN;
+    delete process.env.JIRA_EMAIL;
+    delete process.env.JIRA_BASE_URL;
+    process.env.LINEAR_API_KEY = 'lin_api_fake';
+
+    writeConfig({ linear: { 'in-progress': 'state-id-1', 'code-review': 'state-id-2' } });
+    const { transitionOnSessionCreate } = makeJiraLinearApp();
+
+    let callCount = 0;
+    const fetchCalls: Array<{ url: string; body: string }> = [];
+    globalThis.fetch = (async (input: unknown, init: unknown) => {
+      const reqInit = init as { body?: string } | undefined;
+      fetchCalls.push({ url: String(input), body: reqInit?.body ?? '' });
+      callCount++;
+      // First call: issue lookup — return issue UUID
+      if (callCount === 1) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ data: { issues: { nodes: [{ id: 'issue-uuid-abc' }] } } }),
+        };
+      }
+      // Second call: state update mutation
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { issueUpdate: { success: true } } }),
+      };
+    }) as unknown as typeof globalThis.fetch;
+
+    const ctx: TicketContext = {
+      ticketId: 'ENG-77',
+      title: 'Linear test issue',
+      url: 'https://linear.app/eng/issue/ENG-77',
+      source: 'linear',
+      repoPath: '/fake/repo',
+      repoName: 'repo',
+    };
+
+    await transitionOnSessionCreate(ctx);
+
+    assert.equal(fetchCalls.length, 2, 'Should make two fetch calls — one lookup, one update');
+    assert.ok(
+      fetchCalls.every((c) => c.url.includes('linear.app/graphql')),
+      'Both calls should target the Linear GraphQL endpoint',
+    );
+    // First call: issue lookup query
+    assert.ok(fetchCalls[0]!.body.includes('ENG-77'), 'Lookup should reference the ticket identifier');
+    // Second call: mutation with resolved issue UUID and target state ID
+    assert.ok(fetchCalls[1]!.body.includes('issue-uuid-abc'), 'Update mutation should use resolved issue UUID');
+    assert.ok(fetchCalls[1]!.body.includes('state-id-1'), 'Update mutation should pass in-progress state ID');
+
+    // Verify idempotency after success
+    fetchCalls.length = 0;
+    callCount = 0;
+    await transitionOnSessionCreate(ctx);
+    assert.equal(fetchCalls.length, 0, 'Second call should be blocked by idempotency guard after success');
+  });
+
+  test('F5 premature idempotency — failed fetch does not update transitionMap, second call retries', async () => {
+    process.env.JIRA_API_TOKEN = 'fake-token';
+    process.env.JIRA_EMAIL = 'test@test.com';
+    process.env.JIRA_BASE_URL = 'https://my-org.atlassian.net';
+    delete process.env.LINEAR_API_KEY;
+
+    writeConfig({ jira: { 'in-progress': '21', 'code-review': '31' } });
+    const { transitionOnSessionCreate } = makeJiraLinearApp();
+
+    const fetchCalls: string[] = [];
+
+    // First attempt: server returns 500
+    globalThis.fetch = (async (input: unknown) => {
+      fetchCalls.push(String(input));
+      return { ok: false, status: 500, json: async () => ({}) };
+    }) as unknown as typeof globalThis.fetch;
+
+    const ctx: TicketContext = {
+      ticketId: 'FAIL-99',
+      title: 'Failing ticket',
+      url: 'https://my-org.atlassian.net/browse/FAIL-99',
+      source: 'jira',
+      repoPath: '/fake/repo',
+      repoName: 'repo',
+    };
+
+    await transitionOnSessionCreate(ctx);
+    assert.equal(fetchCalls.length, 1, 'First call should attempt fetch');
+
+    // Second attempt after failure: transitionMap should NOT have been updated,
+    // so the guard should not block this retry
+    const fetchCallsBeforeRetry = fetchCalls.length;
+    globalThis.fetch = (async (input: unknown) => {
+      fetchCalls.push(String(input));
+      return { ok: true, status: 204, json: async () => ({}) };
+    }) as unknown as typeof globalThis.fetch;
+
+    await transitionOnSessionCreate(ctx);
+    assert.ok(
+      fetchCalls.length > fetchCallsBeforeRetry,
+      'Second call should NOT be blocked — failed remote call must not update transitionMap',
+    );
+  });
+
+  test('Source detection via BranchLink source field — jira source overrides env-var heuristic', async () => {
+    // Set up env so that env-var heuristic would pick linear (if source field were ignored)
+    delete process.env.JIRA_API_TOKEN;
+    delete process.env.JIRA_EMAIL;
+    delete process.env.JIRA_BASE_URL;
+    process.env.LINEAR_API_KEY = 'lin_api_fake';
+
+    // But also set Jira env so jiraTransition can actually run
+    process.env.JIRA_API_TOKEN = 'fake-token';
+    process.env.JIRA_EMAIL = 'test@test.com';
+    process.env.JIRA_BASE_URL = 'https://my-org.atlassian.net';
+
+    writeConfig({ jira: { 'code-review': '31' }, linear: { 'code-review': 'state-id-2' } });
+    const { checkPrTransitions } = makeJiraLinearApp();
+
+    const fetchCalls: Array<{ url: string; body: string }> = [];
+    globalThis.fetch = (async (input: unknown, init: unknown) => {
+      const reqInit = init as { body?: string } | undefined;
+      fetchCalls.push({ url: String(input), body: reqInit?.body ?? '' });
+      return { ok: true, status: 200, json: async () => ({}) };
+    }) as unknown as typeof globalThis.fetch;
+
+    const prs = [{ number: 20, headRefName: 'feat/via-branch-link', state: 'OPEN' as const }];
+    // BranchLink explicitly declares source: 'jira'
+    const branchLinks: Record<string, BranchLink[]> = {
+      'XPROJ-10': [
+        {
+          repoPath: '/fake/repo',
+          repoName: 'repo',
+          branchName: 'feat/via-branch-link',
+          hasActiveSession: true,
+          source: 'jira',
+        },
+      ],
+    };
+
+    await checkPrTransitions(prs, branchLinks);
+
+    const jiraCall = fetchCalls.find((c) => c.url.includes('/rest/api/3/issue/XPROJ-10/transitions'));
+    assert.ok(
+      jiraCall,
+      `Expected Jira transition call (source from BranchLink), got: ${fetchCalls.map((c) => c.url).join(', ')}`,
+    );
+    assert.ok(jiraCall.body.includes('"31"'), 'Should use code-review Jira transition ID');
+
+    const linearCall = fetchCalls.find((c) => c.url.includes('linear.app/graphql'));
+    assert.equal(linearCall, undefined, 'Should NOT call Linear when BranchLink.source is jira');
+  });
+
+  test('Jira URL validation — http non-localhost URL is rejected without making a fetch', async () => {
+    process.env.JIRA_API_TOKEN = 'fake-token';
+    process.env.JIRA_EMAIL = 'test@test.com';
+    // Insecure non-localhost URL — should be rejected
+    process.env.JIRA_BASE_URL = 'http://evil.com';
+    delete process.env.LINEAR_API_KEY;
+
+    writeConfig({ jira: { 'in-progress': '21' } });
+    const { transitionOnSessionCreate } = makeJiraLinearApp();
+
+    const fetchCalls: string[] = [];
+    globalThis.fetch = (async (input: unknown) => {
+      fetchCalls.push(String(input));
+      return { ok: true, status: 200, json: async () => ({}) };
+    }) as unknown as typeof globalThis.fetch;
+
+    const ctx: TicketContext = {
+      ticketId: 'EVIL-1',
+      title: 'Evil ticket',
+      url: 'http://evil.com/browse/EVIL-1',
+      source: 'jira',
+      repoPath: '/fake/repo',
+      repoName: 'repo',
+    };
+
+    await transitionOnSessionCreate(ctx);
+
+    assert.equal(fetchCalls.length, 0, 'Should not make any fetch call when JIRA_BASE_URL is http non-localhost');
+  });
 });

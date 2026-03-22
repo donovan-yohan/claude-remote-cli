@@ -46,6 +46,7 @@ interface GhNotification {
 let timer: ReturnType<typeof setInterval> | null = null;
 let ghMissingWarned = false;
 let pollInFlight = false;
+let activePollPromise: Promise<void> | null = null;
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -55,16 +56,22 @@ export function startPolling(deps: ReviewPollerDeps): void {
   const config = loadConfig(deps.configPath);
   const intervalMs = config.automations?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 
-  void pollOnce(deps); // immediate first poll
+  activePollPromise = pollOnce(deps);
+  activePollPromise.finally(() => { activePollPromise = null; });
   timer = setInterval(() => {
-    void pollOnce(deps);
+    activePollPromise = pollOnce(deps);
+    activePollPromise.finally(() => { activePollPromise = null; });
   }, intervalMs);
 }
 
-export function stopPolling(): void {
+export async function stopPolling(): Promise<void> {
   if (timer !== null) {
     clearInterval(timer);
     timer = null;
+  }
+  if (activePollPromise) {
+    await activePollPromise;
+    activePollPromise = null;
   }
   ghMissingWarned = false;
 }
@@ -141,6 +148,10 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
 
     if (!config.automations?.autoCheckoutReviewRequests) return;
 
+    // Capture poll-start time as watermark — avoids gap where notifications
+    // arriving between fetch and save would be skipped permanently
+    const pollStartTimestamp = new Date().toISOString();
+
     // First run: default to "now" so we skip all historical notifications.
     // The first poll cycle always produces zero checkouts — only notifications
     // arriving after this timestamp will be processed.
@@ -181,7 +192,7 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
           console.warn('[review-poller] gh CLI not found — stopping poller');
           ghMissingWarned = true;
         }
-        stopPolling();
+        void stopPolling();
         return;
       }
       if (error.killed) {
@@ -288,7 +299,7 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
       const freshConfig = loadConfig(deps.configPath);
       freshConfig.automations = {
         ...freshConfig.automations,
-        lastPollTimestamp: new Date().toISOString(),
+        lastPollTimestamp: pollStartTimestamp,
       };
       saveConfig(deps.configPath, freshConfig);
     } catch (err) {

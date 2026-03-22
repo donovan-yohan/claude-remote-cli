@@ -288,14 +288,18 @@ async function main(): Promise<void> {
   const branchLinkerRouter = createBranchLinkerRouter({
     configPath: CONFIG_PATH,
     getActiveBranchNames: () => {
+      const workspaces = config.workspaces ?? [];
       const map = new Map<string, Set<string>>();
       for (const s of sessions.list()) {
         if (!s.branchName) continue;
-        const existing = map.get(s.repoPath);
+        // Normalize: match session repoPath to workspace root
+        // (worktree sessions store the worktree path, not workspace root)
+        const wsRoot = workspaces.find((ws) => s.repoPath.startsWith(ws)) ?? s.repoPath;
+        const existing = map.get(wsRoot);
         if (existing) {
           existing.add(s.branchName);
         } else {
-          map.set(s.repoPath, new Set([s.branchName]));
+          map.set(wsRoot, new Set([s.branchName]));
         }
       }
       return map;
@@ -610,10 +614,11 @@ async function main(): Promise<void> {
     }
 
     // Start or stop poller based on new setting
-    stopPolling();
-    if (next.autoCheckoutReviewRequests) {
-      startPolling(buildPollerDeps());
-    }
+    void stopPolling().then(() => {
+      if (next.autoCheckoutReviewRequests) {
+        startPolling(buildPollerDeps());
+      }
+    });
 
     res.json(next);
   });
@@ -740,7 +745,7 @@ async function main(): Promise<void> {
       rows?: number;
       needsBranchRename?: boolean;
       branchRenamePrompt?: string;
-      ticketContext?: { ticketId: string; title: string; description?: string; url: string; source: 'github'; repoPath: string; repoName: string };
+      ticketContext?: { ticketId: string; title: string; description?: string; url: string; source: 'github' | 'jira' | 'linear'; repoPath: string; repoName: string };
     };
     if (!repoPath) {
       res.status(400).json({ error: 'repoPath is required' });
@@ -759,6 +764,40 @@ async function main(): Promise<void> {
     if (ticketContext && (typeof ticketContext.ticketId !== 'string' || typeof ticketContext.title !== 'string' || typeof ticketContext.url !== 'string')) {
       res.status(400).json({ error: 'ticketContext requires string ticketId, title, and url' });
       return;
+    }
+    if (ticketContext) {
+      // Validate source is a known integration
+      if (ticketContext.source !== 'github' && ticketContext.source !== 'jira' && ticketContext.source !== 'linear') {
+        res.status(400).json({ error: "ticketContext.source must be 'github', 'jira', or 'linear'" });
+        return;
+      }
+      // Validate repoPath is a configured workspace
+      const configuredWorkspaces = config.workspaces || [];
+      if (!configuredWorkspaces.includes(ticketContext.repoPath)) {
+        res.status(400).json({ error: 'ticketContext.repoPath is not a configured workspace' });
+        return;
+      }
+      // Validate integration is configured for the claimed source
+      if (ticketContext.source === 'jira') {
+        if (!process.env['JIRA_API_TOKEN'] || !process.env['JIRA_EMAIL'] || !process.env['JIRA_BASE_URL']) {
+          res.status(400).json({ error: 'Jira integration is not configured' });
+          return;
+        }
+      } else if (ticketContext.source === 'linear') {
+        if (!process.env['LINEAR_API_KEY']) {
+          res.status(400).json({ error: 'Linear integration is not configured' });
+          return;
+        }
+      }
+      // Validate ticket ID format per source
+      if (ticketContext.source === 'github' && !/^GH-\d+$/.test(ticketContext.ticketId)) {
+        res.status(400).json({ error: 'ticketContext.ticketId for github must match GH-<number>' });
+        return;
+      }
+      if ((ticketContext.source === 'jira' || ticketContext.source === 'linear') && !/^[A-Z]+-\d+$/.test(ticketContext.ticketId)) {
+        res.status(400).json({ error: 'ticketContext.ticketId must match <PROJECT>-<number>' });
+        return;
+      }
     }
     if (ticketContext) {
       // Use ticketContext.repoPath (workspace root) for settings lookup
@@ -1212,8 +1251,8 @@ async function main(): Promise<void> {
     // tmux not installed or no sessions — ignore
   }
 
-  function gracefulShutdown() {
-    stopPolling();
+  async function gracefulShutdown() {
+    await stopPolling();
     closeAnalytics();
     server.close();
     // Serialize sessions to disk BEFORE killing them

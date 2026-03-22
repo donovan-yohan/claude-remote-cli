@@ -281,6 +281,7 @@ export interface BranchLink {
   repoName: string;
   branchName: string;
   hasActiveSession: boolean;
+  source?: 'github' | 'jira' | 'linear' | undefined;
 }
 
 export type BranchLinksResponse = Record<string, BranchLink[]>;

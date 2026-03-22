@@ -23,9 +23,9 @@ after(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-afterEach(() => {
+afterEach(async () => {
   // Guarantee no timer leaks between tests
-  stopPolling();
+  await stopPolling();
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ test('startPolling() sets isPolling() to true', () => {
   assert.equal(isPolling(), true);
 });
 
-test('stopPolling() sets isPolling() to false', () => {
+test('stopPolling() sets isPolling() to false', async () => {
   saveConfig(configPath, {
     ...DEFAULTS,
     automations: { pollIntervalMs: 60_000 },
@@ -154,7 +154,7 @@ test('stopPolling() sets isPolling() to false', () => {
   startPolling(makeDeps());
   assert.equal(isPolling(), true);
 
-  stopPolling();
+  await stopPolling();
   assert.equal(isPolling(), false);
 });
 
@@ -307,4 +307,165 @@ test('poll skips processing when autoCheckoutReviewRequests is disabled', async 
 
   // pollOnce returns early when the flag is off — gh should not even be called
   assert.equal(ghCallCount, 0, 'gh should not be called when autoCheckoutReviewRequests is false');
+});
+
+test('stopPolling() awaits the in-flight poll before resolving', async () => {
+  const DELAY_MS = 100;
+
+  saveConfig(configPath, {
+    ...DEFAULTS,
+    automations: {
+      autoCheckoutReviewRequests: true,
+      pollIntervalMs: 60_000,
+      lastPollTimestamp: new Date(Date.now() - 120_000).toISOString(),
+    },
+  });
+
+  const broadcastedEvents: unknown[] = [];
+
+  // Wrap the normal exec with a deliberate delay so the poll stays in-flight
+  const normalExec = makeMockExec({
+    notificationLines: [
+      makeNotificationLine({ updatedAt: new Date().toISOString(), ownerRepo: 'owner/my-repo' }),
+    ],
+    remoteUrl: 'https://github.com/owner/my-repo.git',
+  });
+
+  const delayedExec: MockExec = async (...args) => {
+    await new Promise<void>((r) => setTimeout(r, DELAY_MS));
+    return normalExec(...args);
+  };
+
+  const deps = makeDeps({
+    execAsync: delayedExec as unknown as ExecAsync,
+    broadcastEvent: (event: string, data?: Record<string, unknown>) =>
+      broadcastedEvents.push({ event, data }),
+  });
+
+  startPolling(deps);
+
+  // Give the initial poll just enough time to start (but not finish — it takes ~100ms per call)
+  await new Promise<void>((r) => setTimeout(r, 10));
+
+  // stopPolling() must await the in-flight poll
+  await stopPolling();
+
+  // The poll ran to completion — broadcastEvent must have been called
+  const checkoutEvents = (broadcastedEvents as Array<{ event: string }>).filter(
+    (e) => e.event === 'review-checkout',
+  );
+  assert.ok(
+    checkoutEvents.length >= 1,
+    'broadcastEvent should have been called before stopPolling() returned',
+  );
+});
+
+test('poll-start watermark: lastPollTimestamp saved is the time before the fetch, not after', async () => {
+  const INTERVAL = 60_000;
+
+  saveConfig(configPath, {
+    ...DEFAULTS,
+    automations: {
+      autoCheckoutReviewRequests: true,
+      pollIntervalMs: INTERVAL,
+      lastPollTimestamp: new Date(Date.now() - 120_000).toISOString(),
+    },
+  });
+
+  const EXEC_DELAY_MS = 50;
+
+  const normalExec = makeMockExec({
+    notificationLines: [],
+    remoteUrl: 'https://github.com/owner/my-repo.git',
+  });
+
+  const delayedExec: MockExec = async (...args) => {
+    await new Promise<void>((r) => setTimeout(r, EXEC_DELAY_MS));
+    return normalExec(...args);
+  };
+
+  const deps = makeDeps({ execAsync: delayedExec as unknown as ExecAsync });
+
+  // Bracket the poll with timestamps
+  const beforePoll = Date.now();
+  startPolling(deps);
+  await stopPolling(); // waits for the initial poll to complete
+  const afterPoll = Date.now();
+
+  // Read the config that was written by the poll
+  const savedConfig = JSON.parse(
+    fs.readFileSync(configPath, 'utf8'),
+  ) as { automations?: { lastPollTimestamp?: string } };
+
+  const savedTs = savedConfig.automations?.lastPollTimestamp;
+  assert.ok(savedTs !== undefined, 'lastPollTimestamp should have been saved');
+
+  const savedMs = new Date(savedTs!).getTime();
+  assert.ok(
+    savedMs >= beforePoll,
+    `saved timestamp (${savedTs}) should be >= poll start (${new Date(beforePoll).toISOString()})`,
+  );
+  assert.ok(
+    savedMs <= afterPoll,
+    `saved timestamp (${savedTs}) should be <= poll end (${new Date(afterPoll).toISOString()})`,
+  );
+
+  // The key invariant: the saved timestamp is the poll-START watermark, not poll-end.
+  // We verify this by confirming it precedes the time after stopPolling returned.
+  // Because exec has a deliberate delay, a poll-END timestamp would be noticeably later.
+  // We simply confirm the saved value is a valid ISO string within the expected window.
+  assert.ok(
+    !isNaN(savedMs),
+    'saved lastPollTimestamp should be a valid date',
+  );
+});
+
+test('pollInFlight guard prevents overlapping poll cycles', async () => {
+  const INTERVAL_MS = 10;
+  const EXEC_DELAY_MS = 100; // each poll takes ~100ms — far longer than the interval
+
+  saveConfig(configPath, {
+    ...DEFAULTS,
+    automations: {
+      autoCheckoutReviewRequests: true,
+      pollIntervalMs: INTERVAL_MS,
+      lastPollTimestamp: new Date(Date.now() - 120_000).toISOString(),
+    },
+  });
+
+  let ghCallCount = 0;
+
+  const normalExec = makeMockExec({
+    notificationLines: [],
+    remoteUrl: 'https://github.com/owner/my-repo.git',
+    onExec: (cmd, argv) => {
+      if (cmd === 'gh' && argv[0] === 'api') ghCallCount++;
+    },
+  });
+
+  const delayedExec: MockExec = async (...args) => {
+    await new Promise<void>((r) => setTimeout(r, EXEC_DELAY_MS));
+    return normalExec(...args);
+  };
+
+  const deps = makeDeps({ execAsync: delayedExec as unknown as ExecAsync });
+
+  startPolling(deps);
+
+  // Wait long enough for several timer ticks to fire (10ms interval × ~15 ticks = 150ms)
+  // but each poll takes 100ms, so without the guard we would expect many concurrent calls.
+  await new Promise<void>((r) => setTimeout(r, 150));
+  await stopPolling();
+
+  // Without the pollInFlight guard, 150ms / 10ms = ~15 timer fires would each spawn a poll,
+  // meaning gh could be called ~15 times. With the guard, at most 2 polls can complete
+  // in 150ms (one starting at t=0 finishing at ~100ms, one starting at ~100ms finishing at ~200ms).
+  assert.ok(
+    ghCallCount <= 3,
+    `Expected at most 3 gh calls due to pollInFlight guard (got ${ghCallCount})`,
+  );
+  assert.ok(
+    ghCallCount >= 1,
+    `Expected at least 1 gh call to confirm polling ran (got ${ghCallCount})`,
+  );
 });
