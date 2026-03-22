@@ -108,6 +108,56 @@ export interface GitHubIssuesResponse {
   error?: string | undefined;
 }
 
+export interface JiraIssue {
+  key: string;
+  title: string;
+  url: string;
+  status: string;
+  priority: string | null;
+  sprint: string | null;
+  storyPoints: number | null;
+  assignee: string | null;
+  updatedAt: string;
+  projectKey: string;
+}
+
+export interface JiraIssuesResponse {
+  issues: JiraIssue[];
+  error?: string | undefined;
+}
+
+export interface JiraStatus {
+  id: string;
+  name: string;
+}
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  url: string;
+  state: string;
+  priority: number;
+  priorityLabel: string;
+  cycle: string | null;
+  estimate: number | null;
+  assignee: string | null;
+  updatedAt: string;
+  teamId: string;
+}
+
+export interface LinearIssuesResponse {
+  issues: LinearIssue[];
+  error?: string | undefined;
+}
+
+export interface LinearState {
+  id: string;
+  name: string;
+}
+
+export type AnyIssue = GitHubIssue | JiraIssue | LinearIssue;
+
 export interface BranchLink {
   repoPath: string;
   repoName: string;
@@ -122,7 +172,7 @@ export interface TicketContext {
   title: string;
   description?: string;
   url: string;
-  source: 'github';
+  source: 'github' | 'jira' | 'linear';
   repoPath: string;
   repoName: string;
 }

@@ -1,10 +1,11 @@
 <script lang="ts">
-  import type { GitHubIssue, BranchLink } from '../lib/types.js';
+  import type { GitHubIssue, JiraIssue, LinearIssue, AnyIssue, BranchLink } from '../lib/types.js';
 
-  let { issue, branchLinks = [], onStartWork }: {
-    issue: GitHubIssue;
+  let { issue, source, branchLinks = [], onStartWork }: {
+    issue: AnyIssue;
+    source: 'github' | 'jira' | 'linear';
     branchLinks?: BranchLink[];
-    onStartWork?: (issue: GitHubIssue) => void;
+    onStartWork?: (issue: AnyIssue) => void;
   } = $props();
 
   const INITIAL_COLORS = [
@@ -26,33 +27,100 @@
     return INITIAL_COLORS[Math.abs(hash) % INITIAL_COLORS.length] ?? '#d97757';
   }
 
-  let chipColor = $derived(deriveColor(issue.repoName));
-  let visibleLabels = $derived(issue.labels.slice(0, 3));
-  let linkedBranch = $derived(branchLinks.length > 0 ? branchLinks[0] : null);
+  function isGitHub(i: AnyIssue): i is GitHubIssue { return source === 'github'; }
+  function isJira(i: AnyIssue): i is JiraIssue { return source === 'jira'; }
+  function isLinear(i: AnyIssue): i is LinearIssue { return source === 'linear'; }
+
+  let ticketId = $derived(
+    isGitHub(issue) ? `GH-${issue.number}` :
+    isJira(issue) ? issue.key :
+    isLinear(issue) ? issue.identifier : ''
+  );
+
+  let linkedBranch = $derived(
+    branchLinks.length > 0 ? branchLinks[0] : null
+  );
   let hasActiveSession = $derived(linkedBranch?.hasActiveSession ?? false);
+
+  // Priority colors for Jira/Linear
+  const PRIORITY_COLORS: Record<string, string> = {
+    'Highest': '#ff5630',
+    'High': '#ff7452',
+    'Medium': '#ffab00',
+    'Low': '#36b37e',
+    'Lowest': '#6b778c',
+  };
+
+  const LINEAR_PRIORITY_COLORS: Record<number, string> = {
+    0: '#6b778c', // No priority
+    1: '#ff5630', // Urgent
+    2: '#ff7452', // High
+    3: '#ffab00', // Medium
+    4: '#36b37e', // Low
+  };
 </script>
 
 <div class="ticket-card">
   <div class="ticket-left">
     <div class="ticket-title-line">
-      <span class="dot {issue.state === 'OPEN' ? 'dot-success' : 'dot-muted'}"></span>
+      {#if isGitHub(issue)}
+        <span class="dot {issue.state === 'OPEN' ? 'dot-success' : 'dot-muted'}"></span>
+      {:else if isJira(issue)}
+        <span class="dot dot-info"></span>
+      {:else if isLinear(issue)}
+        <span class="dot dot-info"></span>
+      {/if}
       <a class="ticket-title-link" href={issue.url} target="_blank" rel="noopener noreferrer">
         {issue.title}
       </a>
     </div>
     <div class="ticket-meta">
-      <span
-        class="repo-chip"
-        style:background={chipColor}
-        title={issue.repoPath ?? issue.repoName}
-      >{issue.repoName}</span>
-      <span class="ticket-sep">·</span>
-      <span class="ticket-number">#{issue.number}</span>
-      {#each visibleLabels as label (label.name)}
-        <span class="label-chip" style:background={'#' + label.color} title={label.name}>
-          {label.name}
-        </span>
-      {/each}
+      {#if isGitHub(issue)}
+        <span
+          class="repo-chip"
+          style:background={deriveColor(issue.repoName)}
+          title={issue.repoPath ?? issue.repoName}
+        >{issue.repoName}</span>
+        <span class="ticket-sep">·</span>
+        <span class="ticket-number">#{issue.number}</span>
+        {#each issue.labels.slice(0, 3) as label (label.name)}
+          <span class="label-chip" style:background={'#' + label.color} title={label.name}>
+            {label.name}
+          </span>
+        {/each}
+      {:else if isJira(issue)}
+        <span class="ticket-key">{issue.key}</span>
+        <span class="ticket-sep">·</span>
+        <span class="status-badge">{issue.status}</span>
+        {#if issue.priority}
+          <span class="ticket-sep">·</span>
+          <span class="priority-badge" style:color={PRIORITY_COLORS[issue.priority] ?? 'var(--text-muted)'}>{issue.priority}</span>
+        {/if}
+        {#if issue.sprint}
+          <span class="ticket-sep">·</span>
+          <span class="sprint-chip">{issue.sprint}</span>
+        {/if}
+        {#if issue.storyPoints != null}
+          <span class="ticket-sep">·</span>
+          <span class="points-badge">{issue.storyPoints}pt</span>
+        {/if}
+      {:else if isLinear(issue)}
+        <span class="ticket-key">{issue.identifier}</span>
+        <span class="ticket-sep">·</span>
+        <span class="status-badge">{issue.state}</span>
+        {#if issue.priority > 0}
+          <span class="ticket-sep">·</span>
+          <span class="priority-badge" style:color={LINEAR_PRIORITY_COLORS[issue.priority] ?? 'var(--text-muted)'}>{issue.priorityLabel}</span>
+        {/if}
+        {#if issue.cycle}
+          <span class="ticket-sep">·</span>
+          <span class="sprint-chip">{issue.cycle}</span>
+        {/if}
+        {#if issue.estimate != null}
+          <span class="ticket-sep">·</span>
+          <span class="points-badge">{issue.estimate}pt</span>
+        {/if}
+      {/if}
       {#if linkedBranch}
         <span class="ticket-sep">·</span>
         <span class="branch-chip">
@@ -146,6 +214,11 @@
     opacity: 0.6;
   }
 
+  .ticket-key {
+    font-weight: 600;
+    opacity: 0.8;
+  }
+
   .repo-chip {
     display: inline-flex;
     align-items: center;
@@ -175,6 +248,48 @@
     text-overflow: ellipsis;
   }
 
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    line-height: 1.4;
+  }
+
+  .priority-badge {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .sprint-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    line-height: 1.4;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .points-badge {
+    font-weight: 600;
+    opacity: 0.7;
+  }
+
   .branch-chip {
     display: inline-flex;
     align-items: center;
@@ -202,6 +317,7 @@
   .dot-success { background: var(--status-success); }
   .dot-muted   { background: var(--border); }
   .dot-active  { background: var(--accent); }
+  .dot-info    { background: var(--accent); opacity: 0.6; }
 
   .ticket-actions {
     display: flex;

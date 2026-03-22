@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { GitHubIssue } from '../lib/types.js';
-  import { createSession, ConflictError } from '../lib/api.js';
+  import type { GitHubIssue, JiraIssue, LinearIssue, AnyIssue, Workspace } from '../lib/types.js';
+  import { createSession, ConflictError, fetchWorkspaces } from '../lib/api.js';
 
   let {
     issue,
@@ -8,43 +8,119 @@
     onClose,
     onSessionCreated,
   }: {
-    issue: GitHubIssue;
+    issue: AnyIssue;
     open: boolean;
     onClose: () => void;
     onSessionCreated: (sessionId: string) => void;
   } = $props();
 
-  let branchName = $state(`gh-${issue.number}`);
+  function detectSource(i: AnyIssue): 'github' | 'jira' | 'linear' {
+    if ('number' in i && 'labels' in i) return 'github';
+    if ('key' in i && 'projectKey' in i) return 'jira';
+    return 'linear';
+  }
+
+  let source = $derived(detectSource(issue));
+
+  let ticketDisplay = $derived(
+    source === 'github' ? `#${(issue as GitHubIssue).number} — ${issue.title}` :
+    source === 'jira' ? `${(issue as JiraIssue).key} — ${issue.title}` :
+    `${(issue as LinearIssue).identifier} — ${issue.title}`
+  );
+
+  let defaultBranch = $derived(
+    source === 'github' ? `gh-${(issue as GitHubIssue).number}` :
+    source === 'jira' ? (issue as JiraIssue).key.toLowerCase() :
+    (issue as LinearIssue).identifier.toLowerCase()
+  );
+
+  // For Jira/Linear, user selects a workspace since issues are cross-repo
+  let workspaces = $state<Workspace[]>([]);
+  let selectedWorkspacePath = $state('');
+
+  let repoPath = $derived(
+    source === 'github' ? (issue as GitHubIssue).repoPath : selectedWorkspacePath
+  );
+  let repoName = $derived.by(() => {
+    if (source === 'github') return (issue as GitHubIssue).repoName;
+    const ws = workspaces.find(w => w.path === selectedWorkspacePath);
+    return ws?.name ?? '';
+  });
+
+  let branchName = $state('');
   let loading = $state(false);
   let error = $state<string | null>(null);
 
+  // Load workspaces for Jira/Linear, and initialize branch name
+  $effect(() => {
+    branchName = defaultBranch;
+    if (source !== 'github' && open) {
+      fetchWorkspaces().then(ws => {
+        workspaces = ws;
+        if (ws.length > 0 && !selectedWorkspacePath) {
+          selectedWorkspacePath = ws[0]!.path;
+        }
+      }).catch(() => {});
+    }
+  });
+
+  function buildTicketContext() {
+    if (source === 'github') {
+      const gh = issue as GitHubIssue;
+      return {
+        ticketId: `GH-${gh.number}`,
+        title: gh.title,
+        url: gh.url,
+        source: 'github' as const,
+        repoPath: gh.repoPath,
+        repoName: gh.repoName,
+      };
+    } else if (source === 'jira') {
+      const jira = issue as JiraIssue;
+      return {
+        ticketId: jira.key,
+        title: jira.title,
+        url: jira.url,
+        source: 'jira' as const,
+        repoPath: repoPath,
+        repoName: repoName,
+      };
+    } else {
+      const linear = issue as LinearIssue;
+      return {
+        ticketId: linear.identifier,
+        title: linear.title,
+        url: linear.url,
+        source: 'linear' as const,
+        repoPath: repoPath,
+        repoName: repoName,
+      };
+    }
+  }
+
   async function handleStart() {
     if (loading) return;
+
+    if (!repoPath) {
+      error = 'No workspace selected. Jira/Linear tickets require a workspace context.';
+      return;
+    }
+
     loading = true;
     error = null;
 
     try {
-      // POST /sessions with branchName — server handles worktree creation
-      // and existing-branch redirect internally (409 conflict).
       const session = await createSession({
-        repoPath: issue.repoPath,
-        repoName: issue.repoName,
+        repoPath,
+        repoName,
         branchName,
-        ticketContext: {
-          ticketId: `GH-${issue.number}`,
-          title: issue.title,
-          url: issue.url,
-          source: 'github',
-          repoPath: issue.repoPath,
-          repoName: issue.repoName,
-        },
+        ticketContext: buildTicketContext(),
       });
 
       onSessionCreated(session.id);
       onClose();
     } catch (err) {
       if (err instanceof ConflictError) {
-        // Branch already exists with an active session — open it directly
         onSessionCreated(err.sessionId);
         onClose();
         return;
@@ -75,13 +151,32 @@
       <div class="modal-body">
         <div class="ticket-info">
           <span class="ticket-info-label">Ticket</span>
-          <span class="ticket-info-value">#{issue.number} — {issue.title}</span>
+          <span class="ticket-info-value">{ticketDisplay}</span>
         </div>
 
-        <div class="ticket-info">
-          <span class="ticket-info-label">Repo</span>
-          <span class="ticket-info-value">{issue.repoName}</span>
-        </div>
+        {#if source === 'github'}
+          <div class="ticket-info">
+            <span class="ticket-info-label">Repo</span>
+            <span class="ticket-info-value">{repoName}</span>
+          </div>
+        {:else}
+          <div class="field">
+            <label class="field-label" for="workspace-select">Workspace</label>
+            {#if workspaces.length > 0}
+              <select
+                id="workspace-select"
+                class="field-input"
+                bind:value={selectedWorkspacePath}
+              >
+                {#each workspaces as ws (ws.path)}
+                  <option value={ws.path}>{ws.name}</option>
+                {/each}
+              </select>
+            {:else}
+              <span class="ticket-info-value" style="opacity: 0.5">Loading workspaces...</span>
+            {/if}
+          </div>
+        {/if}
 
         <div class="field">
           <label class="field-label" for="branch-name">Branch Name</label>
@@ -90,7 +185,7 @@
             class="field-input"
             type="text"
             bind:value={branchName}
-            placeholder="gh-{issue.number}"
+            placeholder={defaultBranch}
           />
         </div>
 

@@ -27,6 +27,8 @@ import { createIntegrationGitHubRouter } from './integration-github.js';
 import { createBranchLinkerRouter, invalidateBranchLinkerCache } from './branch-linker.js';
 import { createHooksRouter } from './hooks.js';
 import { createTicketTransitionsRouter } from './ticket-transitions.js';
+import { createIntegrationJiraRouter } from './integration-jira.js';
+import { createIntegrationLinearRouter } from './integration-linear.js';
 import type { AgentType, Config } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 import { semverLessThan } from './utils.js';
@@ -273,6 +275,14 @@ async function main(): Promise<void> {
   const integrationGitHubRouter = createIntegrationGitHubRouter({ configPath: CONFIG_PATH });
   app.use('/integration-github', requireAuth, integrationGitHubRouter);
 
+  // Mount Jira integration router
+  const integrationJiraRouter = createIntegrationJiraRouter({ configPath: CONFIG_PATH });
+  app.use('/integration-jira', requireAuth, integrationJiraRouter);
+
+  // Mount Linear integration router
+  const integrationLinearRouter = createIntegrationLinearRouter({ configPath: CONFIG_PATH });
+  app.use('/integration-linear', requireAuth, integrationLinearRouter);
+
   // Mount branch linker router
   const branchLinkerRouter = createBranchLinkerRouter({
     configPath: CONFIG_PATH,
@@ -293,7 +303,7 @@ async function main(): Promise<void> {
   app.use('/branch-linker', requireAuth, branchLinkerRouter);
 
   // Mount ticket transitions router
-  const { router: ticketTransitionsRouter, transitionOnSessionCreate, checkPrTransitions } = createTicketTransitionsRouter({});
+  const { router: ticketTransitionsRouter, transitionOnSessionCreate, checkPrTransitions } = createTicketTransitionsRouter({ configPath: CONFIG_PATH });
   app.use('/ticket-transitions', requireAuth, ticketTransitionsRouter);
 
   // Mount org dashboard router — use branchLinkerRouter.fetchLinks() directly (no loopback HTTP)

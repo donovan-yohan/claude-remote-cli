@@ -40,3 +40,4 @@
 | [2026-03-19-workspace-reorder-design.md](2026-03-19-workspace-reorder-design.md) | Drag-and-drop workspace reordering, sidebar header simplification, inactive session contrast | 2026-03-19 | implemented |
 | [2026-03-20-local-analytics-design.md](2026-03-20-local-analytics-design.md) | Local analytics & user behavior tracking with SQLite for agent-queryable usage data | 2026-03-20 | implemented |
 | [2026-03-21-new-tab-quick-create-design.md](2026-03-21-new-tab-quick-create-design.md) | Redesign tab bar "+" dropdown: instant agent/terminal creation, simplified Customize modal, auto-named tabs | 2026-03-21 | implemented |
+| [2026-03-21-org-dashboard-phase4-design.md](2026-03-21-org-dashboard-phase4-design.md) | Jira + Linear integrations with native metadata and StatusMappingModal | 2026-03-21 | implemented |

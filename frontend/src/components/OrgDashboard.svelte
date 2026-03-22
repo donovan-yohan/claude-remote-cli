@@ -3,7 +3,7 @@
   import { fetchOrgPrs, fetchBranchLinks } from '../lib/api.js';
   import { derivePrAction, getStatusCssVar, shouldUseDarkText } from '../lib/pr-state.js';
   import { formatRelativeTime } from '../lib/utils.js';
-  import type { GitHubIssue, PullRequest, OrgPrsResponse, BranchLinksResponse } from '../lib/types.js';
+  import type { AnyIssue, PullRequest, OrgPrsResponse, BranchLinksResponse } from '../lib/types.js';
   import TicketsPanel from './TicketsPanel.svelte';
   import StartWorkModal from './StartWorkModal.svelte';
 
@@ -13,7 +13,7 @@
   } = $props();
 
   let activeTab = $state<'prs' | 'tickets'>('prs');
-  let startWorkIssue = $state<GitHubIssue | null>(null);
+  let startWorkIssue = $state<AnyIssue | null>(null);
 
   const orgQuery = createQuery<OrgPrsResponse>(() => ({
     queryKey: ['org-prs'],

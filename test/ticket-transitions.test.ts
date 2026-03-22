@@ -32,7 +32,9 @@ function makeExecMock(opts: { shouldThrow?: boolean } = {}): {
 }
 
 function makeApp(execMock: MockExec) {
-  const deps = { execAsync: execMock } as unknown as TicketTransitionsDeps;
+  // Use a dummy config path — GitHub transitions don't read config, and
+  // Jira/Linear transitions only read mappings (which default to undefined).
+  const deps = { configPath: '/tmp/test-config-not-found.json', execAsync: execMock } as unknown as TicketTransitionsDeps;
   return createTicketTransitionsRouter(deps);
 }
 
@@ -67,7 +69,7 @@ describe('ticket-transitions', () => {
   describe('transitionOnSessionCreate', () => {
     test('adds in-progress label to GitHub issue', async () => {
       const { exec, calls } = makeExecMock();
-      const { transitionOnSessionCreate } = makeApp(exec as unknown as MockExec);
+      const { transitionOnSessionCreate } = makeApp(exec);
 
       const ctx = makeTicketContext({ ticketId: 'GH-100' });
       await transitionOnSessionCreate(ctx);
@@ -82,7 +84,7 @@ describe('ticket-transitions', () => {
 
     test('is idempotent — does not re-fire same transition', async () => {
       const { exec, calls } = makeExecMock();
-      const { transitionOnSessionCreate } = makeApp(exec as unknown as MockExec);
+      const { transitionOnSessionCreate } = makeApp(exec);
 
       const ctx = makeTicketContext({ ticketId: 'GH-101' });
 
@@ -100,7 +102,7 @@ describe('ticket-transitions', () => {
   describe('checkPrTransitions', () => {
     test('adds code-review label when PR is OPEN for a linked ticket', async () => {
       const { exec, calls } = makeExecMock();
-      const { checkPrTransitions } = makeApp(exec as unknown as MockExec);
+      const { checkPrTransitions } = makeApp(exec);
 
       const ticketId = 'GH-200';
       const branchName = 'feat/my-feature';
@@ -124,7 +126,7 @@ describe('ticket-transitions', () => {
 
     test('adds ready-for-qa label when PR is MERGED for a linked ticket', async () => {
       const { exec, calls } = makeExecMock();
-      const { checkPrTransitions } = makeApp(exec as unknown as MockExec);
+      const { checkPrTransitions } = makeApp(exec);
 
       const ticketId = 'GH-300';
       const branchName = 'feat/merged-feature';
@@ -148,7 +150,7 @@ describe('ticket-transitions', () => {
 
     test('is idempotent for PR transitions', async () => {
       const { exec, calls } = makeExecMock();
-      const { checkPrTransitions } = makeApp(exec as unknown as MockExec);
+      const { checkPrTransitions } = makeApp(exec);
 
       const ticketId = 'GH-400';
       const branchName = 'feat/idempotent-pr';
@@ -167,7 +169,7 @@ describe('ticket-transitions', () => {
 
     test('handles gh CLI errors gracefully', async () => {
       const { exec } = makeExecMock({ shouldThrow: true });
-      const { checkPrTransitions } = makeApp(exec as unknown as MockExec);
+      const { checkPrTransitions } = makeApp(exec);
 
       const ticketId = 'GH-500';
       const branchName = 'feat/error-branch';
