@@ -18,6 +18,7 @@ Execution plans for active and completed work.
 | `workspace-reorder` | 2026-03-19 | Drag-and-drop workspace reordering, sidebar header simplification |
 | `org-dashboard-phase3` | 2026-03-21 | Start Work flow + ticket status transitions (Phase 3 of org dashboard) |
 | `relay-phase1-data-tables` | 2026-03-23 | Shared DataTable component, filter chips, sortable columns, keyboard nav, row grouping, saved presets |
+| `relay-phase2-github-api` | 2026-03-23 | GitHub App OAuth, GraphQL API, smee.io webhooks, real-time updates, CI status, sidebar PR enrichment |
 
 ## Tech Debt
 
