@@ -109,6 +109,7 @@
 
   function toggleGroup(key: string) {
     collapsed[key] = !collapsed[key];
+    focusedIndex = 0;
   }
 
   function handleKeydown(e: KeyboardEvent) {

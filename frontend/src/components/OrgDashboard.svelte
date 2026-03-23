@@ -205,17 +205,25 @@
     if (!name || !name.trim()) return;
     const filters: FilterPreset['filters'] = {};
     if (activeStatusChips.length > 0) filters.status = [...activeStatusChips];
-    await savePreset({
-      name: name.trim(),
-      filters,
-      sort: { column: sortBy, direction: sortDir },
-    });
-    await queryClient.invalidateQueries({ queryKey: ['presets'] });
+    try {
+      await savePreset({
+        name: name.trim(),
+        filters,
+        sort: { column: sortBy, direction: sortDir },
+      });
+      await queryClient.invalidateQueries({ queryKey: ['presets'] });
+    } catch (e) {
+      console.error('Failed to save preset:', e);
+    }
   }
 
   async function handleDeletePreset(preset: FilterPreset) {
-    await deletePreset(preset.name);
-    await queryClient.invalidateQueries({ queryKey: ['presets'] });
+    try {
+      await deletePreset(preset.name);
+      await queryClient.invalidateQueries({ queryKey: ['presets'] });
+    } catch (e) {
+      console.error('Failed to delete preset:', e);
+    }
   }
 </script>
 

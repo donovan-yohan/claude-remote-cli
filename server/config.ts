@@ -31,9 +31,9 @@ export function loadConfig(configPath: string): Config {
   const parsed = JSON.parse(raw) as Partial<Config>;
   const config: Config = { ...DEFAULTS, ...parsed };
 
-  // Set default filter presets if not present in saved config
+  // Set default filter presets if not present in saved config (clone to avoid mutating the constant)
   if (config.filterPresets == null) {
-    config.filterPresets = DEFAULT_PRESETS;
+    config.filterPresets = DEFAULT_PRESETS.map(p => ({ ...p, filters: { ...p.filters }, sort: { ...p.sort } }));
   }
 
   // Validate and clean workspaceGroups

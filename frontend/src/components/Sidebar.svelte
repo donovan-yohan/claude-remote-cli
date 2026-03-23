@@ -190,6 +190,7 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <span
         class="sidebar-brand"
+        data-track="sidebar.home"
         onclick={() => {
           ui.activeWorkspacePath = null;
           sessionState.activeSessionId = null;

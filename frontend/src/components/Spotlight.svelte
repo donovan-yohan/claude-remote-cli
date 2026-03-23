@@ -61,13 +61,12 @@
   );
 
   // Search results
-  interface SpotlightResult {
-    type: 'attention' | 'workspace' | 'session' | 'pr' | 'ticket' | 'command';
-    id: string;
-    label: string;
-    sublabel?: string;
-    data?: unknown;
-  }
+  type SpotlightResult =
+    | { type: 'workspace'; id: string; label: string; sublabel?: string; data: Workspace }
+    | { type: 'session'; id: string; label: string; sublabel?: string; data: SessionSummary }
+    | { type: 'pr' | 'attention'; id: string; label: string; sublabel?: string; data: PullRequest }
+    | { type: 'ticket'; id: string; label: string; sublabel?: string; data: GitHubIssue | JiraIssue }
+    | { type: 'command'; id: string; label: string; sublabel?: string; data: { id: string; label: string; icon: string } };
 
   let results = $derived.by((): SpotlightResult[] => {
     const q = debouncedQuery.toLowerCase().trim();
@@ -269,20 +268,20 @@
     onClose();
     switch (item.type) {
       case 'workspace':
-        onSelectWorkspace((item.data as Workspace).path);
+        onSelectWorkspace(item.data.path);
         break;
       case 'session':
-        onSelectSession((item.data as SessionSummary).id);
+        onSelectSession(item.data.id);
         break;
       case 'attention':
       case 'pr':
-        onSelectPr(item.data as PullRequest);
+        onSelectPr(item.data);
         break;
       case 'ticket':
         // No direct ticket action from spotlight for now
         break;
       case 'command':
-        onCommand((item.data as { id: string }).id);
+        onCommand(item.data.id);
         break;
     }
   }
@@ -391,7 +390,7 @@
                 onmouseenter={() => { focusedIndex = globalIndex; }}
               >
                 {#if item.type === 'attention' || item.type === 'pr'}
-                  <StatusDot status={derivePrDotStatus(item.data as PullRequest)} size={7} />
+                  <StatusDot status={derivePrDotStatus(item.data)} size={7} />
                 {:else}
                   <span class="item-icon">{categoryIcon(item.type)}</span>
                 {/if}

@@ -20,6 +20,7 @@
     border-radius: 50%;
     flex-shrink: 0;
     display: inline-block;
+    box-sizing: border-box;
   }
   /* PR states */
   .status-dot--draft { background: transparent; border: 1.5px solid var(--border); }

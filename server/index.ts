@@ -216,6 +216,20 @@ async function main(): Promise<void> {
   }
 
   const app = express();
+
+  // Mount webhooks BEFORE global express.json() so the router's own json({ verify })
+  // can capture the raw body for HMAC signature verification.
+  // broadcastEvent is wired up after setupWebSocket via the delegate closure below.
+  let broadcastEventDelegate: ((type: string, data?: Record<string, unknown>) => void) | null = null;
+  const webhookSecret = config.github?.webhookSecret;
+  if (webhookSecret) {
+    const webhookRouter = createWebhookRouter({
+      secret: webhookSecret,
+      broadcastEvent: (type, data) => { broadcastEventDelegate?.(type, data); },
+    });
+    app.use('/webhooks', webhookRouter);
+  }
+
   app.use(express.json({ limit: '15mb' }));
   app.use(cookieParser());
   app.use(express.static(frontendDir));
@@ -256,6 +270,9 @@ async function main(): Promise<void> {
 
   const server = http.createServer(app);
   const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher, CONFIG_PATH);
+
+  // Wire up the delegate used by the webhook router (mounted before broadcastEvent was available)
+  broadcastEventDelegate = broadcastEvent;
 
   // Watch .git/HEAD files for branch changes and update active sessions
   const branchWatcher = new BranchWatcher((cwdPath, newBranch) => {
@@ -360,25 +377,25 @@ async function main(): Promise<void> {
   app.use('/ticket-transitions', requireAuth, ticketTransitionsRouter);
 
   // Mount GitHub App OAuth (no auth — callback comes from GitHub redirect)
+  // onConnected is called after token save; startWebhookPolling is defined below
+  // and safe to call here since this callback only fires at runtime (not startup).
   const githubAppRouter = createGitHubAppRouter({
     configPath: CONFIG_PATH,
     clientId: process.env.GITHUB_CLIENT_ID ?? '',
     clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
+    onConnected: () => { startWebhookPolling(); },
   });
-  // /callback must be unprotected (GitHub redirects the user here)
-  // All other routes require auth to prevent unauthorized token access/deletion
-  app.use('/auth/github/callback', githubAppRouter);
+  // /callback is unprotected (GitHub redirects the user here).
+  // We forward GET /auth/github/callback directly to the router's /callback route
+  // by rewriting the URL — this avoids double-mounting the router which would make
+  // the callback reachable at /auth/github/callback/callback instead.
+  app.get('/auth/github/callback', (req: express.Request, res: express.Response) => {
+    const qs = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    (req as express.Request & { url: string }).url = '/callback' + qs;
+    githubAppRouter(req, res, () => res.status(404).end());
+  });
+  // All other routes (/status, /disconnect, GET /) require auth.
   app.use('/auth/github', requireAuth, githubAppRouter);
-
-  // Mount webhooks (no auth — GitHub sends these with HMAC signature)
-  const webhookSecret = config.github?.webhookSecret;
-  if (webhookSecret) {
-    const webhookRouter = createWebhookRouter({
-      secret: webhookSecret,
-      broadcastEvent,
-    });
-    app.use('/webhooks', webhookRouter);
-  }
 
   // Mount org dashboard router — use GraphQL when token available, fall back to gh CLI
   const orgDashboardRouter = createOrgDashboardRouter({
@@ -469,7 +486,8 @@ async function main(): Promise<void> {
         target: `http://127.0.0.1:${config.port}/webhooks`,
         logger: {
           info: () => {},
-          error: () => {
+          error: (msg: string) => {
+            console.warn('[smee] connection error:', msg);
             smeeErrorCount++;
             if (smeeErrorCount >= 3) startWebhookPolling();
           },
@@ -480,9 +498,12 @@ async function main(): Promise<void> {
           smeeErrorCount = 0;
           stopWebhookPolling();
         });
-      }).catch(() => {});
-    }).catch(() => {
-      // smee-client not available — use polling
+      }).catch((err: unknown) => {
+        console.warn('[smee] start failed:', err instanceof Error ? err.message : String(err));
+        if (githubToken) startWebhookPolling();
+      });
+    }).catch((err: unknown) => {
+      console.warn('[smee] smee-client not available:', err instanceof Error ? err.message : String(err));
       if (githubToken) startWebhookPolling();
     });
   } else if (githubToken) {
@@ -800,8 +821,20 @@ async function main(): Promise<void> {
         res.status(400).json({ error: 'sort.direction must be "asc" or "desc"' });
         return;
       }
+      const col = (sort as any).column;
+      if (!col || typeof col !== 'string' || !col.trim()) {
+        res.status(400).json({ error: 'sort.column must be a non-empty string' });
+        return;
+      }
     }
-    const preset = { name: name.trim(), filters: (filters as { status?: string[]; repo?: string[]; role?: string[] }) ?? {}, sort: (sort as { column: string; direction: 'asc' | 'desc' }) ?? { column: 'role', direction: 'asc' as const } };
+    const trimmedName = name.trim();
+    const existingPresets = config.filterPresets ?? [];
+    const duplicate = existingPresets.some((p) => p.name.toLowerCase() === trimmedName.toLowerCase());
+    if (duplicate) {
+      res.status(409).json({ error: `A preset named "${trimmedName}" already exists` });
+      return;
+    }
+    const preset = { name: trimmedName, filters: (filters as { status?: string[]; repo?: string[]; role?: string[] }) ?? {}, sort: (sort as { column: string; direction: 'asc' | 'desc' }) ?? { column: 'role', direction: 'asc' as const } };
     if (!config.filterPresets) config.filterPresets = [];
     config.filterPresets.push(preset);
     saveConfig(CONFIG_PATH, config);

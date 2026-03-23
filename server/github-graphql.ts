@@ -99,14 +99,14 @@ interface GraphQLPullRequest {
   repository: {
     nameWithOwner: string;
   };
-  reviewDecision: string | null;
+  reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
   reviewRequests: {
     nodes: GraphQLReviewRequest[];
   };
   commits: {
     nodes: GraphQLCommit[];
   };
-  mergeable: string | null;
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null;
   additions: number;
   deletions: number;
 }
@@ -244,6 +244,11 @@ export async function fetchPrsGraphQL(
   // GitHub GraphQL returns HTTP 200 even for errors (expired tokens, insufficient scopes)
   if (json.errors && !json.data) {
     throw new Error(`GitHub GraphQL error: ${json.errors[0]?.message ?? 'unknown'}`);
+  }
+
+  if (json.errors) {
+    // Partial errors: data is present but some fields failed — log and continue
+    console.warn('[github-graphql] GraphQL returned partial errors:', json.errors.map((e: any) => e.message).join('; '));
   }
 
   if (!json.data) {

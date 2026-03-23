@@ -127,8 +127,8 @@
           }}
           loading={isLoading}
           error={isError ? 'Could not load pull requests.' : undefined}
-          emptyMessage="No open PRs for {workspaceName}."
-          filteredEmptyMessage="No results for '{searchQuery}'."
+          emptyMessage={`No open PRs for ${workspaceName}.`}
+          filteredEmptyMessage={`No results for '${searchQuery}'.`}
           hasActiveFilters={searchQuery.length > 0}
           onClearFilters={() => searchQuery = ''}
           onRowAction={(pr) => onOpenPrSession?.(pr)}

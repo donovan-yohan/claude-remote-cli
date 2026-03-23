@@ -369,4 +369,26 @@ describe('fetchPrsGraphQL', () => {
     assert.equal(prs[0]!.number, 11);
     assert.equal(prs[0]!.ciStatus, 'SUCCESS');
   });
+
+  test('throws when response has errors but no data (expired token / bad credentials)', async () => {
+    const mockFetch: typeof fetch = async () => {
+      return new Response(
+        JSON.stringify({ errors: [{ message: 'Bad credentials' }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    };
+
+    const repoMap = makeRepoMap([]);
+
+    await assert.rejects(
+      () => fetchPrsGraphQL('expired-token', repoMap, mockFetch),
+      (err: Error) => {
+        assert.ok(
+          err.message.includes('Bad credentials'),
+          `Error should include "Bad credentials", got: ${err.message}`,
+        );
+        return true;
+      },
+    );
+  });
 });

@@ -31,6 +31,7 @@
   });
 
   async function connectGitHub() {
+    if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
     const url = await fetchGitHubAuthUrl();
     window.open(url, '_blank', 'width=600,height=700');
     // Poll for connection status with cleanup

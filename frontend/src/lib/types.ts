@@ -76,8 +76,8 @@ export interface PullRequest {
   updatedAt: string;
   additions: number;
   deletions: number;
-  reviewDecision: string | null;
-  mergeable: string | null;
+  reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null;
   ciStatus: 'SUCCESS' | 'FAILURE' | 'ERROR' | 'PENDING' | null;
   isDraft: boolean;
   repoName?: string;

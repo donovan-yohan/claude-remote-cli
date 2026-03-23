@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
@@ -11,13 +12,28 @@ export interface GitHubAppDeps {
   clientId: string;
   clientSecret: string;
   fetchFn?: typeof globalThis.fetch;
+  onConnected?: () => void;
+}
+
+// CSRF state store: state value → expiry timestamp
+const csrfStateStore = new Map<string, number>();
+const CSRF_STATE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function pruneExpiredStates(): void {
+  const now = Date.now();
+  for (const [state, expiry] of csrfStateStore) {
+    if (now > expiry) csrfStateStore.delete(state);
+  }
 }
 
 /**
  * Creates and returns an Express Router that handles all /auth/github routes.
  *
  * Caller is responsible for mounting and applying auth middleware:
- *   app.use('/auth/github', createGitHubAppRouter({ configPath, clientId, clientSecret }));
+ *   app.use('/auth/github', requireAuth, createGitHubAppRouter({ configPath, clientId, clientSecret }));
+ * The callback route must be mounted separately without auth:
+ *   app.get('/auth/github/callback', ...) — handled by mounting this router at /auth/github/callback
+ *   with the callback route at GET /
  */
 export function createGitHubAppRouter(deps: GitHubAppDeps): Router {
   const { configPath, clientId, clientSecret } = deps;
@@ -32,21 +48,34 @@ export function createGitHubAppRouter(deps: GitHubAppDeps): Router {
   // GET / — Returns JSON { url } with the GitHub OAuth authorization URL
   // No redirect_uri — uses the GitHub App's configured callback URL
   router.get('/', (_req: Request, res: Response) => {
+    pruneExpiredStates();
+    const state = crypto.randomBytes(16).toString('hex');
+    csrfStateStore.set(state, Date.now() + CSRF_STATE_TTL_MS);
     const params = new URLSearchParams({
       client_id: clientId,
       scope: 'repo',
+      state,
     });
     const url = `https://github.com/login/oauth/authorize?${params.toString()}`;
     res.json({ url });
   });
 
   // GET /callback — Exchange auth code for token
+  // Also reachable at GET / when this router is mounted at /auth/github/callback
   router.get('/callback', async (req: Request, res: Response) => {
     const code = req.query['code'];
     if (!code || typeof code !== 'string') {
       res.status(400).json({ error: 'Missing code parameter' });
       return;
     }
+
+    // Validate CSRF state
+    const state = req.query['state'];
+    if (!state || typeof state !== 'string' || !csrfStateStore.has(state)) {
+      res.status(400).json({ error: 'Invalid or missing state parameter' });
+      return;
+    }
+    csrfStateStore.delete(state);
 
     // Exchange code for access token
     let accessToken: string;
@@ -119,6 +148,9 @@ export function createGitHubAppRouter(deps: GitHubAppDeps): Router {
       username,
     };
     saveConfig(configPath, config);
+
+    // Notify caller that connection is established (e.g. start webhook polling)
+    deps.onConnected?.();
 
     // Return HTML page that auto-closes
     res.setHeader('Content-Type', 'text/html');

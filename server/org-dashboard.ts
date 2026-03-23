@@ -199,8 +199,8 @@ export function createOrgDashboardRouter(deps: OrgDashboardDeps): Router {
         const response: PullRequestsResponse = { prs };
         res.json(response);
         return;
-      } catch {
-        // GraphQL failed — fall through to gh CLI path
+      } catch (err) {
+        console.warn('[org-dashboard] GraphQL fetch failed, falling back to gh CLI:', err instanceof Error ? err.message : String(err));
       }
     }
 
