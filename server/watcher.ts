@@ -276,7 +276,12 @@ export class BranchWatcher {
  */
 export function resolveGitDir(cwdPath: string): string | null {
   const dotGit = path.join(cwdPath, '.git');
-  const stat = fs.statSync(dotGit, { throwIfNoEntry: false });
+  let stat: fs.Stats | undefined;
+  try {
+    stat = fs.statSync(dotGit, { throwIfNoEntry: false });
+  } catch (_) {
+    return null; // EACCES, ENOTDIR, etc.
+  }
   if (!stat) return null;
 
   if (stat.isDirectory()) return dotGit;
@@ -320,7 +325,13 @@ export class RefWatcher {
   async rebuild(entries: Array<{ cwdPath: string; branch: string }>): Promise<void> {
     this._closeAll();
 
+    // Dedupe entries — multiple sessions can share the same cwdPath:branch
+    const seen = new Set<string>();
     for (const { cwdPath, branch } of entries) {
+      const dedupeKey = `${cwdPath}:${branch}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
       // Resolve the upstream tracking ref
       let upstreamRef: string;
       try {
