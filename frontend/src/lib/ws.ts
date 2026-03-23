@@ -2,7 +2,19 @@ import type { Terminal } from '@xterm/xterm';
 
 const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
 
-type EventCallback = (msg: { type: string; sessionId?: string; idle?: boolean; state?: string; branchName?: string; displayName?: string; repoPath?: string }) => void;
+interface EventMessage {
+  type: string;
+  sessionId?: string;
+  idle?: boolean;
+  state?: string;
+  branchName?: string;
+  displayName?: string;
+  repoPath?: string;
+  cwdPath?: string;
+  branch?: string;
+}
+
+type EventCallback = (msg: EventMessage) => void;
 
 let eventWs: WebSocket | null = null;
 let ptyWs: WebSocket | null = null;

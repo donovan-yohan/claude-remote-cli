@@ -83,6 +83,12 @@
   let actionColor = $derived(getStatusCssVar(prAction.color));
   let actionDark = $derived(shouldUseDarkText(prAction.color));
   let showAction = $derived(prAction.type !== 'none');
+  let isRefreshing = $derived(prQuery.isFetching || ciQuery.isFetching);
+
+  function handleRefresh() {
+    prQuery.refetch();
+    ciQuery.refetch();
+  }
 
   function handleActionClick(action: PrAction = prAction) {
     const ctx = {
@@ -92,13 +98,12 @@
       unresolvedCommentCount: pr?.unresolvedCommentCount ?? 0,
     };
     const prompt = getActionPrompt(action, ctx);
-    if (prompt !== null) {
-      if (sessionId) {
-        sendPtyData(prompt + '\r');
-      }
-    } else {
-      // archive actions
+    if (prompt === null) {
       onArchive?.();
+      return;
+    }
+    if (sessionId) {
+      sendPtyData(prompt + '\r');
     }
   }
 
@@ -148,6 +153,19 @@
 
   <!-- Right: action buttons -->
   <div class="bar-right">
+    <button
+      class="refresh-btn"
+      class:refreshing={isRefreshing}
+      onclick={handleRefresh}
+      disabled={isRefreshing}
+      aria-label="Refresh PR data"
+      title="Refresh PR data"
+    >
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M14 8A6 6 0 1 1 8 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path d="M8 0L14 2L12 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </button>
     {#if prQuery.isLoading}
       <span class="bar-loading">…</span>
     {:else}
@@ -261,7 +279,41 @@
     display: flex;
     align-items: center;
     padding-left: 10px;
+    gap: 6px;
     flex-shrink: 0;
+  }
+
+  .refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.12s, background 0.12s;
+  }
+
+  .refresh-btn:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--border);
+  }
+
+  .refresh-btn:disabled {
+    cursor: default;
+  }
+
+  .refresh-btn.refreshing svg {
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
 
   .bar-loading {

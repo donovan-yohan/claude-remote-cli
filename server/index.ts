@@ -15,7 +15,7 @@ import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, serializeAll, restoreFromDisk, activeTmuxSessionNames, populateMetaCache } from './sessions.js';
 import { setupWebSocket } from './ws.js';
-import { WorktreeWatcher, BranchWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
+import { WorktreeWatcher, BranchWatcher, RefWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
 import { listBranches, isBranchStale } from './git.js';
@@ -269,11 +269,32 @@ async function main(): Promise<void> {
         }
       }
     }
+    // Rebuild ref watchers when branches change (new upstream to watch)
+    rebuildRefWatcher();
   });
   branchWatcher.rebuild(config.workspaces || []);
   watcher.on('worktrees-changed', () => {
     branchWatcher.rebuild(config.workspaces || []);
   });
+
+  // Watch upstream tracking refs for push/fetch and broadcast ref-changed events
+  const refWatcher = new RefWatcher((cwdPath, branch) => {
+    broadcastEvent('ref-changed', { cwdPath, branch });
+  });
+
+  let refWatcherRebuildPending = false;
+  function rebuildRefWatcher(): void {
+    if (refWatcherRebuildPending) return;
+    refWatcherRebuildPending = true;
+    const entries = sessions.list()
+      .filter(s => s.branchName)
+      .map(s => ({ cwdPath: s.cwd, branch: s.branchName }));
+    refWatcher.rebuild(entries).finally(() => { refWatcherRebuildPending = false; });
+  }
+
+  rebuildRefWatcher();
+  sessions.onSessionCreate(() => rebuildRefWatcher());
+  sessions.onSessionEnd(() => rebuildRefWatcher());
 
   // Configure session defaults for hooks injection
   sessions.configure({ port: config.port, forceOutputParser: config.forceOutputParser ?? false });
@@ -1300,6 +1321,7 @@ async function main(): Promise<void> {
     await stopPolling();
     closeAnalytics();
     branchWatcher.close();
+    refWatcher.close();
     server.close();
     // Serialize sessions to disk BEFORE killing them
     const configDir = path.dirname(CONFIG_PATH);
