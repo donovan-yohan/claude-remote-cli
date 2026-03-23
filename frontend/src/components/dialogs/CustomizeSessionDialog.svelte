@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createRepoSession } from '../../lib/api.js';
+  import { createSession } from '../../lib/api.js';
   import { estimateTerminalDimensions } from '../../lib/utils.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
@@ -60,9 +60,10 @@
     const { cols, rows } = estimateTerminalDimensions();
 
     try {
-      const session = await createRepoSession({
-        repoPath: workspacePath,
-        repoName: workspaceName || workspacePath.split('/').filter(Boolean).pop(),
+      const session = await createSession({
+        workspacePath,
+        worktreePath: null,
+        type: 'agent',
         continue: continueExisting,
         yolo: yoloMode,
         claudeArgs: claudeArgs.length > 0 ? claudeArgs : undefined,

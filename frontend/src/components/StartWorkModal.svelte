@@ -105,8 +105,9 @@
 
     try {
       const session = await createSession({
-        repoPath,
-        repoName,
+        workspacePath: repoPath,
+        worktreePath: null,
+        type: 'agent',
         branchName,
         ticketContext: buildTicketContext(),
       });

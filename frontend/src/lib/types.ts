@@ -10,12 +10,13 @@ export interface Workspace {
 
 export interface SessionSummary {
   id: string;
-  type: 'repo' | 'worktree' | 'terminal';
+  type: 'agent' | 'terminal';
   agent: AgentType;
   mode?: 'pty' | undefined;
   repoName: string;
-  repoPath: string;
-  worktreeName: string;
+  workspacePath: string;
+  worktreePath: string | null;
+  cwd: string;
   branchName: string;
   displayName: string;
   createdAt: string;

@@ -6,7 +6,7 @@
   import { getSessionState, getSessionStatus, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
-  import { createSession, createRepoSession } from '../lib/api.js';
+  import { createSession } from '../lib/api.js';
   import ContextMenu from './ContextMenu.svelte';
   import type { MenuItem } from './ContextMenu.svelte';
 
@@ -53,7 +53,7 @@
   }
 
   function sessionDisplayName(session: SessionSummary): string {
-    if (session.type === 'repo') {
+    if (session.worktreePath === null) {
       // Show "default" unless the user explicitly renamed the session
       const wasRenamed = session.displayName && session.displayName !== session.repoName;
       return wasRenamed ? session.displayName : 'default';
@@ -65,7 +65,7 @@
   function groupDisplayName(groupPath: string, sessions: SessionSummary[]): string {
     const isRepoRoot = groupPath === workspace.path;
     if (isRepoRoot) {
-      const repoSession = sessions.find(s => s.type === 'repo');
+      const repoSession = sessions.find(s => s.worktreePath === null);
       if (repoSession) {
         const wasRenamed = repoSession.displayName && repoSession.displayName !== repoSession.repoName;
         return wasRenamed ? repoSession.displayName : 'default';
@@ -74,7 +74,8 @@
     }
     // All sessions in a worktree group share the same branch — use any
     const branch = sessions.find(s => s.branchName)?.branchName;
-    return branch || sessions[0]?.worktreeName || sessions[0]?.repoName || 'unknown';
+    const cwdName = sessions[0]?.cwd.split('/').pop();
+    return branch || cwdName || sessions[0]?.repoName || 'unknown';
   }
 
   // Aggregate status across all sessions in a group (priority: attention > permission-prompt > running > idle)
@@ -170,9 +171,9 @@
           setLoading(wt.path);
           try {
             const session = await createSession({
-              repoPath: workspace.path,
-              repoName: workspace.name,
+              workspacePath: workspace.path,
               worktreePath: wt.path,
+              type: 'agent',
               branchName: wt.branchName || wt.name,
             });
             await refreshAll();
@@ -189,9 +190,9 @@
           setLoading(wt.path);
           try {
             const session = await createSession({
-              repoPath: workspace.path,
-              repoName: workspace.name,
+              workspacePath: workspace.path,
               worktreePath: wt.path,
+              type: 'agent',
               branchName: wt.branchName || wt.name,
               yolo: true,
             });
@@ -311,9 +312,10 @@
               if (isItemLoading(repoLoadingKey)) return;
               setLoading(repoLoadingKey);
               try {
-                const session = await createRepoSession({
-                  repoPath: workspace.path,
-                  repoName: workspace.name,
+                const session = await createSession({
+                  workspacePath: workspace.path,
+                  worktreePath: null,
+                  type: 'agent',
                 });
                 await refreshAll();
                 onSelectSession(session.id);
@@ -346,9 +348,9 @@
             setLoading(wt.path);
             try {
               const session = await createSession({
-                repoPath: workspace.path,
-                repoName: workspace.name,
+                workspacePath: workspace.path,
                 worktreePath: wt.path,
+                type: 'agent',
                 branchName: wt.branchName || wt.name,
               });
               await refreshAll();

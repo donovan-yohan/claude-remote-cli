@@ -170,9 +170,10 @@ export async function fetchBranches(repoPath: string, options: { refresh?: boole
 }
 
 export async function createSession(body: {
-  repoPath: string;
-  repoName?: string | undefined;
-  worktreePath?: string | undefined;
+  workspacePath: string;
+  worktreePath?: string | null | undefined;
+  type?: 'agent' | 'terminal' | undefined;
+  continue?: boolean | undefined;
   branchName?: string | undefined;
   claudeArgs?: string[] | undefined;
   yolo?: boolean | undefined;
@@ -201,38 +202,6 @@ export async function createSession(body: {
     const data = await res.json() as { sessionId?: string };
     throw new ConflictError(data.sessionId ?? '');
   }
-  return json<SessionSummary>(res);
-}
-
-export async function createRepoSession(body: {
-  repoPath: string;
-  repoName?: string | undefined;
-  continue?: boolean | undefined;
-  claudeArgs?: string[] | undefined;
-  yolo?: boolean | undefined;
-  agent?: string | undefined;
-  useTmux?: boolean | undefined;
-  cols?: number | undefined;
-  rows?: number | undefined;
-}): Promise<SessionSummary> {
-  const res = await fetch('/sessions/repo', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (res.status === 409) {
-    const data = await res.json() as { sessionId?: string };
-    throw new ConflictError(data.sessionId ?? '');
-  }
-  return json<SessionSummary>(res);
-}
-
-export async function createTerminalSession(cwd?: string): Promise<SessionSummary> {
-  const res = await fetch('/sessions/terminal', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cwd }),
-  });
   return json<SessionSummary>(res);
 }
 

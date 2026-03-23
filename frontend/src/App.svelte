@@ -8,7 +8,7 @@
   import { getConfigState } from './lib/state/config.svelte.js';
   import { isMobileDevice, estimateTerminalDimensions } from './lib/utils.js';
   import type { WorktreeInfo, Workspace, PullRequest } from './lib/types.js';
-  import { createWorktree, createSession, createRepoSession, createTerminalSession, fetchWorkspaceSettings, killSession, deleteWorktree } from './lib/api.js';
+  import { createWorktree, createSession, fetchWorkspaceSettings, killSession, deleteWorktree } from './lib/api.js';
   import { derivePrAction, getActionPrompt } from './lib/pr-state.js';
   import { initAnalytics, destroyAnalytics, track } from './lib/analytics.js';
   import PinGate from './components/PinGate.svelte';
@@ -48,10 +48,10 @@
 
   function navigateToSession(sessionId: string, _sessionType: string) {
     sessionState.activeSessionId = sessionId;
-    // Set active workspace from session's repoPath
+    // Set active workspace from session's workspacePath
     const session = sessionState.sessions.find(s => s.id === sessionId);
     if (session) {
-      ui.activeWorkspacePath = session.repoPath;
+      ui.activeWorkspacePath = session.workspacePath;
     }
     clearAttention(sessionId);
     closeSidebar();
@@ -340,13 +340,13 @@
   // Sorted by createdAt so new tabs always appear rightmost.
   let workspaceSessions = $derived(
     (activeSession
-      ? allWorkspaceSessions.filter(s => s.repoPath === activeSession.repoPath)
+      ? allWorkspaceSessions.filter(s => s.cwd === activeSession.cwd)
       : allWorkspaceSessions
     ).toSorted((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
   );
 
   let hasActiveSession = $derived(!!activeSession && !!ui.activeWorkspacePath && (
-    activeSession.repoPath === ui.activeWorkspacePath || activeSession.repoPath.startsWith(ui.activeWorkspacePath + '/')
+    activeSession.workspacePath === ui.activeWorkspacePath
   ));
 
   let sessionTitle = $derived(
@@ -380,11 +380,7 @@
     sessionState.activeSessionId = id;
     const session = sessionState.sessions.find(s => s.id === id);
     if (session) {
-      // For worktree sessions, find the parent workspace path
-      const workspace = sessionState.workspaces.find(w =>
-        session.repoPath === w.path || session.repoPath.startsWith(w.path + '/')
-      );
-      ui.activeWorkspacePath = workspace?.path ?? session.repoPath;
+      ui.activeWorkspacePath = session.workspacePath;
     }
     clearAttention(id);
     closeSidebar();
@@ -395,9 +391,10 @@
     if (!activeWorkspace) return;
     const { cols, rows } = estimateTerminalDimensions();
     try {
-      const session = await createRepoSession({
-        repoPath: activeWorkspace.path,
-        repoName: activeWorkspace.name,
+      const session = await createSession({
+        workspacePath: activeWorkspace.path,
+        worktreePath: activeSession?.worktreePath ?? null,
+        type: 'agent',
         continue: configState.defaultContinue,
         yolo: configState.defaultYolo,
         agent: configState.defaultAgent,
@@ -426,7 +423,11 @@
   async function handleQuickTerminal() {
     if (!activeWorkspace) return;
     try {
-      const session = await createTerminalSession(activeWorkspace.path);
+      const session = await createSession({
+        workspacePath: activeWorkspace.path,
+        worktreePath: activeSession?.worktreePath ?? null,
+        type: 'terminal',
+      });
       await refreshAll();
       if (session?.id) {
         sessionState.activeSessionId = session.id;
@@ -462,9 +463,9 @@
     try {
       const { branchName, worktreePath } = await createWorktree(workspace.path);
       const session = await createSession({
-        repoPath: workspace.path,
-        repoName: workspace.name,
+        workspacePath: workspace.path,
         worktreePath,
+        type: 'agent',
         branchName,
         needsBranchRename: true,
       });
@@ -475,8 +476,7 @@
       closeSidebar();
       terminalRef?.focusTerm();
     } catch (e) {
-      // Fall back to dialog on error
-      customizeDialogRef?.open({ name: workspace.name, path: workspace.path });
+      console.error('Failed to create worktree session:', e);
     } finally {
       clearLoading(loadingKey);
     }
@@ -487,7 +487,7 @@
 
     const workspacePath = activeWorkspace.path;
 
-    const existingSession = sessionState.sessions.find(s => s.branchName === pr.headRefName && s.repoPath.startsWith(workspacePath));
+    const existingSession = sessionState.sessions.find(s => s.branchName === pr.headRefName && s.workspacePath === workspacePath);
     const existingWorktree = sessionState.worktrees.find(w => w.branchName === pr.headRefName && w.repoPath === workspacePath);
 
     let prompt = `Merge the branch "${pr.baseRefName}" into this branch and resolve all merge conflicts. Use \`git merge ${pr.baseRefName}\` and fix any conflicts in the working tree. After resolving, verify the build passes.`;
@@ -503,12 +503,12 @@
     }
 
     try {
-      let worktreePath: string;
+      let worktreePath: string | null;
       let branchName: string;
 
       if (existingSession) {
         // Active session exists in this branch's worktree — open a new tab there
-        worktreePath = existingSession.repoPath;
+        worktreePath = existingSession.worktreePath;
         branchName = existingSession.branchName;
       } else if (existingWorktree) {
         // Inactive worktree exists for this branch — reuse it
@@ -522,9 +522,9 @@
       }
 
       const session = await createSession({
-        repoPath: workspacePath,
-        repoName: activeWorkspace.name,
+        workspacePath,
         worktreePath,
+        type: 'agent',
         branchName,
       });
       await refreshAll();
@@ -546,15 +546,15 @@
     if (!activeWorkspace) return;
     const workspacePath = activeWorkspace.path;
 
-    const existingSession = sessionState.sessions.find(s => s.branchName === pr.headRefName && s.repoPath.startsWith(workspacePath));
+    const existingSession = sessionState.sessions.find(s => s.branchName === pr.headRefName && s.workspacePath === workspacePath);
     const existingWorktree = sessionState.worktrees.find(w => w.branchName === pr.headRefName && w.repoPath === workspacePath);
 
     try {
-      let worktreePath: string;
+      let worktreePath: string | null;
       let branchName: string;
 
       if (existingSession) {
-        worktreePath = existingSession.repoPath;
+        worktreePath = existingSession.worktreePath;
         branchName = existingSession.branchName;
       } else if (existingWorktree) {
         worktreePath = existingWorktree.path;
@@ -566,9 +566,9 @@
       }
 
       const session = await createSession({
-        repoPath: workspacePath,
-        repoName: activeWorkspace.name,
+        workspacePath,
         worktreePath,
+        type: 'agent',
         branchName,
       });
       await refreshAll();
@@ -707,16 +707,11 @@
     await killSession(sessionId);
 
     // If worktree session, delete the worktree too
-    if (session.type === 'worktree') {
-      const workspace = sessionState.workspaces.find(w =>
-        session.repoPath === w.path || session.repoPath.startsWith(w.path + '/')
-      );
-      if (workspace && session.repoPath !== workspace.path) {
-        try {
-          await deleteWorktree(session.repoPath, workspace.path);
-        } catch {
-          // Best effort — worktree may already be gone
-        }
+    if (session.worktreePath !== null) {
+      try {
+        await deleteWorktree(session.worktreePath!, session.workspacePath);
+      } catch {
+        // Best effort — worktree may already be gone
       }
     }
 
