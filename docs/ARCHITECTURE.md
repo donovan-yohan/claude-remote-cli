@@ -105,12 +105,10 @@ PTY flow:
 |--------|------|-------------|
 | `POST` | `/auth` | Authenticate with PIN, returns session cookie |
 | `GET` | `/sessions` | List active sessions |
-| `POST` | `/sessions` | Create worktree session (accepts `branchName`, `claudeArgs`) |
-| `POST` | `/sessions/repo` | Create repo session (no worktree, supports `continue`) |
+| `POST` | `/sessions` | Create session (agent or terminal, in workspace root or worktree) |
 | `PATCH` | `/sessions/:id` | Rename session |
 | `DELETE` | `/sessions/:id` | Terminate session |
 | `POST` | `/sessions/:id/image` | Upload clipboard image |
-| `POST` | `/sessions/terminal` | Create terminal session (bare shell, optional `cwd`) |
 | `GET` | `/branches` | List local and remote branches |
 | `GET` | `/worktrees` | List inactive Claude Code worktrees |
 | `DELETE` | `/worktrees` | Remove worktree, prune refs, delete branch |

@@ -46,8 +46,11 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 
 ## Session Types
 
-- **Repo sessions** (`POST /sessions/repo`) — The selected coding agent runs directly in the repo root. One per repo path (409 on conflict). Supports `continue: true`, which maps to agent-specific continue args.
-- **Worktree sessions** (`POST /sessions`) — Creates git worktree under `.worktrees/` and launches the selected coding agent there. Multiple per repo allowed. If a branch is already checked out (main worktree or another worktree), auto-redirects to that location instead of failing. Default branch names cycle through mountain names (everest, kilimanjaro, denali, ...) tracked per-config via `nextMountainIndex`.
+Sessions are typed as `'agent' | 'terminal'`. All sessions carry a `workspacePath` (the repo root) and an optional `worktreePath` (null for workspace-root sessions, populated for worktree sessions). There is no `'repo'` or `'worktree'` type distinction — the presence of `worktreePath` encodes location.
+
+- **Agent sessions** — The selected coding agent (Claude or Codex) runs in either the workspace root (`worktreePath` is null) or a git worktree (`worktreePath` is set). Workspace-root agent sessions support `continue: true`, which maps to agent-specific continue args. Multiple sessions per workspace are allowed.
+- **Terminal sessions** — A bare shell spawned in either the workspace root or a worktree. Useful for running commands alongside agent sessions.
+- **Worktree creation** — When `worktreePath` is provided and the worktree does not yet exist, `POST /sessions` creates it under `.worktrees/`. If a branch is already checked out (main worktree or another worktree), the session auto-redirects to that location. Default branch names cycle through mountain names (everest, kilimanjaro, denali, ...) tracked per-config via `nextMountainIndex`.
 - **Branch auto-rename** — New worktrees with mountain names get `needsBranchRename: true`. The rename instruction is delivered via a sideband `claude -p` invocation (a one-shot non-interactive Claude process) rather than PTY injection, keeping the main session's input stream clean. The `BranchWatcher` (`server/watcher.ts`) uses `fs.watch` on `.git/HEAD` files to detect branch changes reactively and broadcasts `session-renamed` when a branch changes. Additionally, `GET /sessions` enriches session data with live branch names (rate-limited to 10s intervals).
 - **Worktree deletion** (`DELETE /worktrees`) — Validated via `git worktree list` (supports arbitrary paths, not just `.worktrees/`). Main worktree cannot be deleted.
 
