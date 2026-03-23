@@ -34,3 +34,4 @@
 | [new-tab-modal-mismatch-bug-analysis.md](2026-03-21-new-tab-modal-mismatch-bug-analysis.md) | New tab dropdown uses wrong labels, terminal creation broken, modal shows irrelevant repo/worktree tabs in workspace mode | 2026-03-21 |
 | [stale-session-branch-name-bug-analysis.md](2026-03-22-stale-session-branch-name-bug-analysis.md) | Session branch name frozen at creation time — no `.git/HEAD` watcher, no polling, no refresh mechanism | 2026-03-22 |
 | [sidenav-tab-leak-bug-analysis.md](2026-03-22-sidenav-tab-leak-bug-analysis.md) | Sidenav entry name/icon changes when adding new tab — representative session leaks tab identity into sidebar | 2026-03-22 |
+| [session-flags-lost-on-restart-bug-analysis.md](2026-03-22-session-flags-lost-on-restart-bug-analysis.md) | Session flags (yolo, claudeArgs) lost on auto-update restart — args consumed at spawn, never stored or serialized | 2026-03-22 |

@@ -28,6 +28,7 @@ See `docs/exec-plans/completed/` for historical plans (47 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `session-flags-lost-on-restart` | 2026-03-22 | Preserve yolo/claudeArgs flags across auto-update restart |
 | `hooks-state-detection` | 2026-03-20 | Replace output parser with Claude Code hooks for state detection + branch rename |
 | `local-analytics` | 2026-03-20 | SQLite-backed local analytics and user behavior tracking |
 | `settings-centralization` | 2026-03-19 | Centralize settings resolution server-side; fix sidebar ignoring yolo/agent/tmux defaults |

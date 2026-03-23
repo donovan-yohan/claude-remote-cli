@@ -79,6 +79,8 @@ export type CreatePtyParams = {
   restored?: boolean | undefined;
   port?: number | undefined;
   forceOutputParser?: boolean | undefined;
+  yolo?: boolean | undefined;
+  claudeArgs?: string[] | undefined;
 };
 
 export type CreatePtyResult = SessionSummary & { pid: number | undefined };
@@ -112,6 +114,8 @@ export function createPtySession(
     restored: paramRestored,
     port,
     forceOutputParser,
+    yolo: paramYolo,
+    claudeArgs: paramClaudeArgs,
   } = params;
 
   let args = rawArgs;
@@ -192,6 +196,8 @@ export function createPtySession(
     hookToken,
     hooksActive,
     cleanedUp: false,
+    yolo: paramYolo ?? false,
+    claudeArgs: paramClaudeArgs ?? [],
     _lastHookTime: undefined,
   };
   sessionsMap.set(id, session);

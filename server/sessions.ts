@@ -28,6 +28,8 @@ interface SerializedPtySession {
   tmuxSessionName: string;
   customCommand: string | null;
   cwd: string;
+  yolo: boolean;
+  claudeArgs: string[];
 }
 
 interface PendingSessionsFile {
@@ -299,11 +301,13 @@ function serializeAll(configDir: string): void {
       tmuxSessionName: session.tmuxSessionName,
       customCommand: session.customCommand,
       cwd: session.cwd,
+      yolo: session.yolo,
+      claudeArgs: session.claudeArgs,
     });
   }
 
   const pending: PendingSessionsFile = {
-    version: 1,
+    version: 2,
     timestamp: new Date().toISOString(),
     sessions: serializedPty,
   };
@@ -366,12 +370,20 @@ async function restoreFromDisk(configDir: string): Promise<number> {
         command = 'tmux';
         args = ['-u', 'attach-session', '-t', s.tmuxSessionName];
       } else {
-        // Tmux session died — fall back to agent with continue args
-        args = [...AGENT_CONTINUE_ARGS[s.agent]];
+        // Tmux session died — fall back to agent with continue args + preserved flags
+        args = [
+          ...(s.claudeArgs ?? []),
+          ...(s.yolo ? AGENT_YOLO_ARGS[s.agent] : []),
+          ...AGENT_CONTINUE_ARGS[s.agent],
+        ];
       }
     } else {
-      // Non-tmux agent session — respawn with continue args
-      args = [...AGENT_CONTINUE_ARGS[s.agent]];
+      // Non-tmux agent session — respawn with continue args + preserved flags
+      args = [
+        ...(s.claudeArgs ?? []),
+        ...(s.yolo ? AGENT_YOLO_ARGS[s.agent] : []),
+        ...AGENT_CONTINUE_ARGS[s.agent],
+      ];
     }
 
     try {
@@ -390,6 +402,8 @@ async function restoreFromDisk(configDir: string): Promise<number> {
         useTmux: false, // Don't re-wrap in tmux — either attaching to existing or using plain agent
         tmuxSessionName: s.tmuxSessionName,
         restored: true,
+        yolo: s.yolo ?? false,
+        claudeArgs: s.claudeArgs ?? [],
       };
       if (command) createParams.command = command;
       if (initialScrollback) createParams.initialScrollback = initialScrollback;
