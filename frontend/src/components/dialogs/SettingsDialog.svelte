@@ -198,7 +198,7 @@
 >
   <div class="dialog-content">
     <div class="dialog-header">
-      <h2 class="dialog-title">Settings</h2>
+      <h2 class="dialog-title">Relay Settings</h2>
       <button class="close-btn" aria-label="Close settings" onclick={handleClose}>&#10005;</button>
     </div>
 

@@ -23,6 +23,7 @@
   import MobileHeader from './components/MobileHeader.svelte';
   import UpdateToast from './components/UpdateToast.svelte';
   import ImageToast from './components/ImageToast.svelte';
+  import Spotlight from './components/Spotlight.svelte';
   import CustomizeSessionDialog from './components/dialogs/CustomizeSessionDialog.svelte';
   import SettingsDialog from './components/dialogs/SettingsDialog.svelte';
   import DeleteWorktreeDialog from './components/dialogs/DeleteWorktreeDialog.svelte';
@@ -68,6 +69,7 @@
   let mainAppEl = $state<HTMLDivElement | undefined>();
 
   let keyboardOpen = $state(false);
+  let spotlightOpen = $state(false);
 
   onMount(() => {
     initAnalytics(() => sessionState.activeSessionId);
@@ -105,10 +107,18 @@
 
     {
       const onKeydown = (e: KeyboardEvent) => {
+        const mod = isMac ? e.metaKey : e.ctrlKey;
+
+        // Cmd/Ctrl+P — open spotlight (works even from input fields)
+        if (mod && e.key === 'p' && !e.shiftKey) {
+          e.preventDefault();
+          spotlightOpen = !spotlightOpen;
+          return;
+        }
+
         const tag = (document.activeElement as HTMLElement | null)?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
-        const mod = isMac ? e.metaKey : e.ctrlKey;
         if (!mod) return;
 
         // Cmd/Ctrl+T — quick new agent session
@@ -340,7 +350,7 @@
   ));
 
   let sessionTitle = $derived(
-    activeSession?.displayName || activeWorkspace?.name || 'Claude Remote CLI'
+    activeSession?.displayName || activeWorkspace?.name || 'Relay'
   );
 
   let activeSessionUseTmux = $derived(activeSession?.useTmux ?? false);
@@ -652,6 +662,29 @@
 
   let addWorkspaceDialogRef = $state<AddWorkspaceDialog | undefined>();
 
+  function handleSpotlightCommand(cmd: string) {
+    switch (cmd) {
+      case 'new-worktree':
+        if (activeWorkspace) handleNewWorktree(activeWorkspace);
+        break;
+      case 'new-agent':
+        handleQuickAgent();
+        break;
+      case 'settings':
+        handleOpenSettings();
+        break;
+    }
+  }
+
+  function handleSpotlightSelectPr(pr: import('./lib/types.js').PullRequest) {
+    // Navigate to the PR's workspace, then open the PR branch
+    if (pr.repoPath) {
+      ui.activeWorkspacePath = pr.repoPath;
+      sessionState.activeSessionId = null;
+    }
+    handleOpenPrBranch(pr);
+  }
+
   function handleAddWorkspace() {
     addWorkspaceDialogRef?.open();
   }
@@ -804,6 +837,18 @@
       await refreshAll();
       if (ui.activeWorkspacePath === p) ui.activeWorkspacePath = null;
     }}
+  />
+
+  <!-- Spotlight command palette -->
+  <Spotlight
+    open={spotlightOpen}
+    workspaces={sessionState.workspaces}
+    sessions={sessionState.sessions}
+    onClose={() => { spotlightOpen = false; }}
+    onSelectWorkspace={(path) => { ui.activeWorkspacePath = path; sessionState.activeSessionId = null; closeSidebar(); }}
+    onSelectSession={(id) => handleSelectSession(id)}
+    onSelectPr={handleSpotlightSelectPr}
+    onCommand={handleSpotlightCommand}
   />
 
   <!-- Toasts -->
