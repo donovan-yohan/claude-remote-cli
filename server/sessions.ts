@@ -337,7 +337,11 @@ async function restoreFromDisk(configDir: string, workspaces?: string[]): Promis
         // Derive workspacePath: find configured workspace that contains this cwd
         const configuredWorkspaces = workspaces ?? [];
         const cwd = (s as any).cwd ?? legacy.repoPath ?? '';
-        (s as any).workspacePath = configuredWorkspaces.find(w => cwd === w || cwd.startsWith(w + '/')) ?? cwd;
+        const matchedWorkspace = configuredWorkspaces.find(w => cwd === w || cwd.startsWith(w + '/'));
+        if (!matchedWorkspace) {
+          console.warn(`[sessions] v2→v3 migration: no configured workspace matches cwd "${cwd}", using cwd as workspacePath`);
+        }
+        (s as any).workspacePath = matchedWorkspace ?? cwd;
       }
       if (!('worktreePath' in s)) {
         const cwd = (s as any).cwd ?? '';
@@ -433,8 +437,8 @@ async function restoreFromDisk(configDir: string, workspaces?: string[]): Promis
       if (initialScrollback) createParams.initialScrollback = initialScrollback;
       create(createParams);
       restored++;
-    } catch {
-      console.error(`Failed to restore session ${s.id} (${s.displayName})`);
+    } catch (err) {
+      console.error(`Failed to restore session ${s.id} (${s.displayName})`, err);
     }
 
     // Clean up scrollback file

@@ -276,7 +276,7 @@ describe('sessions', () => {
     assert.strictEqual(session.cwd, '/tmp/workspace/.worktrees/my-branch');
   });
 
-  it('branchName defaults to empty string when neither branchName nor worktreeName provided', () => {
+  it('branchName defaults to empty string when branchName is not provided', () => {
     const result = sessions.create({
       type: 'agent',
       repoName: 'test-repo',

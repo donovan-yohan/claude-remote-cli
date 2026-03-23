@@ -477,6 +477,8 @@
       terminalRef?.focusTerm();
     } catch (e) {
       console.error('Failed to create worktree session:', e);
+      // Fall back to dialog on error so user can retry with options
+      customizeDialogRef?.open({ name: workspace.name, path: workspace.path });
     } finally {
       clearLoading(loadingKey);
     }
@@ -709,7 +711,7 @@
     // If worktree session, delete the worktree too
     if (session.worktreePath !== null) {
       try {
-        await deleteWorktree(session.worktreePath!, session.workspacePath);
+        await deleteWorktree(session.worktreePath, session.workspacePath);
       } catch {
         // Best effort — worktree may already be gone
       }

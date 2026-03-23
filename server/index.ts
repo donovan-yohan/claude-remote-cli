@@ -563,7 +563,6 @@ async function main(): Promise<void> {
       const lastRefresh = branchRefreshCache.get(s.id) ?? 0;
       if (now - lastRefresh < BRANCH_REFRESH_INTERVAL_MS) return;
       const cwd = s.cwd;
-      if (!cwd) return;
       branchRefreshCache.set(s.id, now);
       try {
         const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd });
@@ -1025,7 +1024,7 @@ async function main(): Promise<void> {
     } else if (needsBranchRename) {
       useContinue = false; // brand-new worktree
     } else {
-      useContinue = fs.existsSync(path.join(cwd, '.claude'));
+      useContinue = resolved.continue && fs.existsSync(path.join(cwd, '.claude'));
     }
 
     const args = useContinue
