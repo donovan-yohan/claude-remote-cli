@@ -29,6 +29,9 @@ import { createHooksRouter } from './hooks.js';
 import { createTicketTransitionsRouter } from './ticket-transitions.js';
 import { createIntegrationJiraRouter } from './integration-jira.js';
 import { startPolling, stopPolling } from './review-poller.js';
+import { createGitHubAppRouter } from './github-app.js';
+import { createWebhookRouter } from './webhooks.js';
+import { fetchPrsGraphQL } from './github-graphql.js';
 import type { AgentType, AutomationSettings, Config } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 import { semverLessThan } from './utils.js';
@@ -356,8 +359,32 @@ async function main(): Promise<void> {
   const { router: ticketTransitionsRouter, transitionOnSessionCreate, checkPrTransitions } = createTicketTransitionsRouter({ configPath: CONFIG_PATH });
   app.use('/ticket-transitions', requireAuth, ticketTransitionsRouter);
 
-  // Mount org dashboard router — use branchLinkerRouter.fetchLinks() directly (no loopback HTTP)
-  const orgDashboardRouter = createOrgDashboardRouter({ configPath: CONFIG_PATH, checkPrTransitions, getBranchLinks: () => branchLinkerRouter.fetchLinks() });
+  // Mount GitHub App OAuth (no auth — callback comes from GitHub redirect)
+  const githubAppRouter = createGitHubAppRouter({
+    configPath: CONFIG_PATH,
+    clientId: process.env.GITHUB_CLIENT_ID ?? '',
+    clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
+  });
+  app.use('/auth/github', githubAppRouter);
+
+  // Mount webhooks (no auth — GitHub sends these with HMAC signature)
+  const webhookSecret = config.github?.webhookSecret;
+  if (webhookSecret) {
+    const webhookRouter = createWebhookRouter({
+      secret: webhookSecret,
+      broadcastEvent,
+      getWorkspacePaths: () => loadConfig(CONFIG_PATH).workspaces ?? [],
+    });
+    app.use('/webhooks', webhookRouter);
+  }
+
+  // Mount org dashboard router — use GraphQL when token available, fall back to gh CLI
+  const orgDashboardRouter = createOrgDashboardRouter({
+    configPath: CONFIG_PATH,
+    checkPrTransitions,
+    getBranchLinks: () => branchLinkerRouter.fetchLinks(),
+    fetchGraphQL: fetchPrsGraphQL,
+  });
   app.use('/org-dashboard', requireAuth, orgDashboardRouter);
 
   // Mount analytics router
@@ -410,6 +437,55 @@ async function main(): Promise<void> {
   // Start review request poller if enabled
   if (config.automations?.autoCheckoutReviewRequests) {
     startPolling(buildPollerDeps());
+  }
+
+  // Start smee-client for webhook delivery (with polling fallback)
+  const smeeUrl = config.github?.smeeUrl;
+  const githubToken = config.github?.accessToken;
+  let webhookPollingInterval: ReturnType<typeof setInterval> | null = null;
+  let smeeErrorCount = 0;
+
+  function startWebhookPolling(): void {
+    if (webhookPollingInterval) return;
+    webhookPollingInterval = setInterval(() => {
+      broadcastEvent('pr-updated');
+      broadcastEvent('ci-updated');
+    }, 30_000);
+  }
+
+  function stopWebhookPolling(): void {
+    if (webhookPollingInterval) {
+      clearInterval(webhookPollingInterval);
+      webhookPollingInterval = null;
+    }
+  }
+
+  if (smeeUrl) {
+    import('smee-client').then(({ default: SmeeClient }) => {
+      const smee = new SmeeClient({
+        source: smeeUrl,
+        target: `http://127.0.0.1:${config.port}/webhooks`,
+        logger: {
+          info: () => {},
+          error: () => {
+            smeeErrorCount++;
+            if (smeeErrorCount >= 3) startWebhookPolling();
+          },
+        },
+      });
+      smee.start().then((events) => {
+        events.addEventListener('open', () => {
+          smeeErrorCount = 0;
+          stopWebhookPolling();
+        });
+      }).catch(() => {});
+    }).catch(() => {
+      // smee-client not available — use polling
+      if (githubToken) startWebhookPolling();
+    });
+  } else if (githubToken) {
+    // No smee URL configured — use polling
+    startWebhookPolling();
   }
 
   // Invalidate branch linker cache on session lifecycle changes
