@@ -293,6 +293,10 @@
           refChangedTimers.delete(key);
           invalidatePrQueries();
         }, 5000));
+      } else if (msg.type === 'pr-updated' || msg.type === 'ci-updated') {
+        queryClient.invalidateQueries({ queryKey: ['org-prs'] });
+        queryClient.invalidateQueries({ queryKey: ['pr'] });
+        queryClient.invalidateQueries({ queryKey: ['ci-status'] });
       }
     });
 

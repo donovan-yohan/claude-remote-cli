@@ -443,3 +443,16 @@ export async function savePreset(preset: { name: string; filters: FilterPreset['
 export async function deletePreset(name: string): Promise<void> {
   await fetch(`/presets/${encodeURIComponent(name)}`, { method: 'DELETE', credentials: 'include' });
 }
+
+export async function fetchGitHubStatus(): Promise<{ connected: boolean; username: string | null }> {
+  return json<{ connected: boolean; username: string | null }>(await fetch('/auth/github/status'));
+}
+
+export async function fetchGitHubAuthUrl(): Promise<string> {
+  const data = await json<{ url: string }>(await fetch('/auth/github'));
+  return data.url;
+}
+
+export async function disconnectGitHub(): Promise<void> {
+  await fetch('/auth/github/disconnect', { method: 'POST' });
+}

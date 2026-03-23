@@ -55,6 +55,7 @@
     { key: 'title', label: 'Title', sortable: true },
     { key: 'repo', label: 'Repo', sortable: true, width: '100px' },
     { key: 'role', label: 'Role', sortable: true, width: '60px' },
+    { key: 'ci', label: 'CI', sortable: false, width: '32px' },
     { key: 'age', label: 'Age', sortable: true, width: '50px' },
     { key: 'action', label: '', sortable: false, width: '80px' },
   ];
@@ -92,6 +93,14 @@
     return pr.role === 'author' ? 'by you' : 'review requested';
   }
 
+  function ciIcon(pr: PullRequest): { icon: string; cls: string } | null {
+    if (!pr.ciStatus) return null;
+    if (pr.ciStatus === 'SUCCESS') return { icon: '✓', cls: 'ci-pass' };
+    if (pr.ciStatus === 'FAILURE' || pr.ciStatus === 'ERROR') return { icon: '✗', cls: 'ci-fail' };
+    if (pr.ciStatus === 'PENDING') return { icon: '●', cls: 'ci-pending' };
+    return null;
+  }
+
   let allPrs = $derived(data?.prs ?? []);
 
   // --- Filter + sort pipeline ---
@@ -110,12 +119,18 @@
         (pr.headRefName ?? '').toLowerCase().includes(q)
       );
     }
-    // Sort: default is role (reviewer first) then updated
+    // Sort: default is role (priority tier) then updated
     if (sortBy === 'role') {
-      const roleOrder: Record<string, number> = { reviewer: 0, author: 1 };
+      const priorityTier = (pr: PullRequest): number => {
+        if (pr.reviewDecision === 'CHANGES_REQUESTED' && pr.role === 'author') return 0;
+        if (pr.role === 'reviewer') return 1;
+        if (pr.role === 'author' && !pr.reviewDecision) return 2;
+        if (pr.reviewDecision === 'APPROVED' && pr.ciStatus === 'SUCCESS') return 3;
+        return 4;
+      };
       prs = [...prs].sort((a, b) => {
-        const roleDiff = (roleOrder[a.role] ?? 1) - (roleOrder[b.role] ?? 1);
-        if (roleDiff !== 0) return sortDir === 'asc' ? roleDiff : -roleDiff;
+        const tierDiff = priorityTier(a) - priorityTier(b);
+        if (tierDiff !== 0) return sortDir === 'asc' ? tierDiff : -tierDiff;
         return b.updatedAt.localeCompare(a.updatedAt);
       });
     } else if (sortBy === 'title') {
@@ -351,6 +366,13 @@
           <div class="cell cell--role" style:width="60px" style:flex="none">
             <span class="pr-meta-text">{pr.role}</span>
           </div>
+          <!-- CI column -->
+          {@const ci = ciIcon(pr)}
+          <div class="cell cell--ci" style:width="32px" style:flex="none">
+            {#if ci}
+              <span class="ci-icon {ci.cls}">{ci.icon}</span>
+            {/if}
+          </div>
           <!-- Age column -->
           <div class="cell cell--age" style:width="50px" style:flex="none">
             <span class="pr-meta-text">{formatRelativeTime(pr.updatedAt)}</span>
@@ -583,6 +605,16 @@
   .cell--action {
     justify-content: flex-end;
   }
+
+  .cell--ci {
+    justify-content: center;
+  }
+
+  .ci-icon { font-size: 12px; font-weight: bold; }
+  .ci-pass { color: var(--status-success); }
+  .ci-fail { color: var(--status-error); }
+  .ci-pending { color: var(--status-warning); animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
   /* -- PR row content -- */
   .pr-row-title-line {

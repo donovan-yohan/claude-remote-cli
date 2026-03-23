@@ -13,8 +13,9 @@
     COLLAPSED_SIDEBAR_WIDTH,
   } from '../lib/state/ui.svelte.js';
   import { getSessionState, getSessionsForWorkspace, reorderWorkspaces } from '../lib/state/sessions.svelte.js';
-  import type { Workspace, WorktreeInfo } from '../lib/types.js';
-  import { fetchWorkspaceGroups } from '../lib/api.js';
+  import type { Workspace, WorktreeInfo, OrgPrsResponse } from '../lib/types.js';
+  import { fetchWorkspaceGroups, fetchOrgPrs } from '../lib/api.js';
+  import { createQuery } from '@tanstack/svelte-query';
   import { dndzone } from 'svelte-dnd-action';
   import WorkspaceItem from './WorkspaceItem.svelte';
   import SmartSearch from './SmartSearch.svelte';
@@ -111,6 +112,15 @@
   function handleDoneReorder() {
     exitReorderMode();
   }
+
+  // ── Org PRs for sidebar enrichment ──
+  const orgQuery = createQuery<OrgPrsResponse>(() => ({
+    queryKey: ['org-prs'],
+    queryFn: fetchOrgPrs,
+    staleTime: 60_000,
+  }));
+
+  let orgPrs = $derived(orgQuery.data?.prs ?? []);
 
   // ── Workspace groups ──
   let workspaceGroups = $state<Record<string, string[]>>({});
@@ -253,6 +263,7 @@
               onOpenSettings={(ws) => onOpenSettings(ws)}
               onDeleteSession={(id) => onDeleteSession?.(id)}
               onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
+              {orgPrs}
             />
           </div>
         {/each}
@@ -292,6 +303,7 @@
                 onOpenSettings={(ws) => onOpenSettings(ws)}
                 onDeleteSession={(id) => onDeleteSession?.(id)}
                 onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
+                {orgPrs}
               />
             </div>
           {/each}
