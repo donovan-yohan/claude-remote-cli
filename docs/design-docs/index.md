@@ -43,3 +43,4 @@
 | [2026-03-21-org-dashboard-phase4-design.md](2026-03-21-org-dashboard-phase4-design.md) | Jira + Linear integrations with native metadata and StatusMappingModal | 2026-03-21 | implemented |
 | [2026-03-21-org-dashboard-phase5-design.md](2026-03-21-org-dashboard-phase5-design.md) | PR review automation: auto-checkout review requests, auto-review with code review prompt | 2026-03-21 | implemented |
 | [2026-03-22-org-dashboard-cleanup-design.md](2026-03-22-org-dashboard-cleanup-design.md) | Org dashboard cleanup: tests, dead code, perf fix, API limitation docs | 2026-03-22 | implemented |
+| [2026-03-23-pr-auto-refresh-design.md](2026-03-23-pr-auto-refresh-design.md) | Manual refresh button + automatic PR data sync via git ref watching | 2026-03-23 | implemented |

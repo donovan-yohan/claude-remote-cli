@@ -28,7 +28,7 @@ Twenty-one TypeScript modules compiled to `dist/server/` via `tsc`. Modules comm
 | `ws.ts` | WebSocket upgrade handler: binary relay for PTY I/O + resize JSON, event broadcast channel |
 | `mobile-input-pipeline.ts` | Pure-function event-intent pipeline for mobile virtual keyboard input; unit-tested via JSON fixtures |
 | `utils.ts` | Shared server utilities |
-| `watcher.ts` | File system watching for workspace directories, debounced event emission |
+| `watcher.ts` | File system watching: WorktreeWatcher (workspace dirs), BranchWatcher (.git/HEAD), RefWatcher (upstream tracking refs for PR auto-refresh) |
 | `auth.ts` | PIN hashing (scrypt), rate limiting (5 fails = 15-min lockout), cookie tokens |
 | `config.ts` | Config loading/saving with defaults, per-workspace settings, worktree metadata |
 | `clipboard.ts` | System clipboard detection and image-set operations (osascript/xclip) |

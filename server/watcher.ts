@@ -8,6 +8,12 @@ const execFileAsync = promisify(execFile);
 
 export const WORKTREE_DIRS = ['.worktrees', '.claude/worktrees'];
 
+function closeWatchers(watchers: fs.FSWatcher[]): void {
+  for (const w of watchers) {
+    try { w.close(); } catch (_) {}
+  }
+}
+
 export function isValidWorktreePath(worktreePath: string): boolean {
   const resolved = path.resolve(worktreePath);
   return WORKTREE_DIRS.some(function (dir) {
@@ -26,27 +32,34 @@ export interface ParsedWorktreeEntry {
   isMain: boolean;
 }
 
+interface RawWorktreeBlock {
+  path: string;
+  branch: string;
+  bare: boolean;
+}
+
+function parseWorktreeBlocks(stdout: string): RawWorktreeBlock[] {
+  return stdout.split('\n\n').filter(Boolean).map(block => {
+    let path = '';
+    let branch = '';
+    let bare = false;
+    for (const line of block.split('\n')) {
+      if (line.startsWith('worktree ')) path = line.slice(9);
+      else if (line.startsWith('branch refs/heads/')) branch = line.slice(18);
+      else if (line === 'bare') bare = true;
+    }
+    return { path, branch, bare };
+  });
+}
+
 /**
  * Parse `git worktree list --porcelain` output into ALL entries (including main worktree).
  * Skips bare entries. Detached HEAD entries get empty branch string.
  */
 export function parseAllWorktrees(stdout: string, repoPath: string): ParsedWorktreeEntry[] {
-  const results: ParsedWorktreeEntry[] = [];
-  const blocks = stdout.split('\n\n').filter(Boolean);
-  for (const block of blocks) {
-    const lines = block.split('\n');
-    let wtPath = '';
-    let branch = '';
-    let bare = false;
-    for (const line of lines) {
-      if (line.startsWith('worktree ')) wtPath = line.slice(9);
-      if (line.startsWith('branch refs/heads/')) branch = line.slice(18);
-      if (line === 'bare') bare = true;
-    }
-    if (!wtPath || bare) continue;
-    results.push({ path: wtPath, branch, isMain: wtPath === repoPath });
-  }
-  return results;
+  return parseWorktreeBlocks(stdout)
+    .filter(b => b.path && !b.bare)
+    .map(b => ({ path: b.path, branch: b.branch, isMain: b.path === repoPath }));
 }
 
 /**
@@ -54,23 +67,9 @@ export function parseAllWorktrees(stdout: string, repoPath: string): ParsedWorkt
  * Skips the main worktree (matching repoPath) and bare/detached entries.
  */
 export function parseWorktreeListPorcelain(stdout: string, repoPath: string): ParsedWorktree[] {
-  const results: ParsedWorktree[] = [];
-  const blocks = stdout.split('\n\n').filter(Boolean);
-  for (const block of blocks) {
-    const lines = block.split('\n');
-    let wtPath = '';
-    let branch = '';
-    let bare = false;
-    for (const line of lines) {
-      if (line.startsWith('worktree ')) wtPath = line.slice(9);
-      if (line.startsWith('branch refs/heads/')) branch = line.slice(18);
-      if (line === 'bare') bare = true;
-    }
-    // Skip the main worktree (repo root), bare repos, and detached HEAD
-    if (!wtPath || wtPath === repoPath || bare || !branch) continue;
-    results.push({ path: wtPath, branch });
-  }
-  return results;
+  return parseWorktreeBlocks(stdout)
+    .filter(b => b.path && b.path !== repoPath && !b.bare && b.branch)
+    .map(b => ({ path: b.path, branch: b.branch }));
 }
 
 export class WorktreeWatcher extends EventEmitter {
@@ -135,9 +134,7 @@ export class WorktreeWatcher extends EventEmitter {
   }
 
   private _closeAll(): void {
-    for (const w of this._watchers) {
-      try { w.close(); } catch (_) {}
-    }
+    closeWatchers(this._watchers);
     this._watchers = [];
     if (this._debounceTimer) {
       clearTimeout(this._debounceTimer);
@@ -258,15 +255,178 @@ export class BranchWatcher {
   }
 
   private _closeAll(): void {
-    for (const w of this._watchers) {
-      try { w.close(); } catch (_) {}
-    }
+    closeWatchers(this._watchers);
     this._watchers = [];
     for (const timer of this._debounceTimers.values()) {
       clearTimeout(timer);
     }
     this._debounceTimers.clear();
     this._lastBranch.clear();
+  }
+
+  close(): void {
+    this._closeAll();
+  }
+}
+
+/**
+ * Resolve the git directory for a checkout path, handling both regular repos
+ * and worktrees. For worktrees, follows the `commondir` file to find the main
+ * repo's git dir (where remote refs live).
+ */
+export function resolveGitDir(cwdPath: string): string | null {
+  const dotGit = path.join(cwdPath, '.git');
+  let stat: fs.Stats | undefined;
+  try {
+    stat = fs.statSync(dotGit, { throwIfNoEntry: false });
+  } catch (_) {
+    return null; // EACCES, ENOTDIR, etc.
+  }
+  if (!stat) return null;
+
+  if (stat.isDirectory()) return dotGit;
+
+  // Worktree: .git is a file containing "gitdir: <path>"
+  let content: string;
+  try {
+    content = fs.readFileSync(dotGit, 'utf-8').trim();
+  } catch (_) {
+    return null;
+  }
+  const match = content.match(/^gitdir:\s*(.+)$/);
+  if (!match) return null;
+
+  const worktreeGitDir = path.resolve(cwdPath, match[1]!);
+
+  // Follow commondir to find the main repo's git dir (where refs/remotes/ lives)
+  const commondirFile = path.join(worktreeGitDir, 'commondir');
+  try {
+    const commondir = fs.readFileSync(commondirFile, 'utf-8').trim();
+    return path.resolve(worktreeGitDir, commondir);
+  } catch (_) {
+    // No commondir — fall back to the worktree git dir itself
+    return worktreeGitDir;
+  }
+}
+
+export type RefChangeCallback = (cwdPath: string, branch: string) => void;
+
+export class RefWatcher {
+  private _watchers: fs.FSWatcher[] = [];
+  private _debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private _lastSha = new Map<string, string | null>();
+  private _entries = new Map<string, { cwdPath: string; branch: string; upstreamRef: string }>();
+  private _callback: RefChangeCallback;
+
+  constructor(callback: RefChangeCallback) {
+    this._callback = callback;
+  }
+
+  async rebuild(entries: Array<{ cwdPath: string; branch: string }>): Promise<void> {
+    this._closeAll();
+
+    // Dedupe entries — multiple sessions can share the same cwdPath:branch
+    const seen = new Set<string>();
+    for (const { cwdPath, branch } of entries) {
+      const dedupeKey = `${cwdPath}:${branch}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      // Resolve the upstream tracking ref
+      let upstreamRef: string;
+      try {
+        const { stdout } = await execFileAsync(
+          'git', ['rev-parse', '--symbolic-full-name', '@{u}'],
+          { cwd: cwdPath },
+        );
+        upstreamRef = stdout.trim();
+        if (!upstreamRef) continue;
+      } catch (_) {
+        // No upstream (detached HEAD, unpushed branch) — skip
+        continue;
+      }
+
+      const key = `${cwdPath}:${branch}`;
+      this._entries.set(key, { cwdPath, branch, upstreamRef });
+
+      // Seed last known SHA
+      try {
+        const { stdout } = await execFileAsync(
+          'git', ['rev-parse', upstreamRef],
+          { cwd: cwdPath },
+        );
+        this._lastSha.set(key, stdout.trim());
+      } catch (_) {
+        this._lastSha.set(key, null);
+      }
+
+      // Resolve git dir (handles worktrees via commondir)
+      const gitDir = resolveGitDir(cwdPath);
+      if (!gitDir) continue;
+
+      // Watch the loose ref file if it exists (e.g. refs/remotes/origin/feature-x)
+      // upstreamRef is like "refs/remotes/origin/feature-x"
+      const refFile = path.join(gitDir, upstreamRef);
+      this._addWatch(refFile, key);
+
+      // Watch the remote's ref directory to catch new ref creation
+      const refDir = path.dirname(refFile);
+      this._addWatch(refDir, key);
+    }
+  }
+
+  private _addWatch(target: string, key: string): void {
+    try {
+      if (!fs.existsSync(target)) return;
+      const watcher = fs.watch(target, { persistent: false }, () => {
+        this._debouncedCheck(key);
+      });
+      watcher.on('error', () => {});
+      this._watchers.push(watcher);
+    } catch (_) {}
+  }
+
+  private _debouncedCheck(key: string): void {
+    const existing = this._debounceTimers.get(key);
+    if (existing) clearTimeout(existing);
+
+    this._debounceTimers.set(key, setTimeout(() => {
+      this._debounceTimers.delete(key);
+      this._checkAndEmit(key);
+    }, 300));
+  }
+
+  private async _checkAndEmit(key: string): Promise<void> {
+    const entry = this._entries.get(key);
+    if (!entry) return;
+
+    let newSha: string | null;
+    try {
+      const { stdout } = await execFileAsync(
+        'git', ['rev-parse', entry.upstreamRef],
+        { cwd: entry.cwdPath },
+      );
+      newSha = stdout.trim();
+    } catch (_) {
+      newSha = null; // Ref deleted or pruned
+    }
+
+    const lastSha = this._lastSha.get(key);
+    if (newSha !== lastSha) {
+      this._lastSha.set(key, newSha);
+      this._callback(entry.cwdPath, entry.branch);
+    }
+  }
+
+  private _closeAll(): void {
+    closeWatchers(this._watchers);
+    this._watchers = [];
+    for (const timer of this._debounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this._debounceTimers.clear();
+    this._lastSha.clear();
+    this._entries.clear();
   }
 
   close(): void {
