@@ -79,30 +79,30 @@ function onStateChange(cb: StateChangeCallback): void {
   stateChangeCallbacks.push(cb);
 }
 
-type SessionCreateCallback = (sessionId: string, repoPath: string, branchName?: string) => void;
+type SessionCreateCallback = (sessionId: string, cwd: string, branchName?: string) => void;
 const sessionCreateCallbacks: SessionCreateCallback[] = [];
 
 function onSessionCreate(cb: SessionCreateCallback): void {
   sessionCreateCallbacks.push(cb);
 }
 
-function fireSessionCreate(sessionId: string, repoPath: string, branchName?: string): void {
+function fireSessionCreate(sessionId: string, cwd: string, branchName?: string): void {
   for (const cb of sessionCreateCallbacks) {
-    try { cb(sessionId, repoPath, branchName); }
+    try { cb(sessionId, cwd, branchName); }
     catch (err) { console.error('[sessions] sessionCreate callback error:', err); }
   }
 }
 
-type SessionEndCallback = (sessionId: string, repoPath: string, branchName?: string) => void;
+type SessionEndCallback = (sessionId: string, cwd: string, branchName?: string) => void;
 const sessionEndCallbacks: SessionEndCallback[] = [];
 
 function onSessionEnd(cb: SessionEndCallback): void {
   sessionEndCallbacks.push(cb);
 }
 
-function fireSessionEnd(sessionId: string, repoPath: string, branchName?: string): void {
+function fireSessionEnd(sessionId: string, cwd: string, branchName?: string): void {
   for (const cb of sessionEndCallbacks) {
-    try { cb(sessionId, repoPath, branchName); }
+    try { cb(sessionId, cwd, branchName); }
     catch (err) { console.error('[sessions] sessionEnd callback error:', err); }
   }
 }

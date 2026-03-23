@@ -18,7 +18,7 @@ export interface ReviewPollerDeps {
   getWorkspacePaths: () => string[];
   getWorkspaceSettings: (workspacePath: string) => WorkspaceSettings | undefined;
   createSession: (opts: {
-    repoPath: string;
+    workspacePath: string;
     worktreePath: string;
     branchName: string;
     initialPrompt?: string;
@@ -275,7 +275,7 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
       if (config.automations?.autoReviewOnCheckout && settings?.promptCodeReview) {
         try {
           await deps.createSession({
-            repoPath: workspacePath,
+            workspacePath,
             worktreePath,
             branchName: localBranch,
             initialPrompt: settings.promptCodeReview,

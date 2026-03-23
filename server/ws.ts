@@ -157,8 +157,8 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
     if (state === 'waiting-for-input') { trackEvent({ category: 'agent', action: 'waiting-for-input', target: sessionId, session_id: sessionId }); }
   });
 
-  sessions.onSessionEnd((sessionId, repoPath, branchName) => {
-    broadcastEvent('session-ended', { sessionId, repoPath, branchName });
+  sessions.onSessionEnd((sessionId, cwd, branchName) => {
+    broadcastEvent('session-ended', { sessionId, cwd, branchName });
   });
 
   return { wss, broadcastEvent };

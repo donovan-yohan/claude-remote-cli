@@ -406,15 +406,15 @@ async function main(): Promise<void> {
       configPath: CONFIG_PATH,
       getWorkspacePaths: () => config.workspaces ?? [],
       getWorkspaceSettings: (wsPath: string) => config.workspaceSettings?.[wsPath],
-      createSession: async (opts: { repoPath: string; worktreePath: string; branchName: string; initialPrompt?: string }) => {
-        const resolved = resolveSessionSettings(config, opts.repoPath, {});
-        const repoName = opts.repoPath.split('/').filter(Boolean).pop() || 'session';
+      createSession: async (opts: { workspacePath: string; worktreePath: string; branchName: string; initialPrompt?: string }) => {
+        const resolved = resolveSessionSettings(config, opts.workspacePath, {});
+        const repoName = opts.workspacePath.split('/').filter(Boolean).pop() || 'session';
         const displayName = sessions.nextAgentName();
         sessions.create({
           type: 'agent',
           agent: resolved.agent,
           repoName,
-          workspacePath: opts.repoPath,
+          workspacePath: opts.workspacePath,
           worktreePath: opts.worktreePath,
           cwd: opts.worktreePath,
           branchName: opts.branchName,
