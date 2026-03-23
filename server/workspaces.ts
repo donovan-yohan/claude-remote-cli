@@ -571,8 +571,8 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     const config = getConfig();
     const settings = getWorkspaceSettings(config, resolved);
 
-    let branchName: string;
-    let mountainName: string;
+    let branchName = '';
+    let mountainName = '';
     let gitArgs: string[];
     let nextMountainIndex: number | undefined;
 

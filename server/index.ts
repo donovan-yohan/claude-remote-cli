@@ -18,7 +18,7 @@ import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, BranchWatcher, RefWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
-import { listBranches, isBranchStale } from './git.js';
+import { listBranches } from './git.js';
 import * as push from './push.js';
 import { initAnalytics, closeAnalytics, createAnalyticsRouter } from './analytics.js';
 import { createWorkspaceRouter } from './workspaces.js';
@@ -33,7 +33,6 @@ import { createGitHubAppRouter } from './github-app.js';
 import { createWebhookRouter } from './webhooks.js';
 import { fetchPrsGraphQL } from './github-graphql.js';
 import type { AgentType, AutomationSettings, Config } from './types.js';
-import { MOUNTAIN_NAMES } from './types.js';
 import { semverLessThan } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -133,21 +132,6 @@ function promptPin(question: string): Promise<string> {
   });
 }
 
-function ensureGitignore(repoPath: string, entry: string): void {
-  const gitignorePath = path.join(repoPath, '.gitignore');
-  try {
-    if (fs.existsSync(gitignorePath)) {
-      const content = fs.readFileSync(gitignorePath, 'utf-8');
-      if (content.split('\n').some((line) => line.trim() === entry)) return;
-      const prefix = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
-      fs.appendFileSync(gitignorePath, prefix + entry + '\n');
-    } else {
-      fs.writeFileSync(gitignorePath, entry + '\n');
-    }
-  } catch (_) {
-    // Non-fatal: gitignore update failure shouldn't block session creation
-  }
-}
 
 async function main(): Promise<void> {
   // Ignore SIGPIPE: node-pty can propagate pipe breaks causing unexpected session exits
@@ -277,7 +261,7 @@ async function main(): Promise<void> {
   // Watch .git/HEAD files for branch changes and update active sessions
   const branchWatcher = new BranchWatcher((cwdPath, newBranch) => {
     for (const session of sessions.list()) {
-      if (session.repoPath === cwdPath || session.cwd === cwdPath) {
+      if (session.cwd === cwdPath) {
         const raw = sessions.get(session.id);
         if (raw) {
           raw.branchName = newBranch;
@@ -353,13 +337,11 @@ async function main(): Promise<void> {
   const branchLinkerRouter = createBranchLinkerRouter({
     configPath: CONFIG_PATH,
     getActiveBranchNames: () => {
-      const workspaces = config.workspaces ?? [];
       const map = new Map<string, Set<string>>();
       for (const s of sessions.list()) {
         if (!s.branchName) continue;
-        // Normalize: match session repoPath to workspace root
-        // (worktree sessions store the worktree path, not workspace root)
-        const wsRoot = workspaces.find((ws) => s.repoPath.startsWith(ws)) ?? s.repoPath;
+        // Use workspacePath so all sessions (main worktree and sub-worktrees) group correctly
+        const wsRoot = s.workspacePath || s.cwd;
         const existing = map.get(wsRoot);
         if (existing) {
           existing.add(s.branchName);
@@ -426,19 +408,15 @@ async function main(): Promise<void> {
       getWorkspaceSettings: (wsPath: string) => config.workspaceSettings?.[wsPath],
       createSession: async (opts: { repoPath: string; worktreePath: string; branchName: string; initialPrompt?: string }) => {
         const resolved = resolveSessionSettings(config, opts.repoPath, {});
-        const roots = config.rootDirs || [];
-        const root = roots.find((r) => opts.repoPath.startsWith(r)) || '';
         const repoName = opts.repoPath.split('/').filter(Boolean).pop() || 'session';
-        const worktreeName = opts.worktreePath.split('/').pop() || '';
         const displayName = sessions.nextAgentName();
         sessions.create({
-          type: 'worktree',
+          type: 'agent',
           agent: resolved.agent,
           repoName,
-          repoPath: opts.worktreePath,
+          workspacePath: opts.repoPath,
+          worktreePath: opts.worktreePath,
           cwd: opts.worktreePath,
-          root,
-          worktreeName,
           branchName: opts.branchName,
           displayName,
           args: [...resolved.claudeArgs, ...(resolved.yolo ? AGENT_YOLO_ARGS[resolved.agent] : [])],
@@ -580,11 +558,11 @@ async function main(): Promise<void> {
     }
 
     await Promise.all(allSessions.map(async (s) => {
-      if (s.type !== 'repo' && s.type !== 'worktree') return;
-      if (!s.repoPath) return;
+      if (s.type !== 'agent') return;
+      if (!s.cwd) return;
       const lastRefresh = branchRefreshCache.get(s.id) ?? 0;
       if (now - lastRefresh < BRANCH_REFRESH_INTERVAL_MS) return;
-      const cwd = s.type === 'repo' ? s.repoPath : s.cwd;
+      const cwd = s.cwd;
       if (!cwd) return;
       branchRefreshCache.set(s.id, now);
       try {
@@ -961,56 +939,114 @@ async function main(): Promise<void> {
     res.json({ ok: true });
   });
 
-  // POST /sessions
+  // POST /sessions — unified endpoint for agent and terminal sessions
   app.post('/sessions', requireAuth, async (req, res) => {
-    const { repoPath, repoName, worktreePath, branchName, claudeArgs, yolo, agent, useTmux, cols, rows, needsBranchRename, branchRenamePrompt, ticketContext } = req.body as {
-      repoPath?: string;
-      repoName?: string;
-      worktreePath?: string;
-      branchName?: string;
-      claudeArgs?: string[];
-      yolo?: boolean;
+    const {
+      workspacePath, worktreePath, type = 'agent', agent, yolo, useTmux,
+      claudeArgs, cols, rows, needsBranchRename, branchRenamePrompt,
+      initialPrompt, continue: explicitContinue, ticketContext,
+    } = req.body as {
+      workspacePath?: string;
+      worktreePath?: string | null;
+      type?: 'agent' | 'terminal';
       agent?: AgentType;
+      yolo?: boolean;
       useTmux?: boolean;
+      claudeArgs?: string[];
       cols?: number;
       rows?: number;
       needsBranchRename?: boolean;
       branchRenamePrompt?: string;
+      initialPrompt?: string;
+      continue?: boolean;
       ticketContext?: { ticketId: string; title: string; description?: string; url: string; source: 'github' | 'jira'; repoPath: string; repoName: string };
     };
-    if (!repoPath) {
-      res.status(400).json({ error: 'repoPath is required' });
+
+    if (!workspacePath) {
+      res.status(400).json({ error: 'workspacePath is required' });
       return;
     }
 
-    // Sanitize optional terminal dimensions
+    // Validate workspacePath is a configured workspace
+    const configuredWorkspaces = config.workspaces ?? [];
+    if (!configuredWorkspaces.includes(workspacePath)) {
+      res.status(400).json({ error: 'workspacePath is not a configured workspace' });
+      return;
+    }
+
+    const cwd = worktreePath ?? workspacePath;
+
+    // Validate cwd directory exists
+    if (!fs.existsSync(cwd)) {
+      res.status(400).json({ error: `Directory does not exist: ${cwd}` });
+      return;
+    }
+
     const safeCols = typeof cols === 'number' && Number.isFinite(cols) && cols >= 1 && cols <= 500 ? Math.round(cols) : undefined;
     const safeRows = typeof rows === 'number' && Number.isFinite(rows) && rows >= 1 && rows <= 200 ? Math.round(rows) : undefined;
 
-    const resolved = resolveSessionSettings(config, repoPath, { agent, yolo, useTmux, claudeArgs });
-    const resolvedAgent = resolved.agent;
-    const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
+    const name = workspacePath.split('/').filter(Boolean).pop() || 'session';
 
-    let initialPrompt: string | undefined;
-    if (ticketContext && (typeof ticketContext.ticketId !== 'string' || typeof ticketContext.title !== 'string' || typeof ticketContext.url !== 'string')) {
-      res.status(400).json({ error: 'ticketContext requires string ticketId, title, and url' });
+    if (type === 'terminal') {
+      // Terminal session — bare shell
+      const shell = process.env.SHELL || '/bin/sh';
+      const displayName = sessions.nextTerminalName();
+      const session = sessions.create({
+        type: 'terminal',
+        agent: 'claude' as AgentType,
+        repoName: name,
+        workspacePath,
+        worktreePath: worktreePath ?? null,
+        cwd,
+        displayName,
+        branchName: '',
+        command: shell,
+        args: [],
+        ...(safeCols != null && { cols: safeCols }),
+        ...(safeRows != null && { rows: safeRows }),
+      });
+      res.status(201).json(session);
       return;
     }
+
+    // Agent session
+    const resolved = resolveSessionSettings(config, workspacePath, { agent, yolo, useTmux, claudeArgs });
+    const resolvedAgent = resolved.agent;
+
+    const baseArgs = [
+      ...(resolved.claudeArgs),
+      ...(resolved.yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
+    ];
+
+    // Determine --continue behavior
+    let useContinue = false;
+    if (explicitContinue !== undefined) {
+      useContinue = explicitContinue;
+    } else if (needsBranchRename) {
+      useContinue = false; // brand-new worktree
+    } else {
+      useContinue = fs.existsSync(path.join(cwd, '.claude'));
+    }
+
+    const args = useContinue
+      ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs]
+      : [...baseArgs];
+
+    // Ticket context validation and initial prompt
+    let computedInitialPrompt: string | undefined = initialPrompt;
     if (ticketContext) {
-      // Validate source is a known integration
+      if (typeof ticketContext.ticketId !== 'string' || typeof ticketContext.title !== 'string' || typeof ticketContext.url !== 'string') {
+        res.status(400).json({ error: 'ticketContext requires string ticketId, title, and url' });
+        return;
+      }
       if (ticketContext.source !== 'github' && ticketContext.source !== 'jira') {
         res.status(400).json({ error: "ticketContext.source must be 'github' or 'jira'" });
         return;
       }
-      // Validate repoPath is a configured workspace
-      const configuredWorkspaces = config.workspaces || [];
       if (!configuredWorkspaces.includes(ticketContext.repoPath)) {
         res.status(400).json({ error: 'ticketContext.repoPath is not a configured workspace' });
         return;
       }
-      // Jira integration is configured via acli CLI — no env var check needed.
-      // Auth validation happens when acli commands are actually called.
-      // Validate ticket ID format per source
       if (ticketContext.source === 'github' && !/^GH-\d+$/.test(ticketContext.ticketId)) {
         res.status(400).json({ error: 'ticketContext.ticketId for github must match GH-<number>' });
         return;
@@ -1019,223 +1055,25 @@ async function main(): Promise<void> {
         res.status(400).json({ error: 'ticketContext.ticketId must match <PROJECT>-<number>' });
         return;
       }
-    }
-    if (ticketContext) {
-      // Use ticketContext.repoPath (workspace root) for settings lookup
       const settings = config.workspaceSettings?.[ticketContext.repoPath];
       const template = settings?.promptStartWork ??
         'You are working on ticket {ticketId}: {title}\n\nTicket URL: {ticketUrl}\n\nPlease start by understanding the issue and proposing an approach.';
-      initialPrompt = template
+      computedInitialPrompt = template
         .replace(/\{ticketId\}/g, ticketContext.ticketId)
         .replace(/\{title\}/g, ticketContext.title)
         .replace(/\{ticketUrl\}/g, ticketContext.url)
         .replace(/\{description\}/g, ticketContext.description ?? '');
     }
-    const baseArgs = [
-      ...(resolved.claudeArgs),
-      ...(resolved.yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
-    ];
-
-    // Compute root by matching repoPath against configured rootDirs
-    const roots = config.rootDirs || [];
-    const root = roots.find(function (r) { return repoPath.startsWith(r); }) || '';
-
-    let args: string[];
-    let cwd: string;
-    let worktreeName: string;
-    let sessionRepoPath: string;
-    let resolvedBranch = '';
-    let isMountainName = false;
-
-    if (worktreePath) {
-      // Check if the worktree's branch is stale (merged/at base) and needs a fresh name
-      const currentBranchResult = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktreePath }).catch(() => null);
-      const currentBranch = currentBranchResult?.stdout.trim();
-
-      if (currentBranch && !needsBranchRename) {
-        const stale = await isBranchStale(worktreePath, currentBranch);
-        if (stale) {
-          // Generate unique temp branch: <mountain>-<short-timestamp>
-          const mountainName = worktreePath.split('/').pop() || 'branch';
-          const suffix = Date.now().toString(36).slice(-4);
-          const tempBranch = `${mountainName}-${suffix}`;
-          try {
-            await execFileAsync('git', ['checkout', '-b', tempBranch], { cwd: worktreePath });
-          } catch {
-            await execFileAsync('git', ['branch', '-m', tempBranch], { cwd: worktreePath }).catch(() => {});
-          }
-          isMountainName = true;
-        }
-      }
-
-      // Only use --continue if:
-      // 1. Not a brand-new worktree (needsBranchRename flag)
-      // 2. A prior Claude session exists in this directory (.claude/ dir present)
-      // 3. Branch is not stale (isMountainName means we just created a fresh branch)
-      const hasPriorSession = !needsBranchRename && !isMountainName && fs.existsSync(path.join(worktreePath, '.claude'));
-      args = hasPriorSession ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs] : [...baseArgs];
-      cwd = worktreePath;
-      sessionRepoPath = worktreePath;
-      worktreeName = worktreePath.split('/').pop() || '';
-    } else {
-      // Create new worktree via git
-      let dirName: string;
-      if (branchName) {
-        dirName = branchName.replace(/\//g, '-');
-        resolvedBranch = branchName;
-      } else {
-        // Pick the next mountain name from the cycling list
-        const idx = config.nextMountainIndex || 0;
-        const picked = MOUNTAIN_NAMES[idx % MOUNTAIN_NAMES.length]!;
-        dirName = picked;
-        resolvedBranch = picked;
-        isMountainName = true;
-        config.nextMountainIndex = (idx + 1) % MOUNTAIN_NAMES.length;
-        saveConfig(CONFIG_PATH, config);
-      }
-
-      const worktreeDir = path.join(repoPath, WORKTREE_DIRS[0]!);
-      let targetDir = path.join(worktreeDir, dirName);
-
-      if (fs.existsSync(targetDir)) {
-        targetDir = targetDir + '-' + Date.now().toString(36);
-        dirName = path.basename(targetDir);
-      }
-
-      for (const dir of WORKTREE_DIRS) {
-        ensureGitignore(repoPath, dir + '/');
-      }
-
-      try {
-        // Check if branch exists locally or on a remote
-        let branchExists = false;
-        if (branchName) {
-          const localCheck = await execFileAsync('git', ['rev-parse', '--verify', branchName], { cwd: repoPath }).then(() => true, () => false);
-          if (localCheck) {
-            branchExists = true;
-          } else {
-            const remoteCheck = await execFileAsync('git', ['rev-parse', '--verify', 'origin/' + branchName], { cwd: repoPath }).then(() => true, () => false);
-            if (remoteCheck) {
-              branchExists = true;
-              resolvedBranch = 'origin/' + branchName;
-            }
-          }
-        }
-
-        if (branchName && branchExists) {
-          // Check if branch is already checked out in an existing worktree
-          const { stdout: wtListOut } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });
-          const allWorktrees = parseAllWorktrees(wtListOut, repoPath);
-          const existingWt = allWorktrees.find(wt => wt.branch === branchName);
-
-          if (existingWt) {
-            // Branch already checked out — redirect to the existing worktree
-            if (existingWt.isMain) {
-              // Main worktree → create a repo session
-              const existingRepoSession = sessions.findRepoSession(repoPath);
-              if (existingRepoSession) {
-                res.status(409).json({ error: 'A session already exists for this repo', sessionId: existingRepoSession.id });
-                return;
-              }
-
-              const repoSession = sessions.create({
-                type: 'repo',
-                agent: resolvedAgent,
-                repoName: name,
-                repoPath,
-                cwd: repoPath,
-                root,
-                displayName: sessions.nextAgentName(),
-                args: baseArgs,
-                useTmux: resolved.useTmux,
-                yolo: resolved.yolo,
-                claudeArgs: resolved.claudeArgs,
-                ...(safeCols != null && { cols: safeCols }),
-                ...(safeRows != null && { rows: safeRows }),
-                ...(initialPrompt != null && { initialPrompt }),
-              });
-
-              if (ticketContext) {
-                transitionOnSessionCreate(ticketContext).catch((err: unknown) => {
-                  console.error('[index] transition on session create failed:', err);
-                });
-              }
-              res.status(201).json(repoSession);
-              return;
-            } else {
-              // Another worktree → create a worktree session with --continue
-              cwd = existingWt.path;
-              sessionRepoPath = existingWt.path;
-              worktreeName = existingWt.path.split('/').pop() || '';
-              args = [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs];
-
-              const displayNameVal = sessions.nextAgentName();
-
-              const session = sessions.create({
-                type: 'worktree',
-                agent: resolvedAgent,
-                repoName: name,
-                repoPath: sessionRepoPath,
-                cwd,
-                root,
-                worktreeName,
-                branchName: branchName || worktreeName,
-                displayName: displayNameVal,
-                args,
-                configPath: CONFIG_PATH,
-                useTmux: resolved.useTmux,
-                yolo: resolved.yolo,
-                claudeArgs: resolved.claudeArgs,
-                ...(safeCols != null && { cols: safeCols }),
-                ...(safeRows != null && { rows: safeRows }),
-                ...(initialPrompt != null && { initialPrompt }),
-              });
-
-              writeMeta(CONFIG_PATH, {
-                worktreePath: sessionRepoPath,
-                displayName: displayNameVal,
-                lastActivity: new Date().toISOString(),
-                branchName: branchName || worktreeName,
-              });
-
-              if (ticketContext) {
-                transitionOnSessionCreate(ticketContext).catch((err: unknown) => {
-                  console.error('[index] transition on session create failed:', err);
-                });
-              }
-              res.status(201).json(session);
-              return;
-            }
-          }
-
-          await execFileAsync('git', ['worktree', 'add', targetDir, resolvedBranch], { cwd: repoPath });
-        } else if (branchName) {
-          await execFileAsync('git', ['worktree', 'add', '-b', branchName, targetDir, 'HEAD'], { cwd: repoPath });
-        } else {
-          await execFileAsync('git', ['worktree', 'add', '-b', dirName, targetDir, 'HEAD'], { cwd: repoPath });
-        }
-      } catch (err: unknown) {
-        res.status(500).json({ error: execErrorMessage(err, 'Failed to create worktree') });
-        return;
-      }
-
-      worktreeName = dirName;
-      sessionRepoPath = targetDir;
-      cwd = targetDir;
-      args = [...baseArgs];
-    }
 
     const displayName = sessions.nextAgentName();
-
     const session = sessions.create({
-      type: 'worktree',
+      type: 'agent',
       agent: resolvedAgent,
       repoName: name,
-      repoPath: sessionRepoPath,
+      workspacePath,
+      worktreePath: worktreePath ?? null,
       cwd,
-      root,
-      worktreeName,
-      branchName: branchName || worktreeName,
+      branchName: '',  // populated by branch watcher
       displayName,
       args,
       configPath: CONFIG_PATH,
@@ -1244,17 +1082,18 @@ async function main(): Promise<void> {
       claudeArgs: resolved.claudeArgs,
       ...(safeCols != null && { cols: safeCols }),
       ...(safeRows != null && { rows: safeRows }),
-      needsBranchRename: isMountainName || (needsBranchRename ?? false),
+      needsBranchRename: needsBranchRename ?? false,
       branchRenamePrompt: branchRenamePrompt ?? '',
-      ...(initialPrompt != null && { initialPrompt }),
+      ...(computedInitialPrompt != null && { initialPrompt: computedInitialPrompt }),
     });
 
-    if (!worktreePath) {
+    // Write worktree metadata if in a worktree
+    if (worktreePath) {
       writeMeta(CONFIG_PATH, {
-        worktreePath: sessionRepoPath,
+        worktreePath: cwd,
         displayName,
         lastActivity: new Date().toISOString(),
-        branchName: branchName || worktreeName,
+        branchName: '',
       });
     }
 
@@ -1263,97 +1102,6 @@ async function main(): Promise<void> {
         console.error('[index] transition on session create failed:', err);
       });
     }
-    res.status(201).json(session);
-  });
-
-  // POST /sessions/repo — start a session in the repo root (no worktree)
-  app.post('/sessions/repo', requireAuth, async (req, res) => {
-    const { repoPath, repoName, continue: continueSession, claudeArgs, yolo, agent, useTmux, cols, rows } = req.body as {
-      repoPath?: string;
-      repoName?: string;
-      continue?: boolean;
-      claudeArgs?: string[];
-      yolo?: boolean;
-      agent?: AgentType;
-      useTmux?: boolean;
-      cols?: number;
-      rows?: number;
-    };
-    if (!repoPath) {
-      res.status(400).json({ error: 'repoPath is required' });
-      return;
-    }
-
-    const resolved = resolveSessionSettings(config, repoPath, {
-      agent, yolo, continue: continueSession, useTmux, claudeArgs,
-    });
-    const resolvedAgent = resolved.agent;
-
-    // Sanitize optional terminal dimensions
-    const safeCols = typeof cols === 'number' && Number.isFinite(cols) && cols >= 1 && cols <= 500 ? Math.round(cols) : undefined;
-    const safeRows = typeof rows === 'number' && Number.isFinite(rows) && rows >= 1 && rows <= 200 ? Math.round(rows) : undefined;
-
-    // Multiple sessions per repo allowed (multi-tab support)
-
-    const name = repoName || repoPath.split('/').filter(Boolean).pop() || 'session';
-    const baseArgs = [
-      ...(resolved.claudeArgs),
-      ...(resolved.yolo ? AGENT_YOLO_ARGS[resolvedAgent] : []),
-    ];
-    const args = resolved.continue ? [...AGENT_CONTINUE_ARGS[resolvedAgent], ...baseArgs] : [...baseArgs];
-
-    const roots = config.rootDirs || [];
-    const root = roots.find(function (r) { return repoPath.startsWith(r); }) || '';
-
-    let branchName = '';
-    try {
-      const { stdout } = await execFileAsync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoPath });
-      branchName = stdout.trim();
-    } catch { /* non-fatal */ }
-
-    const session = sessions.create({
-      type: 'repo',
-      agent: resolvedAgent,
-      repoName: name,
-      repoPath,
-      cwd: repoPath,
-      root,
-      displayName: sessions.nextAgentName(),
-      args,
-      branchName,
-      useTmux: resolved.useTmux,
-      yolo: resolved.yolo,
-      claudeArgs: resolved.claudeArgs,
-      ...(safeCols != null && { cols: safeCols }),
-      ...(safeRows != null && { rows: safeRows }),
-    });
-
-    res.status(201).json(session);
-  });
-
-  // POST /sessions/terminal — start a bare shell session (no agent), optional cwd in body
-  app.post('/sessions/terminal', requireAuth, (req, res) => {
-    const shell = process.env.SHELL || '/bin/sh';
-    const displayName = sessions.nextTerminalName();
-    const rawCwd = (req.body as Record<string, unknown>)?.cwd;
-    const startDir = typeof rawCwd === 'string' && rawCwd.trim()
-      ? rawCwd.trim()
-      : os.homedir();
-
-    if (!fs.existsSync(startDir) || !fs.statSync(startDir).isDirectory()) {
-      res.status(400).json({ error: `Directory does not exist: ${startDir}` });
-      return;
-    }
-
-    const session = sessions.create({
-      type: 'terminal',
-      agent: 'claude', // required by CreateParams but unused for terminal sessions
-      repoPath: startDir,
-      cwd: startDir,
-      displayName,
-      command: shell,
-      args: [],
-    });
 
     res.status(201).json(session);
   });
@@ -1382,7 +1130,7 @@ async function main(): Promise<void> {
       const updated = sessions.updateDisplayName(id, displayName);
       const session = sessions.get(id);
       if (session) {
-        writeMeta(CONFIG_PATH, { worktreePath: session.repoPath, displayName, lastActivity: session.lastActivity });
+        writeMeta(CONFIG_PATH, { worktreePath: session.cwd, displayName, lastActivity: session.lastActivity });
       }
       res.json(updated);
     } catch (_) {
