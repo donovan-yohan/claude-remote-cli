@@ -410,7 +410,7 @@ async function main(): Promise<void> {
   app.use('/analytics', requireAuth, createAnalyticsRouter(configDir));
 
   // Restore sessions from a previous update restart
-  const restoredCount = await restoreFromDisk(configDir);
+  const restoredCount = await restoreFromDisk(configDir, config.workspaces ?? []);
   if (restoredCount > 0) {
     console.log(`Restored ${restoredCount} session(s) from previous update.`);
   }

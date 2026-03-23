@@ -62,10 +62,9 @@ export type CreatePtyParams = {
   type?: SessionType | undefined;
   agent?: AgentType | undefined;
   repoName?: string | undefined;
-  repoPath: string;
-  cwd?: string | undefined;
-  root?: string | undefined;
-  worktreeName?: string | undefined;
+  workspacePath: string;
+  worktreePath?: string | null | undefined;
+  cwd: string;
   branchName?: string | undefined;
   displayName?: string | undefined;
   command?: string | undefined;
@@ -90,17 +89,16 @@ export function createPtySession(
   sessionsMap: Map<string, import('./types.js').Session>,
   idleChangeCallbacks: Array<(sessionId: string, idle: boolean) => void>,
   stateChangeCallbacks: Array<(sessionId: string, state: AgentState) => void> = [],
-  sessionEndCallbacks: Array<(sessionId: string, repoPath: string, branchName?: string) => void> = [],
+  sessionEndCallbacks: Array<(sessionId: string, cwd: string, branchName?: string) => void> = [],
 ): { session: PtySession; result: CreatePtyResult } {
   const {
     id,
     type,
     agent = 'claude',
     repoName,
-    repoPath,
+    workspacePath,
+    worktreePath = null,
     cwd,
-    root,
-    worktreeName,
     branchName,
     displayName,
     command,
@@ -144,7 +142,7 @@ export function createPtySession(
   const useTmux = !command && !!paramUseTmux;
   let spawnCommand = resolvedCommand;
   let spawnArgs = args;
-  const tmuxSessionName = paramTmuxSessionName || (useTmux ? generateTmuxSessionName(displayName || repoName || 'session', id) : '');
+  const tmuxSessionName = paramTmuxSessionName || (useTmux ? generateTmuxSessionName(displayName || repoName || path.basename(cwd) || 'session', id) : '');
 
   if (useTmux) {
     const tmux = resolveTmuxSpawn(resolvedCommand, args, tmuxSessionName);
@@ -156,7 +154,7 @@ export function createPtySession(
     name: 'xterm-256color',
     cols,
     rows,
-    cwd: cwd || repoPath,
+    cwd,
     env,
   });
 
@@ -164,26 +162,24 @@ export function createPtySession(
   const scrollback: string[] = initialScrollback ? [...initialScrollback] : [];
   let scrollbackBytes = initialScrollback ? initialScrollback.reduce((sum, s) => sum + s.length, 0) : 0;
 
-  const resolvedCwd = cwd || repoPath;
   // Instantiate vendor-specific output parser (terminal/custom-command sessions get no parser)
   const parser = command ? outputParsers['claude']() : outputParsers[agent]();
   const session: PtySession = {
     id,
-    type: type || 'worktree',
+    type: type || 'agent',
     agent,
     mode: 'pty' as const,
-    root: root || '',
+    workspacePath: workspacePath || '',
+    worktreePath: worktreePath ?? null,
     repoName: repoName || '',
-    repoPath,
-    worktreeName: worktreeName || '',
-    branchName: branchName || worktreeName || '',
-    displayName: displayName || worktreeName || repoName || '',
+    branchName: branchName || '',
+    displayName: displayName || repoName || path.basename(cwd) || '',
     pty: ptyProcess,
     createdAt,
     lastActivity: createdAt,
     scrollback,
     idle: false,
-    cwd: resolvedCwd,
+    cwd,
     customCommand: command || null,
     useTmux,
     tmuxSessionName,
@@ -203,12 +199,12 @@ export function createPtySession(
   sessionsMap.set(id, session);
 
   // Load existing metadata to preserve a previously-set displayName
-  if (configPath && worktreeName) {
-    const existing = readMeta(configPath, repoPath);
+  if (configPath && worktreePath) {
+    const existing = readMeta(configPath, worktreePath);
     if (existing && existing.displayName) {
       session.displayName = existing.displayName;
     }
-    writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: createdAt });
+    writeMeta(configPath, { worktreePath, displayName: session.displayName, lastActivity: createdAt });
   }
 
   let metaFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -244,10 +240,10 @@ export function createPtySession(
       while (scrollbackBytes > MAX_SCROLLBACK && scrollback.length > 1) {
         scrollbackBytes -= (scrollback.shift() as string).length;
       }
-      if (configPath && worktreeName && !metaFlushTimer) {
+      if (configPath && worktreePath && !metaFlushTimer) {
         metaFlushTimer = setTimeout(() => {
           metaFlushTimer = null;
-          writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
+          writeMeta(configPath, { worktreePath, displayName: session.displayName, lastActivity: session.lastActivity });
         }, 5000);
       }
 
@@ -303,7 +299,7 @@ export function createPtySession(
             name: 'xterm-256color',
             cols,
             rows,
-            cwd: cwd || repoPath,
+            cwd,
             env,
           });
         } catch {
@@ -336,11 +332,11 @@ export function createPtySession(
 
       if (idleTimer) clearTimeout(idleTimer);
       if (metaFlushTimer) clearTimeout(metaFlushTimer);
-      if (configPath && worktreeName) {
-        writeMeta(configPath, { worktreePath: repoPath, displayName: session.displayName, lastActivity: session.lastActivity });
+      if (configPath && worktreePath) {
+        writeMeta(configPath, { worktreePath, displayName: session.displayName, lastActivity: session.lastActivity });
       }
       for (const cb of sessionEndCallbacks) {
-        try { cb(id, repoPath, session.branchName); }
+        try { cb(id, cwd, session.branchName); }
         catch (err) { console.error('[pty-handler] sessionEnd callback error:', err); }
       }
       sessionsMap.delete(id);
@@ -356,17 +352,16 @@ export function createPtySession(
     type: session.type,
     agent: session.agent,
     mode: 'pty' as const,
-    root: session.root,
+    workspacePath: session.workspacePath,
+    worktreePath: session.worktreePath,
     repoName: session.repoName,
-    repoPath,
-    worktreeName: session.worktreeName,
     branchName: session.branchName,
     displayName: session.displayName,
     pid: ptyProcess.pid,
     createdAt,
     lastActivity: createdAt,
     idle: false,
-    cwd: resolvedCwd,
+    cwd,
     customCommand: command || null,
     useTmux,
     tmuxSessionName,
