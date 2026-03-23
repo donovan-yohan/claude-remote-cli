@@ -87,6 +87,10 @@ test('GET /auth/github returns URL containing github.com/login/oauth/authorize a
     data.url.includes('client_id=test-client-id'),
     `URL should contain client_id, got: ${data.url}`,
   );
+  assert.ok(
+    data.url.includes('state='),
+    `URL should contain state parameter, got: ${data.url}`,
+  );
 });
 
 test('GET /auth/github/status returns { connected: false } when no token', async () => {
@@ -147,7 +151,14 @@ test('GET /auth/github/callback?code=test-code exchanges code and saves token to
   mockServer = srv;
   mockBaseUrl = url;
 
-  const res = await fetch(`${mockBaseUrl}/auth/github/callback?code=test-code`);
+  // First, get a valid CSRF state from the authorize endpoint
+  const authRes = await fetch(`${mockBaseUrl}/auth/github`);
+  const authData = await authRes.json() as { url: string };
+  const authUrl = new URL(authData.url);
+  const state = authUrl.searchParams.get('state');
+  assert.ok(state, 'Authorize URL should contain a state parameter');
+
+  const res = await fetch(`${mockBaseUrl}/auth/github/callback?code=test-code&state=${state}`);
   assert.equal(res.status, 200);
 
   const body = await res.text();
