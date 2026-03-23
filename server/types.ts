@@ -63,6 +63,8 @@ export interface PtySession extends BaseSession {
   _lastHookTime?: number | undefined;
   lastAttentionNotifiedAt?: number | undefined;
   currentActivity?: { tool: string; detail?: string } | undefined;
+  yolo: boolean;
+  claudeArgs: string[];
 }
 
 export type Session = PtySession;

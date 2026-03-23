@@ -583,7 +583,7 @@ describe('session persistence', () => {
     const pendingPath = path.join(configDir, 'pending-sessions.json');
     assert.ok(fs.existsSync(pendingPath), 'pending-sessions.json should exist');
     const pending = JSON.parse(fs.readFileSync(pendingPath, 'utf-8'));
-    assert.strictEqual(pending.version, 1);
+    assert.strictEqual(pending.version, 2);
     assert.ok(pending.timestamp);
     assert.strictEqual(pending.sessions.length, 1);
     assert.strictEqual(pending.sessions[0].id, s.id);
@@ -834,6 +834,95 @@ describe('session persistence', () => {
     assert.strictEqual(restoredTmux.mode, 'pty');
     assert.strictEqual((restoredTmux as PtySession).tmuxSessionName, 'crc-tmux-session-tmux-rou');
     assert.strictEqual(restoredTmux.displayName, 'Tmux Session');
+  });
+
+  it('serialize/restore preserves yolo flag', async () => {
+    const configDir = createTmpDir();
+
+    const s = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+      yolo: true,
+    });
+
+    const session = sessions.get(s.id);
+    assert.ok(session);
+    assert.strictEqual((session as PtySession).yolo, true);
+
+    serializeAll(configDir);
+    sessions.kill(s.id);
+
+    // Verify yolo is in the serialized JSON
+    const pending = JSON.parse(fs.readFileSync(path.join(configDir, 'pending-sessions.json'), 'utf-8'));
+    assert.strictEqual(pending.version, 2);
+    assert.strictEqual(pending.sessions[0].yolo, true);
+
+    await restoreFromDisk(configDir);
+    const restored = sessions.get(s.id);
+    assert.ok(restored);
+    assert.strictEqual((restored as PtySession).yolo, true);
+  });
+
+  it('serialize/restore preserves claudeArgs', async () => {
+    const configDir = createTmpDir();
+
+    const s = sessions.create({
+      repoName: 'test-repo',
+      repoPath: '/tmp',
+      command: '/bin/cat',
+      args: [],
+      claudeArgs: ['--model', 'opus', '--verbose'],
+    });
+
+    const session = sessions.get(s.id);
+    assert.ok(session);
+    assert.deepStrictEqual((session as PtySession).claudeArgs, ['--model', 'opus', '--verbose']);
+
+    serializeAll(configDir);
+    sessions.kill(s.id);
+
+    await restoreFromDisk(configDir);
+    const restored = sessions.get(s.id);
+    assert.ok(restored);
+    assert.deepStrictEqual((restored as PtySession).claudeArgs, ['--model', 'opus', '--verbose']);
+  });
+
+  it('restoreFromDisk handles v1 pending files without yolo/claudeArgs', async () => {
+    const configDir = createTmpDir();
+
+    // Write a v1 pending file (no yolo/claudeArgs fields)
+    const pending = {
+      version: 1,
+      timestamp: new Date().toISOString(),
+      sessions: [{
+        id: 'v1-compat-test',
+        type: 'worktree' as const,
+        agent: 'claude' as const,
+        root: '',
+        repoName: 'test-repo',
+        repoPath: '/tmp',
+        worktreeName: 'my-wt',
+        branchName: 'my-branch',
+        displayName: 'v1-session',
+        createdAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        useTmux: false,
+        tmuxSessionName: '',
+        customCommand: '/bin/cat',
+        cwd: '/tmp',
+      }],
+    };
+    fs.writeFileSync(path.join(configDir, 'pending-sessions.json'), JSON.stringify(pending));
+
+    const restored = await restoreFromDisk(configDir);
+    assert.strictEqual(restored, 1);
+
+    const session = sessions.get('v1-compat-test');
+    assert.ok(session);
+    assert.strictEqual((session as PtySession).yolo, false);
+    assert.deepStrictEqual((session as PtySession).claudeArgs, []);
   });
 
   it('serializeAll captures session state before kill', () => {

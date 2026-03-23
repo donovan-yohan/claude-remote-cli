@@ -101,3 +101,13 @@ The org dashboard backend queries `is:open` in its GitHub search. The frontend "
 When a sidebar row represents a group of sessions (e.g., all tabs for a worktree), the row's name and icon must come from the group's identity (worktree path, branch name), not from a "representative" session selected by recency. Picking the most-recently-active session as the representative leaks tab-level details (session type, auto-generated tab name) into the sidebar. Tab identity belongs to the tab bar; sidebar identity belongs to the worktree/group. When adding grouped UI patterns, always ask: "does the group's display change when the user interacts with an individual item within it?"
 
 ---
+
+### L-011: Session creation parameters must be stored on the session object if they need to survive restarts
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-22
+- branch: erebus
+
+When session creation accepts flags that affect runtime behavior (yolo mode, custom CLI args, continue mode), these must be stored on the Session object — not just consumed to build a spawn command and discarded. The serialization/restoration cycle can only preserve what's on the session object. In this project, `yolo`, `claudeArgs`, and `args` were converted to CLI arguments at route handler level and passed through to `createPtySession()` as a transient `args` parameter, making it impossible to serialize them for post-update restoration. When adding any creation-time parameter that should persist across restarts, add it to both the `PtySession` interface and `SerializedPtySession`.
+
+---
