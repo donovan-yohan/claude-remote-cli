@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { createQuery } from '@tanstack/svelte-query';
   import { fetchPrForBranchOrNull, fetchCiStatusOrNull, fetchCurrentBranch } from '../lib/api.js';
   import { sendPtyData } from '../lib/ws.js';
@@ -55,11 +56,15 @@
     enabled: prQuery.data?.state === 'OPEN',
   }));
 
-  // Refetch PR and CI data when session changes (e.g. workspace navigation)
+  // Refetch PR and CI data when session changes (e.g. workspace navigation).
+  // untrack() prevents tracking prQuery/ciQuery stores — without it, the effect
+  // re-triggers on every query state change (isFetching, data), creating an infinite loop.
   $effect(() => {
     if (sessionId) {
-      prQuery.refetch();
-      ciQuery.refetch();
+      untrack(() => {
+        prQuery.refetch();
+        ciQuery.refetch();
+      });
     }
   });
 

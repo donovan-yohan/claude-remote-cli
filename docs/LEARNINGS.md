@@ -111,3 +111,13 @@ When a sidebar row represents a group of sessions (e.g., all tabs for a worktree
 When session creation accepts flags that affect runtime behavior (yolo mode, custom CLI args, continue mode), these must be stored on the Session object — not just consumed to build a spawn command and discarded. The serialization/restoration cycle can only preserve what's on the session object. In this project, `yolo`, `claudeArgs`, and `args` were converted to CLI arguments at route handler level and passed through to `createPtySession()` as a transient `args` parameter, making it impossible to serialize them for post-update restoration. When adding any creation-time parameter that should persist across restarts, add it to both the `PtySession` interface and `SerializedPtySession`.
 
 ---
+
+### L-012: Never call `.refetch()` on a TanStack Query store inside a Svelte 5 `$effect` without `untrack()`
+- status: active
+- category: debugging
+- source: /harness:bug 2026-03-23
+- branch: master
+
+TanStack Query's `createQuery` returns a Svelte 5 reactive proxy. Accessing `.refetch` inside a `$effect` tracks the query store as a dependency. When `refetch()` completes, it updates internal state (`isFetching`, `data`), which re-triggers the effect, creating an infinite loop. Always wrap `.refetch()` calls in `untrack()` when used inside `$effect`, or use `queryClient.invalidateQueries()` from outside reactive contexts instead.
+
+---
