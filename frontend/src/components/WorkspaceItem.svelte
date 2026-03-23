@@ -79,7 +79,14 @@
   // Group identity: name derived from worktree/branch, not individual tab
   function groupDisplayName(groupPath: string, sessions: SessionSummary[]): string {
     const isRepoRoot = groupPath === workspace.path;
-    if (isRepoRoot) return 'default';
+    if (isRepoRoot) {
+      const repoSession = sessions.find(s => s.type === 'repo');
+      if (repoSession) {
+        const wasRenamed = repoSession.displayName && repoSession.displayName !== repoSession.repoName;
+        return wasRenamed ? repoSession.displayName : 'default';
+      }
+      return 'default';
+    }
     // All sessions in a worktree group share the same branch — use any
     const branch = sessions.find(s => s.branchName)?.branchName;
     return branch || sessions[0]?.worktreeName || sessions[0]?.repoName || 'unknown';
