@@ -23,7 +23,7 @@
 - [x] Task 5: Server integration wiring + smee polling fallback _(completed 2026-03-23)_
 - [x] Task 6: Frontend events, API, and settings _(completed 2026-03-23)_
 - [x] Task 7: Frontend dashboard + sidebar enrichment _(completed 2026-03-23)_
-- [ ] Task 8: Priority sort + pr-status tests
+- [x] Task 8: Priority sort + pr-status tests _(completed 2026-03-23)_
 
 ## Surprises & Discoveries
 
@@ -1517,10 +1517,16 @@ git commit -m "test: add priority sort and pr-status derivation tests"
 _Filled by /harness:complete when work is done._
 
 **What worked:**
--
+- Parallel subagent dispatch for independent tasks (2+3, 6+7) saved significant time
+- TDD approach with injectable deps (fetchFn, execAsync) made testing clean
+- Plan review caught 9 issues before implementation started
 
 **What didn't:**
--
+- Plan didn't specify OAuth redirect_uri correctly (used smeeUrl)
+- Plan didn't address auth middleware for /auth/github/* routes
+- smee-client API assumption wrong (start() returns Promise, not EventSource)
 
 **Learnings to codify:**
--
+- GitHub GraphQL returns HTTP 200 even with errors — always check `data.errors`
+- Webhook handlers should broadcast signals, not full payloads
+- OAuth callback routes need auth exemption but status/disconnect need protection

@@ -45,5 +45,5 @@
 | [2026-03-22-org-dashboard-cleanup-design.md](2026-03-22-org-dashboard-cleanup-design.md) | Org dashboard cleanup: tests, dead code, perf fix, API limitation docs | 2026-03-22 | implemented |
 | [2026-03-23-pr-auto-refresh-design.md](2026-03-23-pr-auto-refresh-design.md) | Manual refresh button + automatic PR data sync via git ref watching | 2026-03-23 | implemented |
 | [2026-03-23-relay-phase1-data-tables-design.md](2026-03-23-relay-phase1-data-tables-design.md) | Shared DataTable component, filter chips, sortable columns, keyboard nav, row grouping, saved presets | 2026-03-23 | planned |
-| [2026-03-23-relay-phase2-github-api-design.md](2026-03-23-relay-phase2-github-api-design.md) | GitHub App OAuth, GraphQL API, smee.io webhooks, real-time updates, CI status, sidebar PR enrichment | 2026-03-23 | planned |
+| [2026-03-23-relay-phase2-github-api-design.md](2026-03-23-relay-phase2-github-api-design.md) | GitHub App OAuth, GraphQL API, smee.io webhooks, real-time updates, CI status, sidebar PR enrichment | 2026-03-23 | implemented |
 | [2026-03-23-relay-phase3-spotlight-identity-design.md](2026-03-23-relay-phase3-spotlight-identity-design.md) | Spotlight command palette, sidebar header collapse, product rename to Relay | 2026-03-23 | planned |
