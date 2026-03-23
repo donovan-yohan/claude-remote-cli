@@ -1,9 +1,16 @@
 <script lang="ts">
-  import { createQuery } from '@tanstack/svelte-query';
-  import { fetchOrgPrs, fetchBranchLinks } from '../lib/api.js';
+  import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+  import { fetchOrgPrs, fetchBranchLinks, fetchPresets, savePreset, deletePreset } from '../lib/api.js';
   import { derivePrAction, getStatusCssVar, shouldUseDarkText } from '../lib/pr-state.js';
   import { formatRelativeTime } from '../lib/utils.js';
-  import type { AnyIssue, PullRequest, OrgPrsResponse, BranchLinksResponse } from '../lib/types.js';
+  import type { AnyIssue, PullRequest, OrgPrsResponse, BranchLinksResponse, FilterPreset } from '../lib/types.js';
+  import { deriveColor } from '../lib/colors.js';
+  import { derivePrDotStatus } from '../lib/pr-status.js';
+  import DataTable from './DataTable.svelte';
+  import type { Column } from './DataTable.svelte';
+  import FilterChipBar from './FilterChipBar.svelte';
+  import type { FilterChip } from './FilterChipBar.svelte';
+  import StatusDot from './StatusDot.svelte';
   import TicketsPanel from './TicketsPanel.svelte';
   import StartWorkModal from './StartWorkModal.svelte';
   import AutomationPanel from './AutomationPanel.svelte';
@@ -12,6 +19,8 @@
     onOpenWorkspace: (path: string) => void;
     onOpenSession?: (sessionId: string) => void;
   } = $props();
+
+  const queryClient = useQueryClient();
 
   let activeTab = $state<'prs' | 'tickets'>('prs');
   let startWorkIssue = $state<AnyIssue | null>(null);
@@ -30,40 +39,41 @@
     refetchOnWindowFocus: true,
   }));
 
+  const presetsQuery = createQuery<FilterPreset[]>(() => ({
+    queryKey: ['presets'],
+    queryFn: fetchPresets,
+    staleTime: 30_000,
+  }));
+
   let data = $derived(orgQuery.data);
   let isLoading = $derived(orgQuery.isLoading);
   let isError = $derived(orgQuery.isError);
 
-  // Filter / sort state
-  let stateFilter = $state<'open' | 'all'>('open');
-  let sortBy = $state<'updated' | 'title' | 'repo'>('updated');
-
-  // Color derivation (same algorithm as WorkspaceItem)
-  const INITIAL_COLORS = [
-    '#d97757',
-    '#4ade80',
-    '#60a5fa',
-    '#a78bfa',
-    '#f472b6',
-    '#fb923c',
-    '#34d399',
-    '#f87171',
+  // --- Column definitions ---
+  const prColumns: Column[] = [
+    { key: 'status', label: 'St', sortable: false, width: '36px' },
+    { key: 'title', label: 'Title', sortable: true },
+    { key: 'repo', label: 'Repo', sortable: true, width: '100px' },
+    { key: 'role', label: 'Role', sortable: true, width: '60px' },
+    { key: 'age', label: 'Age', sortable: true, width: '50px' },
+    { key: 'action', label: '', sortable: false, width: '80px' },
   ];
 
-  function deriveColor(name: string): string {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-    }
-    return INITIAL_COLORS[Math.abs(hash) % INITIAL_COLORS.length] ?? '#d97757';
-  }
+  // --- Filter / sort state ---
+  let activeStatusChips = $state<string[]>([]);
+  let searchQuery = $state('');
+  let sortBy = $state('role');
+  let sortDir = $state<'asc' | 'desc'>('asc');
 
-  function prStatusDotClass(pr: PullRequest): string {
-    if (pr.state !== 'OPEN') return 'dot dot-muted';
-    if (pr.reviewDecision === 'CHANGES_REQUESTED') return 'dot dot-error';
-    return 'dot dot-success';
-  }
+  // --- Status filter chips ---
+  const statusChips: FilterChip[] = [
+    { id: 'open', label: 'Open' },
+    { id: 'draft', label: 'Draft' },
+    { id: 'changes-requested', label: 'Changes Req' },
+    { id: 'approved', label: 'Approved' },
+  ];
 
+  // --- Helpers ---
   function prActionForRow(pr: PullRequest) {
     const prState = pr.state === 'OPEN' ? 'OPEN' : pr.state === 'MERGED' ? 'MERGED' : 'CLOSED';
     return derivePrAction({
@@ -84,22 +94,53 @@
 
   let allPrs = $derived(data?.prs ?? []);
 
-  let filteredPrs = $derived.by((): PullRequest[] => {
+  // --- Filter + sort pipeline ---
+  let processedPrs = $derived.by((): PullRequest[] => {
     let prs = allPrs;
-    if (stateFilter === 'open') {
-      prs = prs.filter(pr => pr.state === 'OPEN');
+    // Status filter
+    if (activeStatusChips.length > 0) {
+      prs = prs.filter(pr => activeStatusChips.includes(derivePrDotStatus(pr)));
     }
-    if (sortBy === 'title') {
-      prs = [...prs].sort((a, b) => a.title.localeCompare(b.title));
+    // Search
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      prs = prs.filter(pr =>
+        pr.title.toLowerCase().includes(q) ||
+        String(pr.number).includes(q) ||
+        (pr.headRefName ?? '').toLowerCase().includes(q)
+      );
+    }
+    // Sort: default is role (reviewer first) then updated
+    if (sortBy === 'role') {
+      const roleOrder: Record<string, number> = { reviewer: 0, author: 1 };
+      prs = [...prs].sort((a, b) => {
+        const roleDiff = (roleOrder[a.role] ?? 1) - (roleOrder[b.role] ?? 1);
+        if (roleDiff !== 0) return sortDir === 'asc' ? roleDiff : -roleDiff;
+        return b.updatedAt.localeCompare(a.updatedAt);
+      });
+    } else if (sortBy === 'title') {
+      prs = [...prs].sort((a, b) => sortDir === 'asc' ? a.title.localeCompare(b.title) : b.title.localeCompare(a.title));
     } else if (sortBy === 'repo') {
-      prs = [...prs].sort((a, b) => (a.repoName ?? '').localeCompare(b.repoName ?? ''));
+      prs = [...prs].sort((a, b) => sortDir === 'asc' ? (a.repoName ?? '').localeCompare(b.repoName ?? '') : (b.repoName ?? '').localeCompare(a.repoName ?? ''));
     } else {
-      prs = [...prs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      // age = updatedAt
+      prs = [...prs].sort((a, b) => sortDir === 'asc' ? a.updatedAt.localeCompare(b.updatedAt) : b.updatedAt.localeCompare(a.updatedAt));
     }
     return prs;
   });
 
   let openCount = $derived(allPrs.filter(pr => pr.state === 'OPEN').length);
+
+  // Attention count: PRs where you need to act (changes requested on yours, or awaiting your review).
+  // Returns 0 when data is loading/errored since allPrs will be empty.
+  let prAttentionCount = $derived(
+    allPrs.filter(pr =>
+      pr.state === 'OPEN' && (
+        pr.reviewDecision === 'CHANGES_REQUESTED' ||
+        pr.role === 'reviewer'
+      )
+    ).length
+  );
 
   let branchLinksData = $derived(branchLinksQuery.data ?? {});
 
@@ -114,6 +155,52 @@
       }
     }
     return null;
+  }
+
+  let hasActiveFilters = $derived(activeStatusChips.length > 0 || searchQuery.length > 0);
+
+  function clearFilters() {
+    activeStatusChips = [];
+    searchQuery = '';
+  }
+
+  function handleSort(col: string) {
+    if (col === sortBy) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortBy = col;
+      sortDir = 'asc';
+    }
+  }
+
+  function handleChipToggle(id: string) {
+    activeStatusChips = activeStatusChips.includes(id)
+      ? activeStatusChips.filter(c => c !== id)
+      : [...activeStatusChips, id];
+  }
+
+  function applyPreset(preset: FilterPreset) {
+    activeStatusChips = preset.filters.status ?? [];
+    sortBy = preset.sort.column;
+    sortDir = preset.sort.direction;
+  }
+
+  async function handleSaveCurrentView() {
+    const name = window.prompt('Save current view as:');
+    if (!name || !name.trim()) return;
+    const filters: FilterPreset['filters'] = {};
+    if (activeStatusChips.length > 0) filters.status = [...activeStatusChips];
+    await savePreset({
+      name: name.trim(),
+      filters,
+      sort: { column: sortBy, direction: sortDir },
+    });
+    await queryClient.invalidateQueries({ queryKey: ['presets'] });
+  }
+
+  async function handleDeletePreset(preset: FilterPreset) {
+    await deletePreset(preset.name);
+    await queryClient.invalidateQueries({ queryKey: ['presets'] });
   }
 </script>
 
@@ -134,7 +221,7 @@
       class:tab-btn--active={activeTab === 'prs'}
       onclick={() => { activeTab = 'prs'; }}
     >
-      PRs
+      PRs {#if prAttentionCount > 0}<span class="tab-badge">{prAttentionCount}</span>{/if}
     </button>
     <button
       class="tab-btn"
@@ -146,114 +233,186 @@
   </div>
 
   {#if activeTab === 'prs'}
-    {#if !isLoading && !isError && !data?.error && allPrs.length > 0}
-      <div class="filter-bar">
-        <select class="filter-select" bind:value={stateFilter}>
-          <option value="open">Open</option>
-          <option value="all">All</option>
-        </select>
-        <select class="filter-select" bind:value={sortBy}>
-          <option value="updated">Sort: Updated</option>
-          <option value="title">Sort: Title</option>
-          <option value="repo">Sort: Repo</option>
-        </select>
-      </div>
-    {/if}
-
-    {#if isLoading}
-      <div class="pr-list">
-        {#each [1, 2, 3] as _ (_.toString())}
-          <div class="pr-row skeleton">
-            <div class="skeleton-line skeleton-title"></div>
-            <div class="skeleton-line skeleton-meta"></div>
-          </div>
-        {/each}
-      </div>
-
-    {:else if isError}
-      <div class="state-message state-message--error">
-        <span>Failed to load pull requests.</span>
-        <button class="retry-btn" onclick={() => orgQuery.refetch()}>Retry</button>
-      </div>
-
-    {:else if data?.error === 'gh_not_in_path'}
+    {#if data?.error === 'gh_not_in_path'}
       <div class="state-message state-message--info">
         Install GitHub CLI for PR tracking —
         <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer">cli.github.com</a>
       </div>
-
     {:else if data?.error === 'gh_not_authenticated'}
       <div class="state-message state-message--info">
         Run <code>gh auth login</code> to connect GitHub.
       </div>
-
     {:else if data?.error === 'gh_timeout'}
       <div class="state-message state-message--error">
         <span>GitHub is taking too long. Try again.</span>
         <button class="retry-btn" onclick={() => orgQuery.refetch()}>Retry</button>
       </div>
-
     {:else if data?.error === 'no_workspaces'}
       <!-- App.svelte handles the no_workspaces case -->
-
-    {:else if filteredPrs.length === 0}
-      <div class="state-message">
-        {#if stateFilter === 'open'}No open PRs across your repos. Great work!{:else}No pull requests found.{/if}
-      </div>
-
     {:else}
-      <div class="pr-list">
-        {#each filteredPrs as pr (`${pr.repoPath ?? ''}:${pr.number}`)}
+      {#if !isLoading && !isError && allPrs.length > 0}
+        <div class="presets-row">
+          <select
+            class="preset-select"
+            value=""
+            onchange={(e) => {
+              const val = (e.currentTarget as HTMLSelectElement).value;
+              if (val === '__save__') {
+                (e.currentTarget as HTMLSelectElement).value = '';
+                void handleSaveCurrentView();
+              } else if (val) {
+                const preset = (presetsQuery.data ?? []).find(p => p.name === val);
+                if (preset) applyPreset(preset);
+                (e.currentTarget as HTMLSelectElement).value = '';
+              }
+            }}
+          >
+            <option value="" disabled>Presets...</option>
+            {#each (presetsQuery.data ?? []) as preset}
+              <option value={preset.name}>{preset.name}</option>
+            {/each}
+            <option value="__save__">Save current view...</option>
+          </select>
+          {#each (presetsQuery.data ?? []).filter(p => !p.builtIn) as preset}
+            <button
+              class="preset-delete-btn"
+              title="Delete preset: {preset.name}"
+              onclick={() => void handleDeletePreset(preset)}
+            >× {preset.name}</button>
+          {/each}
+        </div>
+        <FilterChipBar
+          chips={statusChips}
+          activeChips={activeStatusChips}
+          onToggle={handleChipToggle}
+          onClearAll={clearFilters}
+          searchQuery={searchQuery}
+          onSearch={(q) => searchQuery = q}
+        />
+      {/if}
+
+      <DataTable
+        columns={prColumns}
+        rows={processedPrs}
+        groupBy="repoName"
+        {sortBy}
+        {sortDir}
+        onSort={handleSort}
+        loading={isLoading}
+        error={isError ? 'Could not load pull requests.' : undefined}
+        emptyMessage="No open PRs across workspaces."
+        filteredEmptyMessage="No PRs match filters."
+        {hasActiveFilters}
+        onClearFilters={clearFilters}
+        maxHeight="100%"
+        onRowAction={(pr) => onOpenWorkspace(pr.repoPath ?? '')}
+      >
+        {#snippet row(pr, _index)}
           {@const action = prActionForRow(pr)}
           {@const actionColor = getStatusCssVar(action.color)}
           {@const darkText = shouldUseDarkText(action.color)}
           {@const repoName = pr.repoName ?? ''}
           {@const chipColor = deriveColor(repoName)}
           {@const ticketId = getTicketIdForPr(pr.headRefName)}
-          <div class="pr-row">
-            <div class="pr-row-left">
-              <div class="pr-row-title-line">
-                <span class={prStatusDotClass(pr)}></span>
-                <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
-                  {pr.title}
-                </a>
-              </div>
-              <div class="pr-row-meta">
-                {#if repoName}
-                  <!-- svelte-ignore a11y_click_events_have_key_events -->
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <span
-                    class="repo-chip"
-                    style:background={chipColor}
-                    title={pr.repoPath ?? repoName}
-                    onclick={() => { if (pr.repoPath) onOpenWorkspace(pr.repoPath); }}
-                  >{repoName}</span>
-                  <span class="pr-sep">·</span>
-                {/if}
-                {#if ticketId}
-                  <span class="ticket-chip">{ticketId}</span>
-                  <span class="pr-sep">·</span>
-                {/if}
-                <span class="pr-role">{prRoleLabel(pr)}</span>
-                <span class="pr-sep">·</span>
-                <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
-              </div>
+          <!-- St column -->
+          <div class="cell cell--status" style:width="36px" style:flex="none">
+            <StatusDot status={derivePrDotStatus(pr)} />
+          </div>
+          <!-- Title column -->
+          <div class="cell cell--title" style:flex="1">
+            <div class="pr-row-title-line">
+              <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
+                {pr.title}
+              </a>
             </div>
-            <div class="pr-row-actions">
-              {#if action.type !== 'none' && action.label}
-                <button
-                  class="pr-action-pill"
-                  style:--pill-color={actionColor}
-                  class:dark-text={darkText}
-                  title={action.label}
-                >
-                  {action.label}
-                </button>
+            <div class="pr-row-meta">
+              <span class="pr-meta-text">#{pr.number}</span>
+              {#if ticketId}
+                <span class="pr-sep">·</span>
+                <span class="ticket-chip">{ticketId}</span>
               {/if}
+              <span class="pr-sep">·</span>
+              <span class="pr-meta-text">{prRoleLabel(pr)}</span>
+              <span class="pr-sep">·</span>
+              <span class="pr-meta-text">{formatRelativeTime(pr.updatedAt)}</span>
             </div>
           </div>
-        {/each}
-      </div>
+          <!-- Repo column -->
+          <div class="cell cell--repo" style:width="100px" style:flex="none">
+            {#if repoName}
+              <span
+                class="repo-chip"
+                style:background={chipColor}
+                title={pr.repoPath ?? repoName}
+              >{repoName}</span>
+            {/if}
+          </div>
+          <!-- Role column -->
+          <div class="cell cell--role" style:width="60px" style:flex="none">
+            <span class="pr-meta-text">{pr.role}</span>
+          </div>
+          <!-- Age column -->
+          <div class="cell cell--age" style:width="50px" style:flex="none">
+            <span class="pr-meta-text">{formatRelativeTime(pr.updatedAt)}</span>
+          </div>
+          <!-- Action column -->
+          <div class="cell cell--action" style:width="80px" style:flex="none">
+            {#if action.type !== 'none' && action.label}
+              <button
+                class="pr-action-pill"
+                style:--pill-color={actionColor}
+                class:dark-text={darkText}
+                title={action.label}
+                onclick={() => onOpenWorkspace(pr.repoPath ?? '')}
+              >
+                {action.label}
+              </button>
+            {/if}
+          </div>
+        {/snippet}
+
+        {#snippet mobileCard(pr, _index)}
+          {@const action = prActionForRow(pr)}
+          {@const actionColor = getStatusCssVar(action.color)}
+          {@const darkText = shouldUseDarkText(action.color)}
+          {@const repoName = pr.repoName ?? ''}
+          {@const chipColor = deriveColor(repoName)}
+          {@const ticketId = getTicketIdForPr(pr.headRefName)}
+          <div class="mobile-card">
+            <div class="mobile-card-line1">
+              <StatusDot status={derivePrDotStatus(pr)} />
+              <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
+                {pr.title}
+              </a>
+            </div>
+            <div class="mobile-card-line2">
+              {#if repoName}
+                <span
+                  class="repo-chip"
+                  style:background={chipColor}
+                  title={pr.repoPath ?? repoName}
+                >{repoName}</span>
+              {/if}
+              {#if ticketId}
+                <span class="ticket-chip">{ticketId}</span>
+              {/if}
+              <span class="pr-meta-text">{prRoleLabel(pr)}</span>
+              <span class="pr-sep">·</span>
+              <span class="pr-meta-text">{formatRelativeTime(pr.updatedAt)}</span>
+            </div>
+            {#if action.type !== 'none' && action.label}
+              <button
+                class="pr-action-pill pr-action-pill--full"
+                style:--pill-color={actionColor}
+                class:dark-text={darkText}
+                onclick={() => onOpenWorkspace(pr.repoPath ?? '')}
+              >
+                {action.label}
+              </button>
+            {/if}
+          </div>
+        {/snippet}
+      </DataTable>
     {/if}
   {:else if activeTab === 'tickets'}
     <TicketsPanel onStartWork={(issue) => { startWorkIssue = issue; }} />
@@ -285,7 +444,7 @@
     overflow-y: auto;
   }
 
-  /* ── Header ── */
+  /* -- Header -- */
   .org-header {
     display: flex;
     align-items: baseline;
@@ -311,7 +470,7 @@
     opacity: 0.7;
   }
 
-  /* ── Tab strip ── */
+  /* -- Tab strip -- */
   .tab-strip {
     display: flex;
     gap: 0;
@@ -346,31 +505,15 @@
     border-bottom-color: var(--accent);
   }
 
-  /* ── Filter bar ── */
-  .filter-bar {
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .filter-select {
-    padding: 6px 10px;
-    font-size: var(--font-size-xs);
+  .tab-badge {
     font-family: var(--font-mono);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text);
-    cursor: pointer;
-    outline: none;
-    transition: border-color 0.12s;
+    font-size: 0.65rem;
+    color: var(--accent);
+    margin-left: 4px;
+    opacity: 0.8;
   }
 
-  .filter-select:focus {
-    border-color: var(--accent);
-  }
-
-  /* ── State messages ── */
+  /* -- State messages (gh errors) -- */
   .state-message {
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
@@ -391,6 +534,10 @@
     text-decoration: underline;
   }
 
+  .state-message--error {
+    color: var(--status-error);
+  }
+
   .retry-btn {
     background: none;
     border: 1px solid var(--border);
@@ -408,49 +555,42 @@
     color: var(--accent);
   }
 
-  /* ── PR list ── */
-  .pr-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  .pr-row {
+  /* -- Table cell layout -- */
+  .cell {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-    transition: background 0.1s;
-  }
-
-  .pr-row:last-child {
-    border-bottom: none;
-  }
-
-  .pr-row:hover {
-    background: var(--surface);
-  }
-
-  .pr-row-left {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
+    padding: 8px;
     min-width: 0;
-    flex: 1;
   }
 
+  .cell--status {
+    justify-content: center;
+  }
+
+  .cell--title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+
+  .cell--repo,
+  .cell--role,
+  .cell--age {
+    justify-content: flex-start;
+    overflow: hidden;
+  }
+
+  .cell--action {
+    justify-content: flex-end;
+  }
+
+  /* -- PR row content -- */
   .pr-row-title-line {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
+    width: 100%;
   }
 
   .pr-title-link {
@@ -470,13 +610,6 @@
     text-decoration: underline;
   }
 
-  .pr-row-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
   .pr-row-meta {
     display: flex;
     align-items: center;
@@ -485,6 +618,13 @@
     font-family: var(--font-mono);
     color: var(--text-muted);
     flex-wrap: wrap;
+  }
+
+  .pr-meta-text {
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    white-space: nowrap;
   }
 
   .pr-sep {
@@ -501,7 +641,6 @@
     font-family: var(--font-mono);
     font-weight: 700;
     color: #000;
-    cursor: pointer;
     white-space: nowrap;
     transition: opacity 0.12s;
     line-height: 1.4;
@@ -527,27 +666,14 @@
     line-height: 1.4;
   }
 
-  /* Status dot */
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    display: inline-block;
-  }
-
-  .dot-success { background: var(--status-success); }
-  .dot-error   { background: var(--status-error); }
-  .dot-muted   { background: var(--border); }
-
   /* Action pill */
   .pr-action-pill {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    padding: 6px 12px;
-    min-height: 32px;
+    padding: 4px 10px;
+    min-height: 28px;
     border-radius: 20px;
     border: none;
     background: var(--pill-color, var(--border));
@@ -568,64 +694,86 @@
     color: #1a1a1a;
   }
 
-  /* ── Skeletons ── */
-  .skeleton {
-    pointer-events: none;
-    min-height: 56px;
+  /* -- Mobile card layout -- */
+  .mobile-card {
+    display: flex;
     flex-direction: column;
-    justify-content: center;
     gap: 6px;
+    padding: 10px 8px;
+    width: 100%;
   }
 
-  .skeleton-line {
-    background: var(--border);
-    border-radius: 3px;
-    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  .mobile-card-line1 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
   }
 
-  .skeleton-title {
-    height: 13px;
-    width: 60%;
+  .mobile-card-line2 {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    flex-wrap: wrap;
   }
 
-  .skeleton-meta {
-    height: 10px;
-    width: 40%;
+  .pr-action-pill--full {
+    width: 100%;
+    justify-content: center;
   }
 
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50%       { opacity: 0.7; }
+  /* -- Presets row -- */
+  .presets-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
   }
 
-  /* ── Mobile: card-style rows ── */
+  .preset-select {
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    padding: 4px 8px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.12s;
+  }
+
+  .preset-select:focus,
+  .preset-select:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .preset-delete-btn {
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    padding: 3px 8px;
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+    white-space: nowrap;
+  }
+
+  .preset-delete-btn:hover {
+    border-color: var(--status-error, #e05555);
+    color: var(--status-error, #e05555);
+  }
+
   @media (max-width: 600px) {
     .org-dashboard {
       padding: 14px;
-    }
-
-    .pr-row {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
-      padding: 12px 10px;
-    }
-
-    .pr-row-left {
-      width: 100%;
-    }
-
-    .pr-row-actions {
-      align-self: flex-end;
-    }
-
-    .pr-action-pill {
-      padding: 5px 12px;
-      min-height: 32px;
-    }
-
-    .filter-bar {
-      flex-wrap: wrap;
     }
   }
 </style>

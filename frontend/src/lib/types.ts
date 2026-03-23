@@ -78,6 +78,7 @@ export interface PullRequest {
   deletions: number;
   reviewDecision: string | null;
   mergeable: string | null;
+  isDraft?: boolean;
   repoName?: string;
   repoPath?: string;
 }
@@ -215,4 +216,11 @@ export interface AutomationSettings {
   autoReviewOnCheckout?: boolean;
   pollIntervalMs?: number;
   lastPollTimestamp?: string;
+}
+
+export interface FilterPreset {
+  name: string;
+  builtIn?: boolean;
+  filters: { status?: string[]; repo?: string[]; role?: string[] };
+  sort: { column: string; direction: 'asc' | 'desc' };
 }

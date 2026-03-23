@@ -704,6 +704,50 @@ async function main(): Promise<void> {
     res.json({ groups: config.workspaceGroups ?? {} });
   });
 
+  // GET /presets — return all filter presets (built-in merged with user presets)
+  app.get('/presets', requireAuth, (_req: express.Request, res: express.Response) => {
+    res.json(config.filterPresets ?? []);
+  });
+
+  // POST /presets — add a new user filter preset
+  app.post('/presets', requireAuth, (req: express.Request, res: express.Response) => {
+    const { name, filters, sort } = req.body as { name?: string; filters?: unknown; sort?: unknown };
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ error: 'name is required' });
+      return;
+    }
+    if (sort && typeof sort === 'object') {
+      const dir = (sort as any).direction;
+      if (dir !== 'asc' && dir !== 'desc') {
+        res.status(400).json({ error: 'sort.direction must be "asc" or "desc"' });
+        return;
+      }
+    }
+    const preset = { name: name.trim(), filters: (filters as { status?: string[]; repo?: string[]; role?: string[] }) ?? {}, sort: (sort as { column: string; direction: 'asc' | 'desc' }) ?? { column: 'role', direction: 'asc' as const } };
+    if (!config.filterPresets) config.filterPresets = [];
+    config.filterPresets.push(preset);
+    saveConfig(CONFIG_PATH, config);
+    res.json(preset);
+  });
+
+  // DELETE /presets/:name — remove a user preset (built-in presets cannot be deleted)
+  app.delete('/presets/:name', requireAuth, (req: express.Request, res: express.Response) => {
+    const name = decodeURIComponent(req.params['name'] ?? '');
+    const presets = config.filterPresets ?? [];
+    const target = presets.find((p) => p.name === name);
+    if (!target) {
+      res.status(404).json({ error: 'Preset not found' });
+      return;
+    }
+    if (target.builtIn) {
+      res.status(400).json({ error: 'Cannot delete a built-in preset' });
+      return;
+    }
+    config.filterPresets = presets.filter((p) => p.name !== name);
+    saveConfig(CONFIG_PATH, config);
+    res.json({ ok: true });
+  });
+
   // GET /push/vapid-key
   app.get('/push/vapid-key', requireAuth, (_req, res) => {
     const key = push.getVapidPublicKey();

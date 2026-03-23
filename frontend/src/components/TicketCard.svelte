@@ -1,5 +1,14 @@
 <script lang="ts">
   import type { GitHubIssue, JiraIssue, AnyIssue, BranchLink } from '../lib/types.js';
+  import { deriveColor } from '../lib/colors.js';
+  import StatusDot from './StatusDot.svelte';
+  function simpleJiraStatus(status: string): 'in-progress' | 'code-review' | 'ready-for-qa' | 'unmapped' {
+    const lower = status.toLowerCase();
+    if (lower.includes('progress') || lower.includes('doing') || lower.includes('development')) return 'in-progress';
+    if (lower.includes('review') || lower.includes('pr')) return 'code-review';
+    if (lower.includes('qa') || lower.includes('test') || lower.includes('done') || lower.includes('resolved')) return 'ready-for-qa';
+    return 'unmapped';
+  }
 
   let { issue, source, branchLinks = [], onStartWork }: {
     issue: AnyIssue;
@@ -7,25 +16,6 @@
     branchLinks?: BranchLink[];
     onStartWork?: (issue: AnyIssue) => void;
   } = $props();
-
-  const INITIAL_COLORS = [
-    '#d97757',
-    '#4ade80',
-    '#60a5fa',
-    '#a78bfa',
-    '#f472b6',
-    '#fb923c',
-    '#34d399',
-    '#f87171',
-  ];
-
-  function deriveColor(name: string): string {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-    }
-    return INITIAL_COLORS[Math.abs(hash) % INITIAL_COLORS.length] ?? '#d97757';
-  }
 
   function isGitHub(i: AnyIssue): i is GitHubIssue { return source === 'github'; }
   function isJira(i: AnyIssue): i is JiraIssue { return source === 'jira'; }
@@ -51,9 +41,9 @@
   <div class="ticket-left">
     <div class="ticket-title-line">
       {#if isGitHub(issue)}
-        <span class="dot {issue.state === 'OPEN' ? 'dot-success' : 'dot-muted'}"></span>
+        <StatusDot status={issue.state === 'OPEN' ? 'open' : 'closed'} />
       {:else if isJira(issue)}
-        <span class="dot dot-info"></span>
+        <StatusDot status={simpleJiraStatus(issue.status)} />
       {/if}
       <a class="ticket-title-link" href={issue.url} target="_blank" rel="noopener noreferrer">
         {issue.title}
@@ -269,7 +259,7 @@
     opacity: 0.8;
   }
 
-  /* Status dot */
+  /* Active session dot in branch chip */
   .dot {
     width: 7px;
     height: 7px;
@@ -283,10 +273,7 @@
     height: 6px;
   }
 
-  .dot-success { background: var(--status-success); }
-  .dot-muted   { background: var(--border); }
-  .dot-active  { background: var(--accent); }
-  .dot-info    { background: var(--accent); opacity: 0.6; }
+  .dot-active { background: var(--accent); }
 
   .ticket-actions {
     display: flex;

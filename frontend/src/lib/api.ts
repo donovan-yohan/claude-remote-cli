@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, JiraStatus, AutomationSettings } from './types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, JiraStatus, AutomationSettings, FilterPreset } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -424,4 +424,22 @@ export async function updateAutomations(settings: Partial<AutomationSettings>): 
     body: JSON.stringify(settings),
   });
   return json<AutomationSettings>(res);
+}
+
+export async function fetchPresets(): Promise<FilterPreset[]> {
+  const res = await fetch('/presets', { credentials: 'include' });
+  return res.json() as Promise<FilterPreset[]>;
+}
+
+export async function savePreset(preset: { name: string; filters: FilterPreset['filters']; sort: FilterPreset['sort'] }): Promise<void> {
+  await fetch('/presets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(preset),
+  });
+}
+
+export async function deletePreset(name: string): Promise<void> {
+  await fetch(`/presets/${encodeURIComponent(name)}`, { method: 'DELETE', credentials: 'include' });
 }

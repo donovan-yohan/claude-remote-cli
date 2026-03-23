@@ -321,7 +321,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
-    const fields = 'number,title,url,headRefName,baseRefName,state,author,updatedAt,additions,deletions,reviewDecision,mergeable,mergeStateStatus';
+    const fields = 'number,title,url,headRefName,baseRefName,state,author,updatedAt,additions,deletions,reviewDecision,mergeable,mergeStateStatus,isDraft';
 
     // Get current GitHub user
     let currentUser = '';
@@ -350,6 +350,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
         deletions: (raw.deletions as number) ?? 0,
         reviewDecision: (raw.reviewDecision as string) ?? null,
         mergeable: (raw.mergeable as string) ?? null,
+        isDraft: (raw.isDraft as boolean) ?? false,
       };
     }
 

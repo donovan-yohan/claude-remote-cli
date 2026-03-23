@@ -160,6 +160,7 @@ export interface Config {
     jira?: { projectKey?: string; statusMappings?: Partial<Record<TransitionState, string>> };
   } | undefined;
   automations?: AutomationSettings | undefined;
+  filterPresets?: FilterPreset[] | undefined;
 }
 
 export interface AutomationSettings {
@@ -167,6 +168,13 @@ export interface AutomationSettings {
   autoReviewOnCheckout?: boolean;
   pollIntervalMs?: number;
   lastPollTimestamp?: string;
+}
+
+export interface FilterPreset {
+  name: string;
+  builtIn?: boolean;
+  filters: { status?: string[]; repo?: string[]; role?: string[] };
+  sort: { column: string; direction: 'asc' | 'desc' };
 }
 
 export interface ServicePaths {
@@ -202,6 +210,7 @@ export interface PullRequest {
   deletions: number;
   reviewDecision: string | null;
   mergeable: string | null;
+  isDraft?: boolean;
   repoName?: string | undefined;
   repoPath?: string | undefined;
 }

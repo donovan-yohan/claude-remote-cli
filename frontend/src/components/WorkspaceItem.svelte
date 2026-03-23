@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
+  import { deriveColor } from '../lib/colors.js';
   import { getSessionState, getSessionStatus, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
@@ -36,26 +37,6 @@
 
   // Flatten all sessions for attention detection
   let allSessions = $derived([...sessionGroups.values()].flat());
-
-  // Derive a consistent color for the workspace letter initial
-  const INITIAL_COLORS = [
-    '#d97757', // accent/orange
-    '#4ade80', // green
-    '#60a5fa', // blue
-    '#a78bfa', // purple
-    '#f472b6', // pink
-    '#fb923c', // amber-orange
-    '#34d399', // teal
-    '#f87171', // red
-  ];
-
-  function deriveColor(name: string): string {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-    }
-    return INITIAL_COLORS[Math.abs(hash) % INITIAL_COLORS.length] ?? '#d97757';
-  }
 
   let initialColor = $derived(deriveColor(workspace.name));
   let initial = $derived(workspace.name.charAt(0).toUpperCase());
