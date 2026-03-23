@@ -78,7 +78,8 @@ export interface PullRequest {
   deletions: number;
   reviewDecision: string | null;
   mergeable: string | null;
-  isDraft?: boolean;
+  ciStatus: 'SUCCESS' | 'FAILURE' | 'ERROR' | 'PENDING' | null;
+  isDraft: boolean;
   repoName?: string;
   repoPath?: string;
 }

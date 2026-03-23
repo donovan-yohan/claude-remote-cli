@@ -161,6 +161,12 @@ export interface Config {
   } | undefined;
   automations?: AutomationSettings | undefined;
   filterPresets?: FilterPreset[] | undefined;
+  github?: {
+    accessToken?: string;
+    username?: string;
+    webhookSecret?: string;
+    smeeUrl?: string;
+  } | undefined;
 }
 
 export interface AutomationSettings {
@@ -210,7 +216,8 @@ export interface PullRequest {
   deletions: number;
   reviewDecision: string | null;
   mergeable: string | null;
-  isDraft?: boolean;
+  ciStatus: 'SUCCESS' | 'FAILURE' | 'ERROR' | 'PENDING' | null;
+  isDraft: boolean;
   repoName?: string | undefined;
   repoPath?: string | undefined;
 }

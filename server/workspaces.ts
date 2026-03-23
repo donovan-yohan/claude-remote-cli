@@ -351,6 +351,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
         reviewDecision: (raw.reviewDecision as string) ?? null,
         mergeable: (raw.mergeable as string) ?? null,
         isDraft: (raw.isDraft as boolean) ?? false,
+        ciStatus: null,
       };
     }
 

@@ -246,6 +246,8 @@ export function createOrgDashboardRouter(deps: OrgDashboardDeps): Router {
         deletions: 0,
         reviewDecision: null,
         mergeable: null,
+        isDraft: false,
+        ciStatus: null,
         repoName,
         repoPath: wsPath,
       });
@@ -291,6 +293,8 @@ export function createOrgDashboardRouter(deps: OrgDashboardDeps): Router {
             deletions: 0,
             reviewDecision: null,
             mergeable: null,
+            isDraft: false,
+            ciStatus: null,
             repoName: path.basename(wsPath),
             repoPath: wsPath,
           });
