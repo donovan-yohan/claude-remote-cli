@@ -24,6 +24,7 @@ export interface OrgDashboardDeps {
     branchLinks: Record<string, Array<{ repoPath: string; repoName: string; branchName: string; hasActiveSession: boolean }>>,
   ) => Promise<void>;
   getBranchLinks?: () => Promise<Record<string, Array<{ repoPath: string; repoName: string; branchName: string; hasActiveSession: boolean }>>>;
+  fetchGraphQL?: (token: string, repoMap: Map<string, string>) => Promise<{ prs: PullRequest[]; username: string }>;
 }
 
 // In-memory cache for search results
@@ -177,6 +178,31 @@ export function createOrgDashboardRouter(deps: OrgDashboardDeps): Router {
 
     // Build repo → workspace path map
     const repoMap = await buildRepoMap(workspacePaths, exec);
+
+    // Check for GraphQL path (GitHub App token)
+    const githubToken = config.github?.accessToken;
+    if (githubToken && deps.fetchGraphQL) {
+      try {
+        const result = await deps.fetchGraphQL(githubToken, repoMap);
+        cachedUser = result.username;
+        const prs = result.prs;
+        prs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+        cache = { prs, fetchedAt: now };
+
+        // Fire ticket transitions (same best-effort as below)
+        if (deps.checkPrTransitions && deps.getBranchLinks) {
+          deps.getBranchLinks()
+            .then((links) => deps.checkPrTransitions!(prs, links))
+            .catch(() => {});
+        }
+
+        const response: PullRequestsResponse = { prs };
+        res.json(response);
+        return;
+      } catch {
+        // GraphQL failed — fall through to gh CLI path
+      }
+    }
 
     // Single gh search API call
     let searchResponse: GhSearchResponse;

@@ -308,3 +308,93 @@ test('caches results within TTL — exec called only once for two requests', asy
 
   assert.equal(searchCallCount, 1, 'gh search should have been called exactly once (cache hit on second request)');
 });
+
+test('uses GraphQL path when github accessToken is in config', async () => {
+  // Use an isolated tmp dir, config, and server so this test does not
+  // interfere with the shared server used by the other tests.
+  const gqlTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'org-dashboard-gql-test-'));
+  const gqlConfigPath = path.join(gqlTmpDir, 'config.json');
+
+  saveConfig(gqlConfigPath, {
+    ...DEFAULTS,
+    workspaces: [WORKSPACE_PATH_A],
+    github: { accessToken: 'ghp_test123', username: 'graphqluser' },
+  });
+
+  const graphqlPr: import('../server/types.js').PullRequest = {
+    number: 99,
+    title: 'GraphQL PR',
+    url: 'https://github.com/myorg/repo-a/pull/99',
+    headRefName: 'feat/graphql',
+    baseRefName: 'main',
+    state: 'OPEN',
+    author: 'graphqluser',
+    role: 'author',
+    updatedAt: '2026-03-22T00:00:00Z',
+    additions: 5,
+    deletions: 2,
+    reviewDecision: null,
+    mergeable: null,
+    isDraft: false,
+    ciStatus: null,
+    repoName: 'repo-a',
+    repoPath: WORKSPACE_PATH_A,
+  };
+
+  let graphqlCallCount = 0;
+  let capturedToken: string | undefined;
+  let capturedRepoMap: Map<string, string> | undefined;
+
+  const mockFetchGraphQL = async (token: string, repoMap: Map<string, string>) => {
+    graphqlCallCount++;
+    capturedToken = token;
+    capturedRepoMap = repoMap;
+    return { prs: [graphqlPr], username: 'graphqluser' };
+  };
+
+  // exec mock that handles git remote but should NOT be called for gh user/search
+  const exec = makeMockExec({
+    remotes: { [WORKSPACE_PATH_A]: 'git@github.com:myorg/repo-a.git' },
+  });
+
+  let gqlServer: Server | undefined;
+  let gqlBaseUrl: string;
+
+  await new Promise<void>((resolve) => {
+    const app = express();
+    app.use(express.json());
+    const deps = {
+      configPath: gqlConfigPath,
+      execAsync: exec,
+      fetchGraphQL: mockFetchGraphQL,
+    } as unknown as OrgDashboardDeps;
+    app.use('/org-dashboard', createOrgDashboardRouter(deps));
+    gqlServer = app.listen(0, '127.0.0.1', () => {
+      const addr = gqlServer!.address();
+      if (typeof addr === 'object' && addr) {
+        gqlBaseUrl = `http://127.0.0.1:${addr.port}`;
+      }
+      resolve();
+    });
+  });
+
+  try {
+    const res = await fetch(`${gqlBaseUrl!}/org-dashboard/prs`);
+    const data = await res.json() as PullRequestsResponse;
+
+    assert.equal(data.error, undefined, `Unexpected error: ${data.error}`);
+    assert.equal(data.prs.length, 1, 'Should return the GraphQL PR');
+    assert.equal(data.prs[0]?.number, 99, 'PR number should match GraphQL data');
+    assert.equal(data.prs[0]?.title, 'GraphQL PR');
+
+    assert.equal(graphqlCallCount, 1, 'fetchGraphQL should have been called exactly once');
+    assert.equal(capturedToken, 'ghp_test123', 'fetchGraphQL should receive the configured access token');
+    assert.ok(capturedRepoMap instanceof Map, 'fetchGraphQL should receive the repoMap');
+  } finally {
+    await new Promise<void>((resolve) => {
+      if (gqlServer) gqlServer.close(() => resolve());
+      else resolve();
+    });
+    fs.rmSync(gqlTmpDir, { recursive: true, force: true });
+  }
+});
