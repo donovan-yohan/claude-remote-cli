@@ -160,6 +160,13 @@ export interface Config {
     jira?: { projectKey?: string; statusMappings?: Partial<Record<TransitionState, string>> };
   } | undefined;
   automations?: AutomationSettings | undefined;
+  filterPresets?: FilterPreset[] | undefined;
+  github?: {
+    accessToken?: string;
+    username?: string;
+    webhookSecret?: string;
+    smeeUrl?: string;
+  } | undefined;
 }
 
 export interface AutomationSettings {
@@ -167,6 +174,13 @@ export interface AutomationSettings {
   autoReviewOnCheckout?: boolean;
   pollIntervalMs?: number;
   lastPollTimestamp?: string;
+}
+
+export interface FilterPreset {
+  name: string;
+  builtIn?: boolean;
+  filters: { status?: string[]; repo?: string[]; role?: string[] };
+  sort: { column: string; direction: 'asc' | 'desc' };
 }
 
 export interface ServicePaths {
@@ -200,8 +214,10 @@ export interface PullRequest {
   updatedAt: string;
   additions: number;
   deletions: number;
-  reviewDecision: string | null;
-  mergeable: string | null;
+  reviewDecision: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED' | null;
+  mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null;
+  ciStatus: 'SUCCESS' | 'FAILURE' | 'ERROR' | 'PENDING' | null;
+  isDraft: boolean;
   repoName?: string | undefined;
   repoPath?: string | undefined;
 }

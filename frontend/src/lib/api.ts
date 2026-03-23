@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, JiraStatus, AutomationSettings } from './types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, JiraStatus, AutomationSettings, FilterPreset } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -424,4 +424,38 @@ export async function updateAutomations(settings: Partial<AutomationSettings>): 
     body: JSON.stringify(settings),
   });
   return json<AutomationSettings>(res);
+}
+
+export async function fetchPresets(): Promise<FilterPreset[]> {
+  const res = await fetch('/presets', { credentials: 'include' });
+  return json<FilterPreset[]>(res);
+}
+
+export async function savePreset(preset: { name: string; filters: FilterPreset['filters']; sort: FilterPreset['sort'] }): Promise<void> {
+  const res = await fetch('/presets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(preset),
+  });
+  if (!res.ok) throw new Error('Failed to save preset');
+}
+
+export async function deletePreset(name: string): Promise<void> {
+  const res = await fetch(`/presets/${encodeURIComponent(name)}`, { method: 'DELETE', credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to delete preset');
+}
+
+export async function fetchGitHubStatus(): Promise<{ connected: boolean; username: string | null }> {
+  return json<{ connected: boolean; username: string | null }>(await fetch('/auth/github/status', { credentials: 'include' }));
+}
+
+export async function fetchGitHubAuthUrl(): Promise<string> {
+  const data = await json<{ url: string }>(await fetch('/auth/github', { credentials: 'include' }));
+  return data.url;
+}
+
+export async function disconnectGitHub(): Promise<void> {
+  const res = await fetch('/auth/github/disconnect', { method: 'POST', credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to disconnect GitHub');
 }

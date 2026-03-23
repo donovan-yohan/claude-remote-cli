@@ -17,6 +17,7 @@ Execution plans for active and completed work.
 | `sidebar-session-model-mismatch` | 2026-03-19 | Fix sidebar showing 1 row per session instead of 1 row per folder |
 | `workspace-reorder` | 2026-03-19 | Drag-and-drop workspace reordering, sidebar header simplification |
 | `org-dashboard-phase3` | 2026-03-21 | Start Work flow + ticket status transitions (Phase 3 of org dashboard) |
+| `relay-phase1-data-tables` | 2026-03-23 | Shared DataTable component, filter chips, sortable columns, keyboard nav, row grouping, saved presets |
 
 ## Tech Debt
 
@@ -28,6 +29,7 @@ See `docs/exec-plans/completed/` for historical plans (47 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `relay-phase2-github-api` | 2026-03-23 | GitHub App OAuth, GraphQL API, smee.io webhooks, real-time updates, CI status, sidebar PR enrichment |
 | `session-flags-lost-on-restart` | 2026-03-22 | Preserve yolo/claudeArgs flags across auto-update restart |
 | `hooks-state-detection` | 2026-03-20 | Replace output parser with Claude Code hooks for state detection + branch rename |
 | `local-analytics` | 2026-03-20 | SQLite-backed local analytics and user behavior tracking |

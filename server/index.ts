@@ -29,6 +29,9 @@ import { createHooksRouter } from './hooks.js';
 import { createTicketTransitionsRouter } from './ticket-transitions.js';
 import { createIntegrationJiraRouter } from './integration-jira.js';
 import { startPolling, stopPolling } from './review-poller.js';
+import { createGitHubAppRouter } from './github-app.js';
+import { createWebhookRouter } from './webhooks.js';
+import { fetchPrsGraphQL } from './github-graphql.js';
 import type { AgentType, AutomationSettings, Config } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 import { semverLessThan } from './utils.js';
@@ -213,6 +216,20 @@ async function main(): Promise<void> {
   }
 
   const app = express();
+
+  // Mount webhooks BEFORE global express.json() so the router's own json({ verify })
+  // can capture the raw body for HMAC signature verification.
+  // broadcastEvent is wired up after setupWebSocket via the delegate closure below.
+  let broadcastEventDelegate: ((type: string, data?: Record<string, unknown>) => void) | null = null;
+  const webhookSecret = config.github?.webhookSecret;
+  if (webhookSecret) {
+    const webhookRouter = createWebhookRouter({
+      secret: webhookSecret,
+      broadcastEvent: (type, data) => { broadcastEventDelegate?.(type, data); },
+    });
+    app.use('/webhooks', webhookRouter);
+  }
+
   app.use(express.json({ limit: '15mb' }));
   app.use(cookieParser());
   app.use(express.static(frontendDir));
@@ -253,6 +270,9 @@ async function main(): Promise<void> {
 
   const server = http.createServer(app);
   const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher, CONFIG_PATH);
+
+  // Wire up the delegate used by the webhook router (mounted before broadcastEvent was available)
+  broadcastEventDelegate = broadcastEvent;
 
   // Watch .git/HEAD files for branch changes and update active sessions
   const branchWatcher = new BranchWatcher((cwdPath, newBranch) => {
@@ -356,8 +376,34 @@ async function main(): Promise<void> {
   const { router: ticketTransitionsRouter, transitionOnSessionCreate, checkPrTransitions } = createTicketTransitionsRouter({ configPath: CONFIG_PATH });
   app.use('/ticket-transitions', requireAuth, ticketTransitionsRouter);
 
-  // Mount org dashboard router — use branchLinkerRouter.fetchLinks() directly (no loopback HTTP)
-  const orgDashboardRouter = createOrgDashboardRouter({ configPath: CONFIG_PATH, checkPrTransitions, getBranchLinks: () => branchLinkerRouter.fetchLinks() });
+  // Mount GitHub App OAuth (no auth — callback comes from GitHub redirect)
+  // onConnected is called after token save; startWebhookPolling is defined below
+  // and safe to call here since this callback only fires at runtime (not startup).
+  const githubAppRouter = createGitHubAppRouter({
+    configPath: CONFIG_PATH,
+    clientId: process.env.GITHUB_CLIENT_ID ?? '',
+    clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
+    onConnected: () => { startWebhookPolling(); },
+  });
+  // /callback is unprotected (GitHub redirects the user here).
+  // We forward GET /auth/github/callback directly to the router's /callback route
+  // by rewriting the URL — this avoids double-mounting the router which would make
+  // the callback reachable at /auth/github/callback/callback instead.
+  app.get('/auth/github/callback', (req: express.Request, res: express.Response) => {
+    const qs = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
+    (req as express.Request & { url: string }).url = '/callback' + qs;
+    githubAppRouter(req, res, () => res.status(404).end());
+  });
+  // All other routes (/status, /disconnect, GET /) require auth.
+  app.use('/auth/github', requireAuth, githubAppRouter);
+
+  // Mount org dashboard router — use GraphQL when token available, fall back to gh CLI
+  const orgDashboardRouter = createOrgDashboardRouter({
+    configPath: CONFIG_PATH,
+    checkPrTransitions,
+    getBranchLinks: () => branchLinkerRouter.fetchLinks(),
+    fetchGraphQL: fetchPrsGraphQL,
+  });
   app.use('/org-dashboard', requireAuth, orgDashboardRouter);
 
   // Mount analytics router
@@ -410,6 +456,59 @@ async function main(): Promise<void> {
   // Start review request poller if enabled
   if (config.automations?.autoCheckoutReviewRequests) {
     startPolling(buildPollerDeps());
+  }
+
+  // Start smee-client for webhook delivery (with polling fallback)
+  const smeeUrl = config.github?.smeeUrl;
+  const githubToken = config.github?.accessToken;
+  let webhookPollingInterval: ReturnType<typeof setInterval> | null = null;
+  let smeeErrorCount = 0;
+
+  function startWebhookPolling(): void {
+    if (webhookPollingInterval) return;
+    webhookPollingInterval = setInterval(() => {
+      broadcastEvent('pr-updated');
+      broadcastEvent('ci-updated');
+    }, 30_000);
+  }
+
+  function stopWebhookPolling(): void {
+    if (webhookPollingInterval) {
+      clearInterval(webhookPollingInterval);
+      webhookPollingInterval = null;
+    }
+  }
+
+  if (smeeUrl) {
+    import('smee-client').then(({ default: SmeeClient }) => {
+      const smee = new SmeeClient({
+        source: smeeUrl,
+        target: `http://127.0.0.1:${config.port}/webhooks`,
+        logger: {
+          info: () => {},
+          error: (msg: string) => {
+            console.warn('[smee] connection error:', msg);
+            smeeErrorCount++;
+            if (smeeErrorCount >= 3) startWebhookPolling();
+          },
+        },
+      });
+      smee.start().then((events) => {
+        events.addEventListener('open', () => {
+          smeeErrorCount = 0;
+          stopWebhookPolling();
+        });
+      }).catch((err: unknown) => {
+        console.warn('[smee] start failed:', err instanceof Error ? err.message : String(err));
+        if (githubToken) startWebhookPolling();
+      });
+    }).catch((err: unknown) => {
+      console.warn('[smee] smee-client not available:', err instanceof Error ? err.message : String(err));
+      if (githubToken) startWebhookPolling();
+    });
+  } else if (githubToken) {
+    // No smee URL configured — use polling
+    startWebhookPolling();
   }
 
   // Invalidate branch linker cache on session lifecycle changes
@@ -702,6 +801,62 @@ async function main(): Promise<void> {
   // GET /config/workspace-groups — return workspace group configuration
   app.get('/config/workspace-groups', requireAuth, (_req, res) => {
     res.json({ groups: config.workspaceGroups ?? {} });
+  });
+
+  // GET /presets — return all filter presets (built-in merged with user presets)
+  app.get('/presets', requireAuth, (_req: express.Request, res: express.Response) => {
+    res.json(config.filterPresets ?? []);
+  });
+
+  // POST /presets — add a new user filter preset
+  app.post('/presets', requireAuth, (req: express.Request, res: express.Response) => {
+    const { name, filters, sort } = req.body as { name?: string; filters?: unknown; sort?: unknown };
+    if (!name || typeof name !== 'string' || !name.trim()) {
+      res.status(400).json({ error: 'name is required' });
+      return;
+    }
+    if (sort && typeof sort === 'object') {
+      const dir = (sort as any).direction;
+      if (dir !== 'asc' && dir !== 'desc') {
+        res.status(400).json({ error: 'sort.direction must be "asc" or "desc"' });
+        return;
+      }
+      const col = (sort as any).column;
+      if (!col || typeof col !== 'string' || !col.trim()) {
+        res.status(400).json({ error: 'sort.column must be a non-empty string' });
+        return;
+      }
+    }
+    const trimmedName = name.trim();
+    const existingPresets = config.filterPresets ?? [];
+    const duplicate = existingPresets.some((p) => p.name.toLowerCase() === trimmedName.toLowerCase());
+    if (duplicate) {
+      res.status(409).json({ error: `A preset named "${trimmedName}" already exists` });
+      return;
+    }
+    const preset = { name: trimmedName, filters: (filters as { status?: string[]; repo?: string[]; role?: string[] }) ?? {}, sort: (sort as { column: string; direction: 'asc' | 'desc' }) ?? { column: 'role', direction: 'asc' as const } };
+    if (!config.filterPresets) config.filterPresets = [];
+    config.filterPresets.push(preset);
+    saveConfig(CONFIG_PATH, config);
+    res.json(preset);
+  });
+
+  // DELETE /presets/:name — remove a user preset (built-in presets cannot be deleted)
+  app.delete('/presets/:name', requireAuth, (req: express.Request, res: express.Response) => {
+    const name = decodeURIComponent(req.params['name'] ?? '');
+    const presets = config.filterPresets ?? [];
+    const target = presets.find((p) => p.name === name);
+    if (!target) {
+      res.status(404).json({ error: 'Preset not found' });
+      return;
+    }
+    if (target.builtIn) {
+      res.status(400).json({ error: 'Cannot delete a built-in preset' });
+      return;
+    }
+    config.filterPresets = presets.filter((p) => p.name !== name);
+    saveConfig(CONFIG_PATH, config);
+    res.json({ ok: true });
   });
 
   // GET /push/vapid-key
@@ -1326,6 +1481,7 @@ async function main(): Promise<void> {
   }
 
   async function gracefulShutdown() {
+    stopWebhookPolling();
     await stopPolling();
     closeAnalytics();
     branchWatcher.close();

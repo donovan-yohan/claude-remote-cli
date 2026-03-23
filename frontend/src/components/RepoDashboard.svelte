@@ -4,6 +4,10 @@
   import { derivePrAction, getStatusCssVar, shouldUseDarkText } from '../lib/pr-state.js';
   import { formatRelativeTime } from '../lib/utils.js';
   import type { PullRequest, ActivityEntry, DashboardData } from '../lib/types.js';
+  import DataTable from './DataTable.svelte';
+  import type { Column } from './DataTable.svelte';
+  import StatusDot from './StatusDot.svelte';
+  import { derivePrDotStatus } from '../lib/pr-status.js';
 
   let {
     workspacePath,
@@ -36,17 +40,15 @@
   let isLoading = $derived(dashQuery.isLoading);
   let isError = $derived(dashQuery.isError);
 
-  function prStatusDotClass(pr: PullRequest): string {
-    if (pr.state !== 'OPEN') return 'dot dot-muted';
-    // Derive from reviewDecision as a proxy for CI state — full CI data not in PullRequest type
-    if (pr.reviewDecision === 'CHANGES_REQUESTED') return 'dot dot-error';
-    return 'dot dot-success';
-  }
+  const prColumns: Column[] = [
+    { key: 'status', label: 'St', sortable: false, width: '36px' },
+    { key: 'title', label: 'Title', sortable: true },
+    { key: 'role', label: 'Role', sortable: true, width: '60px' },
+    { key: 'age', label: 'Age', sortable: true, width: '50px' },
+    { key: 'action', label: '', sortable: false, width: '120px' },
+  ];
 
   function prActionForRow(pr: PullRequest) {
-    // Dashboard doesn't fetch CI status per-PR — derive action from PR state only.
-    // CI-aware actions (Fix Errors, Checks Running) are only shown in the PrTopBar
-    // which fetches CI data for the active session's branch.
     const prState = pr.state === 'OPEN' ? 'OPEN' : pr.state === 'MERGED' ? 'MERGED' : 'CLOSED';
     return derivePrAction({
       commitsAhead: 1,
@@ -54,9 +56,9 @@
       ciPassing: 0,
       ciFailing: 0,
       ciPending: 0,
-      ciTotal: 0, // No CI data → state machine returns "Code Review" for OPEN PRs
+      ciTotal: 0,
       mergeable: (pr.mergeable as 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN' | null) ?? null,
-      unresolvedCommentCount: 0, // Dashboard doesn't fetch per-PR unresolved counts
+      unresolvedCommentCount: 0,
     });
   }
 
@@ -70,16 +72,30 @@
   }
 
   let searchQuery = $state('');
-  let showSearch = $derived(data ? data.prs.length > 5 : false);
-  let filteredPrs = $derived(() => {
+  let sortBy = $state('age');
+  let sortDir = $state<'asc' | 'desc'>('desc');
+
+  let processedPrs = $derived.by((): PullRequest[] => {
     if (!data) return [];
+    let prs = data.prs;
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return data.prs;
-    return data.prs.filter(pr =>
-      pr.title.toLowerCase().includes(q) ||
-      String(pr.number).includes(q) ||
-      pr.headRefName.toLowerCase().includes(q)
-    );
+    if (q) {
+      prs = prs.filter(pr =>
+        pr.title.toLowerCase().includes(q) ||
+        String(pr.number).includes(q) ||
+        pr.headRefName.toLowerCase().includes(q)
+      );
+    }
+    prs = [...prs].sort((a, b) => {
+      if (sortBy === 'title') return sortDir === 'asc' ? a.title.localeCompare(b.title) : b.title.localeCompare(a.title);
+      if (sortBy === 'role') {
+        const roleOrder: Record<string, number> = { reviewer: 0, author: 1 };
+        return sortDir === 'asc' ? (roleOrder[a.role] ?? 1) - (roleOrder[b.role] ?? 1) : (roleOrder[b.role] ?? 1) - (roleOrder[a.role] ?? 1);
+      }
+      // age = updatedAt
+      return sortDir === 'asc' ? a.updatedAt.localeCompare(b.updatedAt) : b.updatedAt.localeCompare(a.updatedAt);
+    });
+    return prs;
   });
 </script>
 
@@ -94,101 +110,155 @@
     <section class="dashboard-section dashboard-section--scroll">
       <div class="section-heading">OPEN PULL REQUESTS</div>
 
-      {#if isLoading}
-        <div class="scroll-container">
-          <div class="pr-list">
-            {#each [1, 2] as _}
-              <div class="pr-row skeleton">
-                <div class="skeleton-line skeleton-title"></div>
-                <div class="skeleton-line skeleton-meta"></div>
-              </div>
-            {/each}
-          </div>
-        </div>
-      {:else if isError}
-        <div class="section-message">
-          Could not load pull requests
-        </div>
-      {:else if data && !data.hasGhCli}
+      {#if data && !data.hasGhCli}
         <div class="section-message info">
           Install GitHub CLI for PR tracking —
           <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer">cli.github.com</a>
         </div>
-      {:else if data && data.prs.length === 0}
-        <div class="section-message">No open pull requests</div>
-      {:else if data}
-        {#if showSearch}
-          <input
-            class="pr-search"
-            type="text"
-            placeholder="Filter PRs by title, number, or branch..."
-            bind:value={searchQuery}
-          />
-        {/if}
-        <div class="scroll-container">
-          <div class="pr-list">
-            {#each filteredPrs() as pr (pr.number)}
-              {@const action = prActionForRow(pr)}
-              {@const actionColor = getStatusCssVar(action.color)}
-              {@const darkText = shouldUseDarkText(action.color)}
-              <div class="pr-row">
-                <div class="pr-row-left">
-                  <div class="pr-row-title-line">
-                    <span class={prStatusDotClass(pr)}></span>
-                    <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
-                      {pr.title}
-                    </a>
-                  </div>
-                  <div class="pr-row-meta">
-                    <span class="pr-num">#{pr.number}</span>
-                    <span class="pr-sep">·</span>
-                    <span class="pr-role">{prRoleLabel(pr)}</span>
-                    <span class="pr-sep">·</span>
-                    <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
-                  </div>
-                </div>
-                <div class="pr-row-actions">
-                  <button
-                    class="pr-session-btn"
-                    title="Open session on this branch"
-                    onclick={() => onOpenPrSession(pr)}
-                  >+</button>
-                  {#if pr.mergeable === 'CONFLICTING'}
-                    <button
-                      class="pr-action-pill pr-conflict-pill"
-                      title="Open worktree and fix merge conflicts"
-                      onclick={() => onFixConflicts(pr)}
-                    >
-                      Fix Conflicts
-                    </button>
-                  {/if}
-                  {#if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
-                    <a
-                      class="pr-action-pill pr-merge-pill"
-                      href={pr.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="Ready to merge on GitHub"
-                    >
-                      Merge
-                    </a>
-                  {/if}
-                  {#if action.type !== 'none' && action.label}
-                    <button
-                      class="pr-action-pill"
-                      style:--pill-color={actionColor}
-                      class:dark-text={darkText}
-                      title={action.label}
-                      onclick={() => onPrAction(pr)}
-                    >
-                      {action.label}
-                    </button>
-                  {/if}
-                </div>
+      {:else}
+        <DataTable
+          columns={prColumns}
+          rows={processedPrs}
+          {sortBy}
+          {sortDir}
+          onSort={(col) => {
+            if (col === sortBy) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+            else { sortBy = col; sortDir = 'asc'; }
+          }}
+          loading={isLoading}
+          error={isError ? 'Could not load pull requests.' : undefined}
+          emptyMessage={`No open PRs for ${workspaceName}.`}
+          filteredEmptyMessage={`No results for '${searchQuery}'.`}
+          hasActiveFilters={searchQuery.length > 0}
+          onClearFilters={() => searchQuery = ''}
+          onRowAction={(pr) => onOpenPrSession?.(pr)}
+        >
+          {#snippet row(pr, _index)}
+            {@const action = prActionForRow(pr)}
+            {@const actionColor = getStatusCssVar(action.color)}
+            {@const darkText = shouldUseDarkText(action.color)}
+            <div class="pr-cell pr-cell--status" style:width="36px" style:flex="none">
+              <StatusDot status={derivePrDotStatus(pr)} />
+            </div>
+            <div class="pr-cell pr-cell--title" style:flex="1">
+              <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
+                {pr.title}
+              </a>
+              <div class="pr-row-meta">
+                <span class="pr-num">#{pr.number}</span>
+                <span class="pr-sep">&middot;</span>
+                <span class="pr-role">{prRoleLabel(pr)}</span>
+                <span class="pr-sep">&middot;</span>
+                <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
               </div>
-            {/each}
-          </div>
-        </div>
+            </div>
+            <div class="pr-cell pr-cell--role" style:width="60px" style:flex="none">
+              <span class="pr-role-text">{pr.role === 'author' ? 'Author' : 'Review'}</span>
+            </div>
+            <div class="pr-cell pr-cell--age" style:width="50px" style:flex="none">
+              <span class="pr-age-text">{formatRelativeTime(pr.updatedAt)}</span>
+            </div>
+            <div class="pr-cell pr-cell--action" style:width="120px" style:flex="none">
+              <div class="pr-row-actions">
+                <button
+                  class="pr-session-btn"
+                  title="Open session on this branch"
+                  onclick={() => onOpenPrSession(pr)}
+                >+</button>
+                {#if pr.mergeable === 'CONFLICTING'}
+                  <button
+                    class="pr-action-pill pr-conflict-pill"
+                    title="Open worktree and fix merge conflicts"
+                    onclick={() => onFixConflicts(pr)}
+                  >
+                    Fix Conflicts
+                  </button>
+                {/if}
+                {#if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
+                  <a
+                    class="pr-action-pill pr-merge-pill"
+                    href={pr.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Ready to merge on GitHub"
+                  >
+                    Merge
+                  </a>
+                {/if}
+                {#if action.type !== 'none' && action.label}
+                  <button
+                    class="pr-action-pill"
+                    style:--pill-color={actionColor}
+                    class:dark-text={darkText}
+                    title={action.label}
+                    onclick={() => onPrAction(pr)}
+                  >
+                    {action.label}
+                  </button>
+                {/if}
+              </div>
+            </div>
+          {/snippet}
+
+          {#snippet mobileCard(pr, _index)}
+            {@const action = prActionForRow(pr)}
+            {@const actionColor = getStatusCssVar(action.color)}
+            {@const darkText = shouldUseDarkText(action.color)}
+            <div class="mobile-pr-card">
+              <div class="mobile-pr-top">
+                <StatusDot status={derivePrDotStatus(pr)} />
+                <a class="pr-title-link" href={pr.url} target="_blank" rel="noopener noreferrer">
+                  {pr.title}
+                </a>
+              </div>
+              <div class="pr-row-meta">
+                <span class="pr-num">#{pr.number}</span>
+                <span class="pr-sep">&middot;</span>
+                <span class="pr-role">{prRoleLabel(pr)}</span>
+                <span class="pr-sep">&middot;</span>
+                <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
+              </div>
+              <div class="pr-row-actions mobile-pr-actions">
+                <button
+                  class="pr-session-btn"
+                  title="Open session on this branch"
+                  onclick={() => onOpenPrSession(pr)}
+                >+</button>
+                {#if pr.mergeable === 'CONFLICTING'}
+                  <button
+                    class="pr-action-pill pr-conflict-pill"
+                    title="Open worktree and fix merge conflicts"
+                    onclick={() => onFixConflicts(pr)}
+                  >
+                    Fix Conflicts
+                  </button>
+                {/if}
+                {#if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
+                  <a
+                    class="pr-action-pill pr-merge-pill"
+                    href={pr.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Ready to merge on GitHub"
+                  >
+                    Merge
+                  </a>
+                {/if}
+                {#if action.type !== 'none' && action.label}
+                  <button
+                    class="pr-action-pill"
+                    style:--pill-color={actionColor}
+                    class:dark-text={darkText}
+                    title={action.label}
+                    onclick={() => onPrAction(pr)}
+                  >
+                    {action.label}
+                  </button>
+                {/if}
+              </div>
+            </div>
+          {/snippet}
+        </DataTable>
       {/if}
     </section>
 
@@ -199,7 +269,7 @@
       {#if isLoading}
         <div class="scroll-container">
           <div class="activity-list">
-            {#each [1, 2, 3] as _}
+            {#each [1, 2, 3] as _ (_)}
               <div class="activity-row skeleton">
                 <div class="skeleton-line skeleton-activity"></div>
               </div>
@@ -251,7 +321,7 @@
     flex: 1;
   }
 
-  /* ── Section ── */
+  /* -- Section -- */
   .dashboard-section {
     display: flex;
     flex-direction: column;
@@ -265,7 +335,7 @@
     overflow: hidden;
   }
 
-  /* ── Scroll container with gradient fades ── */
+  /* -- Scroll container with gradient fades (activity section) -- */
   .scroll-container {
     position: relative;
     flex: 1;
@@ -316,64 +386,33 @@
     text-decoration: underline;
   }
 
-  /* ── PR search ── */
-  .pr-search {
-    padding: 8px 10px;
-    font-size: var(--font-size-sm);
-    font-family: var(--font-mono);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text);
-    outline: none;
-    transition: border-color 0.12s;
-  }
-
-  .pr-search::placeholder {
-    color: var(--text-muted);
-    opacity: 0.6;
-  }
-
-  .pr-search:focus {
-    border-color: var(--accent);
-  }
-
-  /* ── PR list ── */
-  .pr-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-  }
-
-  .pr-row {
+  /* -- PR cell layout (DataTable row) -- */
+  .pr-cell {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
+    padding: 6px 8px;
+    min-width: 0;
   }
 
-  .pr-row:last-child {
-    border-bottom: none;
+  .pr-cell--status {
+    justify-content: center;
   }
 
-  .pr-row-left {
-    display: flex;
+  .pr-cell--title {
     flex-direction: column;
+    align-items: flex-start;
     gap: 3px;
-    min-width: 0;
-    flex: 1;
   }
 
-  .pr-row-title-line {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
+  .pr-cell--role,
+  .pr-cell--age {
+    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+  }
+
+  .pr-cell--action {
+    justify-content: flex-end;
   }
 
   .pr-title-link {
@@ -385,7 +424,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
-    flex: 1;
+    max-width: 100%;
   }
 
   .pr-title-link:hover {
@@ -447,19 +486,12 @@
     opacity: 0.4;
   }
 
-  /* Status dot */
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    display: inline-block;
+  .pr-role-text,
+  .pr-age-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-
-  .dot-success { background: var(--status-success); }
-  .dot-error   { background: var(--status-error); }
-  .dot-warning { background: var(--status-warning); }
-  .dot-muted   { background: var(--border); }
 
   /* Action pill */
   .pr-action-pill {
@@ -489,7 +521,28 @@
     color: #1a1a1a;
   }
 
-  /* ── Activity list ── */
+  /* -- Mobile PR card -- */
+  .mobile-pr-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 12px;
+    width: 100%;
+  }
+
+  .mobile-pr-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .mobile-pr-actions {
+    align-self: flex-end;
+    margin-top: 4px;
+  }
+
+  /* -- Activity list -- */
   .activity-list {
     display: flex;
     flex-direction: column;
@@ -533,7 +586,7 @@
     opacity: 0.6;
   }
 
-  /* ── Non-git notice ── */
+  /* -- Non-git notice -- */
   .non-git-notice {
     padding: 8px 0;
   }
@@ -544,7 +597,7 @@
     color: var(--text-muted);
   }
 
-  /* ── CTA buttons ── */
+  /* -- CTA buttons -- */
   .cta-row {
     display: flex;
     align-items: center;
@@ -579,26 +632,9 @@
     cursor: not-allowed;
   }
 
-  /* ── Skeletons ── */
+  /* -- Skeletons (activity section only) -- */
   .skeleton {
     pointer-events: none;
-  }
-
-  .skeleton-line {
-    background: var(--border);
-    border-radius: 3px;
-    animation: skeleton-pulse 1.4s ease-in-out infinite;
-  }
-
-  .skeleton-title {
-    height: 13px;
-    width: 60%;
-    margin-bottom: 5px;
-  }
-
-  .skeleton-meta {
-    height: 10px;
-    width: 40%;
   }
 
   .skeleton-activity {
@@ -606,32 +642,13 @@
     width: 75%;
   }
 
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50%       { opacity: 0.7; }
-  }
-
-  /* ── Mobile ── */
+  /* -- Mobile -- */
   @media (max-width: 600px) {
     .repo-dashboard {
       padding: 14px;
     }
 
-    .pr-row {
-      flex-wrap: wrap;
-      gap: 8px;
-      padding: 12px 10px;
-      min-height: 44px;
-      align-items: flex-start;
-    }
-
-    .pr-row-left {
-      width: 100%;
-    }
-
     .pr-action-pill {
-      align-self: flex-end;
-      margin-left: auto;
       padding: 5px 12px;
       min-height: 32px;
     }

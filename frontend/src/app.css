@@ -74,3 +74,14 @@ html, body {
   background: var(--border);
   border-radius: 4px;
 }
+
+/* Shared skeleton loading animation */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+.skeleton-line {
+  background: var(--border);
+  border-radius: 3px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}

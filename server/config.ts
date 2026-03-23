@@ -1,7 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import type { AgentType, Config, WorkspaceSettings, WorktreeMetadata } from './types.js';
+import type { AgentType, Config, FilterPreset, WorkspaceSettings, WorktreeMetadata } from './types.js';
+
+export const DEFAULT_PRESETS: FilterPreset[] = [
+  { name: 'Needs Attention', builtIn: true, filters: {}, sort: { column: 'role', direction: 'asc' } },
+  { name: 'All PRs', builtIn: true, filters: {}, sort: { column: 'age', direction: 'desc' } },
+];
 
 export const DEFAULTS: Omit<Config, 'pinHash' | 'rootDirs' | 'workspaceSettings' | 'vapidPublicKey' | 'vapidPrivateKey'> = {
   host: '0.0.0.0',
@@ -25,6 +30,11 @@ export function loadConfig(configPath: string): Config {
   const raw = fs.readFileSync(configPath, 'utf8');
   const parsed = JSON.parse(raw) as Partial<Config>;
   const config: Config = { ...DEFAULTS, ...parsed };
+
+  // Set default filter presets if not present in saved config (clone to avoid mutating the constant)
+  if (config.filterPresets == null) {
+    config.filterPresets = DEFAULT_PRESETS.map(p => ({ ...p, filters: { ...p.filters }, sort: { ...p.sort } }));
+  }
 
   // Validate and clean workspaceGroups
   if (config.workspaceGroups != null) {

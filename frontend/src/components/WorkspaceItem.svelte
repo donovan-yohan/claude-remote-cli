@@ -1,5 +1,8 @@
 <script lang="ts">
-  import type { Workspace, SessionSummary, WorktreeInfo } from '../lib/types.js';
+  import type { Workspace, SessionSummary, WorktreeInfo, PullRequest } from '../lib/types.js';
+  import { deriveColor } from '../lib/colors.js';
+  import { derivePrDotStatus } from '../lib/pr-status.js';
+  import StatusDot from './StatusDot.svelte';
   import { getSessionState, getSessionStatus, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
@@ -21,6 +24,7 @@
     onOpenSettings,
     onDeleteSession,
     onDeleteWorktree,
+    orgPrs,
   }: {
     workspace: Workspace;
     sessionGroups: Map<string, SessionSummary[]>;
@@ -32,30 +36,11 @@
     onOpenSettings: (workspace: Workspace) => void;
     onDeleteSession?: (id: string) => void;
     onDeleteWorktree?: (wt: WorktreeInfo) => void;
+    orgPrs?: PullRequest[];
   } = $props();
 
   // Flatten all sessions for attention detection
   let allSessions = $derived([...sessionGroups.values()].flat());
-
-  // Derive a consistent color for the workspace letter initial
-  const INITIAL_COLORS = [
-    '#d97757', // accent/orange
-    '#4ade80', // green
-    '#60a5fa', // blue
-    '#a78bfa', // purple
-    '#f472b6', // pink
-    '#fb923c', // amber-orange
-    '#34d399', // teal
-    '#f87171', // red
-  ];
-
-  function deriveColor(name: string): string {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) {
-      hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
-    }
-    return INITIAL_COLORS[Math.abs(hash) % INITIAL_COLORS.length] ?? '#d97757';
-  }
 
   let initialColor = $derived(deriveColor(workspace.name));
   let initial = $derived(workspace.name.charAt(0).toUpperCase());
@@ -151,6 +136,10 @@
   function worktreeTime(wt: WorktreeInfo): string {
     void _tick;
     return formatRelativeTimeCompact(wt.lastActivity);
+  }
+
+  function findPrForBranch(branchName: string): PullRequest | undefined {
+    return orgPrs?.find(pr => pr.headRefName === branchName && pr.state === 'OPEN' && pr.repoPath === workspace.path);
   }
 
   async function handleRename(session: SessionSummary) {
@@ -270,6 +259,7 @@
         {@const hasActiveSessions = sessionCount > 0}
         {@const groupHasAttention = groupSessions.some(s => getSessionStatus(s) === 'attention')}
         {#if hasActiveSessions && representative}
+          {@const matchedPr = findPrForBranch(groupSessions[0]?.branchName ?? '')}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <li
@@ -287,6 +277,15 @@
               <span class="session-name" class:bold={groupHasAttention}>{groupDisplayName(groupPath, groupSessions)}</span>
               {#if sessionCount > 1}
                 <span class="session-count-badge">{sessionCount}</span>
+              {/if}
+              {#if matchedPr}
+                <span class="sidebar-pr-status">
+                  <StatusDot status={derivePrDotStatus(matchedPr)} size={5} />
+                  {#if matchedPr.ciStatus === 'SUCCESS'}<span class="ci-pass" style="font-size:9px">✓</span>
+                  {:else if matchedPr.ciStatus === 'FAILURE' || matchedPr.ciStatus === 'ERROR'}<span class="ci-fail" style="font-size:9px">✗</span>
+                  {:else if matchedPr.ciStatus === 'PENDING'}<span class="ci-pending" style="font-size:9px">●</span>
+                  {/if}
+                </span>
               {/if}
             </div>
             <div class="session-row-secondary">
@@ -603,6 +602,11 @@
     flex-shrink: 0;
     color: var(--accent);
   }
+
+  .sidebar-pr-status { display: inline-flex; align-items: center; gap: 2px; margin-left: 4px; }
+  .ci-pass { color: var(--status-success); }
+  .ci-fail { color: var(--status-error); }
+  .ci-pending { color: var(--status-warning); }
 
   .secondary-time {
     white-space: nowrap;

@@ -3,10 +3,22 @@
   import { fetchGithubIssues, fetchBranchLinks, fetchJiraIssues } from '../lib/api.js';
   import type { GitHubIssuesResponse, JiraIssuesResponse, BranchLinksResponse, BranchLink, AnyIssue } from '../lib/types.js';
   import TicketCard from './TicketCard.svelte';
+  import DataTable from './DataTable.svelte';
+  import type { Column } from './DataTable.svelte';
 
   let { onStartWork }: { onStartWork?: (issue: AnyIssue) => void } = $props();
 
-  let activeTab = $state<'github' | 'jira'>('github');
+  let activeTab = $state<'github' | 'jira'>('jira');
+
+  let searchQuery = $state('');
+  let sortBy = $state('title');
+  let sortDir = $state<'asc' | 'desc'>('asc');
+
+  const ticketColumns: Column[] = [
+    { key: 'status', label: 'St', sortable: false, width: '36px' },
+    { key: 'title', label: 'Title', sortable: true },
+    { key: 'action', label: '', sortable: false, width: '100px' },
+  ];
 
   // Issue queries
   const githubIssuesQuery = createQuery<GitHubIssuesResponse>(() => ({
@@ -50,7 +62,7 @@
     activeTab === 'github' ? githubIssuesQuery : jiraIssuesQuery
   );
 
-  let activeIssues = $derived(
+  let activeIssues = $derived<AnyIssue[]>(
     activeTab === 'github' ? githubIssues : jiraIssues
   );
 
@@ -68,6 +80,27 @@
     if ('number' in issue) return `GH-${issue.number}`;
     return issue.key;
   }
+
+  function branchLinksForIssue(issue: AnyIssue): BranchLink[] {
+    return getBranchLinksForTicket(getTicketId(issue));
+  }
+
+  let processedIssues = $derived.by((): AnyIssue[] => {
+    let issues = activeIssues;
+    const q = searchQuery.toLowerCase().trim();
+    if (q) {
+      issues = issues.filter(issue => {
+        const title = 'title' in issue ? issue.title : (issue as any).summary ?? '';
+        const key = 'key' in issue ? issue.key : `#${(issue as any).number}`;
+        return title.toLowerCase().includes(q) || key.toLowerCase().includes(q);
+      });
+    }
+    if (sortBy === 'title') {
+      const getTitle = (i: AnyIssue) => ('title' in i ? i.title : (i as any).summary ?? '');
+      issues = [...issues].sort((a, b) => sortDir === 'asc' ? getTitle(a).localeCompare(getTitle(b)) : getTitle(b).localeCompare(getTitle(a)));
+    }
+    return issues;
+  });
 </script>
 
 <div class="tickets-panel">
@@ -99,63 +132,59 @@
     </span>
   </div>
 
-  <!-- Content -->
-  {#if activeQuery.isLoading}
-    <div class="ticket-list">
-      {#each [1, 2, 3] as _ (_.toString())}
-        <div class="ticket-skeleton">
-          <div class="skeleton-line skeleton-title"></div>
-          <div class="skeleton-line skeleton-meta"></div>
-        </div>
-      {/each}
-    </div>
-
-  {:else if activeQuery.isError}
-    <div class="state-message state-message--error">
-      <span>Failed to load issues.</span>
-      <button class="retry-btn" onclick={() => activeQuery.refetch()}>Retry</button>
-    </div>
-
-  {:else if activeTab === 'github' && activeError === 'gh_not_in_path'}
+  <!-- Tool-specific config/auth errors: shown instead of the table -->
+  {#if activeTab === 'github' && activeError === 'gh_not_in_path'}
     <div class="state-message state-message--info">
       Install GitHub CLI for issue tracking —
       <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer">cli.github.com</a>
     </div>
-
   {:else if activeTab === 'github' && activeError === 'gh_not_authenticated'}
     <div class="state-message state-message--info">
       Run <code>gh auth login</code> to connect GitHub.
     </div>
-
   {:else if activeTab === 'jira' && activeError === 'acli_not_in_path'}
     <div class="state-message state-message--info">
       Install the Atlassian CLI to see your Jira tickets: <code>brew install acli</code> then <code>acli jira auth login --web</code>
     </div>
-
   {:else if activeTab === 'jira' && activeError === 'acli_not_authenticated'}
     <div class="state-message state-message--info">
       Run <code>acli jira auth login --web</code> to connect your Jira account.
     </div>
-
-  {:else if activeError}
-    <div class="state-message state-message--error">
-      <span>Failed to load issues.</span>
-      <button class="retry-btn" onclick={() => activeQuery.refetch()}>Retry</button>
-    </div>
-
-  {:else if activeIssues.length === 0}
-    <div class="state-message">
-      {#if activeTab === 'github'}No open issues assigned to you. Enjoy the quiet.
-      {:else}No active Jira issues assigned to you.
-      {/if}
-    </div>
-
   {:else}
-    <div class="ticket-list">
-      {#each activeIssues as issue (getTicketId(issue))}
-        <TicketCard {issue} source={activeTab} branchLinks={getBranchLinksForTicket(getTicketId(issue))} {...(onStartWork != null && { onStartWork })} />
-      {/each}
-    </div>
+    <!-- DataTable handles loading, network errors, empty, and data states -->
+    <DataTable
+      columns={ticketColumns}
+      rows={processedIssues}
+      sortBy={sortBy}
+      sortDir={sortDir}
+      onSort={(col) => {
+        if (col === sortBy) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        else { sortBy = col; sortDir = 'asc'; }
+      }}
+      loading={activeQuery.isLoading}
+      error={activeQuery.isError || activeError ? 'Failed to load issues.' : undefined}
+      emptyMessage="No assigned tickets."
+      filteredEmptyMessage="No tickets match search."
+      hasActiveFilters={searchQuery.length > 0}
+      onClearFilters={() => searchQuery = ''}
+    >
+      {#snippet row(issue, index)}
+        <TicketCard
+          {issue}
+          source={activeTab}
+          branchLinks={branchLinksForIssue(issue)}
+          {...(onStartWork != null && { onStartWork })}
+        />
+      {/snippet}
+      {#snippet mobileCard(issue, index)}
+        <TicketCard
+          {issue}
+          source={activeTab}
+          branchLinks={branchLinksForIssue(issue)}
+          {...(onStartWork != null && { onStartWork })}
+        />
+      {/snippet}
+    </DataTable>
   {/if}
 </div>
 
@@ -246,71 +275,6 @@
 
   .state-message--info a:hover {
     text-decoration: underline;
-  }
-
-  .retry-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    cursor: pointer;
-    padding: 4px 10px;
-    transition: border-color 0.12s, color 0.12s;
-  }
-
-  .retry-btn:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-  }
-
-  /* -- Ticket list -- */
-  .ticket-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  /* -- Skeletons -- */
-  .ticket-skeleton {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 6px;
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
-    min-height: 56px;
-    pointer-events: none;
-  }
-
-  .ticket-skeleton:last-child {
-    border-bottom: none;
-  }
-
-  .skeleton-line {
-    background: var(--border);
-    border-radius: 3px;
-    animation: skeleton-pulse 1.4s ease-in-out infinite;
-  }
-
-  .skeleton-title {
-    height: 13px;
-    width: 60%;
-  }
-
-  .skeleton-meta {
-    height: 10px;
-    width: 40%;
-  }
-
-  @keyframes skeleton-pulse {
-    0%, 100% { opacity: 0.4; }
-    50%       { opacity: 0.7; }
   }
 
   /* -- Mobile -- */

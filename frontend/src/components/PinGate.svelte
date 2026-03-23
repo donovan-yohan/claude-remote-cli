@@ -20,7 +20,7 @@
 
 <div class="pin-gate">
   <div class="pin-container">
-    <h1>Claude Remote CLI</h1>
+    <h1>Relay</h1>
     <p>Enter PIN to continue</p>
     <input
       type="password"

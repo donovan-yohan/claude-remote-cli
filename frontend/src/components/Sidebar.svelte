@@ -13,11 +13,11 @@
     COLLAPSED_SIDEBAR_WIDTH,
   } from '../lib/state/ui.svelte.js';
   import { getSessionState, getSessionsForWorkspace, reorderWorkspaces } from '../lib/state/sessions.svelte.js';
-  import type { Workspace, WorktreeInfo } from '../lib/types.js';
-  import { fetchWorkspaceGroups } from '../lib/api.js';
+  import type { Workspace, WorktreeInfo, OrgPrsResponse } from '../lib/types.js';
+  import { fetchWorkspaceGroups, fetchOrgPrs } from '../lib/api.js';
+  import { createQuery } from '@tanstack/svelte-query';
   import { dndzone } from 'svelte-dnd-action';
   import WorkspaceItem from './WorkspaceItem.svelte';
-  import SmartSearch from './SmartSearch.svelte';
 
   const ui = getUi();
   const sessionState = getSessionState();
@@ -46,11 +46,6 @@
     ui.activeWorkspacePath = path;
     // Clear active session so the main area shows the dashboard
     sessionState.activeSessionId = null;
-  }
-
-  function handleSmartSearchSelect(path: string) {
-    ui.activeWorkspacePath = path;
-    closeSidebar();
   }
 
   function startResize(e: MouseEvent) {
@@ -111,6 +106,15 @@
   function handleDoneReorder() {
     exitReorderMode();
   }
+
+  // ── Org PRs for sidebar enrichment ──
+  const orgQuery = createQuery<OrgPrsResponse>(() => ({
+    queryKey: ['org-prs'],
+    queryFn: fetchOrgPrs,
+    staleTime: 60_000,
+  }));
+
+  let orgPrs = $derived(orgQuery.data?.prs ?? []);
 
   // ── Workspace groups ──
   let workspaceGroups = $state<Record<string, string[]>>({});
@@ -182,34 +186,22 @@
       {ui.sidebarCollapsed ? '»' : '«'}
     </button>
     {#if !ui.sidebarCollapsed}
-      <span class="sidebar-label">Workspaces</span>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span
+        class="sidebar-brand"
+        data-track="sidebar.home"
+        onclick={() => {
+          ui.activeWorkspacePath = null;
+          sessionState.activeSessionId = null;
+          closeSidebar();
+        }}
+      >Relay</span>
     {/if}
     <button class="icon-btn" aria-label="Close sidebar" onclick={closeSidebar}>✕</button>
   </div>
 
   {#if !ui.sidebarCollapsed}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="home-btn"
-      class:home-btn--active={ui.activeWorkspacePath === null && !sessionState.activeSessionId}
-      data-track="sidebar.home"
-      onclick={() => {
-        ui.activeWorkspacePath = null;
-        sessionState.activeSessionId = null;
-        closeSidebar();
-      }}
-    >
-      <span class="home-icon">⌂</span>
-      <span class="home-label">Home</span>
-    </div>
-
-    {#if !ui.reorderMode}
-      <SmartSearch
-        workspaces={sessionState.workspaces}
-        onSelect={handleSmartSearchSelect}
-      />
-    {/if}
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
@@ -253,6 +245,7 @@
               onOpenSettings={(ws) => onOpenSettings(ws)}
               onDeleteSession={(id) => onDeleteSession?.(id)}
               onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
+              {orgPrs}
             />
           </div>
         {/each}
@@ -292,6 +285,7 @@
                 onOpenSettings={(ws) => onOpenSettings(ws)}
                 onDeleteSession={(id) => onDeleteSession?.(id)}
                 onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
+                {orgPrs}
               />
             </div>
           {/each}
@@ -365,14 +359,19 @@
     flex-shrink: 0;
   }
 
-  .sidebar-label {
+  .sidebar-brand {
     flex: 1;
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     font-weight: 600;
-    color: var(--text-muted);
+    color: var(--text);
     font-family: var(--font-mono);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: color 0.12s;
+  }
+
+  .sidebar-brand:hover {
+    color: var(--accent);
   }
 
   .collapse-btn {
@@ -417,41 +416,6 @@
 
   .icon-btn:active {
     background: var(--border);
-  }
-
-  /* Home button */
-  .home-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
-    min-height: 44px;
-    cursor: pointer;
-    border-left: 3px solid transparent;
-    transition: background 0.12s, border-color 0.12s;
-    flex-shrink: 0;
-  }
-
-  .home-btn:hover {
-    background: var(--surface-hover);
-  }
-
-  .home-btn--active {
-    border-left-color: var(--accent);
-    background: var(--surface-hover);
-  }
-
-  .home-icon {
-    font-size: 1rem;
-    color: var(--text-muted);
-    flex-shrink: 0;
-  }
-
-  .home-label {
-    font-size: var(--font-size-sm);
-    font-family: var(--font-mono);
-    font-weight: 600;
-    color: var(--text);
   }
 
   /* Group headers */

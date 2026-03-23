@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate, fetchAnalyticsSize, clearAnalytics } from '../../lib/api.js';
+  import { setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate, fetchAnalyticsSize, clearAnalytics, fetchGitHubStatus, fetchGitHubAuthUrl, disconnectGitHub } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
 
@@ -19,6 +19,40 @@
 
   let analyticsSize = $state<number | null>(null);
   let clearing = $state(false);
+
+  let githubStatus = $state<{ connected: boolean; username: string | null }>({ connected: false, username: null });
+  let githubPollInterval: ReturnType<typeof setInterval> | null = null;
+
+  $effect(() => {
+    fetchGitHubStatus().then(s => { githubStatus = s; }).catch(() => {});
+    return () => {
+      if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
+    };
+  });
+
+  async function connectGitHub() {
+    if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
+    const url = await fetchGitHubAuthUrl();
+    window.open(url, '_blank', 'width=600,height=700');
+    // Poll for connection status with cleanup
+    githubPollInterval = setInterval(async () => {
+      try {
+        const status = await fetchGitHubStatus();
+        if (status.connected) {
+          githubStatus = status;
+          if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
+        }
+      } catch { /* ignore network errors during polling */ }
+    }, 2000);
+    setTimeout(() => {
+      if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
+    }, 120_000);
+  }
+
+  async function handleDisconnectGitHub() {
+    await disconnectGitHub();
+    githubStatus = { connected: false, username: null };
+  }
 
   export async function open() {
     error = '';
@@ -165,7 +199,7 @@
 >
   <div class="dialog-content">
     <div class="dialog-header">
-      <h2 class="dialog-title">Settings</h2>
+      <h2 class="dialog-title">Relay Settings</h2>
       <button class="close-btn" aria-label="Close settings" onclick={handleClose}>&#10005;</button>
     </div>
 
@@ -208,6 +242,34 @@
           <input id="default-notifications" type="checkbox" class="dialog-checkbox" bind:checked={config.defaultNotifications} onchange={handleNotificationsChange} />
           <label for="default-notifications" class="devtools-label">Enable notifications for new sessions</label>
         </div>
+      </section>
+
+      <!-- GitHub Connection section -->
+      <section class="settings-section">
+        <h3 class="section-title">GitHub Connection</h3>
+        {#if githubStatus.connected}
+          <div class="version-row">
+            <span class="version-current">Connected as <strong>{githubStatus.username}</strong></span>
+            <button
+              class="btn btn-ghost btn-sm"
+              onclick={handleDisconnectGitHub}
+              data-track="dialog.settings.github-disconnect"
+            >
+              Disconnect
+            </button>
+          </div>
+        {:else}
+          <p class="section-desc">Connect your GitHub account to enable PR and CI features.</p>
+          <div>
+            <button
+              class="btn btn-primary btn-sm"
+              onclick={connectGitHub}
+              data-track="dialog.settings.github-connect"
+            >
+              Connect GitHub
+            </button>
+          </div>
+        {/if}
       </section>
 
       <!-- Developer tools section -->
