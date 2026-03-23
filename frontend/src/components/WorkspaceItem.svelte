@@ -139,7 +139,7 @@
   }
 
   function findPrForBranch(branchName: string): PullRequest | undefined {
-    return orgPrs?.find(pr => pr.headRefName === branchName && pr.state === 'OPEN');
+    return orgPrs?.find(pr => pr.headRefName === branchName && pr.state === 'OPEN' && pr.repoPath === workspace.path);
   }
 
   async function handleRename(session: SessionSummary) {

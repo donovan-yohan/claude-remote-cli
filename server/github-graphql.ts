@@ -239,6 +239,16 @@ export async function fetchPrsGraphQL(
     throw new Error(`GitHub GraphQL request failed: ${response.status} ${response.statusText}`);
   }
 
-  const data = (await response.json()) as GraphQLResponse;
-  return mapGraphQLResponse(data, repoMap);
+  const json = (await response.json()) as { errors?: Array<{ message: string }>; data?: GraphQLResponse['data'] };
+
+  // GitHub GraphQL returns HTTP 200 even for errors (expired tokens, insufficient scopes)
+  if (json.errors && !json.data) {
+    throw new Error(`GitHub GraphQL error: ${json.errors[0]?.message ?? 'unknown'}`);
+  }
+
+  if (!json.data) {
+    throw new Error('GitHub GraphQL returned no data');
+  }
+
+  return mapGraphQLResponse({ data: json.data }, repoMap);
 }

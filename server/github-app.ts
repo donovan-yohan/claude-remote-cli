@@ -30,12 +30,10 @@ export function createGitHubAppRouter(deps: GitHubAppDeps): Router {
   }
 
   // GET / — Returns JSON { url } with the GitHub OAuth authorization URL
+  // No redirect_uri — uses the GitHub App's configured callback URL
   router.get('/', (_req: Request, res: Response) => {
-    const config = getConfig();
-    const redirectUri = (config.github?.smeeUrl) ?? '';
     const params = new URLSearchParams({
       client_id: clientId,
-      ...(redirectUri ? { redirect_uri: redirectUri } : {}),
       scope: 'repo',
     });
     const url = `https://github.com/login/oauth/authorize?${params.toString()}`;

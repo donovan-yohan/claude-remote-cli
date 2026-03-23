@@ -11,7 +11,6 @@ import type { Request, Response } from 'express';
 export interface WebhookDeps {
   secret: string;
   broadcastEvent: (type: string, data?: Record<string, unknown>) => void;
-  getWorkspacePaths: () => string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -64,9 +63,9 @@ export function createWebhookRouter(deps: WebhookDeps): Router {
     const event = req.headers['x-github-event'];
 
     if (event === 'pull_request' || event === 'pull_request_review') {
-      deps.broadcastEvent('pr-updated', req.body as Record<string, unknown>);
-    } else if (event === 'check_suite') {
-      deps.broadcastEvent('ci-updated', req.body as Record<string, unknown>);
+      deps.broadcastEvent('pr-updated');
+    } else if (event === 'check_suite' || event === 'check_run') {
+      deps.broadcastEvent('ci-updated');
     }
     // Unknown events: ignore, return 200 OK
 

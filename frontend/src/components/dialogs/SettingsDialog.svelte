@@ -21,23 +21,31 @@
   let clearing = $state(false);
 
   let githubStatus = $state<{ connected: boolean; username: string | null }>({ connected: false, username: null });
+  let githubPollInterval: ReturnType<typeof setInterval> | null = null;
 
   $effect(() => {
     fetchGitHubStatus().then(s => { githubStatus = s; }).catch(() => {});
+    return () => {
+      if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
+    };
   });
 
   async function connectGitHub() {
     const url = await fetchGitHubAuthUrl();
     window.open(url, '_blank', 'width=600,height=700');
-    // Poll for connection status
-    const interval = setInterval(async () => {
-      const status = await fetchGitHubStatus();
-      if (status.connected) {
-        githubStatus = status;
-        clearInterval(interval);
-      }
+    // Poll for connection status with cleanup
+    githubPollInterval = setInterval(async () => {
+      try {
+        const status = await fetchGitHubStatus();
+        if (status.connected) {
+          githubStatus = status;
+          if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
+        }
+      } catch { /* ignore network errors during polling */ }
     }, 2000);
-    setTimeout(() => clearInterval(interval), 120_000);
+    setTimeout(() => {
+      if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
+    }, 120_000);
   }
 
   async function handleDisconnectGitHub() {

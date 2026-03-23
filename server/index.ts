@@ -365,7 +365,10 @@ async function main(): Promise<void> {
     clientId: process.env.GITHUB_CLIENT_ID ?? '',
     clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
   });
-  app.use('/auth/github', githubAppRouter);
+  // /callback must be unprotected (GitHub redirects the user here)
+  // All other routes require auth to prevent unauthorized token access/deletion
+  app.use('/auth/github/callback', githubAppRouter);
+  app.use('/auth/github', requireAuth, githubAppRouter);
 
   // Mount webhooks (no auth — GitHub sends these with HMAC signature)
   const webhookSecret = config.github?.webhookSecret;
@@ -373,7 +376,6 @@ async function main(): Promise<void> {
     const webhookRouter = createWebhookRouter({
       secret: webhookSecret,
       broadcastEvent,
-      getWorkspacePaths: () => loadConfig(CONFIG_PATH).workspaces ?? [],
     });
     app.use('/webhooks', webhookRouter);
   }
@@ -1446,6 +1448,7 @@ async function main(): Promise<void> {
   }
 
   async function gracefulShutdown() {
+    stopWebhookPolling();
     await stopPolling();
     closeAnalytics();
     branchWatcher.close();
