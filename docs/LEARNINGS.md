@@ -91,3 +91,13 @@ The `search/issues` endpoint does not include `reviewDecision` (APPROVED, CHANGE
 The org dashboard backend queries `is:open` in its GitHub search. The frontend "All" filter operates on the returned dataset, not a separate query — switching from "Open" to "All" shows the same PRs. To support closed/merged PR display, the backend would need a second query or the existing query would need to drop `is:open` (which would increase response size significantly).
 
 ---
+
+### L-010: Sidebar group rows must derive identity from the group, not from individual sessions within it
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-22
+- branch: fix-sidenav-tabs-isolation
+
+When a sidebar row represents a group of sessions (e.g., all tabs for a worktree), the row's name and icon must come from the group's identity (worktree path, branch name), not from a "representative" session selected by recency. Picking the most-recently-active session as the representative leaks tab-level details (session type, auto-generated tab name) into the sidebar. Tab identity belongs to the tab bar; sidebar identity belongs to the worktree/group. When adding grouped UI patterns, always ask: "does the group's display change when the user interacts with an individual item within it?"
+
+---
