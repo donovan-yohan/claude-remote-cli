@@ -157,7 +157,8 @@ async function main(): Promise<void> {
   }
 
   // Startup-only config — captured once at boot.
-  // Use ONLY for bind-time values (port, host, PIN) that cannot change while the server is running.
+  // Use ONLY for values wired into the listening socket or long-lived connections
+  // (port, host, webhookSecret, smeeUrl, githubToken, forceOutputParser).
   let startupConfig: Config;
   try {
     startupConfig = loadConfig(CONFIG_PATH);
@@ -535,7 +536,8 @@ async function main(): Promise<void> {
       return;
     }
 
-    const valid = await auth.verifyPin(pin, getConfig().pinHash as string);
+    const authConfig = getConfig();
+    const valid = await auth.verifyPin(pin, authConfig.pinHash as string);
     if (!valid) {
       auth.recordFailedAttempt(ip);
       res.status(401).json({ error: 'Invalid PIN' });
@@ -546,7 +548,7 @@ async function main(): Promise<void> {
     const token = auth.generateCookieToken();
     authenticatedTokens.add(token);
 
-    const ttlMs = parseTTL(getConfig().cookieTTL);
+    const ttlMs = parseTTL(authConfig.cookieTTL);
     setTimeout(() => authenticatedTokens.delete(token), ttlMs);
 
     res.cookie('token', token, {

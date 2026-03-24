@@ -28,7 +28,7 @@ export interface WorkspaceDeps {
   configPath: string;
   /** Injected so tests can override execFile calls */
   execAsync?: typeof execFileAsync;
-  /** Called after workspace add/remove so watchers can rebuild */
+  /** Called after any workspace mutation (add, remove, reorder, bulk-add) so watchers can rebuild */
   onWorkspacesChanged?: () => void;
 }
 
