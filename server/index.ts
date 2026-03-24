@@ -43,8 +43,7 @@ const execFileAsync = promisify(execFile);
 // When run directly (development), fall back to local config.json
 const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', '..', 'config.json');
 
-// TODO: Replace with actual OAuth App client ID after creating the GitHub OAuth App
-const DEFAULT_GITHUB_CLIENT_ID = 'PLACEHOLDER_CLIENT_ID';
+const DEFAULT_GITHUB_CLIENT_ID = 'Ov23lilheF3LelYSo0bu';
 
 const VERSION_CACHE_TTL = 5 * 60 * 1000;
 let versionCache: { latest: string; fetchedAt: number } | null = null;
@@ -365,8 +364,8 @@ async function main(): Promise<void> {
   // onConnected is called after token save; startWebhookPolling is defined below
   // and safe to call here since this callback only fires at runtime (not startup).
   const githubClientId = process.env.GITHUB_CLIENT_ID || DEFAULT_GITHUB_CLIENT_ID;
-  if (githubClientId === 'PLACEHOLDER_CLIENT_ID') {
-    console.warn('[github] No GITHUB_CLIENT_ID configured — GitHub device flow will not work until a client ID is set');
+  if (!githubClientId) {
+    console.warn('[github] No GITHUB_CLIENT_ID configured — GitHub device flow will not work');
   }
   const githubAppRouter = createGitHubAppRouter({
     configPath: CONFIG_PATH,
