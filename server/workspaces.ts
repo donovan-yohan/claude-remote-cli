@@ -28,6 +28,8 @@ export interface WorkspaceDeps {
   configPath: string;
   /** Injected so tests can override execFile calls */
   execAsync?: typeof execFileAsync;
+  /** Called after workspace add/remove so watchers can rebuild */
+  onWorkspacesChanged?: () => void;
 }
 
 // Exported helpers
@@ -170,6 +172,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
 
     saveConfig(configPath, config);
+    deps.onWorkspacesChanged?.();
     trackEvent({ category: 'workspace', action: 'added', target: resolved, properties: { name: path.basename(resolved) } });
 
     const workspace: Workspace = {
@@ -204,6 +207,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
 
     config.workspaces = workspaces.filter((p) => p !== resolved);
     saveConfig(configPath, config);
+    deps.onWorkspacesChanged?.();
     trackEvent({ category: 'workspace', action: 'removed', target: resolved });
 
     res.json({ removed: resolved });
@@ -307,6 +311,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     if (added.length > 0) {
       config.workspaces = [...(config.workspaces ?? []), ...added.map((a) => a.path)];
       saveConfig(configPath, config);
+      deps.onWorkspacesChanged?.();
     }
 
     res.status(201).json({ added, errors });

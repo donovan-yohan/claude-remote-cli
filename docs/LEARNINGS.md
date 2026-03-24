@@ -122,6 +122,16 @@ TanStack Query's `createQuery` returns a Svelte 5 reactive proxy. Accessing `.re
 
 ---
 
+### L-014: When one module mutates shared config on disk, all modules that read that config must reload — never validate against a startup snapshot
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-24
+- branch: workspace-config-validation
+
+When multiple server modules access the same config file, ensure they all use the same access pattern. If a workspace router reloads config from disk on every request (fresh reads), but the session handler validates against an in-memory object loaded at startup (stale read), any mutations by the workspace router are invisible to the session handler until restart. Either centralize config access behind a single `getConfig()` that always reads from disk, or use an event/notification pattern so disk mutations propagate to in-memory consumers. The workspace router's `getConfig()` pattern is the correct one — the problem is `index.ts` using a stale `let config` loaded once at startup.
+
+---
+
 ### L-013: When multiple code paths create the same resource type, they must share a single counter/naming mechanism
 - status: active
 - category: architecture
