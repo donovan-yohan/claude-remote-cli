@@ -131,3 +131,13 @@ TanStack Query's `createQuery` returns a Svelte 5 reactive proxy. Accessing `.re
 `POST /sessions` and `POST /workspaces/worktree` both create git worktrees with mountain names, but use different counters (global `config.nextMountainIndex` vs per-workspace `settings.nextMountainIndex`). Worktrees created via one path don't increment the other's counter, causing name collisions that silently break worktree creation. Additionally, resource creation APIs that depend on sequential naming must include collision detection (check if name/branch/directory exists, skip to next) — never assume the counter is accurate. When adding any auto-naming feature, grep for all code paths that create the same resource type and ensure they share one source of truth.
 
 ---
+
+### L-014: Always gate drag-and-drop library activation behind an explicit mode toggle — never leave it always-on
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-24
+- branch: mobile-longpress-drag
+
+When using `svelte-dnd-action` (or any drag-and-drop library) on a scrollable container, pass `dragDisabled: true` by default and only enable it when the user explicitly enters reorder mode. Libraries like `svelte-dnd-action` attach touch event listeners to draggable children and `preventDefault()` on `touchmove`, which blocks native scroll. Having an application-level reorder mode toggle (e.g., `ui.reorderMode`) without wiring it to the library's `dragDisabled` option creates a disconnect — your mode gate is purely cosmetic while the library still steals events. Always check library docs for disable/enable APIs and wire them to your mode state.
+
+---

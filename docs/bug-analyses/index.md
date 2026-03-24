@@ -37,3 +37,4 @@
 | [session-flags-lost-on-restart-bug-analysis.md](2026-03-22-session-flags-lost-on-restart-bug-analysis.md) | Session flags (yolo, claudeArgs) lost on auto-update restart — args consumed at spawn, never stored or serialized | 2026-03-22 |
 | [pr-query-infinite-loop-bug-analysis.md](2026-03-23-pr-query-infinite-loop-bug-analysis.md) | Infinite PR/CI fetch loop — `$effect` tracks TanStack Query reactive proxy, refetch mutates tracked state | 2026-03-23 |
 | [new-worktree-button-regression-bug-analysis.md](2026-03-23-new-worktree-button-regression-bug-analysis.md) | New worktree button opens session dialog — mountain name collision + dual counter desync + silent error fallback | 2026-03-23 |
+| [sidebar-touch-scroll-blocked-by-dnd-bug-analysis.md](2026-03-24-sidebar-touch-scroll-blocked-by-dnd-bug-analysis.md) | Sidebar can't scroll on mobile — svelte-dnd-action intercepts touches because dragDisabled not set | 2026-03-24 |

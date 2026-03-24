@@ -206,7 +206,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="workspace-list"
-      use:dndzone={{ items: localDndItems, flipDurationMs, type: 'workspaces', dropTargetStyle: {} }}
+      use:dndzone={{ items: localDndItems, flipDurationMs, type: 'workspaces', dropTargetStyle: {}, dragDisabled: !ui.reorderMode }}
       onconsider={handleDndConsider}
       onfinalize={handleDndFinalize}
       ontouchstart={handleTouchStart}
