@@ -571,8 +571,8 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     const config = getConfig();
     const settings = getWorkspaceSettings(config, resolved);
 
-    let branchName: string;
-    let mountainName: string;
+    let branchName = '';
+    let mountainName = '';
     let gitArgs: string[];
     let nextMountainIndex: number | undefined;
 
@@ -582,13 +582,35 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       branchName = existingBranch;
       gitArgs = ['worktree', 'add', path.join(resolved, '.worktrees', mountainName), existingBranch];
     } else {
-      // Create a new branch using the next mountain name
-      const index = settings.nextMountainIndex ?? 0;
-      mountainName = MOUNTAIN_NAMES[index % MOUNTAIN_NAMES.length] ?? 'everest';
-      branchName = (settings.branchPrefix ?? '') + mountainName;
-      nextMountainIndex = index + 1;
+      // Create a new branch using the next mountain name — with collision retry
+      const baseIndex = settings.nextMountainIndex ?? 0;
+      let found = false;
 
-      // Detect base branch: user setting > git detected > fallback
+      for (let attempt = 0; attempt < MOUNTAIN_NAMES.length; attempt++) {
+        const candidateIndex = (baseIndex + attempt) % MOUNTAIN_NAMES.length;
+        const candidateName = MOUNTAIN_NAMES[candidateIndex] ?? 'everest';
+        const candidateBranch = (settings.branchPrefix ?? '') + candidateName;
+        const candidatePath = path.join(resolved, '.worktrees', candidateName);
+
+        // Check if branch or directory already exists
+        const branchExists = await exec('git', ['rev-parse', '--verify', candidateBranch], { cwd: resolved }).then(() => true, () => false);
+        const dirExists = fs.existsSync(candidatePath);
+
+        if (!branchExists && !dirExists) {
+          mountainName = candidateName;
+          branchName = candidateBranch;
+          nextMountainIndex = candidateIndex + 1;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) {
+        res.status(409).json({ error: 'All mountain names are taken for this workspace. Delete some worktrees first.' });
+        return;
+      }
+
+      // Detect base branch (keep existing logic)
       let baseBranch = settings.defaultBranch;
       if (!baseBranch) {
         const detected = await detectGitRepo(resolved);

@@ -16,10 +16,10 @@ interface SerializedPtySession {
   id: string;
   type: SessionType;
   agent: AgentType;
-  root: string;
+  workspacePath: string;
+  worktreePath: string | null;
+  cwd: string;
   repoName: string;
-  repoPath: string;
-  worktreeName: string;
   branchName: string;
   displayName: string;
   createdAt: string;
@@ -27,13 +27,12 @@ interface SerializedPtySession {
   useTmux: boolean;
   tmuxSessionName: string;
   customCommand: string | null;
-  cwd: string;
   yolo?: boolean;
   claudeArgs?: string[];
 }
 
 interface PendingSessionsFile {
-  version: number;
+  version: number;  // now 3
   timestamp: string;
   sessions: SerializedPtySession[];
 }
@@ -80,30 +79,30 @@ function onStateChange(cb: StateChangeCallback): void {
   stateChangeCallbacks.push(cb);
 }
 
-type SessionCreateCallback = (sessionId: string, repoPath: string, branchName?: string) => void;
+type SessionCreateCallback = (sessionId: string, cwd: string, branchName?: string) => void;
 const sessionCreateCallbacks: SessionCreateCallback[] = [];
 
 function onSessionCreate(cb: SessionCreateCallback): void {
   sessionCreateCallbacks.push(cb);
 }
 
-function fireSessionCreate(sessionId: string, repoPath: string, branchName?: string): void {
+function fireSessionCreate(sessionId: string, cwd: string, branchName?: string): void {
   for (const cb of sessionCreateCallbacks) {
-    try { cb(sessionId, repoPath, branchName); }
+    try { cb(sessionId, cwd, branchName); }
     catch (err) { console.error('[sessions] sessionCreate callback error:', err); }
   }
 }
 
-type SessionEndCallback = (sessionId: string, repoPath: string, branchName?: string) => void;
+type SessionEndCallback = (sessionId: string, cwd: string, branchName?: string) => void;
 const sessionEndCallbacks: SessionEndCallback[] = [];
 
 function onSessionEnd(cb: SessionEndCallback): void {
   sessionEndCallbacks.push(cb);
 }
 
-function fireSessionEnd(sessionId: string, repoPath: string, branchName?: string): void {
+function fireSessionEnd(sessionId: string, cwd: string, branchName?: string): void {
   for (const cb of sessionEndCallbacks) {
-    try { cb(sessionId, repoPath, branchName); }
+    try { cb(sessionId, cwd, branchName); }
     catch (err) { console.error('[sessions] sessionEnd callback error:', err); }
   }
 }
@@ -133,8 +132,8 @@ function create({ id: providedId, needsBranchRename, branchRenamePrompt, initial
     target: id,
     properties: {
       agent,
-      type: rest.type ?? 'worktree',
-      workspace: rest.root ?? rest.repoPath,
+      type: rest.type ?? 'agent',
+      workspace: rest.workspacePath,
       mode: rest.command ? 'terminal' : 'agent',
     },
     session_id: id,
@@ -148,7 +147,7 @@ function create({ id: providedId, needsBranchRename, branchRenamePrompt, initial
   if (initialPrompt) {
     ptySession.initialPrompt = initialPrompt;
   }
-  fireSessionCreate(id, ptySession.repoPath, ptySession.branchName);
+  fireSessionCreate(id, ptySession.cwd, ptySession.branchName);
   if (initialPrompt) {
     const promptHandler = (changedId: string, state: AgentState) => {
       if (changedId === id && state === 'waiting-for-input' && ptySession.initialPrompt) {
@@ -180,16 +179,15 @@ function list(): SessionSummary[] {
       type: s.type,
       agent: s.agent,
       mode: s.mode,
-      root: s.root,
+      workspacePath: s.workspacePath,
+      worktreePath: s.worktreePath,
+      cwd: s.cwd,
       repoName: s.repoName,
-      repoPath: s.repoPath,
-      worktreeName: s.worktreeName,
       branchName: s.branchName,
       displayName: s.displayName,
       createdAt: s.createdAt,
       lastActivity: s.lastActivity,
       idle: s.idle,
-      cwd: s.cwd,
       customCommand: s.customCommand,
       useTmux: s.useTmux,
       tmuxSessionName: s.tmuxSessionName,
@@ -229,12 +227,12 @@ function kill(id: string): void {
     properties: {
       agent: session.agent,
       type: session.type,
-      workspace: session.root || session.repoPath,
+      workspace: session.workspacePath,
       duration_s: durationS,
     },
     session_id: id,
   });
-  fireSessionEnd(id, session.repoPath, session.branchName);
+  fireSessionEnd(id, session.cwd, session.branchName);
   sessions.delete(id);
 }
 
@@ -262,10 +260,6 @@ function write(id: string, data: string): void {
   session.pty.write(data);
 }
 
-function findRepoSession(repoPath: string): SessionSummary | undefined {
-  return list().find((s) => s.type === 'repo' && s.repoPath === repoPath);
-}
-
 function nextTerminalName(): string {
   return `Terminal ${++terminalCounter}`;
 }
@@ -289,25 +283,24 @@ function serializeAll(configDir: string): void {
       id: session.id,
       type: session.type,
       agent: session.agent,
-      root: session.root,
+      workspacePath: session.workspacePath,
+      worktreePath: session.worktreePath,
+      cwd: session.cwd,
       repoName: session.repoName,
-      repoPath: session.repoPath,
-      worktreeName: session.worktreeName,
       branchName: session.branchName,
       displayName: session.displayName,
       createdAt: session.createdAt,
       lastActivity: session.lastActivity,
       useTmux: session.useTmux,
-      tmuxSessionName: session.tmuxSessionName,
+      tmuxSessionName: session.tmuxSessionName || '',
       customCommand: session.customCommand,
-      cwd: session.cwd,
       yolo: session.yolo,
       claudeArgs: session.claudeArgs,
     });
   }
 
   const pending: PendingSessionsFile = {
-    version: 2,
+    version: 3,
     timestamp: new Date().toISOString(),
     sessions: serializedPty,
   };
@@ -315,7 +308,7 @@ function serializeAll(configDir: string): void {
   fs.writeFileSync(path.join(configDir, 'pending-sessions.json'), JSON.stringify(pending, null, 2), 'utf-8');
 }
 
-async function restoreFromDisk(configDir: string): Promise<number> {
+async function restoreFromDisk(configDir: string, workspaces?: string[]): Promise<number> {
   const pendingPath = path.join(configDir, 'pending-sessions.json');
   if (!fs.existsSync(pendingPath)) return 0;
 
@@ -331,6 +324,40 @@ async function restoreFromDisk(configDir: string): Promise<number> {
   if (Date.now() - new Date(pending.timestamp).getTime() > STALE_THRESHOLD_MS) {
     fs.unlinkSync(pendingPath);
     return 0;
+  }
+
+  // v2 → v3 migration
+  if (pending.version <= 2) {
+    for (const s of pending.sessions) {
+      const legacy = s as SerializedPtySession & { repoPath?: string; root?: string; worktreeName?: string };
+      if (!('cwd' in s) && legacy.repoPath) {
+        (s as any).cwd = legacy.repoPath;
+      }
+      if (!('workspacePath' in s)) {
+        // Derive workspacePath: find configured workspace that contains this cwd
+        const configuredWorkspaces = workspaces ?? [];
+        const cwd = (s as any).cwd ?? legacy.repoPath ?? '';
+        const matchedWorkspace = configuredWorkspaces.find(w => cwd === w || cwd.startsWith(w + '/'));
+        if (!matchedWorkspace) {
+          console.warn(`[sessions] v2→v3 migration: no configured workspace matches cwd "${cwd}", using cwd as workspacePath`);
+        }
+        (s as any).workspacePath = matchedWorkspace ?? cwd;
+      }
+      if (!('worktreePath' in s)) {
+        const cwd = (s as any).cwd ?? '';
+        const workspacePath = (s as any).workspacePath ?? '';
+        // If cwd differs from workspacePath, it's a worktree
+        (s as any).worktreePath = cwd !== workspacePath ? cwd : null;
+      }
+      // Map old types to new
+      if ((s as any).type === 'repo' || (s as any).type === 'worktree') {
+        (s as any).type = 'agent';
+      }
+      // Clean up legacy fields
+      delete legacy.repoPath;
+      delete legacy.root;
+      delete legacy.worktreeName;
+    }
   }
 
   const scrollbackDirPath = path.join(configDir, 'scrollback');
@@ -394,10 +421,9 @@ async function restoreFromDisk(configDir: string): Promise<number> {
         type: s.type,
         agent: s.agent,
         repoName: s.repoName,
-        repoPath: s.repoPath,
+        workspacePath: s.workspacePath,
+        worktreePath: s.worktreePath,
         cwd: s.cwd,
-        root: s.root,
-        worktreeName: s.worktreeName,
         branchName: s.branchName,
         displayName: s.displayName,
         args,
@@ -411,8 +437,8 @@ async function restoreFromDisk(configDir: string): Promise<number> {
       if (initialScrollback) createParams.initialScrollback = initialScrollback;
       create(createParams);
       restored++;
-    } catch {
-      console.error(`Failed to restore session ${s.id} (${s.displayName})`);
+    } catch (err) {
+      console.error(`Failed to restore session ${s.id} (${s.displayName})`, err);
     }
 
     // Clean up scrollback file
@@ -444,7 +470,7 @@ function activeTmuxSessionNames(): Set<string> {
 }
 
 async function fetchMetaForSession(session: SessionSummary): Promise<SessionMeta> {
-  const repoPath = session.repoPath;
+  const repoPath = session.cwd;
   const branch = session.branchName;
 
   let prNumber: number | null = null;
@@ -507,4 +533,4 @@ async function populateMetaCache(): Promise<void> {
   );
 }
 
-export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionCreate, onSessionEnd, findRepoSession, nextTerminalName, nextAgentName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionCreate, onSessionEnd, nextTerminalName, nextAgentName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

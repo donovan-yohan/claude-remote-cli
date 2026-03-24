@@ -9,7 +9,7 @@ interface EventMessage {
   state?: string;
   branchName?: string;
   displayName?: string;
-  repoPath?: string;
+  cwd?: string;
   cwdPath?: string;
   branch?: string;
 }

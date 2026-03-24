@@ -108,7 +108,7 @@ async function spawnBranchRename(
 
       if (deps.configPath) {
         writeMeta(deps.configPath, {
-          worktreePath: session.repoPath,
+          worktreePath: session.cwd,
           displayName: session.displayName,
           lastActivity: session.lastActivity,
           branchName: session.branchName,

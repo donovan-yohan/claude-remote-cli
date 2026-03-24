@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from '../server/watcher.js';
+import { MOUNTAIN_NAMES } from '../server/types.js';
 
 describe('worktree directories constant', () => {
   it('should include both .worktrees and .claude/worktrees', () => {
@@ -290,5 +291,96 @@ describe('CLI worktree arg parsing', () => {
     const hasPositionalPath = subArgs.length > 0 && !subArgs[0]!.startsWith('-');
     assert.equal(hasPositionalPath, true);
     assert.equal(subArgs[0], './my-path');
+  });
+});
+
+describe('mountain name collision retry', () => {
+  it('MOUNTAIN_NAMES is a non-empty array of strings', () => {
+    assert.ok(Array.isArray(MOUNTAIN_NAMES), 'MOUNTAIN_NAMES should be an array');
+    assert.ok(MOUNTAIN_NAMES.length > 0, 'MOUNTAIN_NAMES should not be empty');
+    for (const name of MOUNTAIN_NAMES) {
+      assert.equal(typeof name, 'string', `each mountain name should be a string, got: ${typeof name}`);
+      assert.ok(name.length > 0, 'each mountain name should be non-empty');
+    }
+  });
+
+  it('MOUNTAIN_NAMES contains expected well-known peaks', () => {
+    assert.ok(MOUNTAIN_NAMES.includes('everest'), 'should include everest');
+    assert.ok(MOUNTAIN_NAMES.includes('k2'), 'should include k2');
+    assert.ok(MOUNTAIN_NAMES.includes('fuji'), 'should include fuji');
+  });
+
+  it('collision retry logic skips taken names and selects the next available one', () => {
+    // Simulate the collision retry loop from workspaces.ts
+    // The first two names are "taken"; the third should be selected.
+    const takenNames = new Set<string>([MOUNTAIN_NAMES[0], MOUNTAIN_NAMES[1]]);
+    const baseIndex = 0;
+    let selected: string | null = null;
+    let selectedIndex = -1;
+
+    for (let attempt = 0; attempt < MOUNTAIN_NAMES.length; attempt++) {
+      const candidateIndex = (baseIndex + attempt) % MOUNTAIN_NAMES.length;
+      const candidateName = MOUNTAIN_NAMES[candidateIndex]!;
+      if (!takenNames.has(candidateName)) {
+        selected = candidateName;
+        selectedIndex = candidateIndex;
+        break;
+      }
+    }
+
+    assert.ok(selected !== null, 'should find an available name');
+    assert.equal(selected, MOUNTAIN_NAMES[2], 'should select the third name after skipping first two');
+    assert.equal(selectedIndex, 2);
+  });
+
+  it('collision retry wraps around when baseIndex is near the end', () => {
+    // baseIndex near the end — should wrap around to the beginning
+    const lastIndex = MOUNTAIN_NAMES.length - 1;
+    const lastName = MOUNTAIN_NAMES[lastIndex]!;
+    const takenNames = new Set<string>([lastName]);
+    const baseIndex = lastIndex;
+    let selected: string | null = null;
+
+    for (let attempt = 0; attempt < MOUNTAIN_NAMES.length; attempt++) {
+      const candidateIndex = (baseIndex + attempt) % MOUNTAIN_NAMES.length;
+      const candidateName = MOUNTAIN_NAMES[candidateIndex]!;
+      if (!takenNames.has(candidateName)) {
+        selected = candidateName;
+        break;
+      }
+    }
+
+    assert.ok(selected !== null, 'should find an available name after wrap-around');
+    // The first candidate tried was lastIndex (taken), so the next is index 0
+    assert.equal(selected, MOUNTAIN_NAMES[0], 'should wrap around to the first name');
+  });
+
+  it('nextMountainIndex advances to the candidate after the selected one', () => {
+    // After selecting candidateIndex N, nextMountainIndex should be N+1
+    const baseIndex = 0;
+    const takenNames = new Set<string>();
+    let nextMountainIndex: number | undefined;
+
+    for (let attempt = 0; attempt < MOUNTAIN_NAMES.length; attempt++) {
+      const candidateIndex = (baseIndex + attempt) % MOUNTAIN_NAMES.length;
+      const candidateName = MOUNTAIN_NAMES[candidateIndex]!;
+      if (!takenNames.has(candidateName)) {
+        nextMountainIndex = candidateIndex + 1;
+        break;
+      }
+    }
+
+    assert.equal(nextMountainIndex, 1, 'nextMountainIndex should be 1 after selecting index 0');
+  });
+
+  it('all mountain names are unique', () => {
+    const unique = new Set(MOUNTAIN_NAMES);
+    assert.equal(unique.size, MOUNTAIN_NAMES.length, 'all mountain names should be unique');
+  });
+
+  it('mountain names contain only lowercase letters, digits, and hyphens', () => {
+    for (const name of MOUNTAIN_NAMES) {
+      assert.ok(/^[a-z0-9-]+$/.test(name), `mountain name "${name}" should only contain lowercase letters, digits, and hyphens`);
+    }
   });
 });

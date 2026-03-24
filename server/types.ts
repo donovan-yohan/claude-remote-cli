@@ -3,7 +3,7 @@ import type { OutputParser } from './output-parsers/index.js';
 
 export type AgentState = 'initializing' | 'waiting-for-input' | 'processing' | 'permission-prompt' | 'error' | 'idle';
 
-export type SessionType = 'repo' | 'worktree' | 'terminal';
+export type SessionType = 'agent' | 'terminal';
 export type AgentType = 'claude' | 'codex';
 export type SessionStatus = 'active' | 'disconnected';
 export type SessionMode = 'pty';
@@ -30,16 +30,15 @@ interface BaseSession {
   type: SessionType;
   agent: AgentType;
   mode: SessionMode;
-  root: string;
+  workspacePath: string;
+  worktreePath: string | null;
+  cwd: string;
   repoName: string;
-  repoPath: string;
-  worktreeName: string;
   branchName: string;
   displayName: string;
   createdAt: string;
   lastActivity: string;
   idle: boolean;
-  cwd: string;
   customCommand: string | null;
   status: SessionStatus;
   needsBranchRename: boolean;
@@ -75,16 +74,15 @@ export interface SessionSummary {
   type: SessionType;
   agent: AgentType;
   mode: SessionMode;
-  root: string;
+  workspacePath: string;
+  worktreePath: string | null;
+  cwd: string;
   repoName: string;
-  repoPath: string;
-  worktreeName: string;
   branchName: string;
   displayName: string;
   createdAt: string;
   lastActivity: string;
   idle: boolean;
-  cwd: string;
   customCommand: string | null;
   useTmux: boolean;
   tmuxSessionName: string;
@@ -154,7 +152,6 @@ export interface Config {
   vapidPrivateKey?: string | undefined;
   debugLog?: boolean | undefined;
   forceOutputParser?: boolean | undefined;
-  nextMountainIndex?: number | undefined;
   workspaceGroups?: Record<string, string[]> | undefined;
   integrations?: {
     jira?: { projectKey?: string; statusMappings?: Partial<Record<TransitionState, string>> };

@@ -217,7 +217,7 @@
         {#each localDndItems as item (item.id)}
           {@const workspace = item.workspace}
           {@const activeSessions = getSessionsForWorkspace(workspace.path)}
-          {@const activeWorktreePaths = new Set(activeSessions.map(s => s.repoPath))}
+          {@const activeWorktreePaths = new Set(activeSessions.map(s => s.worktreePath).filter(Boolean) as string[])}
           {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
             wt.repoPath === workspace.path &&
             wt.path.startsWith(workspace.path + '/') &&
@@ -227,9 +227,10 @@
             const groups = new Map<string, typeof activeSessions>();
             groups.set(workspace.path, []);
             for (const s of activeSessions) {
-              const existing = groups.get(s.repoPath);
+              const groupKey = s.worktreePath ?? s.workspacePath;
+              const existing = groups.get(groupKey);
               if (existing) existing.push(s);
-              else groups.set(s.repoPath, [s]);
+              else groups.set(groupKey, [s]);
             }
             return groups;
           })()}
@@ -257,7 +258,7 @@
           {#each group.items as item (item.id)}
             {@const workspace = item.workspace}
             {@const activeSessions = getSessionsForWorkspace(workspace.path)}
-            {@const activeWorktreePaths = new Set(activeSessions.map(s => s.repoPath))}
+            {@const activeWorktreePaths = new Set(activeSessions.map(s => s.worktreePath).filter(Boolean) as string[])}
             {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
               wt.repoPath === workspace.path &&
               wt.path.startsWith(workspace.path + '/') &&
@@ -267,9 +268,10 @@
               const groups = new Map<string, typeof activeSessions>();
               groups.set(workspace.path, []);
               for (const s of activeSessions) {
-                const existing = groups.get(s.repoPath);
+                const groupKey = s.worktreePath ?? s.workspacePath;
+                const existing = groups.get(groupKey);
                 if (existing) existing.push(s);
-                else groups.set(s.repoPath, [s]);
+                else groups.set(groupKey, [s]);
               }
               return groups;
             })()}
