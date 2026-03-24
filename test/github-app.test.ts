@@ -493,3 +493,75 @@ test('Concurrent flow cancels previous', async () => {
     await stopServer(srv);
   }
 });
+
+test('POST /disconnect preserves webhookSecret and smeeUrl', async () => {
+  const configPath = path.join(tmpDir, 'config-disconnect.json');
+  saveConfig(configPath, {
+    ...DEFAULTS,
+    github: {
+      accessToken: 'ghs_to_remove',
+      username: 'testuser',
+      webhookSecret: 'whsec_keep',
+      smeeUrl: 'https://smee.io/keep',
+    },
+  });
+
+  const { srv, url } = await startServer({ configPath });
+
+  try {
+    const res = await fetch(`${url}/auth/github/disconnect`, { method: 'POST' });
+    assert.equal(res.status, 200);
+
+    const data = await res.json() as { ok: boolean };
+    assert.equal(data.ok, true);
+
+    // Verify token and username removed, but webhook config preserved
+    const saved = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
+      github?: { accessToken?: string; username?: string; webhookSecret?: string; smeeUrl?: string };
+    };
+    assert.equal(saved.github?.accessToken, undefined, 'accessToken should be removed');
+    assert.equal(saved.github?.username, undefined, 'username should be removed');
+    assert.equal(saved.github?.webhookSecret, 'whsec_keep', 'webhookSecret should be preserved');
+    assert.equal(saved.github?.smeeUrl, 'https://smee.io/keep', 'smeeUrl should be preserved');
+
+    // Status should show disconnected
+    const statusRes = await fetch(`${url}/auth/github/status`);
+    const statusData = await statusRes.json() as { connected: boolean };
+    assert.equal(statusData.connected, false);
+  } finally {
+    await stopServer(srv);
+  }
+});
+
+test('Token saved without username when GraphQL fails', async () => {
+  const configPath = path.join(tmpDir, 'config-no-username.json');
+  saveConfig(configPath, { ...DEFAULTS });
+
+  let resolveConnected!: () => void;
+  const connectedPromise = new Promise<void>((resolve) => { resolveConnected = resolve; });
+
+  const mockFetch = createMockFetch({
+    'login/device/code': [{ json: DEVICE_CODE_RESPONSE }],
+    'login/oauth/access_token': [{ json: ACCESS_TOKEN_RESPONSE }],
+    'api.github.com/graphql': [{ json: {}, status: 500 }],
+  });
+
+  const { srv, url } = await startServer({
+    configPath,
+    fetchFn: mockFetch,
+    onConnected: resolveConnected,
+  });
+
+  try {
+    await fetch(`${url}/auth/github`);
+    await withTimeout(connectedPromise, 10_000, 'onConnected after GraphQL failure');
+
+    const saved = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
+      github?: { accessToken?: string; username?: string };
+    };
+    assert.equal(saved.github?.accessToken, 'ghs_mock_token_123', 'Token should be saved');
+    assert.equal(saved.github?.username, undefined, 'Username should not be saved when GraphQL fails');
+  } finally {
+    await stopServer(srv);
+  }
+});

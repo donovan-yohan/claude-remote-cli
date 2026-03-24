@@ -363,13 +363,9 @@ async function main(): Promise<void> {
   // Mount GitHub device flow auth
   // onConnected is called after token save; startWebhookPolling is defined below
   // and safe to call here since this callback only fires at runtime (not startup).
-  const githubClientId = process.env.GITHUB_CLIENT_ID || DEFAULT_GITHUB_CLIENT_ID;
-  if (!githubClientId) {
-    console.warn('[github] No GITHUB_CLIENT_ID configured — GitHub device flow will not work');
-  }
   const githubAppRouter = createGitHubAppRouter({
     configPath: CONFIG_PATH,
-    clientId: githubClientId,
+    clientId: process.env.GITHUB_CLIENT_ID || DEFAULT_GITHUB_CLIENT_ID,
     onConnected: () => { startWebhookPolling(); },
   });
   app.use('/auth/github', requireAuth, githubAppRouter);

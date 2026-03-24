@@ -55,19 +55,19 @@
             githubStatus = status;
             clearDeviceFlow();
           } else if (status.deviceFlowStatus === 'denied') {
+            clearDeviceFlow();
             deviceFlowError = 'Authorization denied. Try again.';
-            clearDeviceFlow();
           } else if (status.deviceFlowStatus === 'expired') {
-            deviceFlowError = 'Code expired. Try again.';
             clearDeviceFlow();
+            deviceFlowError = 'Code expired. Try again.';
           }
         } catch { /* ignore network errors during polling */ }
       }, 2000);
       // Fallback timeout
       deviceFlowTimeout = setTimeout(() => {
         if (deviceCode) {
-          deviceFlowError = 'Code expired. Try again.';
           clearDeviceFlow();
+          deviceFlowError = 'Code expired. Try again.';
         }
       }, result.expiresIn * 1000);
     } catch {
