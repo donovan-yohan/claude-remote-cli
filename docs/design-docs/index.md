@@ -45,3 +45,4 @@
 | [2026-03-22-org-dashboard-cleanup-design.md](2026-03-22-org-dashboard-cleanup-design.md) | Org dashboard cleanup: tests, dead code, perf fix, API limitation docs | 2026-03-22 | implemented |
 | [2026-03-23-pr-auto-refresh-design.md](2026-03-23-pr-auto-refresh-design.md) | Manual refresh button + automatic PR data sync via git ref watching | 2026-03-23 | implemented |
 | [2026-03-23-session-worktree-separation-design.md](2026-03-23-session-worktree-separation-design.md) | Separate session and worktree concerns — clean RESTful contracts | 2026-03-23 | implemented |
+| [2026-03-23-github-device-flow-design.md](2026-03-23-github-device-flow-design.md) | Replace OAuth web flow with device flow for zero-config GitHub auth | 2026-03-23 | current |

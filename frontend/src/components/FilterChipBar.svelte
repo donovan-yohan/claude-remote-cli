@@ -71,7 +71,7 @@
     color: var(--text-muted);
     background: transparent;
     border: 1px solid var(--border);
-    padding: 3px 8px;
+    padding: 5px 12px;
     cursor: pointer;
     transition: border-color 0.15s, color 0.15s;
     white-space: nowrap;

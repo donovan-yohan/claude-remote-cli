@@ -712,8 +712,8 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    padding: 4px 10px;
-    min-height: 28px;
+    padding: 5px 14px;
+    min-height: 30px;
     border-radius: 20px;
     border: none;
     background: var(--pill-color, var(--border));
