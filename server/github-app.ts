@@ -21,6 +21,7 @@ interface DeviceFlowState {
   interval: number;
   timerId: ReturnType<typeof setInterval> | null;
   flowStatus: 'polling' | 'denied' | 'expired' | null;
+  pollInFlight: boolean;
 }
 
 let deviceFlow: DeviceFlowState = {
@@ -29,6 +30,7 @@ let deviceFlow: DeviceFlowState = {
   interval: 5,
   timerId: null,
   flowStatus: null,
+  pollInFlight: false,
 };
 
 /** Test helper — returns the current device flow state. */
@@ -141,6 +143,11 @@ export function createGitHubAppRouter(deps: GitHubAppDeps): Router {
       delete config.github.username;
     }
     saveConfig(configPath, config);
+
+    // Cancel any in-progress device-flow polling and invalidate the current flow
+    stopPollTimer();
+    deviceFlow.generation += 1;
+    deviceFlow.deviceCode = '';
     deviceFlow.flowStatus = null;
     res.json({ ok: true });
   });
@@ -157,6 +164,10 @@ async function poll(
 ): Promise<void> {
   // Generation check — abort if a newer flow has started
   if (deviceFlow.generation !== generation) return;
+  // In-flight guard — skip if previous poll hasn't finished (prevents overlap when request takes > interval)
+  if (deviceFlow.pollInFlight) return;
+  deviceFlow.pollInFlight = true;
+  try {
 
   let data: Record<string, string>;
   const pollController = new AbortController();
@@ -254,6 +265,9 @@ async function poll(
     return;
   }
 
-  // Unknown response
-  console.warn('Unknown device flow poll response', data);
+    // Unknown response
+    console.warn('Unknown device flow poll response', data);
+  } finally {
+    deviceFlow.pollInFlight = false;
+  }
 }
