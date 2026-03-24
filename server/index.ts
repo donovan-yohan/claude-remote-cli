@@ -43,6 +43,8 @@ const execFileAsync = promisify(execFile);
 // When run directly (development), fall back to local config.json
 const CONFIG_PATH = process.env.CLAUDE_REMOTE_CONFIG || path.join(__dirname, '..', '..', 'config.json');
 
+const DEFAULT_GITHUB_CLIENT_ID = 'Ov23lilheF3LelYSo0bu';
+
 const VERSION_CACHE_TTL = 5 * 60 * 1000;
 let versionCache: { latest: string; fetchedAt: number } | null = null;
 
@@ -358,25 +360,14 @@ async function main(): Promise<void> {
   const { router: ticketTransitionsRouter, transitionOnSessionCreate, checkPrTransitions } = createTicketTransitionsRouter({ configPath: CONFIG_PATH });
   app.use('/ticket-transitions', requireAuth, ticketTransitionsRouter);
 
-  // Mount GitHub App OAuth (no auth — callback comes from GitHub redirect)
+  // Mount GitHub device flow auth
   // onConnected is called after token save; startWebhookPolling is defined below
   // and safe to call here since this callback only fires at runtime (not startup).
   const githubAppRouter = createGitHubAppRouter({
     configPath: CONFIG_PATH,
-    clientId: process.env.GITHUB_CLIENT_ID ?? '',
-    clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
+    clientId: process.env.GITHUB_CLIENT_ID || DEFAULT_GITHUB_CLIENT_ID,
     onConnected: () => { startWebhookPolling(); },
   });
-  // /callback is unprotected (GitHub redirects the user here).
-  // We forward GET /auth/github/callback directly to the router's /callback route
-  // by rewriting the URL — this avoids double-mounting the router which would make
-  // the callback reachable at /auth/github/callback/callback instead.
-  app.get('/auth/github/callback', (req: express.Request, res: express.Response) => {
-    const qs = req.url.includes('?') ? req.url.substring(req.url.indexOf('?')) : '';
-    (req as express.Request & { url: string }).url = '/callback' + qs;
-    githubAppRouter(req, res, () => res.status(404).end());
-  });
-  // All other routes (/status, /disconnect, GET /) require auth.
   app.use('/auth/github', requireAuth, githubAppRouter);
 
   // Mount org dashboard router — use GraphQL when token available, fall back to gh CLI

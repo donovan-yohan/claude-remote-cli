@@ -19,6 +19,7 @@ Execution plans for active and completed work.
 | `org-dashboard-phase3` | 2026-03-21 | Start Work flow + ticket status transitions (Phase 3 of org dashboard) |
 | `relay-phase1-data-tables` | 2026-03-23 | Shared DataTable component, filter chips, sortable columns, keyboard nav, row grouping, saved presets |
 | `session-worktree-separation` | 2026-03-23 | Separate session and worktree concerns — unified POST /sessions, collision retry, v2→v3 migration |
+| `github-device-flow` | 2026-03-24 | Replace OAuth web flow with GitHub Device Flow for zero-config auth |
 
 ## Tech Debt
 

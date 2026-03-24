@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate, fetchAnalyticsSize, clearAnalytics, fetchGitHubStatus, fetchGitHubAuthUrl, disconnectGitHub } from '../../lib/api.js';
+  import { setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate, fetchAnalyticsSize, clearAnalytics, fetchGitHubStatus, initiateGitHubDevice, disconnectGitHub } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
 
@@ -20,33 +20,59 @@
   let analyticsSize = $state<number | null>(null);
   let clearing = $state(false);
 
-  let githubStatus = $state<{ connected: boolean; username: string | null }>({ connected: false, username: null });
+  let githubStatus = $state<{ connected: boolean; username: string | null; deviceFlowStatus?: string }>({ connected: false, username: null });
   let githubPollInterval: ReturnType<typeof setInterval> | null = null;
+  let deviceCode = $state<{ userCode: string; verificationUri: string; expiresIn: number } | null>(null);
+  let deviceFlowError = $state('');
+  let deviceFlowTimeout: ReturnType<typeof setTimeout> | null = null;
 
   $effect(() => {
     fetchGitHubStatus().then(s => { githubStatus = s; }).catch(() => {});
     return () => {
       if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
+      if (deviceFlowTimeout) { clearTimeout(deviceFlowTimeout); deviceFlowTimeout = null; }
     };
   });
 
-  async function connectGitHub() {
+  function clearDeviceFlow() {
+    deviceCode = null;
+    deviceFlowError = '';
     if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
-    const url = await fetchGitHubAuthUrl();
-    window.open(url, '_blank', 'width=600,height=700');
-    // Poll for connection status with cleanup
-    githubPollInterval = setInterval(async () => {
-      try {
-        const status = await fetchGitHubStatus();
-        if (status.connected) {
-          githubStatus = status;
-          if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
+    if (deviceFlowTimeout) { clearTimeout(deviceFlowTimeout); deviceFlowTimeout = null; }
+  }
+
+  async function connectGitHub() {
+    clearDeviceFlow();
+    try {
+      const result = await initiateGitHubDevice();
+      deviceCode = result;
+      window.open(result.verificationUri, '_blank');
+      // Poll for connection status
+      githubPollInterval = setInterval(async () => {
+        try {
+          const status = await fetchGitHubStatus();
+          if (status.connected) {
+            githubStatus = status;
+            clearDeviceFlow();
+          } else if (status.deviceFlowStatus === 'denied') {
+            clearDeviceFlow();
+            deviceFlowError = 'Authorization denied. Try again.';
+          } else if (status.deviceFlowStatus === 'expired') {
+            clearDeviceFlow();
+            deviceFlowError = 'Code expired. Try again.';
+          }
+        } catch { /* ignore network errors during polling */ }
+      }, 2000);
+      // Fallback timeout
+      deviceFlowTimeout = setTimeout(() => {
+        if (deviceCode) {
+          clearDeviceFlow();
+          deviceFlowError = 'Code expired. Try again.';
         }
-      } catch { /* ignore network errors during polling */ }
-    }, 2000);
-    setTimeout(() => {
-      if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
-    }, 120_000);
+      }, result.expiresIn * 1000);
+    } catch {
+      deviceFlowError = 'Failed to connect to GitHub. Try again.';
+    }
   }
 
   async function handleDisconnectGitHub() {
@@ -247,9 +273,23 @@
       <!-- GitHub Connection section -->
       <section class="settings-section">
         <h3 class="section-title">GitHub Connection</h3>
-        {#if githubStatus.connected}
+        {#if deviceCode}
+          <div class="settings-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="version-current">Enter code: <strong>{deviceCode.userCode}</strong></span>
+              <button class="retry-btn" onclick={() => navigator.clipboard.writeText(deviceCode?.userCode ?? '')}>Copy</button>
+            </div>
+            <span class="version-label">at <a href={deviceCode.verificationUri} target="_blank" rel="noopener noreferrer">{deviceCode.verificationUri}</a></span>
+            <span class="version-label">Waiting for authorization...</span>
+          </div>
+        {:else if deviceFlowError}
+          <div class="settings-row">
+            <span class="version-label" style="color: var(--status-error)">{deviceFlowError}</span>
+            <button class="retry-btn" onclick={connectGitHub}>Try Again</button>
+          </div>
+        {:else if githubStatus.connected}
           <div class="version-row">
-            <span class="version-current">Connected as <strong>{githubStatus.username}</strong></span>
+            <span class="version-current">Connected as <strong>{githubStatus.username ?? 'GitHub'}</strong></span>
             <button
               class="btn btn-ghost btn-sm"
               onclick={handleDisconnectGitHub}

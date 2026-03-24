@@ -415,13 +415,18 @@ export async function deletePreset(name: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete preset');
 }
 
-export async function fetchGitHubStatus(): Promise<{ connected: boolean; username: string | null }> {
-  return json<{ connected: boolean; username: string | null }>(await fetch('/auth/github/status', { credentials: 'include' }));
+export async function fetchGitHubStatus(): Promise<{ connected: boolean; username: string | null; deviceFlowStatus?: 'polling' | 'denied' | 'expired' }> {
+  return json<{ connected: boolean; username: string | null; deviceFlowStatus?: 'polling' | 'denied' | 'expired' }>(await fetch('/auth/github/status', { credentials: 'include' }));
 }
 
-export async function fetchGitHubAuthUrl(): Promise<string> {
-  const data = await json<{ url: string }>(await fetch('/auth/github', { credentials: 'include' }));
-  return data.url;
+export async function initiateGitHubDevice(): Promise<{
+  userCode: string;
+  verificationUri: string;
+  expiresIn: number;
+}> {
+  return json<{ userCode: string; verificationUri: string; expiresIn: number }>(
+    await fetch('/auth/github', { credentials: 'include' })
+  );
 }
 
 export async function disconnectGitHub(): Promise<void> {
