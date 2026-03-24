@@ -148,11 +148,13 @@ async function main(): Promise<void> {
   let lastGoodConfig: Config | null = null;
   function getConfig(): Config {
     try {
-      lastGoodConfig = loadConfig(CONFIG_PATH);
-      return lastGoodConfig;
+      const fresh = loadConfig(CONFIG_PATH);
+      lastGoodConfig = fresh;
+      return structuredClone(fresh);
     } catch (err) {
       console.warn('[config] Failed to load config, using last good config:', err);
-      return lastGoodConfig ?? ({ ...DEFAULTS } as Config);
+      const fallback = lastGoodConfig ?? ({ ...DEFAULTS } as Config);
+      return structuredClone(fallback);
     }
   }
 
@@ -344,9 +346,15 @@ async function main(): Promise<void> {
   const workspaceRouter = createWorkspaceRouter({
     configPath: CONFIG_PATH,
     onWorkspacesChanged: () => {
-      const workspaces = getConfig().workspaces || [];
-      watcher.rebuild(workspaces);
-      branchWatcher.rebuild(workspaces);
+      setImmediate(() => {
+        try {
+          const workspaces = getConfig().workspaces || [];
+          watcher.rebuild(workspaces);
+          branchWatcher.rebuild(workspaces);
+        } catch (err) {
+          console.error('Failed to rebuild workspace watchers:', err);
+        }
+      });
     },
   });
   app.use('/workspaces', requireAuth, workspaceRouter);

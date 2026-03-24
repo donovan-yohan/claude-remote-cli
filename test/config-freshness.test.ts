@@ -57,7 +57,7 @@ describe('config freshness', () => {
   it('loadConfig sees workspace settings changes', () => {
     // Add workspace settings to disk
     const config = loadConfig(configPath);
-    config.workspaceSettings = { '/existing/workspace': { defaultAgent: 'codex' as any } };
+    config.workspaceSettings = { '/existing/workspace': { defaultAgent: 'codex' } };
     saveConfig(configPath, config);
 
     // Fresh read should see settings
