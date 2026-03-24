@@ -942,7 +942,7 @@ async function main(): Promise<void> {
   app.post('/sessions', requireAuth, async (req, res) => {
     const {
       workspacePath, worktreePath, type = 'agent', agent, yolo, useTmux,
-      claudeArgs, cols, rows, needsBranchRename, branchRenamePrompt,
+      claudeArgs, cols, rows, branchName: requestBranchName, needsBranchRename, branchRenamePrompt,
       initialPrompt, continue: explicitContinue, ticketContext,
     } = req.body as {
       workspacePath?: string;
@@ -954,6 +954,7 @@ async function main(): Promise<void> {
       claudeArgs?: string[];
       cols?: number;
       rows?: number;
+      branchName?: string;
       needsBranchRename?: boolean;
       branchRenamePrompt?: string;
       initialPrompt?: string;
@@ -1072,7 +1073,7 @@ async function main(): Promise<void> {
       workspacePath,
       worktreePath: worktreePath ?? null,
       cwd,
-      branchName: '',  // populated by branch watcher
+      branchName: requestBranchName || '',  // caller may provide; branch watcher enriches later
       displayName,
       args,
       configPath: CONFIG_PATH,
@@ -1092,7 +1093,7 @@ async function main(): Promise<void> {
         worktreePath: cwd,
         displayName,
         lastActivity: new Date().toISOString(),
-        branchName: '',
+        branchName: requestBranchName || '',
       });
     }
 
