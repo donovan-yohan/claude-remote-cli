@@ -242,6 +242,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
 
     config.workspaces = rawPaths as string[];
     saveConfig(configPath, config);
+    deps.onWorkspacesChanged?.();
 
     const results: Workspace[] = await Promise.all(
       (rawPaths as string[]).map(async (p) => {

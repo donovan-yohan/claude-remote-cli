@@ -145,12 +145,14 @@ async function main(): Promise<void> {
 
   // Runtime config — always reads fresh from disk.
   // Use this for ALL config access in route handlers, pollers, and event callbacks.
+  let lastGoodConfig: Config | null = null;
   function getConfig(): Config {
     try {
-      return loadConfig(CONFIG_PATH);
+      lastGoodConfig = loadConfig(CONFIG_PATH);
+      return lastGoodConfig;
     } catch (err) {
-      console.warn('[config] Failed to load config, using defaults:', err);
-      return { ...DEFAULTS } as Config;
+      console.warn('[config] Failed to load config, using last good config:', err);
+      return lastGoodConfig ?? ({ ...DEFAULTS } as Config);
     }
   }
 
@@ -324,7 +326,7 @@ async function main(): Promise<void> {
   sessions.onSessionCreate(() => rebuildRefWatcher());
   sessions.onSessionEnd(() => rebuildRefWatcher());
 
-  // Configure session defaults for hooks injection
+  // Configure session defaults for hooks injection (startup-only — changing these requires restart)
   sessions.configure({ port: startupConfig.port, forceOutputParser: startupConfig.forceOutputParser ?? false });
 
   // Mount hooks router BEFORE auth middleware — hook callbacks come from localhost Claude Code
@@ -449,8 +451,8 @@ async function main(): Promise<void> {
   }
 
   // Start smee-client for webhook delivery (with polling fallback)
-  const smeeUrl = getConfig().github?.smeeUrl;
-  const githubToken = getConfig().github?.accessToken;
+  const smeeUrl = startupConfig.github?.smeeUrl;
+  const githubToken = startupConfig.github?.accessToken;
   let webhookPollingInterval: ReturnType<typeof setInterval> | null = null;
   let smeeErrorCount = 0;
 
