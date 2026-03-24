@@ -84,7 +84,7 @@ Implementation:
 
 **Poll response handling:**
 
-Each poll callback checks that its captured `device_code` matches the currently stored one before acting. If a newer flow has started, the stale callback is a no-op (the timer was already cleared by the new flow).
+Each poll callback checks that its captured generation counter matches the current one before acting. If a newer flow has started, the stale callback is a no-op (the timer was already cleared by the new flow).
 
 - `error: "authorization_pending"` — continue polling
 - `error: "slow_down"` — clear current timer, restart with interval increased by 5 seconds (per spec). Does NOT increment the generation counter — this is an internal timer restart for the same flow, not a new flow.
@@ -221,7 +221,7 @@ Bake the resulting Client ID into source as `DEFAULT_GITHUB_CLIENT_ID`. Client I
 ## Edge Cases
 
 - **Concurrent device flows:** Only one active at a time. Starting a new `GET /auth/github` cancels any in-progress poll timer and increments a generation counter. Stale poll callbacks check the generation before acting.
-- **In-flight stale requests:** If a poll request is already in-flight when the timer is cancelled, the response handler checks that its captured `device_code` matches the current one. Mismatches are silently discarded.
+- **In-flight stale requests:** If a poll request is already in-flight when the timer is cancelled, the response handler re-checks the generation counter after the await. Mismatched generations cause the callback to return as a no-op.
 - **Server restart during flow:** In-memory device code is lost. User simply re-initiates. No persistence needed for a 15-minute flow.
 - **Rate limiting:** GitHub's `slow_down` error increases the poll interval by 5s. The server clears the current timer and starts a new one with the adjusted interval.
 - **User denies authorization:** GitHub returns `access_denied`. Server clears the timer and sets `flowStatus = 'denied'`. Frontend detects this via `deviceFlowStatus` on the status endpoint and shows "Authorization denied" immediately.

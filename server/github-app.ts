@@ -36,6 +36,13 @@ export function _getDeviceFlowState(): DeviceFlowState {
   return deviceFlow;
 }
 
+function stopPollTimer(): void {
+  if (deviceFlow.timerId !== null) {
+    clearInterval(deviceFlow.timerId);
+    deviceFlow.timerId = null;
+  }
+}
+
 /**
  * Creates and returns an Express Router that handles all /auth/github routes.
  *
@@ -55,10 +62,7 @@ export function createGitHubAppRouter(deps: GitHubAppDeps): Router {
   // GET / — Initiate GitHub Device Flow
   router.get('/', async (_req: Request, res: Response) => {
     // Cancel any existing poll timer and increment generation
-    if (deviceFlow.timerId !== null) {
-      clearInterval(deviceFlow.timerId);
-      deviceFlow.timerId = null;
-    }
+    stopPollTimer();
     deviceFlow.generation += 1;
     deviceFlow.flowStatus = null; // Reset stale status from prior flow
     const generation = deviceFlow.generation;
@@ -101,7 +105,7 @@ export function createGitHubAppRouter(deps: GitHubAppDeps): Router {
 
     // Store device code and start polling
     deviceFlow.deviceCode = deviceCodeData.device_code;
-    deviceFlow.interval = deviceCodeData.interval ?? 5;
+    deviceFlow.interval = Math.max(deviceCodeData.interval ?? 5, 1);
     deviceFlow.flowStatus = 'polling';
 
     deviceFlow.timerId = setInterval(
@@ -191,10 +195,7 @@ async function poll(
     // Re-check generation before restarting timer
     if (deviceFlow.generation !== generation) return;
     // Clear timer and restart with increased interval (do NOT increment generation)
-    if (deviceFlow.timerId !== null) {
-      clearInterval(deviceFlow.timerId);
-      deviceFlow.timerId = null;
-    }
+    stopPollTimer();
     deviceFlow.interval += 5;
     deviceFlow.timerId = setInterval(
       () => void poll(generation, configPath, clientId, fetchFn, onConnected),
@@ -204,19 +205,13 @@ async function poll(
   }
 
   if (data['error'] === 'expired_token') {
-    if (deviceFlow.timerId !== null) {
-      clearInterval(deviceFlow.timerId);
-      deviceFlow.timerId = null;
-    }
+    stopPollTimer();
     deviceFlow.flowStatus = 'expired';
     return;
   }
 
   if (data['error'] === 'access_denied') {
-    if (deviceFlow.timerId !== null) {
-      clearInterval(deviceFlow.timerId);
-      deviceFlow.timerId = null;
-    }
+    stopPollTimer();
     deviceFlow.flowStatus = 'denied';
     return;
   }
@@ -252,10 +247,7 @@ async function poll(
     saveConfig(configPath, config);
 
     // Clear timer and mark flow complete
-    if (deviceFlow.timerId !== null) {
-      clearInterval(deviceFlow.timerId);
-      deviceFlow.timerId = null;
-    }
+    stopPollTimer();
     deviceFlow.flowStatus = null;
 
     onConnected?.();
