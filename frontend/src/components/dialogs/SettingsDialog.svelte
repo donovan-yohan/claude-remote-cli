@@ -18,8 +18,9 @@
     fetchGitHubStatus,
     fetchWebhookStatus,
   } from '../../lib/api.js';
-  import { refreshAll } from '../../lib/state/sessions.svelte.js';
+  import { refreshAll, getNotificationSessionIds } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
+  import { requestPermission, getPermissionState, syncPushSubscription } from '../../lib/notifications.js';
 
   let shellRef = $state<ReturnType<typeof DialogShell> | undefined>(undefined);
   let contentEl = $state<HTMLDivElement | undefined>(undefined);
@@ -42,6 +43,9 @@
   // GitHub state (for integration props)
   let githubConnected = $state(false);
   let webhookCount = $state(0);
+
+  // Notification permission state
+  let notificationPermission = $state<NotificationPermission | 'unsupported'>(getPermissionState());
 
   // Devtools state
   let devtoolsEnabled = $state(false);
@@ -109,6 +113,7 @@
     versionChecked = false;
     updating = false;
     devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
+    notificationPermission = getPermissionState();
     refreshConfig();
     checkVersionAsync();
     fetchAnalyticsSizeAsync();
@@ -175,8 +180,30 @@
   async function handleNotificationsChange() {
     const prev = config.defaultNotifications;
     error = '';
+
+    // When toggling ON, request browser permission if not already granted
+    if (config.defaultNotifications && notificationPermission !== 'granted') {
+      const permission = await requestPermission();
+      notificationPermission = permission;
+
+      if (permission !== 'granted') {
+        config.defaultNotifications = prev;
+        error = permission === 'unsupported'
+          ? 'Notifications are not supported in this browser.'
+          : permission === 'default'
+          ? 'Notification permission is required. Please allow when prompted.'
+          : 'Notifications blocked by browser. Check site settings to enable.';
+        return;
+      }
+    }
+
     try {
       await setDefaultNotifications(config.defaultNotifications);
+
+      // Register push subscription whenever notifications are enabled and permission is granted
+      if (notificationPermission === 'granted') {
+        await syncPushSubscription(getNotificationSessionIds());
+      }
     } catch {
       config.defaultNotifications = prev;
       error = 'Failed to update notifications default.';
@@ -288,8 +315,13 @@
         <input type="checkbox" class="dialog-checkbox" bind:checked={config.launchInTmux} onchange={handleTmuxChange} />
       </SettingRow>
 
-      <SettingRow name="Notifications" description="Push notifications when sessions need attention">
-        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultNotifications} onchange={handleNotificationsChange} />
+      <SettingRow name="Notifications" description={
+        notificationPermission === 'denied' ? 'Blocked by browser — check site settings to enable'
+        : notificationPermission === 'unsupported' ? 'Not supported in this browser'
+        : 'Notify when sessions need attention'
+      }>
+        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultNotifications} onchange={handleNotificationsChange}
+          disabled={(notificationPermission === 'denied' || notificationPermission === 'unsupported') && !config.defaultNotifications} />
       </SettingRow>
     </section>
 

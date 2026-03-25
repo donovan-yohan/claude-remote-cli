@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,9 +8,9 @@ import { promisify } from 'node:util';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
-import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
+import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys, writeMeta } from './config.js';
 import { trackEvent } from './analytics.js';
-import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
+import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, isStalePr, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
 import type { Config, PrInfo, PullRequest, PullRequestsResponse, Workspace } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
@@ -586,7 +587,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
 
     try {
       const pr = await getPrForBranch(workspacePath, branch);
-      if (pr) {
+      if (pr && !isStalePr(pr)) {
         let unresolvedCommentCount = 0;
         if (pr.state === 'OPEN') {
           try {
@@ -675,14 +676,15 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       branchName = existingBranch;
       gitArgs = ['worktree', 'add', path.join(resolved, '.worktrees', mountainName), existingBranch];
     } else {
-      // Create a new branch using the next mountain name — with collision retry
+      // Create a new branch: <mountain>-<hex-suffix> — with retry if directory is taken
       const baseIndex = settings.nextMountainIndex ?? 0;
       let found = false;
 
       for (let attempt = 0; attempt < MOUNTAIN_NAMES.length; attempt++) {
         const candidateIndex = (baseIndex + attempt) % MOUNTAIN_NAMES.length;
         const candidateName = MOUNTAIN_NAMES[candidateIndex] ?? 'everest';
-        const candidateBranch = (settings.branchPrefix ?? '') + candidateName;
+        const suffix = crypto.randomBytes(2).toString('hex');
+        const candidateBranch = (settings.branchPrefix ?? '') + candidateName + '-' + suffix;
         const candidatePath = path.join(resolved, '.worktrees', candidateName);
 
         // Check if branch or directory already exists
@@ -738,6 +740,14 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     if (nextMountainIndex !== undefined) {
       setWorkspaceSettings(configPath, config, resolved, { nextMountainIndex });
     }
+
+    // Write metadata so DELETE /worktrees can find the suffixed branch name
+    writeMeta(configPath, {
+      worktreePath,
+      displayName: mountainName,
+      lastActivity: new Date().toISOString(),
+      branchName,
+    });
 
     res.json({ branchName, mountainName, worktreePath });
   });

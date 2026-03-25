@@ -162,13 +162,63 @@ The frontend tsconfig enables `exactOptionalPropertyTypes: true`. Under this set
 
 ---
 
-### L-014: Always gate drag-and-drop library activation behind an explicit mode toggle — never leave it always-on
+### L-022: Features gated by browser permissions must surface the permission state in the UI — a settings toggle is not a permission request
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: everest
+
+When a feature depends on a browser permission (Notifications, Geolocation, Camera, etc.), the settings UI must address two distinct layers: (1) the app-level opt-in (which entities should use the feature) and (2) the browser-level permission (whether the browser allows it at all). A checkbox that only controls layer 1 gives users a false sense of enablement. Always: call the browser permission API when the user enables the feature, display the current permission state (granted/denied/default), and provide guidance if permission was denied. The permission request must be triggered by a user gesture (especially on iOS PWA where this is strictly enforced).
+
+---
+
+### L-023: Silent catch blocks on browser API calls hide broken features — always log or surface permission/subscription failures
+- status: active
+- category: debugging
+- source: /harness:bug 2026-03-25
+- branch: everest
+
+When calling browser APIs that can fail due to missing permissions (e.g., `pushManager.subscribe()`, `Notification.requestPermission()`), empty `catch {}` blocks make broken features indistinguishable from working ones. The push notification pipeline had three silent catches that hid the fact that no subscription was ever created. At minimum: log the error in development, and in production surface the failure state in the UI (e.g., "Push notifications unavailable — permission denied"). Never swallow errors from permission-dependent APIs without at least recording the failure in application state.
+
+---
+
+### L-024: DnD `dragDisabled` must be device-aware — always-on for mouse, gated for touch
 - status: active
 - category: patterns
-- source: /harness:bug 2026-03-24
-- branch: mobile-longpress-drag
+- source: /harness:bug 2026-03-25
+- branch: shasta
 
-When using `svelte-dnd-action` (or any drag-and-drop library) on a scrollable container, pass `dragDisabled: true` by default and only enable it when the user explicitly enters reorder mode. Libraries like `svelte-dnd-action` attach touch event listeners to draggable children and `preventDefault()` on `touchmove`, which blocks native scroll. Having an application-level reorder mode toggle (e.g., `ui.reorderMode`) without wiring it to the library's `dragDisabled` option creates a disconnect — your mode gate is purely cosmetic while the library still steals events. Always check library docs for disable/enable APIs and wire them to your mode state.
+When using `svelte-dnd-action` on a scrollable container, `dragDisabled` must use different strategies per input method. Mouse drag does not conflict with scroll (users scroll via wheel), so desktop should always have `dragDisabled: false`. Touch drag conflicts with scroll (both are finger gestures), so mobile needs `dragDisabled: true` by default with a long-press gesture to enable drag temporarily. A single global "reorder mode" toggle that gates all input types equally will either break desktop drag (no mouse entry point) or break mobile scroll (always-on touch interception). Use `matchMedia('(pointer: fine)')` or similar to branch behavior.
+
+---
+
+### L-025: Never couple a library's technical enable/disable flag to unrelated UI visibility changes
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: shasta
+
+When a library provides a boolean to enable/disable its event handling (e.g., `svelte-dnd-action`'s `dragDisabled`), do not bind that same boolean to UI layout changes (hiding content, collapsing sections). The library flag exists for event management, not visual design. Coupling them means any change to the event strategy (e.g., making drag always-on for desktop) forces an unintended layout change. Keep library enable/disable flags as narrow technical controls. If a distinct UI mode is needed, use a separate state variable with its own entry/exit logic.
+
+---
+
+### L-018: Auto-generated resource names that interact with external systems must include a uniqueness token
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: kilimanjaro
+
+When generating names for resources (branches, worktrees, containers) that interact with external systems retaining permanent history (GitHub PRs, Docker registries, CI pipelines), never reuse bare names from a rotating pool. External systems associate names permanently — `gh pr view <branch>` returns the most recent PR for that branch name regardless of state. Append a short unique suffix (e.g., 4-char random hex) so each lifecycle gets a distinct identity. The cost is cosmetic (slightly longer names); the benefit is eliminating an entire class of stale-association bugs. This applies even when the name is temporary (e.g., renamed after first interaction) because the initial state matters for UX.
+
+---
+
+### L-019: When a bug analysis recommends both a short-term and long-term fix, the long-term fix needs a tracking mechanism or it will be forgotten
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-25
+- branch: kilimanjaro
+
+The 2026-03-19 stale-PR bug analysis recommended (1) filter merged/closed PRs (short-term) and (2) unique branch names (long-term). The short-term fix was partially applied but the long-term fix was never implemented, causing recurrence 6 days later. When a bug has both a symptom fix and a root-cause fix, the root-cause fix must be tracked as a separate work item (plan, issue, or TODO) — otherwise it gets lost in the "we fixed it" satisfaction of the symptom fix.
 
 ---
 
