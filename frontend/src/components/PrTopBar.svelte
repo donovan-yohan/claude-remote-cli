@@ -133,6 +133,7 @@
   // ── Inline rename ──────────────────────────────────
   let renaming = $state(false);
   let renameValue = $state('');
+  let renameSubmitting = $state(false);
   let renameInputEl = $state<HTMLInputElement | null>(null);
   let renameWarning = $state<{ oldName: string; newName: string } | null>(null);
 
@@ -144,6 +145,7 @@
   }
 
   function cancelRename() {
+    if (renameSubmitting) return;
     renaming = false;
     renameValue = '';
   }
@@ -155,6 +157,7 @@
       return;
     }
 
+    renameSubmitting = true;
     try {
       const res = await fetch('/workspaces/rename-branch?path=' + encodeURIComponent(workspacePath), {
         method: 'POST',
@@ -172,9 +175,17 @@
         if (pr) {
           renameWarning = { oldName, newName: data.newName };
         }
+      } else {
+        // Show error and exit rename mode
+        renaming = false;
+        renameValue = '';
       }
     } catch {
-      // Silent fail — branch name stays unchanged
+      // Exit rename mode on error
+      renaming = false;
+      renameValue = '';
+    } finally {
+      renameSubmitting = false;
     }
   }
 
@@ -206,6 +217,7 @@
     {:else}
       <BranchSwitcher
         {workspacePath}
+        currentWorktreePath={workspacePath}
         currentBranch={currentBranch}
         disabled={agentRunning}
         onSwitch={handleBranchSwitch}

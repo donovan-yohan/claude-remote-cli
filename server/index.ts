@@ -595,7 +595,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    const sessionList = sessions.list().map((s) => ({ id: s.id, worktreePath: s.worktreePath ?? s.cwd }));
+    const sessionList = sessions.list().map((s) => ({ id: s.id, worktreePath: s.worktreePath ?? s.workspacePath }));
     res.json(await listBranchesEnriched(repoPath, { refresh, sessions: sessionList }));
   });
 

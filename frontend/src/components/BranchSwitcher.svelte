@@ -86,7 +86,8 @@
   }
 
   function isCheckedOutElsewhere(branch: BranchInfo): boolean {
-    return !!branch.checkedOutIn && branch.checkedOutIn.worktreePath !== currentWorktreePath;
+    if (!currentWorktreePath || !branch.checkedOutIn) return false;
+    return branch.checkedOutIn.worktreePath !== currentWorktreePath;
   }
 
   function handleJump(branch: BranchInfo, e: MouseEvent) {
@@ -151,7 +152,7 @@
         <div class="branch-error">{switchError}</div>
       {/if}
 
-      {#if showCreateOption}
+      {#if showCreateOption && onCreateBranch}
         <div class="branch-create" role="option" aria-selected={false} tabindex="-1" onmousedown={() => onCreateBranch?.(filterText.trim())}>
           <span class="branch-create-icon">+</span>
           <span>Create "<strong>{filterText.trim()}</strong>"</span>
@@ -181,7 +182,7 @@
                 <span class="branch-check branch-check--empty"></span>
               {/if}
               <span class="branch-option-name">{branch.name}</span>
-              {#if checkedOutElsewhere && branch.checkedOutIn}
+              {#if checkedOutElsewhere && branch.checkedOutIn && (onJumpToSession || onStartSession)}
                 <span class="branch-worktree-name">({branch.checkedOutIn.worktreeName})</span>
                 <button
                   class="branch-jump-btn"

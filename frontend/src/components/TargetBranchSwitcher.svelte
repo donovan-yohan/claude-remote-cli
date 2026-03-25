@@ -32,7 +32,7 @@
     enabled: open,
   }));
 
-  // Filter to remote-only branches, strip origin/ prefix
+  // Filter to remote-only branches (origin/ prefix already stripped by backend, defensive strip here)
   let filteredBranches = $derived.by(() => {
     const branches = (branchQuery.data ?? [])
       .filter(b => b.isRemote)

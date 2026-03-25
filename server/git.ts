@@ -529,7 +529,7 @@ async function listBranchesEnriched(
     remoteBranches = stdout
       .split('\n')
       .map((b) => b.trim())
-      .filter((b) => b.length > 0 && !b.includes('HEAD'))
+      .filter((b) => b.length > 0 && !b.includes('HEAD') && b.startsWith('origin/'))
       .map((b) => b.replace(/^origin\//, ''));
   } catch {
     // continue with empty list
@@ -606,8 +606,9 @@ async function renameBranch(
     const { stdout: currentStdout } = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoPath });
     const oldName = currentStdout.trim();
     if (!oldName) return { success: false, error: 'Could not determine current branch' };
+    if (oldName === 'HEAD') return { success: false, error: 'Cannot rename: not on a branch (detached HEAD)' };
 
-    await run('git', ['branch', '-m', newName], { cwd: repoPath, timeout: 5000 });
+    await run('git', ['branch', '-m', '--', newName], { cwd: repoPath, timeout: 5000 });
     return { success: true, oldName, newName };
   } catch (err: unknown) {
     const errObj = err as { stderr?: string; message?: string };
@@ -622,7 +623,7 @@ async function createBranch(
 ): Promise<{ success: true; branch: string } | { success: false; error: string }> {
   const run = options.exec || execFileAsync as ExecFileAsyncLike;
   try {
-    await run('git', ['checkout', '-b', branchName], { cwd: repoPath, timeout: 5000 });
+    await run('git', ['checkout', '-b', '--', branchName], { cwd: repoPath, timeout: 5000 });
     return { success: true, branch: branchName };
   } catch (err: unknown) {
     const errObj = err as { stderr?: string; message?: string };
@@ -652,18 +653,23 @@ async function pushBranch(
   branch: string,
   deleteOldBranch?: string,
   options: { exec?: ExecFileAsyncLike } = {},
-): Promise<{ success: true } | { success: false; error: string }> {
+): Promise<{ success: true; deleteError?: string } | { success: false; error: string }> {
   const run = options.exec || execFileAsync as ExecFileAsyncLike;
   try {
     await run('git', ['push', 'origin', branch], { cwd: repoPath, timeout: 30000 });
-    if (deleteOldBranch) {
-      await run('git', ['push', 'origin', '--delete', deleteOldBranch], { cwd: repoPath, timeout: 10000 });
-    }
-    return { success: true };
   } catch (err: unknown) {
     const errObj = err as { stderr?: string; message?: string };
     return { success: false, error: (errObj.stderr ?? errObj.message ?? 'Unknown error').trim() };
   }
+  if (deleteOldBranch) {
+    try {
+      await run('git', ['push', 'origin', '--delete', deleteOldBranch], { cwd: repoPath, timeout: 10000 });
+    } catch (err: unknown) {
+      const errObj = err as { stderr?: string; message?: string };
+      return { success: true, deleteError: (errObj.stderr ?? errObj.message ?? 'Failed to delete old branch').trim() };
+    }
+  }
+  return { success: true };
 }
 
 export {
