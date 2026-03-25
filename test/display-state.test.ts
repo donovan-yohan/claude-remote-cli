@@ -48,12 +48,6 @@ describe('transitionDisplayState', () => {
       'seen-idle + backend-state-changed(idle) → seen-idle (CRITICAL INVARIANT)',
     ],
     [
-      'seen-idle',
-      { type: 'user-submitted' },
-      'running',
-      'seen-idle + user-submitted → running',
-    ],
-    [
       'permission',
       { type: 'user-viewed' },
       'seen-idle',
@@ -64,12 +58,6 @@ describe('transitionDisplayState', () => {
       { type: 'backend-state-changed', state: 'running' },
       'running',
       'permission + backend-state-changed(running) → running',
-    ],
-    [
-      'inactive',
-      { type: 'session-started' },
-      'initializing',
-      'inactive + session-started → initializing',
     ],
     [
       'running',

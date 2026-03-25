@@ -482,7 +482,7 @@ async function main(): Promise<void> {
 
   // Invalidate branch linker cache on session lifecycle changes
   sessions.onSessionCreate(() => { invalidateBranchLinkerCache(); });
-  sessions.onSessionEnd(() => { invalidateBranchLinkerCache(); });
+  sessions.onSessionEnd((sessionId) => { invalidateBranchLinkerCache(); lastPushState.delete(sessionId); });
 
   // Push notifications on meaningful state transitions (skip when hooks already sent attention notification)
   const lastPushState = new Map<string, string>();

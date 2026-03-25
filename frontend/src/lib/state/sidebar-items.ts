@@ -49,12 +49,15 @@ function deriveBackendState(sessions: SessionSummary[]): BackendDisplayState {
  */
 function initialDisplayState(sessions: SessionSummary[]): DisplayState {
   if (sessions.length === 0) return 'inactive';
-  const backendState = deriveBackendState(sessions);
-  if (backendState === 'permission') return 'permission';
-  if (backendState === 'running') return 'running';
-  if (backendState === 'initializing') return 'initializing';
-  // idle — safe default is 'seen-idle' for initial load so we don't spam notifications
-  return 'seen-idle';
+  switch (deriveBackendState(sessions)) {
+    case 'permission':   return 'permission';
+    case 'running':      return 'running';
+    case 'initializing': return 'initializing';
+    case 'idle':
+    default:
+      // Safe default on initial load — don't spam notifications for already-idle sessions
+      return 'seen-idle';
+  }
 }
 
 /**
@@ -63,13 +66,6 @@ function initialDisplayState(sessions: SessionSummary[]): DisplayState {
 function mostRecentActivity(sessions: SessionSummary[]): string {
   if (sessions.length === 0) return '';
   return sessions.reduce((best, s) => (s.lastActivity > best ? s.lastActivity : best), sessions[0]!.lastActivity);
-}
-
-export interface BuildSidebarItemsParams {
-  sessions: SessionSummary[];
-  worktrees: WorktreeInfo[];
-  workspaces: Workspace[];
-  existingItems: SidebarItem[];
 }
 
 /**
@@ -125,7 +121,7 @@ export function buildSidebarItems(
       const kind: 'repo' | 'worktree' = groupPath === workspace.path ? 'repo' : 'worktree';
 
       const newBackendState = deriveBackendState(groupSessions);
-      const reconciled = reconcileDisplayState(existingById.get(groupPath), newBackendState, groupSessions);
+      const displayState = reconcileDisplayState(existingById.get(groupPath), newBackendState, groupSessions);
 
       result.push({
         id: groupPath,
@@ -135,7 +131,7 @@ export function buildSidebarItems(
         displayName: firstSession.displayName,
         branchName: firstSession.branchName,
         lastActivity: mostRecentActivity(groupSessions),
-        displayState: reconciled.displayState,
+        displayState,
         lastKnownBackendState: newBackendState,
         sessions: groupSessions,
       });
@@ -147,8 +143,6 @@ export function buildSidebarItems(
       if (worktree.repoPath !== workspace.path) continue;
       if (coveredPaths.has(worktree.path)) continue;
 
-      const reconciled = reconcileDisplayState(existingById.get(worktree.path), null, []);
-
       result.push({
         id: worktree.path,
         kind: 'worktree',
@@ -157,7 +151,7 @@ export function buildSidebarItems(
         displayName: worktree.displayName,
         branchName: worktree.branchName,
         lastActivity: worktree.lastActivity,
-        displayState: reconciled.displayState,
+        displayState: reconcileDisplayState(existingById.get(worktree.path), null, []),
         lastKnownBackendState: null,
         sessions: [],
       });
@@ -166,10 +160,7 @@ export function buildSidebarItems(
 
     // If no sessions at workspace root and the workspace root was not covered by
     // any group path, add the repo root as inactive
-    const workspaceRootCovered = coveredPaths.has(workspace.path);
-    if (!workspaceRootCovered) {
-      const reconciled = reconcileDisplayState(existingById.get(workspace.path), null, []);
-
+    if (!coveredPaths.has(workspace.path)) {
       result.push({
         id: workspace.path,
         kind: 'repo',
@@ -178,7 +169,7 @@ export function buildSidebarItems(
         displayName: workspace.name,
         branchName: workspace.defaultBranch ?? '',
         lastActivity: '',
-        displayState: reconciled.displayState,
+        displayState: reconcileDisplayState(existingById.get(workspace.path), null, []),
         lastKnownBackendState: null,
         sessions: [],
       });
@@ -192,7 +183,6 @@ export function buildSidebarItems(
     const firstSession = groupSessions[0];
     if (!firstSession) continue;
     const newBackendState = deriveBackendState(groupSessions);
-    const reconciled = reconcileDisplayState(existingById.get(groupPath), newBackendState, groupSessions);
 
     result.push({
       id: groupPath,
@@ -202,7 +192,7 @@ export function buildSidebarItems(
       displayName: firstSession.displayName,
       branchName: firstSession.branchName,
       lastActivity: mostRecentActivity(groupSessions),
-      displayState: reconciled.displayState,
+      displayState: reconcileDisplayState(existingById.get(groupPath), newBackendState, groupSessions),
       lastKnownBackendState: newBackendState,
       sessions: groupSessions,
     });
@@ -223,26 +213,18 @@ function reconcileDisplayState(
   existing: SidebarItem | undefined,
   newBackendState: BackendDisplayState | null,
   sessions: SessionSummary[],
-): { displayState: DisplayState } {
+): DisplayState {
   // No sessions → always inactive regardless of history
-  if (sessions.length === 0) {
-    return { displayState: 'inactive' };
-  }
+  if (sessions.length === 0) return 'inactive';
 
-  if (!existing) {
-    return { displayState: initialDisplayState(sessions) };
-  }
+  if (!existing) return initialDisplayState(sessions);
 
-  // Sessions exist and we have an existing item
-  if (existing.lastKnownBackendState === newBackendState) {
-    // Backend state unchanged — preserve the existing display state
-    return { displayState: existing.displayState };
-  }
+  // Backend state unchanged — preserve the existing display state
+  if (existing.lastKnownBackendState === newBackendState) return existing.displayState;
 
   // Backend state changed — apply transition
-  const next = newBackendState
-    ? transitionDisplayState(existing.displayState, { type: 'backend-state-changed', state: newBackendState })
-    : existing.displayState;
-
-  return { displayState: next };
+  if (newBackendState) {
+    return transitionDisplayState(existing.displayState, { type: 'backend-state-changed', state: newBackendState });
+  }
+  return existing.displayState;
 }

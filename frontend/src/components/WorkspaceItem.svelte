@@ -4,6 +4,7 @@
   import { derivePrDotStatus } from '../lib/pr-status.js';
   import StatusDot from './StatusDot.svelte';
   import { getSessionState, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
+  import { isAttentionState } from '../lib/state/display-state.js';
   import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
   import { createSession } from '../lib/api.js';
@@ -55,7 +56,7 @@
 
   function itemHasAttention(groupPath: string): boolean {
     const item = sessionState.sidebarItems.find(i => i.id === groupPath);
-    return item?.displayState === 'unseen-idle' || item?.displayState === 'permission';
+    return item !== undefined && isAttentionState(item.displayState);
   }
 
   function sessionDisplayName(session: SessionSummary): string {
@@ -87,7 +88,7 @@
   let hasAttention = $derived(
     sessionState.sidebarItems
       .filter(i => i.repoPath === workspace.path)
-      .some(i => i.displayState === 'unseen-idle' || i.displayState === 'permission')
+      .some(i => isAttentionState(i.displayState))
   );
   let creatingWorktree = $derived(isItemLoading(`new-worktree:${workspace.path}`));
   let inReorderMode = $derived(ui.reorderMode);

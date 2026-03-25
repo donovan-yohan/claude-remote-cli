@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll, handleBackendStateChanged, handleUserViewed, handleUserSubmitted, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, handleBackendStateChanged, handleUserViewed, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
@@ -293,6 +293,7 @@
         renameSession(msg.sessionId, msg.branchName ?? '', msg.displayName ?? '');
       } else if (msg.type === 'session-ended') {
         invalidatePrQueries();
+        refreshAll();
       } else if (msg.type === 'ref-changed' && msg.cwdPath) {
         const key = msg.cwdPath;
         const existing = refChangedTimers.get(key);

@@ -4,8 +4,6 @@ export type BackendDisplayState = 'initializing' | 'running' | 'idle' | 'permiss
 export type DisplayEvent =
   | { type: 'backend-state-changed'; state: BackendDisplayState }
   | { type: 'user-viewed' }
-  | { type: 'user-submitted' }
-  | { type: 'session-started' }
   | { type: 'session-ended' };
 
 export function transitionDisplayState(current: DisplayState, event: DisplayEvent): DisplayState {
@@ -22,18 +20,9 @@ export function transitionDisplayState(current: DisplayState, event: DisplayEven
         case 'initializing':
           return 'initializing';
       }
-      return current;
     }
     case 'user-viewed': {
       if (current === 'unseen-idle' || current === 'permission') return 'seen-idle';
-      return current;
-    }
-    case 'user-submitted': {
-      if (current === 'seen-idle') return 'running';
-      return current;
-    }
-    case 'session-started': {
-      if (current === 'inactive') return 'initializing';
       return current;
     }
     case 'session-ended': {
@@ -42,6 +31,10 @@ export function transitionDisplayState(current: DisplayState, event: DisplayEven
   }
 }
 
+export function isAttentionState(state: DisplayState): boolean {
+  return state === 'unseen-idle' || state === 'permission';
+}
+
 export function shouldNotify(from: DisplayState, to: DisplayState): boolean {
-  return from === 'running' && (to === 'unseen-idle' || to === 'permission');
+  return from === 'running' && isAttentionState(to);
 }

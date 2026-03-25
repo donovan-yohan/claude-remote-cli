@@ -111,10 +111,12 @@ export function handleBackendStateChanged(sessionId: string, backendState: Backe
   const session = sessions.find(s => s.id === sessionId);
   if (session) {
     session.idle = backendState === 'idle';
-    if (backendState === 'running') session.agentState = 'processing';
-    else if (backendState === 'idle') session.agentState = 'idle';
-    else if (backendState === 'permission') session.agentState = 'permission-prompt';
-    else if (backendState === 'initializing') session.agentState = 'initializing';
+    switch (backendState) {
+      case 'running':      session.agentState = 'processing'; break;
+      case 'idle':         session.agentState = 'idle'; break;
+      case 'permission':   session.agentState = 'permission-prompt'; break;
+      case 'initializing': session.agentState = 'initializing'; break;
+    }
   }
 
   // Find the SidebarItem containing this session
@@ -145,13 +147,6 @@ export function handleUserViewed(sessionId: string): void {
   const item = sidebarItems.find(i => i.sessions.some(s => s.id === sessionId));
   if (item) {
     item.displayState = transitionDisplayState(item.displayState, { type: 'user-viewed' });
-  }
-}
-
-export function handleUserSubmitted(sessionId: string): void {
-  const item = sidebarItems.find(i => i.sessions.some(s => s.id === sessionId));
-  if (item) {
-    item.displayState = transitionDisplayState(item.displayState, { type: 'user-submitted' });
   }
 }
 

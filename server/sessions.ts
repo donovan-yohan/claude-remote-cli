@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgentType, AgentState, Session, SessionSummary, SessionMeta, SessionType } from './types.js';
+import type { AgentType, AgentState, BackendDisplayState, Session, SessionSummary, SessionMeta, SessionType } from './types.js';
+export type { BackendDisplayState };
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './types.js';
 import { createPtySession } from './pty-handler.js';
 import type { CreatePtyParams } from './pty-handler.js';
@@ -104,8 +105,6 @@ function fireSessionEnd(sessionId: string, cwd: string, branchName?: string): vo
 export function fireStateChange(sessionId: string, state: AgentState): void {
   for (const cb of [...stateChangeCallbacks]) cb(sessionId, state);
 }
-
-export type BackendDisplayState = 'initializing' | 'running' | 'idle' | 'permission';
 
 export function computeBackendState(session: { agentState: AgentState; idle: boolean }): BackendDisplayState {
   // permission-prompt takes highest priority
