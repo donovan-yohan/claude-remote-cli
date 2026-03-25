@@ -1,6 +1,9 @@
-import type { SessionSummary, WorktreeInfo, Workspace, AgentState } from '../types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, SidebarItem } from '../types.js';
 import { fireNotification, shouldFireNotification } from '../notifications.js';
 import * as api from '../api.js';
+import type { BackendDisplayState } from './display-state.js';
+import { transitionDisplayState, shouldNotify } from './display-state.js';
+import { buildSidebarItems } from './sidebar-items.js';
 
 const NOTIFICATIONS_STORAGE_KEY = 'claude-remote-notifications';
 const ACTIVE_SESSION_KEY = 'claude-remote-active-session';
@@ -21,10 +24,9 @@ let sessions = $state<SessionSummary[]>([]);
 let worktrees = $state<WorktreeInfo[]>([]);
 let workspaces = $state<Workspace[]>([]);
 let activeSessionId = $state<string | null>(loadActiveSessionId());
-let attentionSessions = $state<Record<string, boolean>>({});
-let dismissedSessions = $state<Record<string, number>>({});
 let loadingItems = $state<Record<string, boolean>>({});
 let notificationSessions = $state<Record<string, boolean>>({});
+let sidebarItems = $state<SidebarItem[]>([]);
 
 function loadNotificationPrefs(): void {
   try {
@@ -51,9 +53,9 @@ export function getSessionState() {
       activeSessionId = id;
       saveActiveSessionId(id);
     },
-    get attentionSessions() { return attentionSessions; },
     get loadingItems() { return loadingItems; },
     get notificationSessions() { return notificationSessions; },
+    get sidebarItems() { return sidebarItems; },
   };
 }
 
@@ -75,14 +77,8 @@ export async function refreshAll(): Promise<void> {
       saveActiveSessionId(null);
     }
 
-    // Prune stale attention flags, dismissed cooldowns, and notification prefs
+    // Prune stale notification prefs
     let notifPruned = false;
-    for (const id of Object.keys(attentionSessions)) {
-      if (!activeIds.has(id)) delete attentionSessions[id];
-    }
-    for (const id of Object.keys(dismissedSessions)) {
-      if (!activeIds.has(id)) delete dismissedSessions[id];
-    }
     for (const id of Object.keys(notificationSessions)) {
       if (!activeIds.has(id)) {
         delete notificationSessions[id];
@@ -91,14 +87,15 @@ export async function refreshAll(): Promise<void> {
     }
     if (notifPruned) saveNotificationPrefs();
 
+    // Rebuild sidebar items, reconciling displayState against existing items
+    sidebarItems = buildSidebarItems(sessions, worktrees, workspaces, sidebarItems);
+
   } catch { /* silent */ }
 }
 
 export function getSessionsForWorkspace(workspacePath: string): SessionSummary[] {
   return sessions.filter(s => s.workspacePath === workspacePath);
 }
-
-const ATTENTION_COOLDOWN_MS = 30_000;
 
 export function renameSession(sessionId: string, branchName: string, displayName: string): void {
   const session = sessions.find(s => s.id === sessionId);
@@ -108,59 +105,54 @@ export function renameSession(sessionId: string, branchName: string, displayName
   }
 }
 
-export function setAgentState(sessionId: string, state: AgentState): void {
+export function handleBackendStateChanged(sessionId: string, backendState: BackendDisplayState): void {
+  // Keep session fields in sync so that refreshAll()/buildSidebarItems() reconciliation
+  // sees the latest state if a full refresh arrives while real-time events are in flight.
   const session = sessions.find(s => s.id === sessionId);
-  if (session) session.agentState = state;
+  if (session) {
+    session.idle = backendState === 'idle';
+    if (backendState === 'running') session.agentState = 'processing';
+    else if (backendState === 'idle') session.agentState = 'idle';
+    else if (backendState === 'permission') session.agentState = 'permission-prompt';
+    else if (backendState === 'initializing') session.agentState = 'initializing';
+  }
 
-  // Only trigger attention for waiting-for-input (real attention needed)
-  if (state === 'waiting-for-input' && sessionId !== activeSessionId && session?.type !== 'terminal') {
-    const dismissedAt = dismissedSessions[sessionId];
-    if (dismissedAt && Date.now() - dismissedAt < ATTENTION_COOLDOWN_MS) {
-      return;
-    }
-    delete dismissedSessions[sessionId];
-    attentionSessions[sessionId] = true;
+  // Find the SidebarItem containing this session
+  const item = sidebarItems.find(i => i.sessions.some(s => s.id === sessionId));
+  if (!item) return;
 
-    if (session && notificationSessions[sessionId] && shouldFireNotification()) {
-      fireNotification(session);
+  // Update lastKnownBackendState
+  const oldDisplayState = item.displayState;
+  item.lastKnownBackendState = backendState;
+
+  // Apply transition
+  const newDisplayState = transitionDisplayState(item.displayState, { type: 'backend-state-changed', state: backendState });
+  if (newDisplayState !== oldDisplayState) {
+    item.displayState = newDisplayState;
+
+    // Fire notification if appropriate
+    if (shouldNotify(oldDisplayState, newDisplayState)) {
+      const notifySession = item.sessions[0];
+      if (notifySession && notificationSessions[notifySession.id] && shouldFireNotification()) {
+        fireNotification(notifySession);
+      }
     }
-  } else if (state === 'processing' || state === 'initializing') {
-    // Agent is working — clear attention
-    delete attentionSessions[sessionId];
   }
 }
 
-export function setAttention(sessionId: string, idle: boolean): void {
-  // Update the idle flag on the session object so getSessionStatus() reflects
-  // the real-time state without waiting for a full refreshAll() round-trip.
-  const session = sessions.find(s => s.id === sessionId);
-  if (session) session.idle = idle;
-
-  // If session has agentState from the output parser, skip the idle-based attention
-  // logic — setAgentState handles attention more accurately
-  if (session?.agentState && session.agentState !== 'idle') return;
-
-  if (idle && sessionId !== activeSessionId && session?.type !== 'terminal') {
-    const dismissedAt = dismissedSessions[sessionId];
-    if (dismissedAt && Date.now() - dismissedAt < ATTENTION_COOLDOWN_MS) {
-      // Within cooldown window — don't re-trigger attention
-      return;
-    }
-    delete dismissedSessions[sessionId];
-    attentionSessions[sessionId] = true;
-
-    // Fire browser notification if enabled and tab not focused
-    if (session && notificationSessions[sessionId] && shouldFireNotification()) {
-      fireNotification(session);
-    }
-  } else {
-    delete attentionSessions[sessionId];
+export function handleUserViewed(sessionId: string): void {
+  // Find the SidebarItem containing this session
+  const item = sidebarItems.find(i => i.sessions.some(s => s.id === sessionId));
+  if (item) {
+    item.displayState = transitionDisplayState(item.displayState, { type: 'user-viewed' });
   }
 }
 
-export function clearAttention(sessionId: string): void {
-  delete attentionSessions[sessionId];
-  dismissedSessions[sessionId] = Date.now();
+export function handleUserSubmitted(sessionId: string): void {
+  const item = sidebarItems.find(i => i.sessions.some(s => s.id === sessionId));
+  if (item) {
+    item.displayState = transitionDisplayState(item.displayState, { type: 'user-submitted' });
+  }
 }
 
 export function setNotificationEnabled(sessionId: string, enabled: boolean): void {
@@ -179,13 +171,6 @@ export function getNotificationSessionIds(): string[] {
   return Object.entries(notificationSessions)
     .filter(([, enabled]) => enabled)
     .map(([id]) => id);
-}
-
-export function getSessionStatus(session: SessionSummary): 'attention' | 'idle' | 'running' | 'permission-prompt' {
-  if (attentionSessions[session.id]) return 'attention';
-  if (session.agentState === 'permission-prompt') return 'permission-prompt';
-  if (session.idle) return 'idle';
-  return 'running';
 }
 
 export function setLoading(key: string): void {

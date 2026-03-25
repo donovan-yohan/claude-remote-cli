@@ -60,6 +60,7 @@ export interface PtySession extends BaseSession {
   hooksActive: boolean;
   cleanedUp: boolean;
   _lastHookTime?: number | undefined;
+  _lastEmittedBackendState?: string | undefined;
   lastAttentionNotifiedAt?: number | undefined;
   currentActivity?: { tool: string; detail?: string } | undefined;
   yolo: boolean;

@@ -37,3 +37,4 @@
 | [session-flags-lost-on-restart-bug-analysis.md](2026-03-22-session-flags-lost-on-restart-bug-analysis.md) | Session flags (yolo, claudeArgs) lost on auto-update restart — args consumed at spawn, never stored or serialized | 2026-03-22 |
 | [pr-query-infinite-loop-bug-analysis.md](2026-03-23-pr-query-infinite-loop-bug-analysis.md) | Infinite PR/CI fetch loop — `$effect` tracks TanStack Query reactive proxy, refetch mutates tracked state | 2026-03-23 |
 | [new-worktree-button-regression-bug-analysis.md](2026-03-23-new-worktree-button-regression-bug-analysis.md) | New worktree button opens session dialog — mountain name collision + dual counter desync + silent error fallback | 2026-03-23 |
+| [idle-to-attention-spurious-transition-bug-analysis.md](2026-03-24-idle-to-attention-spurious-transition-bug-analysis.md) | Idle (blue) dot spuriously transitions to attention (orange) after 30s cooldown — no state machine, no "seen" tracking | 2026-03-24 |

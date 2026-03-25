@@ -3,7 +3,7 @@
   import { deriveColor } from '../lib/colors.js';
   import { derivePrDotStatus } from '../lib/pr-status.js';
   import StatusDot from './StatusDot.svelte';
-  import { getSessionState, getSessionStatus, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
   import { createSession } from '../lib/api.js';
@@ -47,9 +47,15 @@
   let collapsed = $derived(isWorkspaceCollapsed(workspace.path));
   let totalItems = $derived(allSessions.length + inactiveWorktrees.length);
 
-  function statusDotClass(session: SessionSummary): string {
-    const st = getSessionStatus(session);
-    return 'status-dot status-dot--' + st;
+  function statusDotClass(groupPath: string): string {
+    const item = sessionState.sidebarItems.find(i => i.id === groupPath);
+    const state = item?.displayState ?? 'inactive';
+    return 'status-dot status-dot--' + state;
+  }
+
+  function itemHasAttention(groupPath: string): boolean {
+    const item = sessionState.sidebarItems.find(i => i.id === groupPath);
+    return item?.displayState === 'unseen-idle' || item?.displayState === 'permission';
   }
 
   function sessionDisplayName(session: SessionSummary): string {
@@ -78,20 +84,11 @@
     return branch || cwdName || sessions[0]?.repoName || 'unknown';
   }
 
-  // Aggregate status across all sessions in a group (priority: attention > permission-prompt > running > idle)
-  function groupStatusDotClass(sessions: SessionSummary[]): string {
-    const STATUS_PRIORITY: Record<string, number> = { attention: 4, 'permission-prompt': 3, running: 2, idle: 1 };
-    let best = 'idle';
-    let bestPriority = 0;
-    for (const s of sessions) {
-      const st = getSessionStatus(s);
-      const p = STATUS_PRIORITY[st] ?? 0;
-      if (p > bestPriority) { best = st; bestPriority = p; }
-    }
-    return 'status-dot status-dot--' + best;
-  }
-
-  let hasAttention = $derived(allSessions.some(s => getSessionStatus(s) === 'attention'));
+  let hasAttention = $derived(
+    sessionState.sidebarItems
+      .filter(i => i.repoPath === workspace.path)
+      .some(i => i.displayState === 'unseen-idle' || i.displayState === 'permission')
+  );
   let creatingWorktree = $derived(isItemLoading(`new-worktree:${workspace.path}`));
   let inReorderMode = $derived(ui.reorderMode);
 
@@ -258,7 +255,6 @@
         {@const sessionCount = groupSessions.length}
         {@const isRepoRoot = groupPath === workspace.path}
         {@const hasActiveSessions = sessionCount > 0}
-        {@const groupHasAttention = groupSessions.some(s => getSessionStatus(s) === 'attention')}
         {#if hasActiveSessions && representative}
           {@const matchedPr = findPrForBranch(groupSessions[0]?.branchName ?? '')}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -266,7 +262,7 @@
           <li
             class="session-row"
             class:selected={groupSessions.some(s => sessionState.activeSessionId === s.id)}
-            class:attention={groupHasAttention}
+            class:attention={itemHasAttention(groupPath)}
             data-track="sidebar.session.click"
             onclick={() => onSelectSession(representative.id)}
             ontouchstart={(e) => handleRowTouchStart(representative.id, e.currentTarget as HTMLElement)}
@@ -274,8 +270,8 @@
             ontouchmove={handleRowTouchMove}
           >
             <div class="session-row-primary">
-              <span class={groupStatusDotClass(groupSessions)}></span>
-              <span class="session-name" class:bold={groupHasAttention}>{groupDisplayName(groupPath, groupSessions)}</span>
+              <span class={statusDotClass(groupPath)}></span>
+              <span class="session-name" class:bold={itemHasAttention(groupPath)}>{groupDisplayName(groupPath, groupSessions)}</span>
               {#if sessionCount > 1}
                 <span class="session-count-badge">{sessionCount}</span>
               {/if}
@@ -301,9 +297,9 @@
           </li>
         {:else if isRepoRoot}
           <!-- Persistent repo root entry — always shown even with no active sessions -->
+          {@const repoLoadingKey = `repo-session:${workspace.path}`}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          {@const repoLoadingKey = `repo-session:${workspace.path}`}
           <li
             class="session-row inactive"
             class:loading={isItemLoading(repoLoadingKey)}
@@ -655,23 +651,27 @@
     flex-shrink: 0;
   }
 
-  .status-dot--running { background: var(--status-success); }
-  .status-dot--idle    { background: var(--status-info); }
+  /* Display-state dot classes */
+  .status-dot--running      { background: var(--status-success); }
+  .status-dot--initializing { background: #6b7280; }
+  .status-dot--unseen-idle  {
+    background: var(--status-warning);
+    box-shadow: 0 0 5px 1px rgba(251, 191, 36, 0.45);
+    animation: attention-glow 2s ease-in-out infinite;
+  }
+  .status-dot--seen-idle    { background: var(--status-info); }
+  .status-dot--permission   {
+    background: #eab308;
+    box-shadow: 0 0 5px 1px rgba(234, 179, 8, 0.45);
+    animation: attention-glow 1.5s ease-in-out infinite;
+  }
+  .status-dot--inactive     { background: #555; }
+
   .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: #555; flex-shrink: 0; }
   .session-row.inactive .session-name { color: var(--text-muted); }
   .session-row.inactive:hover .session-name { color: var(--text); }
   .session-row.loading { pointer-events: none; opacity: 0.7; }
   .session-row.loading .session-name { color: var(--accent); }
-  .status-dot--attention {
-    background: var(--status-warning);
-    box-shadow: 0 0 5px 1px rgba(251, 191, 36, 0.45);
-    animation: attention-glow 2s ease-in-out infinite;
-  }
-  .status-dot--permission-prompt {
-    background: #eab308;
-    box-shadow: 0 0 5px 1px rgba(234, 179, 8, 0.45);
-    animation: attention-glow 1.5s ease-in-out infinite;
-  }
 
   @keyframes attention-glow {
     0%, 100% { box-shadow: 0 0 3px 1px rgba(251, 191, 36, 0.3); }

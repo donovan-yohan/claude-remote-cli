@@ -65,12 +65,6 @@ function configure(opts: { port?: number; forceOutputParser?: boolean }): void {
 
 let terminalCounter = 0;
 let agentCounter = 0;
-type IdleChangeCallback = (sessionId: string, idle: boolean) => void;
-const idleChangeCallbacks: IdleChangeCallback[] = [];
-
-function onIdleChange(cb: IdleChangeCallback): void {
-  idleChangeCallbacks.push(cb);
-}
 
 type StateChangeCallback = (sessionId: string, state: AgentState) => void;
 const stateChangeCallbacks: StateChangeCallback[] = [];
@@ -111,6 +105,36 @@ export function fireStateChange(sessionId: string, state: AgentState): void {
   for (const cb of [...stateChangeCallbacks]) cb(sessionId, state);
 }
 
+export type BackendDisplayState = 'initializing' | 'running' | 'idle' | 'permission';
+
+export function computeBackendState(session: { agentState: AgentState; idle: boolean }): BackendDisplayState {
+  // permission-prompt takes highest priority
+  if (session.agentState === 'permission-prompt') return 'permission';
+  // processing or error = running
+  if (session.agentState === 'processing' || session.agentState === 'error') return 'running';
+  // initializing
+  if (session.agentState === 'initializing') return 'initializing';
+  // idle or waiting-for-input = idle
+  return 'idle';
+}
+
+type BackendStateChangeCallback = (sessionId: string, state: BackendDisplayState) => void;
+const backendStateChangeCallbacks: BackendStateChangeCallback[] = [];
+
+export function onBackendStateChange(cb: BackendStateChangeCallback): void {
+  backendStateChangeCallbacks.push(cb);
+}
+
+export function fireBackendStateIfChanged(session: Session): void {
+  const newState = computeBackendState(session);
+  if (session._lastEmittedBackendState === newState) return;
+  session._lastEmittedBackendState = newState;
+  for (const cb of [...backendStateChangeCallbacks]) {
+    try { cb(session.id, newState); }
+    catch (err) { console.error('[sessions] backendStateChange callback error:', err); }
+  }
+}
+
 function create({ id: providedId, needsBranchRename, branchRenamePrompt, initialPrompt, agent = 'claude', cols = 80, rows = 24, args = [], port, forceOutputParser, ...rest }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
@@ -125,7 +149,7 @@ function create({ id: providedId, needsBranchRename, branchRenamePrompt, initial
     forceOutputParser: forceOutputParser ?? defaultForceOutputParser,
   };
 
-  const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks, stateChangeCallbacks, sessionEndCallbacks);
+  const { session: ptySession, result } = createPtySession(ptyParams, sessions, stateChangeCallbacks, sessionEndCallbacks, fireBackendStateIfChanged);
   trackEvent({
     category: 'session',
     action: 'created',
@@ -533,4 +557,4 @@ async function populateMetaCache(): Promise<void> {
   );
 }
 
-export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionCreate, onSessionEnd, nextTerminalName, nextAgentName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onStateChange, onSessionCreate, onSessionEnd, nextTerminalName, nextAgentName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
