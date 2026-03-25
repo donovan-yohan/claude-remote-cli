@@ -4,14 +4,13 @@
   import { derivePrDotStatus } from '../lib/pr-status.js';
   import StatusDot from './StatusDot.svelte';
   import { getSessionState, getSessionStatus, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
-  import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
+  import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
-  import { createSession } from '../lib/api.js';
+  import { createSession, renameSession } from '../lib/api.js';
   import ContextMenu from './ContextMenu.svelte';
   import type { MenuItem } from './ContextMenu.svelte';
 
   const sessionState = getSessionState();
-  const ui = getUi();
 
   let {
     workspace,
@@ -111,14 +110,7 @@
     }, 500);
   }
 
-  function handleRowTouchEnd() {
-    if (longPressTimer) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
-  }
-
-  function handleRowTouchMove() {
+  function cancelLongPress() {
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
@@ -145,11 +137,7 @@
   async function handleRename(session: SessionSummary) {
     const newName = prompt('Rename session:', sessionDisplayName(session));
     if (newName && newName.trim()) {
-      await fetch(`/sessions/${session.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: newName.trim() }),
-      });
+      await renameSession(session.id, newName.trim());
       await refreshAll();
     }
   }
@@ -264,8 +252,8 @@
             data-track="sidebar.session.click"
             onclick={() => onSelectSession(representative.id)}
             ontouchstart={(e) => handleRowTouchStart(representative.id, e.currentTarget as HTMLElement)}
-            ontouchend={handleRowTouchEnd}
-            ontouchmove={handleRowTouchMove}
+            ontouchend={cancelLongPress}
+            ontouchmove={cancelLongPress}
           >
             <div class="session-row-primary">
               <span class={groupStatusDotClass(groupSessions)}></span>
@@ -354,8 +342,8 @@
             }
           }}
           ontouchstart={(e) => handleRowTouchStart(wt.path, e.currentTarget as HTMLElement)}
-          ontouchend={handleRowTouchEnd}
-          ontouchmove={handleRowTouchMove}
+          ontouchend={cancelLongPress}
+          ontouchmove={cancelLongPress}
         >
           <div class="session-row-primary">
             <span class="dot dot-inactive"></span>

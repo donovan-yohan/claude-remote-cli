@@ -104,8 +104,7 @@
     localDndItems = e.detail.items;
     const newOrder = localDndItems.map(item => item.id);
     reorderWorkspaces(newOrder);
-    // Reset mobile drag after completing a reorder
-    if (mobileDragEnabled) mobileDragEnabled = false;
+    mobileDragEnabled = false;
   }
 
   // ── Org PRs for sidebar enrichment ──
@@ -215,7 +214,7 @@
             onSelectWorkspace={handleSelectWorkspace}
             {onSelectSession}
             onNewWorktree={onNewWorktree}
-            onOpenSettings={(ws) => onOpenSettings(ws)}
+            {onOpenSettings}
             onDeleteSession={(id) => onDeleteSession?.(id)}
             onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
             {orgPrs}
