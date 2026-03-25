@@ -172,6 +172,7 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+    position: relative;
   }
 
   .dialog-shell--compact .dialog-shell__content {

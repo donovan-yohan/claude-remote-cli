@@ -130,21 +130,21 @@
 
 <style>
   .toc-backdrop {
-    position: fixed;
+    position: absolute;
     inset: 0;
     background: rgba(0, 0, 0, 0.3);
-    z-index: 9;
+    z-index: 100;
   }
 
   .toc-drawer {
-    position: fixed;
+    position: absolute;
     left: 0;
     top: 0;
-    height: 100%;
+    bottom: 0;
     width: 220px;
-    background: var(--surface);
+    background: var(--bg);
     border-right: 1px solid var(--border);
-    z-index: 10;
+    z-index: 101;
     display: flex;
     flex-direction: column;
     transform: translateX(-100%);
