@@ -28,8 +28,9 @@
   let fitAddon: FitAddon;
   let imageUploadInProgress = false;
 
-  // ── Terminal zoom state (desktop only) ──────────────────────────────────────
   const ui = getUi();
+
+  // ── Terminal zoom overlay + shortcuts (desktop only) ────────────────────────
   let zoomOverlayVisible = $state(false);
   let zoomOverlayText = $state('100%');
   let zoomOverlayTimer: ReturnType<typeof setTimeout> | null = null;
@@ -122,10 +123,13 @@
     {
       const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
       t.attachCustomKeyEventHandler((e) => {
-        // ── Zoom shortcuts (desktop only) ──
+        // ── Zoom shortcuts (desktop only: Cmd+=/- on Mac, Ctrl+=/- elsewhere) ──
         if (!isMobileDevice && e.type === 'keydown') {
-          const mod = isMac ? e.metaKey : e.ctrlKey;
-          if (mod && !e.shiftKey && !e.altKey && !(isMac ? e.ctrlKey : e.metaKey)) {
+          // Allow shift because Cmd+Shift+= produces '+' on US keyboards
+          const onlyMod = isMac
+            ? e.metaKey && !e.ctrlKey && !e.altKey
+            : e.ctrlKey && !e.metaKey && !e.altKey;
+          if (onlyMod) {
             if (e.key === '=' || e.key === '+') {
               e.preventDefault();
               applyZoom((t.options.fontSize ?? DEFAULT_TERMINAL_FONT_SIZE) + 1);

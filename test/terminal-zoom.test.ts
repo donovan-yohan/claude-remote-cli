@@ -10,6 +10,7 @@ const MIN = 8;
 const MAX = 28;
 
 function clampFontSize(size: number): number {
+  if (!Number.isFinite(size)) return DEFAULT;
   return Math.max(MIN, Math.min(MAX, Math.round(size)));
 }
 
@@ -57,6 +58,12 @@ describe('terminal zoom', () => {
     it('handles boundary values exactly', () => {
       assert.equal(clampFontSize(MIN), MIN);
       assert.equal(clampFontSize(MAX), MAX);
+    });
+
+    it('returns default for NaN and non-finite values', () => {
+      assert.equal(clampFontSize(NaN), DEFAULT);
+      assert.equal(clampFontSize(Infinity), DEFAULT);
+      assert.equal(clampFontSize(-Infinity), DEFAULT);
     });
   });
 

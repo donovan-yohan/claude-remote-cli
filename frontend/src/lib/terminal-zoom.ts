@@ -5,6 +5,7 @@ import {
 } from './state/ui.svelte.js';
 
 export function clampFontSize(size: number): number {
+  if (!Number.isFinite(size)) return DEFAULT_TERMINAL_FONT_SIZE;
   return Math.max(MIN_TERMINAL_FONT_SIZE, Math.min(MAX_TERMINAL_FONT_SIZE, Math.round(size)));
 }
 
