@@ -39,6 +39,12 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `TicketCard.svelte` | Individual ticket row: status dot, provider-native metadata (labels/sprint/cycle/priority), branch link, Start Work button |
 | `StartWorkModal.svelte` | Start Work modal: ticket info, workspace selector (for Jira/Linear), branch name input, creates worktree session with ticket context |
 | `StatusMappingModal.svelte` | Map workflow transition states (in-progress, code-review, ready-for-qa) to Jira transition IDs / Linear status IDs |
+| `dialogs/DialogShell.svelte` | Shared dialog wrapper (fullscreen/compact variants, terminal aesthetic, shared button/form CSS) |
+| `dialogs/SettingRow.svelte` | Consistent setting row (name, description, action slot) |
+| `dialogs/SettingsToc.svelte` | Settings TOC drawer with IntersectionObserver scroll tracking |
+| `dialogs/integrations/GitHubIntegration.svelte` | GitHub OAuth App connection panel within SettingsDialog |
+| `dialogs/integrations/WebhookIntegration.svelte` | GitHub webhook CRUD and smee proxy panel within SettingsDialog |
+| `dialogs/integrations/JiraIntegration.svelte` | Jira connection and project config panel within SettingsDialog |
 | `dialogs/` | Session customization, settings, workspace, and worktree deletion dialogs |
 
 ## State Management

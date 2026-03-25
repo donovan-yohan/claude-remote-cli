@@ -1,100 +1,123 @@
 <script lang="ts">
-  import { setDefaultAgent, setDefaultContinue, setDefaultYolo, setLaunchInTmux, setDefaultNotifications, checkVersion, triggerUpdate, fetchAnalyticsSize, clearAnalytics, fetchGitHubStatus, initiateGitHubDevice, disconnectGitHub } from '../../lib/api.js';
+  import DialogShell from './DialogShell.svelte';
+  import SettingRow from './SettingRow.svelte';
+  import GitHubIntegration from './integrations/GitHubIntegration.svelte';
+  import WebhookIntegration from './integrations/WebhookIntegration.svelte';
+  import JiraIntegration from './integrations/JiraIntegration.svelte';
+  import {
+    setDefaultAgent,
+    setDefaultContinue,
+    setDefaultYolo,
+    setLaunchInTmux,
+    setDefaultNotifications,
+    checkVersion,
+    triggerUpdate,
+    fetchAnalyticsSize,
+    clearAnalytics,
+    fetchGitHubStatus,
+  } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
 
-  let dialogEl: HTMLDialogElement;
+  let shellRef = $state<ReturnType<typeof DialogShell> | undefined>(undefined);
+  let contentEl = $state<HTMLDivElement | undefined>(undefined);
 
-  let devtoolsEnabled = $state(false);
   const config = getConfigState();
   let error = $state('');
 
+  // Version state
   let currentVersion = $state('');
   let latestVersion = $state<string | null>(null);
   let updateAvailable = $state(false);
   let versionChecked = $state(false);
-  let versionChecking = $state(false);
   let updating = $state(false);
   let updateStatus = $state('');
 
+  // Analytics state
   let analyticsSize = $state<number | null>(null);
   let clearing = $state(false);
 
-  let githubStatus = $state<{ connected: boolean; username: string | null; deviceFlowStatus?: string }>({ connected: false, username: null });
-  let githubPollInterval: ReturnType<typeof setInterval> | null = null;
-  let deviceCode = $state<{ userCode: string; verificationUri: string; expiresIn: number } | null>(null);
-  let deviceFlowError = $state('');
-  let deviceFlowTimeout: ReturnType<typeof setTimeout> | null = null;
+  // GitHub state (for integration props)
+  let githubConnected = $state(false);
+  let webhookCount = $state(0);
 
-  $effect(() => {
-    fetchGitHubStatus().then(s => { githubStatus = s; }).catch(() => {});
-    return () => {
-      if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
-      if (deviceFlowTimeout) { clearTimeout(deviceFlowTimeout); deviceFlowTimeout = null; }
+  // Devtools state
+  let devtoolsEnabled = $state(false);
+
+  // Search state
+  let searchQuery = $state('');
+
+  // TOC drawer state
+  let tocOpen = $state(false);
+
+  function matchesSearch(sectionId: string): boolean {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    if (sectionId.includes(q)) return true;
+    const sectionData: Record<string, string[]> = {
+      general: ['default coding agent', 'continue existing session', 'yolo mode', 'launch in tmux', 'notifications', 'push notifications'],
+      integrations: ['github', 'webhooks', 'jira', 'real-time', 'ci', 'pr', 'tickets'],
+      advanced: ['developer tools', 'analytics', 'debug panel', 'usage data'],
+      about: ['version', 'update'],
     };
-  });
-
-  function clearDeviceFlow() {
-    deviceCode = null;
-    deviceFlowError = '';
-    if (githubPollInterval) { clearInterval(githubPollInterval); githubPollInterval = null; }
-    if (deviceFlowTimeout) { clearTimeout(deviceFlowTimeout); deviceFlowTimeout = null; }
+    return sectionData[sectionId]?.some(term => term.includes(q)) ?? false;
   }
 
-  async function connectGitHub() {
-    clearDeviceFlow();
+  async function checkVersionAsync() {
+    updateStatus = '';
     try {
-      const result = await initiateGitHubDevice();
-      deviceCode = result;
-      window.open(result.verificationUri, '_blank');
-      // Poll for connection status
-      githubPollInterval = setInterval(async () => {
-        try {
-          const status = await fetchGitHubStatus();
-          if (status.connected) {
-            githubStatus = status;
-            clearDeviceFlow();
-          } else if (status.deviceFlowStatus === 'denied') {
-            clearDeviceFlow();
-            deviceFlowError = 'Authorization denied. Try again.';
-          } else if (status.deviceFlowStatus === 'expired') {
-            clearDeviceFlow();
-            deviceFlowError = 'Code expired. Try again.';
-          }
-        } catch { /* ignore network errors during polling */ }
-      }, 2000);
-      // Fallback timeout
-      deviceFlowTimeout = setTimeout(() => {
-        if (deviceCode) {
-          clearDeviceFlow();
-          deviceFlowError = 'Code expired. Try again.';
-        }
-      }, result.expiresIn * 1000);
+      const data = await checkVersion();
+      currentVersion = data.current;
+      latestVersion = data.latest;
+      updateAvailable = data.updateAvailable;
+      versionChecked = true;
     } catch {
-      deviceFlowError = 'Failed to connect to GitHub. Try again.';
+      updateStatus = 'Failed to check for updates.';
     }
   }
 
-  async function handleDisconnectGitHub() {
-    await disconnectGitHub();
-    githubStatus = { connected: false, username: null };
+  async function fetchAnalyticsSizeAsync() {
+    try {
+      const d = await fetchAnalyticsSize();
+      analyticsSize = d.bytes;
+    } catch {
+      // ignore
+    }
   }
 
-  export async function open() {
+  async function fetchGitHubStatusAsync() {
+    try {
+      const s = await fetchGitHubStatus();
+      githubConnected = s.connected;
+    } catch {
+      // ignore
+    }
+  }
+
+  export function open(scrollToId?: string) {
     error = '';
     updateStatus = '';
     versionChecked = false;
     updating = false;
     devtoolsEnabled = localStorage.getItem('devtools-enabled') === 'true';
-    await refreshConfig();
-    dialogEl.showModal();
-    handleCheckVersion();
-    fetchAnalyticsSize().then(d => { analyticsSize = d.bytes; }).catch(() => {});
+    refreshConfig();
+    checkVersionAsync();
+    fetchAnalyticsSizeAsync();
+    fetchGitHubStatusAsync();
+    shellRef?.open();
+    if (scrollToId) {
+      requestAnimationFrame(() => {
+        contentEl?.querySelector(`#${scrollToId}`)?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
   }
 
   export function close() {
-    dialogEl.close();
+    shellRef?.close();
+    refreshAll();
   }
+
+  // -- Handler functions (API calls with optimistic updates) --
 
   async function handleAgentChange() {
     const prev = config.defaultAgent;
@@ -151,19 +174,21 @@
     }
   }
 
-  async function handleCheckVersion() {
-    versionChecking = true;
-    updateStatus = '';
+  function handleDevtoolsChange() {
+    localStorage.setItem('devtools-enabled', devtoolsEnabled ? 'true' : 'false');
+    window.dispatchEvent(new Event('devtools-changed'));
+  }
+
+  async function handleClearAnalytics() {
+    if (!confirm('Clear all analytics data? This cannot be undone.')) return;
+    clearing = true;
     try {
-      const data = await checkVersion();
-      currentVersion = data.current;
-      latestVersion = data.latest;
-      updateAvailable = data.updateAvailable;
-      versionChecked = true;
+      await clearAnalytics();
+      analyticsSize = 0;
     } catch {
-      updateStatus = 'Failed to check for updates.';
+      error = 'Failed to clear analytics.';
     } finally {
-      versionChecking = false;
+      clearing = false;
     }
   }
 
@@ -185,471 +210,296 @@
     }
   }
 
-  function onDevtoolsChange() {
-    localStorage.setItem('devtools-enabled', devtoolsEnabled ? 'true' : 'false');
-    window.dispatchEvent(new Event('devtools-changed'));
+  function handleGitHubDisconnect() {
+    githubConnected = false;
   }
 
-  async function handleClearAnalytics() {
-    if (!confirm('Clear all analytics data? This cannot be undone.')) return;
-    clearing = true;
-    try {
-      await clearAnalytics();
-      analyticsSize = 0;
-    } catch {
-      error = 'Failed to clear analytics.';
-    } finally {
-      clearing = false;
-    }
+  function scrollToSection(sectionId: string) {
+    tocOpen = false;
+    contentEl?.querySelector(`#${sectionId}`)?.scrollIntoView({ behavior: 'smooth' });
   }
-
-  async function handleClose() {
-    dialogEl.close();
-    await refreshAll();
-  }
-
-  function onDialogClick(e: MouseEvent) {
-    if (e.target === dialogEl) {
-      handleClose();
-    }
-  }
-
-  // Root directory management removed — workspaces are managed from the sidebar
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<dialog
-  bind:this={dialogEl}
-  onclick={onDialogClick}
-  class="dialog"
->
-  <div class="dialog-content">
-    <div class="dialog-header">
-      <h2 class="dialog-title">Relay Settings</h2>
-      <button class="close-btn" aria-label="Close settings" onclick={handleClose}>&#10005;</button>
-    </div>
+{#snippet headerExtra()}
+  <div class="header-extra-content">
+    <button class="hamburger-btn" onclick={() => tocOpen = !tocOpen} aria-label="Navigation">&#9776;</button>
+    <input
+      class="search-input"
+      type="text"
+      placeholder="Search..."
+      bind:value={searchQuery}
+      aria-label="Search settings"
+    />
+  </div>
+{/snippet}
 
-    <div class="dialog-body">
-      {#if error}
-        <p class="error-msg">{error}</p>
-      {/if}
+<DialogShell bind:this={shellRef} title="SETTINGS" variant="fullscreen" header-extra={headerExtra}>
+  <div class="settings-content" bind:this={contentEl}>
+    {#if error}
+      <p class="error-msg">{error}</p>
+    {/if}
 
-      <!-- Default coding agent section -->
-      <section class="settings-section">
-        <h3 class="section-title">Default Coding Agent</h3>
-        <p class="section-desc">CLI used when creating new sessions.</p>
-        <select
-          class="agent-select"
-          bind:value={config.defaultAgent}
-          onchange={handleAgentChange}
-        >
+    <!-- TOC drawer overlay -->
+    {#if tocOpen}
+      <div class="toc-backdrop" onclick={() => tocOpen = false} role="presentation"></div>
+      <nav class="toc-drawer" aria-label="Settings navigation">
+        <button class="toc-item" onclick={() => scrollToSection('section-general')}>GENERAL</button>
+        <button class="toc-item" onclick={() => scrollToSection('section-integrations')}>INTEGRATIONS</button>
+        <button class="toc-item toc-sub" onclick={() => scrollToSection('section-integrations')}>GitHub</button>
+        <button class="toc-item toc-sub" onclick={() => scrollToSection('section-integrations')}>Webhooks</button>
+        <button class="toc-item toc-sub" onclick={() => scrollToSection('section-integrations')}>Jira</button>
+        <button class="toc-item" onclick={() => scrollToSection('section-advanced')}>ADVANCED</button>
+        <button class="toc-item" onclick={() => scrollToSection('section-about')}>ABOUT</button>
+      </nav>
+    {/if}
+
+    <!-- GENERAL section -->
+    <section id="section-general" class="settings-section" class:dimmed={!matchesSearch('general')}>
+      <h3 class="section-heading">GENERAL</h3>
+
+      <SettingRow name="Default Coding Agent" description="Which AI agent to use for new sessions">
+        <select bind:value={config.defaultAgent} onchange={handleAgentChange}>
           <option value="claude">Claude</option>
           <option value="codex">Codex</option>
         </select>
-      </section>
+      </SettingRow>
 
-      <!-- Session defaults section -->
-      <section class="settings-section">
-        <h3 class="section-title">Global Defaults</h3>
-        <p class="section-desc">Default options for all workspaces. Override per-workspace in workspace settings.</p>
-        <div class="devtools-row">
-          <input id="default-continue" type="checkbox" class="dialog-checkbox" bind:checked={config.defaultContinue} onchange={handleContinueChange} />
-          <label for="default-continue" class="devtools-label">Continue existing session</label>
-        </div>
-        <div class="devtools-row">
-          <input id="default-yolo" type="checkbox" class="dialog-checkbox" bind:checked={config.defaultYolo} onchange={handleYoloChange} />
-          <label for="default-yolo" class="devtools-label">YOLO mode (skip permission checks)</label>
-        </div>
-        <div class="devtools-row">
-          <input id="default-tmux" type="checkbox" class="dialog-checkbox" bind:checked={config.launchInTmux} onchange={handleTmuxChange} />
-          <label for="default-tmux" class="devtools-label">Launch in tmux</label>
-        </div>
-        <div class="devtools-row">
-          <input id="default-notifications" type="checkbox" class="dialog-checkbox" bind:checked={config.defaultNotifications} onchange={handleNotificationsChange} />
-          <label for="default-notifications" class="devtools-label">Enable notifications for new sessions</label>
-        </div>
-      </section>
+      <SettingRow name="Continue existing session" description="Resume the last session when opening a repo">
+        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultContinue} onchange={handleContinueChange} />
+      </SettingRow>
 
-      <!-- GitHub Connection section -->
-      <section class="settings-section">
-        <h3 class="section-title">GitHub Connection</h3>
-        {#if deviceCode}
-          <div class="settings-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="version-current">Enter code: <strong>{deviceCode.userCode}</strong></span>
-              <button class="retry-btn" onclick={() => navigator.clipboard.writeText(deviceCode?.userCode ?? '')}>Copy</button>
-            </div>
-            <span class="version-label">at <a href={deviceCode.verificationUri} target="_blank" rel="noopener noreferrer">{deviceCode.verificationUri}</a></span>
-            <span class="version-label">Waiting for authorization...</span>
-          </div>
-        {:else if deviceFlowError}
-          <div class="settings-row">
-            <span class="version-label" style="color: var(--status-error)">{deviceFlowError}</span>
-            <button class="retry-btn" onclick={connectGitHub}>Try Again</button>
-          </div>
-        {:else if githubStatus.connected}
-          <div class="version-row">
-            <span class="version-current">Connected as <strong>{githubStatus.username ?? 'GitHub'}</strong></span>
-            <button
-              class="btn btn-ghost btn-sm"
-              onclick={handleDisconnectGitHub}
-              data-track="dialog.settings.github-disconnect"
-            >
-              Disconnect
-            </button>
-          </div>
-        {:else}
-          <p class="section-desc">Connect your GitHub account to enable PR and CI features.</p>
-          <div>
-            <button
-              class="btn btn-primary btn-sm"
-              onclick={connectGitHub}
-              data-track="dialog.settings.github-connect"
-            >
-              Connect GitHub
-            </button>
-          </div>
-        {/if}
-      </section>
+      <SettingRow name="YOLO mode" description="Skip permission checks for all sessions">
+        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultYolo} onchange={handleYoloChange} />
+      </SettingRow>
 
-      <!-- Developer tools section -->
-      <section class="settings-section">
-        <h3 class="section-title">Developer Tools</h3>
-        <div class="devtools-row">
-          <input
-            id="devtools-toggle"
-            type="checkbox"
-            class="dialog-checkbox"
-            bind:checked={devtoolsEnabled}
-            onchange={onDevtoolsChange}
-          />
-          <label for="devtools-toggle" class="devtools-label">Enable mobile debug panel</label>
-        </div>
-      </section>
+      <SettingRow name="Launch in tmux" description="Wrap sessions in tmux for scroll and copy">
+        <input type="checkbox" class="dialog-checkbox" bind:checked={config.launchInTmux} onchange={handleTmuxChange} />
+      </SettingRow>
 
-      <!-- Analytics section -->
-      <section class="settings-section">
-        <h3 class="section-title">Analytics</h3>
-        <div class="version-row">
-          <span class="version-current">
-            DB size: {analyticsSize !== null ? (analyticsSize / 1024 / 1024).toFixed(1) + ' MB' : '...'}
-          </span>
-          <button
-            class="btn btn-ghost btn-sm"
-            onclick={handleClearAnalytics}
-            disabled={clearing}
-            data-track="dialog.settings.clear-analytics"
-          >
+      <SettingRow name="Notifications" description="Push notifications when sessions need attention">
+        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultNotifications} onchange={handleNotificationsChange} />
+      </SettingRow>
+    </section>
+
+    <!-- INTEGRATIONS section -->
+    <section id="section-integrations" class="settings-section" class:dimmed={!matchesSearch('integrations')}>
+      <h3 class="section-heading">INTEGRATIONS</h3>
+      <GitHubIntegration
+        onDisconnect={handleGitHubDisconnect}
+        webhookCount={webhookCount}
+      />
+      <WebhookIntegration
+        githubConnected={githubConnected}
+      />
+      <JiraIntegration />
+    </section>
+
+    <!-- ADVANCED section -->
+    <section id="section-advanced" class="settings-section" class:dimmed={!matchesSearch('advanced')}>
+      <h3 class="section-heading">ADVANCED</h3>
+
+      <SettingRow name="Developer Tools" description="Mobile debug panel">
+        <input type="checkbox" class="dialog-checkbox" bind:checked={devtoolsEnabled} onchange={handleDevtoolsChange} />
+      </SettingRow>
+
+      <SettingRow name="Analytics" description="Local usage data">
+        <div class="analytics-action">
+          {#if analyticsSize !== null}
+            <span class="analytics-size">{(analyticsSize / 1024 / 1024).toFixed(1)} MB</span>
+          {/if}
+          <button class="btn btn-ghost btn-sm" onclick={handleClearAnalytics} disabled={clearing}>
             {clearing ? 'Clearing\u2026' : 'Clear'}
           </button>
         </div>
-      </section>
+      </SettingRow>
+    </section>
 
-      <!-- Version & Updates section -->
-      <section class="settings-section">
-        <h3 class="section-title">Version</h3>
-        <div class="version-row">
-          <span class="version-current">
-            {#if currentVersion}v{currentVersion}{:else}...{/if}
-          </span>
-          {#if versionChecked && !updateAvailable && !updating}
-            <span class="version-status">Up to date</span>
-          {/if}
-        </div>
+    <!-- ABOUT section -->
+    <section id="section-about" class="settings-section" class:dimmed={!matchesSearch('about')}>
+      <h3 class="section-heading">ABOUT</h3>
+
+      <SettingRow name="Version" description={currentVersion ? `v${currentVersion}` : ''}>
         {#if updateAvailable}
-          <div class="version-update-row">
-            <span class="version-update-text">v{currentVersion} &rarr; v{latestVersion}</span>
-            <button class="btn btn-primary btn-sm" onclick={handleUpdate} disabled={updating}>
-              {updating ? 'Updating\u2026' : 'Update Now'}
-            </button>
-          </div>
-        {:else if !versionChecked}
-          <button
-            class="btn btn-ghost btn-sm"
-            onclick={handleCheckVersion}
-            disabled={versionChecking}
-          >
-            {versionChecking ? 'Checking\u2026' : 'Check for updates'}
+          <button class="btn btn-primary btn-sm" onclick={handleUpdate} disabled={updating}>
+            {updating ? 'Updating\u2026' : `Update to v${latestVersion}`}
           </button>
+        {:else if versionChecked}
+          <span class="version-ok">Up to date</span>
         {/if}
-        {#if updateStatus}
-          <p class="version-status-msg">{updateStatus}</p>
-        {/if}
-      </section>
-    </div>
+      </SettingRow>
 
-    <div class="dialog-footer">
-      <button class="btn btn-ghost" onclick={handleClose}>Close</button>
-    </div>
+      {#if updateStatus}
+        <p class="update-status">{updateStatus}</p>
+      {/if}
+    </section>
   </div>
-</dialog>
+</DialogShell>
 
 <style>
-  .dialog {
-    background: var(--surface);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 0;
-    width: min(460px, 95vw);
-    max-height: 90vh;
-    overflow: hidden;
-  }
-
-  .dialog::backdrop {
-    background: rgba(0, 0, 0, 0.6);
-  }
-
-  .dialog-content {
-    display: flex;
-    flex-direction: column;
-    max-height: 90vh;
-    overflow: hidden;
-  }
-
-  .dialog-header {
+  .header-extra-content {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 16px 20px 12px;
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
+    gap: 8px;
   }
 
-  .dialog-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    margin: 0;
-  }
-
-  .close-btn {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 1rem;
-    cursor: pointer;
-    padding: 4px 6px;
-    border-radius: 4px;
-  }
-
-  .close-btn:hover {
-    background: var(--border);
-    color: var(--text);
-  }
-
-  .dialog-body {
-    padding: 16px 20px;
-    overflow-y: auto;
-    flex: 1;
+  .settings-content {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 32px;
+    position: relative;
   }
 
   .settings-section {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
+    transition: opacity 200ms ease, max-height 200ms ease;
   }
 
-  .section-title {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: var(--text);
-    margin: 0;
-  }
-
-  .section-desc {
-    font-size: 0.82rem;
-    color: var(--text-muted);
-    margin: 0;
-  }
-
-  .empty-msg {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    font-style: italic;
-    margin: 0;
-  }
-
-  .roots-list {
-    list-style: none;
-    margin: 0;
+  .settings-section.dimmed {
+    opacity: 0.3;
+    max-height: 0;
+    overflow: hidden;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    margin: 0;
   }
 
-  .root-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+  .section-heading {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .search-input {
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 7px 10px;
-  }
-
-  .root-path {
-    font-size: 0.85rem;
-    font-family: monospace;
+    border-radius: 0;
     color: var(--text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    padding: 6px 12px;
     flex: 1;
+    max-width: 200px;
+    outline: none;
   }
 
-  .remove-btn {
+  .search-input:focus {
+    border-color: var(--accent);
+  }
+
+  .search-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .hamburger-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--text-muted);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+    font-family: var(--font-mono);
+  }
+
+  .hamburger-btn:hover {
+    background: var(--border);
+    color: var(--text);
+  }
+
+  /* TOC drawer */
+  .toc-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 10;
+  }
+
+  .toc-drawer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 220px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    z-index: 11;
+    padding: 16px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    animation: toc-slide-in 150ms ease forwards;
+  }
+
+  @keyframes toc-slide-in {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  .toc-item {
     background: none;
     border: none;
     color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    padding: 8px 16px;
     cursor: pointer;
-    font-size: 0.9rem;
-    padding: 2px 5px;
-    border-radius: 4px;
-    flex-shrink: 0;
-    line-height: 1;
+    transition: background 100ms ease, color 100ms ease;
   }
 
-  .remove-btn:hover {
-    background: var(--border);
+  .toc-item:hover {
+    background: var(--surface-hover);
     color: var(--text);
   }
 
-  .add-root-row {
-    display: flex;
-    gap: 8px;
+  .toc-sub {
+    padding-left: 32px;
+    font-size: var(--font-size-xs);
   }
 
-  .add-root-input {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    font-size: 0.9rem;
-    padding: 7px 10px;
-  }
-
-  .error-msg {
-    font-size: 0.82rem;
-    color: #e74c3c;
-    margin: 0;
-  }
-
-  .agent-select {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    font-size: 0.9rem;
-    padding: 7px 10px;
-    width: 100%;
-    box-sizing: border-box;
-  }
-
-  .devtools-row {
+  .analytics-action {
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .dialog-checkbox {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--accent);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  .devtools-label {
-    font-size: 0.9rem;
-    cursor: pointer;
-  }
-
-  .dialog-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding: 12px 20px 16px;
-    border-top: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .btn {
-    padding: 8px 18px;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    cursor: pointer;
-    border: 1px solid transparent;
-    font-weight: 500;
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: #fff;
-    flex-shrink: 0;
-  }
-
-  .btn-primary:hover {
-    opacity: 0.9;
-  }
-
-  .btn-ghost {
-    background: transparent;
+  .analytics-size {
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
-    border-color: var(--border);
+    font-family: var(--font-mono);
   }
 
-  .btn-ghost:hover {
-    background: var(--border);
-    color: var(--text);
+  .version-ok {
+    font-size: var(--font-size-sm);
+    color: var(--status-success);
   }
 
-  .btn-sm {
-    padding: 5px 12px;
-    font-size: 0.8rem;
-  }
-
-  .version-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .version-current {
-    font-size: 0.9rem;
-    font-family: monospace;
-    color: var(--text);
-  }
-
-  .version-status {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .version-update-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 10px;
-  }
-
-  .version-update-text {
-    font-size: 0.85rem;
-    color: var(--accent);
-  }
-
-  .version-status-msg {
-    font-size: 0.82rem;
+  .update-status {
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     margin: 0;
+  }
+
+  select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 0;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+
+  select:focus {
+    border-color: var(--accent);
+    outline: none;
   }
 </style>

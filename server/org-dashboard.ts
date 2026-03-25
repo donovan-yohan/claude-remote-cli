@@ -6,6 +6,7 @@ import { Router } from 'express';
 import type { Request, Response } from 'express';
 
 import { loadConfig } from './config.js';
+import { extractOwnerRepo, buildRepoMap } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -51,53 +52,6 @@ interface GhSearchItem {
 
 interface GhSearchResponse {
   items: GhSearchItem[];
-}
-
-/**
- * Extracts "owner/repo" from a git remote URL.
- * Handles both SSH (git@github.com:owner/repo.git) and HTTPS (https://github.com/owner/repo.git) forms.
- */
-function extractOwnerRepo(remoteUrl: string): string | null {
-  // SSH: git@github.com:owner/repo.git
-  const sshMatch = remoteUrl.match(/git@[^:]+:([^/]+\/[^/]+?)(?:\.git)?$/);
-  if (sshMatch) return sshMatch[1] ?? null;
-
-  // HTTPS: https://github.com/owner/repo.git
-  const httpsMatch = remoteUrl.match(/https?:\/\/[^/]+\/([^/]+\/[^/]+?)(?:\.git)?$/);
-  if (httpsMatch) return httpsMatch[1] ?? null;
-
-  return null;
-}
-
-/**
- * Returns a map of "owner/repo" → workspace path for all git workspaces.
- * Workspaces that are not git repos or have no remote are omitted.
- */
-async function buildRepoMap(
-  workspacePaths: string[],
-  exec: typeof execFileAsync,
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-
-  await Promise.all(
-    workspacePaths.map(async (wsPath) => {
-      try {
-        const { stdout } = await exec(
-          'git',
-          ['remote', 'get-url', 'origin'],
-          { cwd: wsPath, timeout: GH_TIMEOUT_MS },
-        );
-        const ownerRepo = extractOwnerRepo(stdout.trim());
-        if (ownerRepo) {
-          map.set(ownerRepo.toLowerCase(), wsPath);
-        }
-      } catch {
-        // Not a git repo or no remote — skip
-      }
-    }),
-  );
-
-  return map;
 }
 
 /**

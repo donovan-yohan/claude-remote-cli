@@ -88,7 +88,7 @@ export function createGitHubAppRouter(deps: GitHubAppDeps): Router {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ client_id: clientId, scope: 'repo' }),
+        body: JSON.stringify({ client_id: clientId, scope: 'repo admin:repo_hook' }),
         signal: controller.signal,
       });
 
