@@ -2,7 +2,7 @@
 
 > **Status**: Completed | **Created**: 2026-03-25 | **Last Updated**: 2026-03-25
 > **Bug Analysis**: `docs/bug-analyses/2026-03-25-push-notifications-never-prompted-bug-analysis.md`
-> **Consulted Learnings**: L-018, L-019
+> **Consulted Learnings**: L-020, L-021
 > **For Claude:** Use /harness:orchestrate to execute this plan.
 
 ## Decision Log
