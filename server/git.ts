@@ -496,11 +496,13 @@ async function buildRepoMap(
 
 const ONE_DAY_MS = 86_400_000;
 
-/** A PR is stale if it's MERGED or CLOSED and was last updated more than 1 day ago. */
+/** A PR is stale if it's MERGED or CLOSED and was last updated more than 1 day ago (or has no valid timestamp). */
 function isStalePr(pr: PrInfo): boolean {
   if (pr.state === 'OPEN') return false;
   if (!pr.updatedAt) return true; // no timestamp → treat as stale
-  return Date.now() - new Date(pr.updatedAt).getTime() > ONE_DAY_MS;
+  const elapsed = Date.now() - new Date(pr.updatedAt).getTime();
+  if (Number.isNaN(elapsed)) return true; // unparseable date → treat as stale
+  return elapsed > ONE_DAY_MS;
 }
 
 export {

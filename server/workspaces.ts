@@ -618,7 +618,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       branchName = existingBranch;
       gitArgs = ['worktree', 'add', path.join(resolved, '.worktrees', mountainName), existingBranch];
     } else {
-      // Create a new branch using the next mountain name — with collision retry
+      // Create a new branch: <mountain>-<hex-suffix> — with retry if directory is taken
       const baseIndex = settings.nextMountainIndex ?? 0;
       let found = false;
 
