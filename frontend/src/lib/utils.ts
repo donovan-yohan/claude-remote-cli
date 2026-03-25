@@ -1,3 +1,5 @@
+import { getUi, DEFAULT_TERMINAL_FONT_SIZE } from './state/ui.svelte.js';
+
 export function rootShortName(path: string): string {
   return path.split('/').filter(Boolean).pop() || path;
 }
@@ -43,8 +45,12 @@ export const isMobileDevice =
   /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 export function estimateTerminalDimensions(): { cols: number; rows: number } {
+  const fontSize = getUi().terminalFontSize;
+  const ratio = fontSize / DEFAULT_TERMINAL_FONT_SIZE;
+  const charWidth = 8 * ratio;
+  const lineHeight = 17 * ratio;
   return {
-    cols: Math.max(80, Math.floor((window.innerWidth - 60) / 8)),
-    rows: Math.max(24, Math.floor((window.innerHeight - 120) / 17)),
+    cols: Math.max(80, Math.floor((window.innerWidth - 60) / charWidth)),
+    rows: Math.max(24, Math.floor((window.innerHeight - 120) / lineHeight)),
   };
 }

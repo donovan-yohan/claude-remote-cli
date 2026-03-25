@@ -1,10 +1,14 @@
 const SIDEBAR_WIDTH_KEY = 'claude-remote-sidebar-width';
 const SIDEBAR_COLLAPSED_KEY = 'claude-remote-sidebar-collapsed';
 const ACTIVE_WORKSPACE_KEY = 'claude-remote-active-workspace';
+const TERMINAL_FONT_SIZE_KEY = 'claude-remote-terminal-font-size';
 export const DEFAULT_SIDEBAR_WIDTH = 240;
 export const MIN_SIDEBAR_WIDTH = 180;
 export const MAX_SIDEBAR_WIDTH = 500;
 export const COLLAPSED_SIDEBAR_WIDTH = 44;
+export const DEFAULT_TERMINAL_FONT_SIZE = 14;
+export const MIN_TERMINAL_FONT_SIZE = 8;
+export const MAX_TERMINAL_FONT_SIZE = 28;
 
 function loadSidebarWidth(): number {
   try {
@@ -27,12 +31,24 @@ function loadActiveWorkspacePath(): string | null {
   catch { return null; }
 }
 
+function loadTerminalFontSize(): number {
+  try {
+    const stored = localStorage.getItem(TERMINAL_FONT_SIZE_KEY);
+    if (stored) {
+      const val = parseInt(stored, 10);
+      if (!Number.isNaN(val) && val >= MIN_TERMINAL_FONT_SIZE && val <= MAX_TERMINAL_FONT_SIZE) return val;
+    }
+  } catch { /* localStorage unavailable */ }
+  return DEFAULT_TERMINAL_FONT_SIZE;
+}
+
 let sidebarOpen = $state(false);
 let sidebarWidth = $state(loadSidebarWidth());
 let sidebarCollapsed = $state(loadSidebarCollapsed());
 let searchQuery = $state('');
 let activeWorkspacePath = $state<string | null>(loadActiveWorkspacePath());
 let reorderMode = $state(false);
+let terminalFontSize = $state(loadTerminalFontSize());
 
 export function getUi() {
   return {
@@ -54,6 +70,8 @@ export function getUi() {
     },
     get reorderMode() { return reorderMode; },
     set reorderMode(v: boolean) { reorderMode = v; },
+    get terminalFontSize() { return terminalFontSize; },
+    set terminalFontSize(v: number) { terminalFontSize = v; },
   };
 }
 
@@ -68,6 +86,10 @@ export function saveSidebarWidth(): void {
 export function toggleSidebarCollapsed(): void {
   sidebarCollapsed = !sidebarCollapsed;
   try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed)); }
+  catch { /* localStorage unavailable */ }
+}
+export function saveTerminalFontSize(): void {
+  try { localStorage.setItem(TERMINAL_FONT_SIZE_KEY, String(terminalFontSize)); }
   catch { /* localStorage unavailable */ }
 }
 

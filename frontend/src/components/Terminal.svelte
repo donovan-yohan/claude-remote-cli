@@ -6,6 +6,8 @@
   import { connectPtySocket, sendPtyData, sendPtyResize } from '../lib/ws.js';
   import { isMobileDevice } from '../lib/utils.js';
   import { uploadImage } from '../lib/api.js';
+  import { getUi, saveTerminalFontSize, DEFAULT_TERMINAL_FONT_SIZE } from '../lib/state/ui.svelte.js';
+  import { clampFontSize, zoomPercentage } from '../lib/terminal-zoom.js';
 
   let {
     sessionId,
@@ -25,6 +27,26 @@
   let term: Terminal | null = $state(null);
   let fitAddon: FitAddon;
   let imageUploadInProgress = false;
+
+  // ── Terminal zoom state (desktop only) ──────────────────────────────────────
+  const ui = getUi();
+  let zoomOverlayVisible = $state(false);
+  let zoomOverlayText = $state('100%');
+  let zoomOverlayTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function applyZoom(newSize: number) {
+    if (!term) return;
+    const clamped = clampFontSize(newSize);
+    if (clamped === term.options.fontSize) return;
+    term.options.fontSize = clamped;
+    ui.terminalFontSize = clamped;
+    saveTerminalFontSize();
+    fitTerm();
+    zoomOverlayText = zoomPercentage(clamped) + '%';
+    zoomOverlayVisible = true;
+    if (zoomOverlayTimer) clearTimeout(zoomOverlayTimer);
+    zoomOverlayTimer = setTimeout(() => { zoomOverlayVisible = false; }, 1500);
+  }
 
   // Expose term instance for MobileInput
   export function getTerm() {
@@ -53,7 +75,7 @@
   onMount(() => {
     const t = new Terminal({
       cursorBlink: true,
-      fontSize: isMobileDevice ? 12 : 14,
+      fontSize: isMobileDevice ? 12 : ui.terminalFontSize,
       fontFamily: 'Menlo, monospace',
       scrollback: 10000,
       theme: {
@@ -98,10 +120,31 @@
     t.onData((data) => sendPtyData(data));
 
     {
-
-      // Ctrl+V on non-Mac for clipboard/image paste
       const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform || '');
       t.attachCustomKeyEventHandler((e) => {
+        // ── Zoom shortcuts (desktop only) ──
+        if (!isMobileDevice && e.type === 'keydown') {
+          const mod = isMac ? e.metaKey : e.ctrlKey;
+          if (mod && !e.shiftKey && !e.altKey && !(isMac ? e.ctrlKey : e.metaKey)) {
+            if (e.key === '=' || e.key === '+') {
+              e.preventDefault();
+              applyZoom((t.options.fontSize ?? DEFAULT_TERMINAL_FONT_SIZE) + 1);
+              return false;
+            }
+            if (e.key === '-') {
+              e.preventDefault();
+              applyZoom((t.options.fontSize ?? DEFAULT_TERMINAL_FONT_SIZE) - 1);
+              return false;
+            }
+            if (e.key === '0') {
+              e.preventDefault();
+              applyZoom(DEFAULT_TERMINAL_FONT_SIZE);
+              return false;
+            }
+          }
+        }
+
+        // ── Ctrl+V clipboard/image paste (non-Mac) ──
         if (
           !isMac &&
           e.type === 'keydown' &&
@@ -147,7 +190,7 @@
         }
         return true;
       });
-    }  // end Ctrl+V handler block
+    }  // end keyboard handler block
 
     // OSC 52 clipboard handler — intercepts tmux clipboard sequences and writes to browser clipboard
     t.parser.registerOscHandler(52, (data) => {
@@ -201,6 +244,7 @@
     return () => {
       if (roTimer) clearTimeout(roTimer);
       if (longPressTimer) clearTimeout(longPressTimer);
+      if (zoomOverlayTimer) clearTimeout(zoomOverlayTimer);
       ro.disconnect();
       t.dispose();
       term = null;
@@ -645,6 +689,11 @@
       <button class="scroll-fab scroll-fab-bottom" data-dir="bottom" data-track="terminal.scroll-bottom" aria-label="Skip to bottom">&#8615;</button>
     </div>
   {/if}
+  {#if !isMobileDevice}
+    <div class="zoom-overlay" class:visible={zoomOverlayVisible}>
+      {zoomOverlayText}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -735,5 +784,24 @@
     .scroll-fab-bottom {
       margin-top: 4px;
     }
+  }
+
+  .zoom-overlay {
+    position: absolute;
+    top: 8px;
+    right: 16px;
+    background: rgba(255, 255, 255, 0.12);
+    color: #d4d4d4;
+    font-size: 12px;
+    font-family: Menlo, monospace;
+    padding: 2px 8px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .zoom-overlay.visible {
+    opacity: 1;
   }
 </style>
