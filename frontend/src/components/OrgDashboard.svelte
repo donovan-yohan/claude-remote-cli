@@ -57,7 +57,7 @@
     { key: 'role', label: 'Role', sortable: true, width: '60px' },
     { key: 'ci', label: 'CI', sortable: false, width: '32px' },
     { key: 'age', label: 'Age', sortable: true, width: '50px' },
-    { key: 'action', label: '', sortable: false, width: '80px' },
+    { key: 'action', label: '', sortable: false, width: '140px' },
   ];
 
   // --- Filter / sort state ---
@@ -386,7 +386,7 @@
             <span class="pr-meta-text">{formatRelativeTime(pr.updatedAt)}</span>
           </div>
           <!-- Action column -->
-          <div class="cell cell--action" style:width="80px" style:flex="none">
+          <div class="cell cell--action" style:width="140px" style:flex="none">
             {#if action.type !== 'none' && action.label}
               <button
                 class="pr-action-pill"

@@ -211,3 +211,13 @@ When a query to an external system (GitHub API, database, etc.) returns "not fou
 When a UI element needs different visibility on mobile vs desktop (e.g., "always visible on mobile, hover-reveal on desktop"), implement it purely in CSS with a media query override — never add a parallel JS `matchMedia` check that also hides the element. Dual mechanisms create redundant hiding that's easy to break independently: fixing the CSS leaves the JS guard in place (or vice versa), making the bug appear unfixed. The pattern: set the desktop default in base CSS (e.g., `opacity: 0` + `:hover { opacity: 1 }`), then override in `@media (max-width: 600px) { opacity: 1 }`. Never pass a `hideTrigger={isMobile}` prop that prevents the element from rendering in the DOM — CSS can't show what JS never rendered.
 
 ---
+
+### L-021: When a template adds explicit checks for a state already handled by a state machine, use `{:else if}` — never independent `{#if}` blocks for mutually exclusive states
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: fuji
+
+When a pure-function state machine (e.g., `derivePrAction()`) already maps input states to actions, and the template adds explicit checks for specific states (e.g., `CONFLICTING` → "Fix Conflicts" button with a different handler), those explicit checks and the state machine's generic output must be mutually exclusive in the template. Using independent `{#if}` blocks for states that can never be true simultaneously creates duplication when the state machine's output label matches the explicit check. Always use `{#if}/{:else if}/{:else if}` chains for mutually exclusive UI states. When adding a new template branch for a specific state, check whether the generic action rendering already covers it.
+
+---

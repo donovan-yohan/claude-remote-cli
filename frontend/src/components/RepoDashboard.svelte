@@ -45,7 +45,7 @@
     { key: 'title', label: 'Title', sortable: true },
     { key: 'role', label: 'Role', sortable: true, width: '60px' },
     { key: 'age', label: 'Age', sortable: true, width: '50px' },
-    { key: 'action', label: '', sortable: false, width: '120px' },
+    { key: 'action', label: '', sortable: false, width: '160px' },
   ];
 
   function prActionForRow(pr: PullRequest) {
@@ -116,6 +116,42 @@
           <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer">cli.github.com</a>
         </div>
       {:else}
+        {#snippet prActionPills(pr: PullRequest, action: ReturnType<typeof prActionForRow>, actionColor: string, darkText: boolean)}
+          <button
+            class="pr-session-btn"
+            title="Open session on this branch"
+            onclick={() => onOpenPrSession(pr)}
+          >+</button>
+          {#if pr.mergeable === 'CONFLICTING'}
+            <button
+              class="pr-action-pill pr-conflict-pill"
+              title="Open worktree and fix merge conflicts"
+              onclick={() => onFixConflicts(pr)}
+            >
+              Fix Conflicts
+            </button>
+          {:else if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
+            <a
+              class="pr-action-pill pr-merge-pill"
+              href={pr.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Ready to merge on GitHub"
+            >
+              Merge
+            </a>
+          {:else if action.type !== 'none' && action.label}
+            <button
+              class="pr-action-pill"
+              style:--pill-color={actionColor}
+              class:dark-text={darkText}
+              title={action.label}
+              onclick={() => onPrAction(pr)}
+            >
+              {action.label}
+            </button>
+          {/if}
+        {/snippet}
         <DataTable
           columns={prColumns}
           rows={processedPrs}
@@ -158,44 +194,9 @@
             <div class="pr-cell pr-cell--age" style:width="50px" style:flex="none">
               <span class="pr-age-text">{formatRelativeTime(pr.updatedAt)}</span>
             </div>
-            <div class="pr-cell pr-cell--action" style:width="120px" style:flex="none">
+            <div class="pr-cell pr-cell--action" style:width="160px" style:flex="none">
               <div class="pr-row-actions">
-                <button
-                  class="pr-session-btn"
-                  title="Open session on this branch"
-                  onclick={() => onOpenPrSession(pr)}
-                >+</button>
-                {#if pr.mergeable === 'CONFLICTING'}
-                  <button
-                    class="pr-action-pill pr-conflict-pill"
-                    title="Open worktree and fix merge conflicts"
-                    onclick={() => onFixConflicts(pr)}
-                  >
-                    Fix Conflicts
-                  </button>
-                {/if}
-                {#if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
-                  <a
-                    class="pr-action-pill pr-merge-pill"
-                    href={pr.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Ready to merge on GitHub"
-                  >
-                    Merge
-                  </a>
-                {/if}
-                {#if action.type !== 'none' && action.label}
-                  <button
-                    class="pr-action-pill"
-                    style:--pill-color={actionColor}
-                    class:dark-text={darkText}
-                    title={action.label}
-                    onclick={() => onPrAction(pr)}
-                  >
-                    {action.label}
-                  </button>
-                {/if}
+                {@render prActionPills(pr, action, actionColor, darkText)}
               </div>
             </div>
           {/snippet}
@@ -219,42 +220,7 @@
                 <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
               </div>
               <div class="pr-row-actions mobile-pr-actions">
-                <button
-                  class="pr-session-btn"
-                  title="Open session on this branch"
-                  onclick={() => onOpenPrSession(pr)}
-                >+</button>
-                {#if pr.mergeable === 'CONFLICTING'}
-                  <button
-                    class="pr-action-pill pr-conflict-pill"
-                    title="Open worktree and fix merge conflicts"
-                    onclick={() => onFixConflicts(pr)}
-                  >
-                    Fix Conflicts
-                  </button>
-                {/if}
-                {#if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
-                  <a
-                    class="pr-action-pill pr-merge-pill"
-                    href={pr.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title="Ready to merge on GitHub"
-                  >
-                    Merge
-                  </a>
-                {/if}
-                {#if action.type !== 'none' && action.label}
-                  <button
-                    class="pr-action-pill"
-                    style:--pill-color={actionColor}
-                    class:dark-text={darkText}
-                    title={action.label}
-                    onclick={() => onPrAction(pr)}
-                  >
-                    {action.label}
-                  </button>
-                {/if}
+                {@render prActionPills(pr, action, actionColor, darkText)}
               </div>
             </div>
           {/snippet}
