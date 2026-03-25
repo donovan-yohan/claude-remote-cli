@@ -889,13 +889,7 @@
       width: 100%;
     }
 
-    .sidebar-overlay {
-      display: block;
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 99;
-    }
+    /* No overlay needed — sidebar is full-screen on mobile */
 
     .terminal-area {
       width: 100%;

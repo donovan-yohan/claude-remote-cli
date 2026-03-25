@@ -532,16 +532,18 @@
     background: var(--border);
   }
 
-  /* Mobile */
+  /* Mobile — full-screen overlay */
   @media (max-width: 600px) {
     .sidebar {
       position: fixed;
-      top: 0;
-      left: 0;
-      height: 100%;
+      inset: 0;
+      width: 100vw !important;
+      min-width: 100vw !important;
+      height: 100vh;
+      height: 100dvh;
       transform: translateX(-100%);
-      box-shadow: 2px 0 12px rgba(0, 0, 0, 0.5);
       transition: transform 0.25s ease;
+      box-shadow: none;
     }
 
     .sidebar.open {

@@ -134,6 +134,7 @@
   }
 
   /* ── Fullscreen variant ── */
+  /* Mobile: true full-screen */
   .dialog-shell--fullscreen {
     width: 100vw;
     height: 100vh;
@@ -141,12 +142,12 @@
     max-height: 100vh;
   }
 
-  @media (min-width: 1200px) {
+  /* Desktop: centered ~75% modal */
+  @media (min-width: 601px) {
     .dialog-shell--fullscreen {
-      inset: 24px;
-      width: auto;
-      height: auto;
-      max-width: none;
+      width: 75vw;
+      height: 80vh;
+      max-width: 960px;
       max-height: none;
     }
   }
