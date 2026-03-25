@@ -1,12 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import {
     getUi,
     closeSidebar,
     saveSidebarWidth,
     toggleSidebarCollapsed,
-    enterReorderMode,
-    exitReorderMode,
     MIN_SIDEBAR_WIDTH,
     MAX_SIDEBAR_WIDTH,
     DEFAULT_SIDEBAR_WIDTH,
@@ -14,7 +11,7 @@
   } from '../lib/state/ui.svelte.js';
   import { getSessionState, getSessionsForWorkspace, reorderWorkspaces } from '../lib/state/sessions.svelte.js';
   import type { Workspace, WorktreeInfo, OrgPrsResponse } from '../lib/types.js';
-  import { fetchWorkspaceGroups, fetchOrgPrs } from '../lib/api.js';
+  import { fetchOrgPrs } from '../lib/api.js';
   import { createQuery } from '@tanstack/svelte-query';
   import { dndzone } from 'svelte-dnd-action';
   import WorkspaceItem from './WorkspaceItem.svelte';
@@ -84,6 +81,11 @@
   // ── Drag-and-drop reorder ──
   const flipDurationMs = 200;
 
+  // Coarse-pointer devices (phones, tablets) need drag gating to preserve scroll
+  const isTouchDevice = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  let mobileDragEnabled = $state(false);
+  let dragDisabled = $derived(isTouchDevice && !mobileDragEnabled);
+
   // svelte-dnd-action requires items with `id` property
   let dndItems = $derived(
     sessionState.workspaces.map(w => ({ id: w.path, workspace: w }))
@@ -101,10 +103,7 @@
     localDndItems = e.detail.items;
     const newOrder = localDndItems.map(item => item.id);
     reorderWorkspaces(newOrder);
-  }
-
-  function handleDoneReorder() {
-    exitReorderMode();
+    mobileDragEnabled = false;
   }
 
   // ── Org PRs for sidebar enrichment ──
@@ -116,57 +115,23 @@
 
   let orgPrs = $derived(orgQuery.data?.prs ?? []);
 
-  // ── Workspace groups ──
-  let workspaceGroups = $state<Record<string, string[]>>({});
-
-  onMount(() => {
-    fetchWorkspaceGroups().then(groups => { workspaceGroups = groups; }).catch(() => {});
-  });
-
-  // Build group → workspace list mapping for rendering
-  let groupedWorkspaces = $derived.by((): Array<{ groupName: string | null; items: Array<{ id: string; workspace: Workspace }> }> => {
-    if (ui.reorderMode || Object.keys(workspaceGroups).length === 0) {
-      return [{ groupName: null, items: localDndItems }];
-    }
-    // Build reverse map: path → group name
-    const pathToGroup = new Map<string, string>();
-    for (const [groupName, paths] of Object.entries(workspaceGroups)) {
-      for (const p of paths) pathToGroup.set(p, groupName);
-    }
-    const groups: Array<{ groupName: string | null; items: Array<{ id: string; workspace: Workspace }> }> = [];
-    const groupOrder = Object.keys(workspaceGroups);
-    for (const groupName of groupOrder) {
-      const items = localDndItems.filter(item => pathToGroup.get(item.id) === groupName);
-      if (items.length > 0) groups.push({ groupName, items });
-    }
-    // Ungrouped at the bottom
-    const ungrouped = localDndItems.filter(item => !pathToGroup.has(item.id));
-    if (ungrouped.length > 0) groups.push({ groupName: null, items: ungrouped });
-    return groups;
-  });
-
-  // ── Mobile long-press to enter reorder mode ──
+  // ── Mobile long-press to enable drag ──
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
   function handleTouchStart() {
+    if (longPressTimer) clearTimeout(longPressTimer);
     longPressTimer = setTimeout(() => {
-      enterReorderMode();
+      mobileDragEnabled = true;
       longPressTimer = null;
     }, 500);
   }
 
-  function handleTouchEnd() {
+  function cancelTouch() {
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
     }
-  }
-
-  function handleTouchMove() {
-    if (longPressTimer) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
+    mobileDragEnabled = false;
   }
 </script>
 
@@ -206,93 +171,50 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="workspace-list"
-      use:dndzone={{ items: localDndItems, flipDurationMs, type: 'workspaces', dropTargetStyle: {}, dragDisabled: !ui.reorderMode }}
+      use:dndzone={{ items: localDndItems, flipDurationMs, type: 'workspaces', dropTargetStyle: {}, dragDisabled }}
       onconsider={handleDndConsider}
       onfinalize={handleDndFinalize}
       ontouchstart={handleTouchStart}
-      ontouchend={handleTouchEnd}
-      ontouchmove={handleTouchMove}
+      ontouchend={cancelTouch}
+      ontouchmove={cancelTouch}
+      ontouchcancel={cancelTouch}
     >
-      {#if ui.reorderMode}
-        {#each localDndItems as item (item.id)}
-          {@const workspace = item.workspace}
-          {@const activeSessions = getSessionsForWorkspace(workspace.path)}
-          {@const activeWorktreePaths = new Set(activeSessions.map(s => s.worktreePath).filter(Boolean) as string[])}
-          {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
-            wt.repoPath === workspace.path &&
-            wt.path.startsWith(workspace.path + '/') &&
-            !activeWorktreePaths.has(wt.path)
-          )}
-          {@const groupedByPath = (() => {
-            const groups = new Map<string, typeof activeSessions>();
-            groups.set(workspace.path, []);
-            for (const s of activeSessions) {
-              const groupKey = s.worktreePath ?? s.workspacePath;
-              const existing = groups.get(groupKey);
-              if (existing) existing.push(s);
-              else groups.set(groupKey, [s]);
-            }
-            return groups;
-          })()}
-          <div>
-            <WorkspaceItem
-              {workspace}
-              sessionGroups={groupedByPath}
-              {inactiveWorktrees}
-              isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
-              onSelectWorkspace={handleSelectWorkspace}
-              {onSelectSession}
-              onNewWorktree={onNewWorktree}
-              onOpenSettings={(ws) => onOpenSettings(ws)}
-              onDeleteSession={(id) => onDeleteSession?.(id)}
-              onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
-              {orgPrs}
-            />
-          </div>
-        {/each}
-      {:else}
-        {#each groupedWorkspaces as group (group.groupName ?? '__ungrouped__')}
-          {#if group.groupName}
-            <div class="group-header">{group.groupName}</div>
-          {/if}
-          {#each group.items as item (item.id)}
-            {@const workspace = item.workspace}
-            {@const activeSessions = getSessionsForWorkspace(workspace.path)}
-            {@const activeWorktreePaths = new Set(activeSessions.map(s => s.worktreePath).filter(Boolean) as string[])}
-            {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
-              wt.repoPath === workspace.path &&
-              wt.path.startsWith(workspace.path + '/') &&
-              !activeWorktreePaths.has(wt.path)
-            )}
-            {@const groupedByPath = (() => {
-              const groups = new Map<string, typeof activeSessions>();
-              groups.set(workspace.path, []);
-              for (const s of activeSessions) {
-                const groupKey = s.worktreePath ?? s.workspacePath;
-                const existing = groups.get(groupKey);
-                if (existing) existing.push(s);
-                else groups.set(groupKey, [s]);
-              }
-              return groups;
-            })()}
-            <div>
-              <WorkspaceItem
-                {workspace}
-                sessionGroups={groupedByPath}
-                {inactiveWorktrees}
-                isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
-                onSelectWorkspace={handleSelectWorkspace}
-                {onSelectSession}
-                onNewWorktree={onNewWorktree}
-                onOpenSettings={(ws) => onOpenSettings(ws)}
-                onDeleteSession={(id) => onDeleteSession?.(id)}
-                onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
-                {orgPrs}
-              />
-            </div>
-          {/each}
-        {/each}
-      {/if}
+      {#each localDndItems as item (item.id)}
+        {@const workspace = item.workspace}
+        {@const activeSessions = getSessionsForWorkspace(workspace.path)}
+        {@const activeWorktreePaths = new Set(activeSessions.map(s => s.worktreePath).filter(Boolean) as string[])}
+        {@const inactiveWorktrees = sessionState.worktrees.filter(wt =>
+          wt.repoPath === workspace.path &&
+          wt.path.startsWith(workspace.path + '/') &&
+          !activeWorktreePaths.has(wt.path)
+        )}
+        {@const groupedByPath = (() => {
+          const groups = new Map<string, typeof activeSessions>();
+          groups.set(workspace.path, []);
+          for (const s of activeSessions) {
+            const groupKey = s.worktreePath ?? s.workspacePath;
+            const existing = groups.get(groupKey);
+            if (existing) existing.push(s);
+            else groups.set(groupKey, [s]);
+          }
+          return groups;
+        })()}
+        <div>
+          <WorkspaceItem
+            {workspace}
+            sessionGroups={groupedByPath}
+            {inactiveWorktrees}
+            isActive={ui.activeWorkspacePath === workspace.path && !sessionState.activeSessionId}
+            onSelectWorkspace={handleSelectWorkspace}
+            {onSelectSession}
+            onNewWorktree={onNewWorktree}
+            {onOpenSettings}
+            onDeleteSession={(id) => onDeleteSession?.(id)}
+            onDeleteWorktree={(wt) => onDeleteWorktree?.(wt)}
+            {orgPrs}
+          />
+        </div>
+      {/each}
 
       {#if sessionState.workspaces.length === 0}
         <div class="empty-state">
@@ -301,18 +223,10 @@
       {/if}
     </div>
 
-    {#if ui.reorderMode}
-      <button class="done-reorder-btn" onclick={handleDoneReorder}>
-        Done reordering
-      </button>
-    {/if}
-
     <div class="sidebar-footer-row">
-      {#if !ui.reorderMode}
-        <button class="add-workspace-btn" data-track="sidebar.add-workspace" onclick={onAddWorkspace}>
-          + Add Workspace
-        </button>
-      {/if}
+      <button class="add-workspace-btn" data-track="sidebar.add-workspace" onclick={onAddWorkspace}>
+        + Add Workspace
+      </button>
       <button class="settings-icon-btn" data-track="sidebar.settings" onclick={() => onOpenSettings()} aria-label="Settings">
         ⚙
       </button>
@@ -420,17 +334,6 @@
     background: var(--border);
   }
 
-  /* Group headers */
-  .group-header {
-    padding: 10px 10px 4px 10px;
-    font-size: 10px;
-    font-family: var(--font-mono);
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-  }
-
   /* Workspace list */
   .workspace-list {
     flex: 1;
@@ -477,32 +380,6 @@
   }
 
   .add-workspace-btn:active {
-    background: var(--border);
-  }
-
-  /* Done reordering button */
-  .done-reorder-btn {
-    margin: 8px;
-    padding: 10px 12px;
-    min-height: 40px;
-    background: none;
-    border: 1px solid var(--accent);
-    border-radius: 0;
-    color: var(--accent);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    cursor: pointer;
-    touch-action: manipulation;
-    text-align: center;
-    flex-shrink: 0;
-    transition: background 0.1s;
-  }
-
-  .done-reorder-btn:hover {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-  }
-
-  .done-reorder-btn:active {
     background: var(--border);
   }
 

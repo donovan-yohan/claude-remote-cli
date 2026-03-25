@@ -182,13 +182,23 @@ When calling browser APIs that can fail due to missing permissions (e.g., `pushM
 
 ---
 
-### L-014: Always gate drag-and-drop library activation behind an explicit mode toggle — never leave it always-on
+### L-024: DnD `dragDisabled` must be device-aware — always-on for mouse, gated for touch
 - status: active
 - category: patterns
-- source: /harness:bug 2026-03-24
-- branch: mobile-longpress-drag
+- source: /harness:bug 2026-03-25
+- branch: shasta
 
-When using `svelte-dnd-action` (or any drag-and-drop library) on a scrollable container, pass `dragDisabled: true` by default and only enable it when the user explicitly enters reorder mode. Libraries like `svelte-dnd-action` attach touch event listeners to draggable children and `preventDefault()` on `touchmove`, which blocks native scroll. Having an application-level reorder mode toggle (e.g., `ui.reorderMode`) without wiring it to the library's `dragDisabled` option creates a disconnect — your mode gate is purely cosmetic while the library still steals events. Always check library docs for disable/enable APIs and wire them to your mode state.
+When using `svelte-dnd-action` on a scrollable container, `dragDisabled` must use different strategies per input method. Mouse drag does not conflict with scroll (users scroll via wheel), so desktop should always have `dragDisabled: false`. Touch drag conflicts with scroll (both are finger gestures), so mobile needs `dragDisabled: true` by default with a long-press gesture to enable drag temporarily. A single global "reorder mode" toggle that gates all input types equally will either break desktop drag (no mouse entry point) or break mobile scroll (always-on touch interception). Use `matchMedia('(pointer: fine)')` or similar to branch behavior.
+
+---
+
+### L-025: Never couple a library's technical enable/disable flag to unrelated UI visibility changes
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: shasta
+
+When a library provides a boolean to enable/disable its event handling (e.g., `svelte-dnd-action`'s `dragDisabled`), do not bind that same boolean to UI layout changes (hiding content, collapsing sections). The library flag exists for event management, not visual design. Coupling them means any change to the event strategy (e.g., making drag always-on for desktop) forces an unintended layout change. Keep library enable/disable flags as narrow technical controls. If a distinct UI mode is needed, use a separate state variable with its own entry/exit logic.
 
 ---
 

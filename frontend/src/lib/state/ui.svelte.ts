@@ -47,7 +47,6 @@ let sidebarWidth = $state(loadSidebarWidth());
 let sidebarCollapsed = $state(loadSidebarCollapsed());
 let searchQuery = $state('');
 let activeWorkspacePath = $state<string | null>(loadActiveWorkspacePath());
-let reorderMode = $state(false);
 let terminalFontSize = $state(loadTerminalFontSize());
 
 export function getUi() {
@@ -68,8 +67,6 @@ export function getUi() {
         else localStorage.setItem(ACTIVE_WORKSPACE_KEY, v);
       } catch { /* localStorage unavailable */ }
     },
-    get reorderMode() { return reorderMode; },
-    set reorderMode(v: boolean) { reorderMode = v; },
     get terminalFontSize() { return terminalFontSize; },
     set terminalFontSize(v: number) { terminalFontSize = v; },
   };
@@ -77,8 +74,6 @@ export function getUi() {
 
 export function openSidebar(): void { sidebarOpen = true; }
 export function closeSidebar(): void { sidebarOpen = false; }
-export function enterReorderMode(): void { reorderMode = true; }
-export function exitReorderMode(): void { reorderMode = false; }
 export function saveSidebarWidth(): void {
   try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)); }
   catch { /* localStorage unavailable */ }

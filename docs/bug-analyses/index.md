@@ -44,3 +44,4 @@
 | [mobile-triple-dots-hidden-bug-analysis.md](2026-03-25-mobile-triple-dots-hidden-bug-analysis.md) | Triple dots menu hidden on mobile — dual CSS+JS hiding mechanism, no visible affordance for context menu | 2026-03-25 |
 | [worktree-branch-reuse-stale-pr-bug-analysis.md](2026-03-25-worktree-branch-reuse-stale-pr-bug-analysis.md) | Reused mountain branch names pick up old merged/closed PRs from GitHub — recurrence of 2026-03-19 stale PR bugs | 2026-03-25 |
 | [push-notifications-never-prompted-bug-analysis.md](2026-03-25-push-notifications-never-prompted-bug-analysis.md) | Push notifications silently broken — `requestPermission()` exported but never called, no permission UI | 2026-03-25 |
+| [desktop-drag-broken-reorder-mode-jarring-bug-analysis.md](2026-03-25-desktop-drag-broken-reorder-mode-jarring-bug-analysis.md) | Desktop drag broken — reorder mode has no mouse entry point; reorder UI jarringly hides all sidebar content | 2026-03-25 |
