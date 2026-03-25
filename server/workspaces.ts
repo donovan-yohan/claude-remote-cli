@@ -11,7 +11,7 @@ import type { Request, Response } from 'express';
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys, writeMeta } from './config.js';
 import { trackEvent } from './analytics.js';
 import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, isStalePr, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
-import type { Config, PullRequest, PullRequestsResponse, Workspace } from './types.js';
+import type { Config, PrInfo, PullRequest, PullRequestsResponse, Workspace } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -22,6 +22,53 @@ const BROWSE_DENYLIST = new Set([
 ]);
 const BROWSE_MAX_ENTRIES = 100;
 const BULK_MAX_PATHS = 50;
+
+// ── PR lookup cache ─────────────────────────────────────────────────────────
+// Caches `getPrForBranch` results to avoid spawning a `gh` subprocess on every
+// request. Negative results (no PR) use a longer TTL since they only change on
+// user action (push, PR creation).
+
+const PR_CACHE_POSITIVE_TTL_MS = 60_000;   // 60s — same as org-dashboard
+const PR_CACHE_NEGATIVE_TTL_MS = 300_000;  // 5 min — "no PR" rarely changes without user action
+
+interface PrCacheEntry {
+  result: PrInfo | null;
+  fetchedAt: number;
+}
+
+const prCache = new Map<string, PrCacheEntry>();
+
+function prCacheKey(workspacePath: string, branch: string): string {
+  return `${workspacePath}:${branch}`;
+}
+
+function getPrCached(workspacePath: string, branch: string): PrCacheEntry | undefined {
+  const key = prCacheKey(workspacePath, branch);
+  const entry = prCache.get(key);
+  if (!entry) return undefined;
+  const ttl = entry.result ? PR_CACHE_POSITIVE_TTL_MS : PR_CACHE_NEGATIVE_TTL_MS;
+  if (Date.now() - entry.fetchedAt > ttl) {
+    prCache.delete(key);
+    return undefined;
+  }
+  return entry;
+}
+
+function setPrCached(workspacePath: string, branch: string, result: PrInfo | null): void {
+  prCache.set(prCacheKey(workspacePath, branch), { result, fetchedAt: Date.now() });
+}
+
+/** Clear PR cache entries. If workspacePath is given, only clears entries for that workspace. */
+export function clearPrCache(workspacePath?: string): void {
+  if (!workspacePath) {
+    prCache.clear();
+    return;
+  }
+  const prefix = `${workspacePath}:`;
+  for (const key of prCache.keys()) {
+    if (key.startsWith(prefix)) prCache.delete(key);
+  }
+}
 
 // Deps type
 
@@ -532,20 +579,31 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
+    const cached = getPrCached(workspacePath, branch);
+    if (cached) {
+      res.json({ pr: cached.result });
+      return;
+    }
+
     try {
       const pr = await getPrForBranch(workspacePath, branch);
       if (pr && !isStalePr(pr)) {
+        let unresolvedCommentCount = 0;
         if (pr.state === 'OPEN') {
-          const unresolvedCommentCount = await getUnresolvedCommentCount(workspacePath, pr.number);
-          res.json({ ...pr, unresolvedCommentCount });
-        } else {
-          res.json({ ...pr, unresolvedCommentCount: 0 });
+          try {
+            unresolvedCommentCount = await getUnresolvedCommentCount(workspacePath, pr.number);
+          } catch { /* degrade gracefully — show PR without comment count */ }
         }
+        const enriched = { ...pr, unresolvedCommentCount };
+        setPrCached(workspacePath, branch, enriched);
+        res.json({ pr: enriched });
       } else {
-        res.status(404).json({ error: 'No PR found for branch' });
+        setPrCached(workspacePath, branch, null);
+        res.json({ pr: null });
       }
     } catch {
-      res.status(404).json({ error: 'No PR found for branch' });
+      // Do NOT cache transient errors — only cache clean null from getPrForBranch
+      res.json({ pr: null });
     }
   });
 

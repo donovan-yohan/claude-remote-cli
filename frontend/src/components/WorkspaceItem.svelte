@@ -96,10 +96,6 @@
   );
   let creatingWorktree = $derived(isItemLoading(`new-worktree:${workspace.path}`));
   let inReorderMode = $derived(ui.reorderMode);
-
-  // Detect mobile for context menu behavior
-  let isMobile = $state(typeof window !== 'undefined' && window.matchMedia('(max-width: 600px)').matches);
-
   // Context menu refs (keyed by row identifier)
   let menuRefs: Record<string, ContextMenu> = {};
 
@@ -297,7 +293,7 @@
               {/if}
             </div>
             <div class="row-menu-overlay">
-              <ContextMenu items={sessionMenuItems(representative)} hideTrigger={isMobile} bind:this={menuRefs[representative.id]} />
+              <ContextMenu items={sessionMenuItems(representative)} bind:this={menuRefs[representative.id]} />
             </div>
           </li>
         {:else if isRepoRoot}
@@ -375,7 +371,7 @@
             {/if}
           </div>
           <div class="row-menu-overlay">
-            <ContextMenu items={worktreeMenuItems(wt)} hideTrigger={isMobile} bind:this={menuRefs[wt.path]} />
+            <ContextMenu items={worktreeMenuItems(wt)} bind:this={menuRefs[wt.path]} />
           </div>
         </li>
       {/each}
@@ -670,9 +666,9 @@
     box-shadow: 0 0 5px 1px rgba(234, 179, 8, 0.45);
     animation: attention-glow 1.5s ease-in-out infinite;
   }
-  .status-dot--inactive     { background: #555; }
+  .status-dot--inactive     { background: transparent; border: 1.5px solid #555; }
 
-  .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: #555; flex-shrink: 0; }
+  .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: transparent; border: 1.5px solid #555; flex-shrink: 0; }
   .session-row.inactive .session-name { color: var(--text-muted); }
   .session-row.inactive:hover .session-name { color: var(--text); }
   .session-row.loading { pointer-events: none; opacity: 0.7; }
@@ -745,9 +741,9 @@
       opacity: 1;
     }
 
-    /* On mobile, hide the dots overlay — long-press opens menu instead */
+    /* On mobile, always show dots (no hover) */
     .row-menu-overlay {
-      display: none;
+      opacity: 1;
     }
   }
 </style>

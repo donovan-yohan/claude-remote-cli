@@ -21,7 +21,7 @@ import { extensionForMime, setClipboardImage } from './clipboard.js';
 import { listBranches } from './git.js';
 import * as push from './push.js';
 import { initAnalytics, closeAnalytics, createAnalyticsRouter } from './analytics.js';
-import { createWorkspaceRouter } from './workspaces.js';
+import { createWorkspaceRouter, clearPrCache } from './workspaces.js';
 import { createOrgDashboardRouter } from './org-dashboard.js';
 import { createIntegrationGitHubRouter } from './integration-github.js';
 import { createBranchLinkerRouter, invalidateBranchLinkerCache } from './branch-linker.js';
@@ -281,7 +281,11 @@ async function main(): Promise<void> {
   const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher, CONFIG_PATH);
 
   // Wire up the delegate used by the webhook router (mounted before broadcastEvent was available)
-  broadcastEventDelegate = broadcastEvent;
+  // Also clear the PR cache on real webhook events — these indicate actual PR state changes
+  broadcastEventDelegate = (type, data) => {
+    if (type === 'pr-updated') clearPrCache();
+    broadcastEvent(type, data);
+  };
 
   // Watch .git/HEAD files for branch changes and update active sessions
   const branchWatcher = new BranchWatcher((cwdPath, newBranch) => {
@@ -309,6 +313,8 @@ async function main(): Promise<void> {
   // Watch upstream tracking refs for push/fetch and broadcast ref-changed events
   const refWatcher = new RefWatcher((cwdPath, branch) => {
     broadcastEvent('ref-changed', { cwdPath, branch });
+    // Clear all PR cache — cwdPath may be a worktree path that doesn't match workspace cache keys
+    clearPrCache();
   });
 
   let refWatcherRebuildPending = false;
