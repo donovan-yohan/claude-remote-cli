@@ -181,3 +181,23 @@ When using `svelte-dnd-action` (or any drag-and-drop library) on a scrollable co
 When a display status (e.g., session dot color) is derived from multiple independent signals (PTY idle timer, hook-based agentState, parser reconciliation), ad-hoc guards and cooldown timers will always have edge cases. The root invariant — "only show attention when there's genuinely new content the user hasn't seen" — cannot be enforced by checking individual signals in isolation. Instead, model the display state as a formal state machine with a transition function that accepts semantic events and enforces valid transitions at the type level. The key insight: `seen-idle → unseen-idle` should be an **impossible transition** — the only path to `unseen-idle` must go through `running` first.
 
 ---
+
+### L-018: WebSocket-driven query invalidation should be scoped to the affected resource — blanket-invalidation is strongly discouraged
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: master
+
+When WebSocket events carry a payload identifying which resource changed (e.g., `{ repo: "owner/repo" }`), the frontend invalidation handler must use that payload to target specific query keys — not call `invalidateQueries({ queryKey: ['pr'] })` which invalidates every query whose key starts with `['pr']`. TanStack Query keys already encode the resource identity (e.g., `['pr', workspacePath, branch]`), so per-resource invalidation is architecturally possible. Blanket invalidation turns a targeted event into a broadcast, causing O(N) refetches where N is the number of active queries of that type. This is especially wasteful when combined with poll-based event sources that fire periodically regardless of actual changes.
+
+---
+
+### L-019: Negative query results from external systems need longer cache TTLs than positive results — "nothing exists" rarely changes without user action
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-25
+- branch: master
+
+When a query to an external system (GitHub API, database, etc.) returns "not found" / empty / null, cache that negative result with a longer TTL than positive results. The absence of a resource (no PR for a branch) only changes when the user takes explicit action (creates a PR, pushes a ref). Polling a "does this PR exist?" endpoint every 30 seconds when the answer has been "no" for the last hour spawns subprocesses and burns API rate limits for zero information gain. Negative caching should only be invalidated by meaningful state changes: `ref-changed` events, user-initiated refresh, or incoming webhooks — not by periodic "re-check everything" timers. On the server side, endpoints that proxy to expensive external calls (subprocess spawns, API calls) should always cache their results, including negative results.
+
+---
