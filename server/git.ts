@@ -240,7 +240,7 @@ async function getPrForBranch(
         'view',
         branch,
         '--json',
-        'number,title,url,state,headRefName,baseRefName,reviewDecision,isDraft,additions,deletions,mergeable',
+        'number,title,url,state,headRefName,baseRefName,reviewDecision,isDraft,additions,deletions,mergeable,updatedAt',
       ],
       { cwd: repoPath, timeout: 5000 },
     ));
@@ -263,6 +263,7 @@ async function getPrForBranch(
       additions: number;
       deletions: number;
       mergeable: string;
+      updatedAt: string;
     };
 
     return {
@@ -278,6 +279,7 @@ async function getPrForBranch(
       deletions: data.deletions ?? 0,
       mergeable: (data.mergeable as PrInfo['mergeable']) ?? 'UNKNOWN',
       unresolvedCommentCount: 0,
+      updatedAt: data.updatedAt ?? '',
     };
   } catch {
     return null;
@@ -492,6 +494,17 @@ async function buildRepoMap(
   return map;
 }
 
+const ONE_DAY_MS = 86_400_000;
+
+/** A PR is stale if it's MERGED or CLOSED and was last updated more than 1 day ago (or has no valid timestamp). */
+function isStalePr(pr: PrInfo): boolean {
+  if (pr.state === 'OPEN') return false;
+  if (!pr.updatedAt) return true; // no timestamp → treat as stale
+  const elapsed = Date.now() - new Date(pr.updatedAt).getTime();
+  if (Number.isNaN(elapsed)) return true; // unparseable date → treat as stale
+  return elapsed > ONE_DAY_MS;
+}
+
 export {
   listBranches,
   normalizeBranchNames,
@@ -505,6 +518,7 @@ export {
   getWorkingTreeDiff,
   branchToDisplayName,
   isBranchStale,
+  isStalePr,
   extractOwnerRepo,
   buildRepoMap,
 };

@@ -172,6 +172,26 @@ When using `svelte-dnd-action` (or any drag-and-drop library) on a scrollable co
 
 ---
 
+### L-018: Auto-generated resource names that interact with external systems must include a uniqueness token
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: kilimanjaro
+
+When generating names for resources (branches, worktrees, containers) that interact with external systems retaining permanent history (GitHub PRs, Docker registries, CI pipelines), never reuse bare names from a rotating pool. External systems associate names permanently — `gh pr view <branch>` returns the most recent PR for that branch name regardless of state. Append a short unique suffix (e.g., 4-char random hex) so each lifecycle gets a distinct identity. The cost is cosmetic (slightly longer names); the benefit is eliminating an entire class of stale-association bugs. This applies even when the name is temporary (e.g., renamed after first interaction) because the initial state matters for UX.
+
+---
+
+### L-019: When a bug analysis recommends both a short-term and long-term fix, the long-term fix needs a tracking mechanism or it will be forgotten
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-25
+- branch: kilimanjaro
+
+The 2026-03-19 stale-PR bug analysis recommended (1) filter merged/closed PRs (short-term) and (2) unique branch names (long-term). The short-term fix was partially applied but the long-term fix was never implemented, causing recurrence 6 days later. When a bug has both a symptom fix and a root-cause fix, the root-cause fix must be tracked as a separate work item (plan, issue, or TODO) — otherwise it gets lost in the "we fixed it" satisfaction of the symptom fix.
+
+---
+
 ### L-015: UI status indicators derived from multiple signal sources need a formal state machine — not ad-hoc guards
 - status: active
 - category: architecture

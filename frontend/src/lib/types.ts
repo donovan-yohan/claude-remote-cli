@@ -195,6 +195,7 @@ export interface PrInfo {
   deletions: number;
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
   unresolvedCommentCount: number;
+  updatedAt: string;
 }
 
 export interface WorkspaceSettings {
