@@ -6,7 +6,7 @@ Testing patterns and quality standards for claude-remote-cli.
 
 - Node.js built-in `node:test` + `node:assert` — no external test framework
 - TypeScript test files in `test/`, compiled via `tsc -p tsconfig.test.json`
-- Seventeen test files covering all server modules
+- Thirty-four test files covering all server modules
 - `svelte-check` runs in `build`, `test`, and standalone `check` — catches type errors in `.svelte` files
 - E2E tests (Playwright) planned but not yet implemented
 
@@ -53,6 +53,9 @@ Both `build` and `test` fail on type errors. CI runs both via `npm run build && 
 | `test/fs-browse.test.ts` | Filesystem browser API: directory listing, git repo detection, denylist filtering |
 | `test/git.test.ts` | Git operations: branch listing, activity feed, CI status parsing |
 | `test/pr-state.test.ts` | PR lifecycle state machine: action derivation from PR state + CI + mergeable + comments |
+| `test/display-state.test.ts` | Display state machine transitions (6 states), shouldNotify gating, critical seen-idle invariant |
+| `test/backend-state.test.ts` | Backend display state mapping from agentState+idle, deduplication (fireBackendStateIfChanged) |
+| `test/sidebar-items.test.ts` | SidebarItem construction from sessions+worktrees+workspaces, reconciliation across refresh |
 
 ## Test Isolation Patterns
 
