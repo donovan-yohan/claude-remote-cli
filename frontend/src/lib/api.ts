@@ -130,7 +130,10 @@ export async function fetchCiStatusOrNull(workspacePath: string, branch: string)
 export async function fetchPrForBranchOrNull(workspacePath: string, branch: string): Promise<PrInfo | null> {
   const res = await fetch('/workspaces/pr?path=' + encodeURIComponent(workspacePath) + '&branch=' + encodeURIComponent(branch));
   if (!res.ok) return null;
-  return res.json() as Promise<PrInfo>;
+  const data = await res.json() as { pr: null } | PrInfo;
+  // Server returns { pr: null } when no PR exists for the branch
+  if ('pr' in data && data.pr === null) return null;
+  return data as PrInfo;
 }
 
 export async function fetchCurrentBranch(workspacePath: string): Promise<string | null> {

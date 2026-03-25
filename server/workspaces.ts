@@ -22,6 +22,53 @@ const BROWSE_DENYLIST = new Set([
 const BROWSE_MAX_ENTRIES = 100;
 const BULK_MAX_PATHS = 50;
 
+// ── PR lookup cache ─────────────────────────────────────────────────────────
+// Caches `getPrForBranch` results to avoid spawning a `gh` subprocess on every
+// request. Negative results (no PR) use a longer TTL since they only change on
+// user action (push, PR creation).
+
+const PR_CACHE_POSITIVE_TTL_MS = 60_000;   // 60s — same as org-dashboard
+const PR_CACHE_NEGATIVE_TTL_MS = 300_000;  // 5 min — "no PR" rarely changes without user action
+
+interface PrCacheEntry {
+  result: import('./types.js').PrInfo | null;
+  fetchedAt: number;
+}
+
+const prCache = new Map<string, PrCacheEntry>();
+
+function prCacheKey(workspacePath: string, branch: string): string {
+  return `${workspacePath}:${branch}`;
+}
+
+function getPrCached(workspacePath: string, branch: string): PrCacheEntry | undefined {
+  const key = prCacheKey(workspacePath, branch);
+  const entry = prCache.get(key);
+  if (!entry) return undefined;
+  const ttl = entry.result ? PR_CACHE_POSITIVE_TTL_MS : PR_CACHE_NEGATIVE_TTL_MS;
+  if (Date.now() - entry.fetchedAt > ttl) {
+    prCache.delete(key);
+    return undefined;
+  }
+  return entry;
+}
+
+function setPrCached(workspacePath: string, branch: string, result: import('./types.js').PrInfo | null): void {
+  prCache.set(prCacheKey(workspacePath, branch), { result, fetchedAt: Date.now() });
+}
+
+/** Clear PR cache entries. If workspacePath is given, only clears entries for that workspace. */
+export function clearPrCache(workspacePath?: string): void {
+  if (!workspacePath) {
+    prCache.clear();
+    return;
+  }
+  const prefix = `${workspacePath}:`;
+  for (const key of prCache.keys()) {
+    if (key.startsWith(prefix)) prCache.delete(key);
+  }
+}
+
 // Deps type
 
 export interface WorkspaceDeps {
@@ -531,20 +578,36 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
+    // Check cache first to avoid spawning a `gh` subprocess on every request
+    const cached = getPrCached(workspacePath, branch);
+    if (cached) {
+      if (cached.result) {
+        res.json(cached.result);
+      } else {
+        res.json({ pr: null });
+      }
+      return;
+    }
+
     try {
       const pr = await getPrForBranch(workspacePath, branch);
+      setPrCached(workspacePath, branch, pr);
       if (pr) {
         if (pr.state === 'OPEN') {
           const unresolvedCommentCount = await getUnresolvedCommentCount(workspacePath, pr.number);
-          res.json({ ...pr, unresolvedCommentCount });
+          const prWithComments = { ...pr, unresolvedCommentCount };
+          setPrCached(workspacePath, branch, prWithComments);
+          res.json(prWithComments);
         } else {
           res.json({ ...pr, unresolvedCommentCount: 0 });
         }
       } else {
-        res.status(404).json({ error: 'No PR found for branch' });
+        res.json({ pr: null });
       }
     } catch {
-      res.status(404).json({ error: 'No PR found for branch' });
+      // Cache the negative result so we don't retry for 5 minutes
+      setPrCached(workspacePath, branch, null);
+      res.json({ pr: null });
     }
   });
 

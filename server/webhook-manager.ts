@@ -75,9 +75,10 @@ export function startSmartPolling(
         execFileAsync(file, args, opts);
       const repoMap = await buildRepoMap(unwebhookedPaths, execFn);
 
-      for (const [ownerRepo] of repoMap) {
-        broadcastEvent('pr-updated', { repo: ownerRepo });
-        broadcastEvent('ci-updated', { repo: ownerRepo });
+      // Single broadcast per poll cycle — frontend debounces invalidation
+      if (repoMap.size > 0) {
+        broadcastEvent('pr-updated', { repos: [...repoMap.keys()] });
+        broadcastEvent('ci-updated', { repos: [...repoMap.keys()] });
       }
     })();
   };
