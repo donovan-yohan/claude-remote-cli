@@ -162,7 +162,7 @@ The frontend tsconfig enables `exactOptionalPropertyTypes: true`. Under this set
 
 ---
 
-### L-020: Features gated by browser permissions must surface the permission state in the UI — a settings toggle is not a permission request
+### L-022: Features gated by browser permissions must surface the permission state in the UI — a settings toggle is not a permission request
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-25
@@ -172,7 +172,7 @@ When a feature depends on a browser permission (Notifications, Geolocation, Came
 
 ---
 
-### L-021: Silent catch blocks on browser API calls hide broken features — always log or surface permission/subscription failures
+### L-023: Silent catch blocks on browser API calls hide broken features — always log or surface permission/subscription failures
 - status: active
 - category: debugging
 - source: /harness:bug 2026-03-25
@@ -189,6 +189,26 @@ When calling browser APIs that can fail due to missing permissions (e.g., `pushM
 - branch: mobile-longpress-drag
 
 When using `svelte-dnd-action` (or any drag-and-drop library) on a scrollable container, pass `dragDisabled: true` by default and only enable it when the user explicitly enters reorder mode. Libraries like `svelte-dnd-action` attach touch event listeners to draggable children and `preventDefault()` on `touchmove`, which blocks native scroll. Having an application-level reorder mode toggle (e.g., `ui.reorderMode`) without wiring it to the library's `dragDisabled` option creates a disconnect — your mode gate is purely cosmetic while the library still steals events. Always check library docs for disable/enable APIs and wire them to your mode state.
+
+---
+
+### L-018: Auto-generated resource names that interact with external systems must include a uniqueness token
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: kilimanjaro
+
+When generating names for resources (branches, worktrees, containers) that interact with external systems retaining permanent history (GitHub PRs, Docker registries, CI pipelines), never reuse bare names from a rotating pool. External systems associate names permanently — `gh pr view <branch>` returns the most recent PR for that branch name regardless of state. Append a short unique suffix (e.g., 4-char random hex) so each lifecycle gets a distinct identity. The cost is cosmetic (slightly longer names); the benefit is eliminating an entire class of stale-association bugs. This applies even when the name is temporary (e.g., renamed after first interaction) because the initial state matters for UX.
+
+---
+
+### L-019: When a bug analysis recommends both a short-term and long-term fix, the long-term fix needs a tracking mechanism or it will be forgotten
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-25
+- branch: kilimanjaro
+
+The 2026-03-19 stale-PR bug analysis recommended (1) filter merged/closed PRs (short-term) and (2) unique branch names (long-term). The short-term fix was partially applied but the long-term fix was never implemented, causing recurrence 6 days later. When a bug has both a symptom fix and a root-cause fix, the root-cause fix must be tracked as a separate work item (plan, issue, or TODO) — otherwise it gets lost in the "we fixed it" satisfaction of the symptom fix.
 
 ---
 
@@ -219,5 +239,15 @@ When WebSocket events carry a payload identifying which resource changed (e.g., 
 - branch: master
 
 When a query to an external system (GitHub API, database, etc.) returns "not found" / empty / null, cache that negative result with a longer TTL than positive results. The absence of a resource (no PR for a branch) only changes when the user takes explicit action (creates a PR, pushes a ref). Polling a "does this PR exist?" endpoint every 30 seconds when the answer has been "no" for the last hour spawns subprocesses and burns API rate limits for zero information gain. Negative caching should only be invalidated by meaningful state changes: `ref-changed` events, user-initiated refresh, or incoming webhooks — not by periodic "re-check everything" timers. On the server side, endpoints that proxy to expensive external calls (subprocess spawns, API calls) should always cache their results, including negative results.
+
+---
+
+### L-020: Never use dual mechanisms (CSS media query + JS matchMedia) to implement mobile-specific behavior — use CSS alone for visibility
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-25
+- branch: hood
+
+When a UI element needs different visibility on mobile vs desktop (e.g., "always visible on mobile, hover-reveal on desktop"), implement it purely in CSS with a media query override — never add a parallel JS `matchMedia` check that also hides the element. Dual mechanisms create redundant hiding that's easy to break independently: fixing the CSS leaves the JS guard in place (or vice versa), making the bug appear unfixed. The pattern: set the desktop default in base CSS (e.g., `opacity: 0` + `:hover { opacity: 1 }`), then override in `@media (max-width: 600px) { opacity: 1 }`. Never pass a `hideTrigger={isMobile}` prop that prevents the element from rendering in the DOM — CSS can't show what JS never rendered.
 
 ---
