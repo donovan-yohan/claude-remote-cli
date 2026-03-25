@@ -81,9 +81,8 @@
   // ── Drag-and-drop reorder ──
   const flipDurationMs = 200;
 
-  // Device detection: touch devices need drag gating to preserve scroll
-  let isTouchDevice = $state(typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
-  // On touch devices, drag is disabled by default; long-press enables it temporarily
+  // Coarse-pointer devices (phones, tablets) need drag gating to preserve scroll
+  const isTouchDevice = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
   let mobileDragEnabled = $state(false);
   let dragDisabled = $derived(isTouchDevice && !mobileDragEnabled);
 
@@ -120,25 +119,19 @@
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 
   function handleTouchStart() {
-    if (!isTouchDevice) return;
+    if (longPressTimer) clearTimeout(longPressTimer);
     longPressTimer = setTimeout(() => {
       mobileDragEnabled = true;
       longPressTimer = null;
     }, 500);
   }
 
-  function handleTouchEnd() {
+  function cancelTouch() {
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
     }
-  }
-
-  function handleTouchMove() {
-    if (longPressTimer) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
+    mobileDragEnabled = false;
   }
 </script>
 
@@ -182,8 +175,9 @@
       onconsider={handleDndConsider}
       onfinalize={handleDndFinalize}
       ontouchstart={handleTouchStart}
-      ontouchend={handleTouchEnd}
-      ontouchmove={handleTouchMove}
+      ontouchend={cancelTouch}
+      ontouchmove={cancelTouch}
+      ontouchcancel={cancelTouch}
     >
       {#each localDndItems as item (item.id)}
         {@const workspace = item.workspace}

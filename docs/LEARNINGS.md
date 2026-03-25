@@ -142,7 +142,7 @@ When multiple server modules access the same config file, ensure they all use th
 
 ---
 
-### L-014: DnD `dragDisabled` must be device-aware — always-on for mouse, gated for touch
+### L-015: DnD `dragDisabled` must be device-aware — always-on for mouse, gated for touch
 - status: active
 - category: patterns
 - source: /harness:bug 2026-03-25
@@ -152,7 +152,7 @@ When using `svelte-dnd-action` on a scrollable container, `dragDisabled` must us
 
 ---
 
-### L-015: Never couple a library's technical enable/disable flag to unrelated UI visibility changes
+### L-016: Never couple a library's technical enable/disable flag to unrelated UI visibility changes
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-25
