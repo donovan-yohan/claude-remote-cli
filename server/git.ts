@@ -240,7 +240,7 @@ async function getPrForBranch(
         'view',
         branch,
         '--json',
-        'number,title,url,state,headRefName,baseRefName,reviewDecision,isDraft,additions,deletions,mergeable',
+        'number,title,url,state,headRefName,baseRefName,reviewDecision,isDraft,additions,deletions,mergeable,updatedAt',
       ],
       { cwd: repoPath, timeout: 5000 },
     ));
@@ -263,6 +263,7 @@ async function getPrForBranch(
       additions: number;
       deletions: number;
       mergeable: string;
+      updatedAt: string;
     };
 
     return {
@@ -278,6 +279,7 @@ async function getPrForBranch(
       deletions: data.deletions ?? 0,
       mergeable: (data.mergeable as PrInfo['mergeable']) ?? 'UNKNOWN',
       unresolvedCommentCount: 0,
+      updatedAt: data.updatedAt ?? '',
     };
   } catch {
     return null;
@@ -447,6 +449,62 @@ async function isBranchStale(
   }
 }
 
+/**
+ * Extracts "owner/repo" from a git remote URL.
+ * Handles both SSH (git@github.com:owner/repo.git) and HTTPS (https://github.com/owner/repo.git) forms.
+ */
+function extractOwnerRepo(remoteUrl: string): string | null {
+  // SSH: git@github.com:owner/repo.git
+  const sshMatch = remoteUrl.match(/git@[^:]+:([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (sshMatch) return sshMatch[1] ?? null;
+  // HTTPS: https://github.com/owner/repo.git
+  const httpsMatch = remoteUrl.match(/https?:\/\/[^/]+\/([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (httpsMatch) return httpsMatch[1] ?? null;
+  return null;
+}
+
+/**
+ * Returns a map of "owner/repo" → workspace path for all git workspaces.
+ * Workspaces that are not git repos or have no remote are omitted.
+ */
+async function buildRepoMap(
+  workspacePaths: string[],
+  exec: ExecFileAsyncLike,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+
+  await Promise.all(
+    workspacePaths.map(async (wsPath) => {
+      try {
+        const { stdout } = await exec(
+          'git',
+          ['remote', 'get-url', 'origin'],
+          { cwd: wsPath, timeout: 10_000 },
+        );
+        const ownerRepo = extractOwnerRepo(stdout.trim());
+        if (ownerRepo) {
+          map.set(ownerRepo.toLowerCase(), wsPath);
+        }
+      } catch {
+        // Not a git repo or no remote — skip
+      }
+    }),
+  );
+
+  return map;
+}
+
+const ONE_DAY_MS = 86_400_000;
+
+/** A PR is stale if it's MERGED or CLOSED and was last updated more than 1 day ago (or has no valid timestamp). */
+function isStalePr(pr: PrInfo): boolean {
+  if (pr.state === 'OPEN') return false;
+  if (!pr.updatedAt) return true; // no timestamp → treat as stale
+  const elapsed = Date.now() - new Date(pr.updatedAt).getTime();
+  if (Number.isNaN(elapsed)) return true; // unparseable date → treat as stale
+  return elapsed > ONE_DAY_MS;
+}
+
 export {
   listBranches,
   normalizeBranchNames,
@@ -460,4 +518,7 @@ export {
   getWorkingTreeDiff,
   branchToDisplayName,
   isBranchStale,
+  isStalePr,
+  extractOwnerRepo,
+  buildRepoMap,
 };

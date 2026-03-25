@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -7,10 +8,10 @@ import { promisify } from 'node:util';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
-import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
+import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys, writeMeta } from './config.js';
 import { trackEvent } from './analytics.js';
-import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch } from './git.js';
-import type { Config, PullRequest, PullRequestsResponse, Workspace } from './types.js';
+import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, isStalePr, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
+import type { Config, PrInfo, PullRequest, PullRequestsResponse, Workspace } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -21,6 +22,53 @@ const BROWSE_DENYLIST = new Set([
 ]);
 const BROWSE_MAX_ENTRIES = 100;
 const BULK_MAX_PATHS = 50;
+
+// ── PR lookup cache ─────────────────────────────────────────────────────────
+// Caches `getPrForBranch` results to avoid spawning a `gh` subprocess on every
+// request. Negative results (no PR) use a longer TTL since they only change on
+// user action (push, PR creation).
+
+const PR_CACHE_POSITIVE_TTL_MS = 60_000;   // 60s — same as org-dashboard
+const PR_CACHE_NEGATIVE_TTL_MS = 300_000;  // 5 min — "no PR" rarely changes without user action
+
+interface PrCacheEntry {
+  result: PrInfo | null;
+  fetchedAt: number;
+}
+
+const prCache = new Map<string, PrCacheEntry>();
+
+function prCacheKey(workspacePath: string, branch: string): string {
+  return `${workspacePath}:${branch}`;
+}
+
+function getPrCached(workspacePath: string, branch: string): PrCacheEntry | undefined {
+  const key = prCacheKey(workspacePath, branch);
+  const entry = prCache.get(key);
+  if (!entry) return undefined;
+  const ttl = entry.result ? PR_CACHE_POSITIVE_TTL_MS : PR_CACHE_NEGATIVE_TTL_MS;
+  if (Date.now() - entry.fetchedAt > ttl) {
+    prCache.delete(key);
+    return undefined;
+  }
+  return entry;
+}
+
+function setPrCached(workspacePath: string, branch: string, result: PrInfo | null): void {
+  prCache.set(prCacheKey(workspacePath, branch), { result, fetchedAt: Date.now() });
+}
+
+/** Clear PR cache entries. If workspacePath is given, only clears entries for that workspace. */
+export function clearPrCache(workspacePath?: string): void {
+  if (!workspacePath) {
+    prCache.clear();
+    return;
+  }
+  const prefix = `${workspacePath}:`;
+  for (const key of prCache.keys()) {
+    if (key.startsWith(prefix)) prCache.delete(key);
+  }
+}
 
 // Deps type
 
@@ -203,6 +251,35 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     if (idx === -1) {
       res.status(404).json({ error: 'Workspace not found' });
       return;
+    }
+
+    // Clean up GitHub webhook if one exists for this workspace
+    const wsSettings = config.workspaceSettings?.[resolved];
+    if (wsSettings?.webhookId && config.github?.accessToken) {
+      try {
+        const { stdout } = await exec('git', ['remote', 'get-url', 'origin'], { cwd: resolved, timeout: 5000 });
+        const ownerRepo = extractOwnerRepo(stdout.trim());
+        if (ownerRepo) {
+          await globalThis.fetch(`https://api.github.com/repos/${ownerRepo}/hooks/${wsSettings.webhookId}`, {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${config.github.accessToken}`,
+              Accept: 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+            },
+          });
+        }
+      } catch (err) {
+        // Best-effort — log but don't block workspace removal
+        console.warn('[workspaces] Failed to delete webhook for', resolved, err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    // Also clean up webhook-related workspaceSettings
+    if (config.workspaceSettings?.[resolved]) {
+      delete config.workspaceSettings[resolved].webhookId;
+      delete config.workspaceSettings[resolved].webhookEnabled;
+      delete config.workspaceSettings[resolved].webhookError;
     }
 
     config.workspaces = workspaces.filter((p) => p !== resolved);
@@ -502,20 +579,31 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
+    const cached = getPrCached(workspacePath, branch);
+    if (cached) {
+      res.json({ pr: cached.result });
+      return;
+    }
+
     try {
       const pr = await getPrForBranch(workspacePath, branch);
-      if (pr) {
+      if (pr && !isStalePr(pr)) {
+        let unresolvedCommentCount = 0;
         if (pr.state === 'OPEN') {
-          const unresolvedCommentCount = await getUnresolvedCommentCount(workspacePath, pr.number);
-          res.json({ ...pr, unresolvedCommentCount });
-        } else {
-          res.json({ ...pr, unresolvedCommentCount: 0 });
+          try {
+            unresolvedCommentCount = await getUnresolvedCommentCount(workspacePath, pr.number);
+          } catch { /* degrade gracefully — show PR without comment count */ }
         }
+        const enriched = { ...pr, unresolvedCommentCount };
+        setPrCached(workspacePath, branch, enriched);
+        res.json({ pr: enriched });
       } else {
-        res.status(404).json({ error: 'No PR found for branch' });
+        setPrCached(workspacePath, branch, null);
+        res.json({ pr: null });
       }
     } catch {
-      res.status(404).json({ error: 'No PR found for branch' });
+      // Do NOT cache transient errors — only cache clean null from getPrForBranch
+      res.json({ pr: null });
     }
   });
 
@@ -588,14 +676,15 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       branchName = existingBranch;
       gitArgs = ['worktree', 'add', path.join(resolved, '.worktrees', mountainName), existingBranch];
     } else {
-      // Create a new branch using the next mountain name — with collision retry
+      // Create a new branch: <mountain>-<hex-suffix> — with retry if directory is taken
       const baseIndex = settings.nextMountainIndex ?? 0;
       let found = false;
 
       for (let attempt = 0; attempt < MOUNTAIN_NAMES.length; attempt++) {
         const candidateIndex = (baseIndex + attempt) % MOUNTAIN_NAMES.length;
         const candidateName = MOUNTAIN_NAMES[candidateIndex] ?? 'everest';
-        const candidateBranch = (settings.branchPrefix ?? '') + candidateName;
+        const suffix = crypto.randomBytes(2).toString('hex');
+        const candidateBranch = (settings.branchPrefix ?? '') + candidateName + '-' + suffix;
         const candidatePath = path.join(resolved, '.worktrees', candidateName);
 
         // Check if branch or directory already exists
@@ -651,6 +740,14 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     if (nextMountainIndex !== undefined) {
       setWorkspaceSettings(configPath, config, resolved, { nextMountainIndex });
     }
+
+    // Write metadata so DELETE /worktrees can find the suffixed branch name
+    writeMeta(configPath, {
+      worktreePath,
+      displayName: mountainName,
+      lastActivity: new Date().toISOString(),
+      branchName,
+    });
 
     res.json({ branchName, mountainName, worktreePath });
   });

@@ -142,7 +142,47 @@ When multiple server modules access the same config file, ensure they all use th
 
 ---
 
-### L-015: DnD `dragDisabled` must be device-aware — always-on for mouse, gated for touch
+### L-016: `position: fixed` inside a `<dialog>` top-layer element uses the dialog as the containing block, not the viewport
+- status: active
+- category: debugging
+- source: commit f88d830 (settings-webhooks branch, 2026-03-24)
+- branch: dy/feat/settings-webhooks
+
+When an element with `position: fixed` is a descendant of a `<dialog>` that is in the browser's top layer, the dialog becomes the CSS containing block — not the viewport. This means `inset: 0` fills the dialog, not the screen, and `height: 100%` refers to the dialog's height. The fix: use `position: absolute` on drawers/backdrops inside dialogs, ensure the ancestor dialog content wrapper has `position: relative`, and set `bottom: 0` instead of `height: 100%`. This affects `SettingsToc.svelte` and any future drawer-inside-dialog pattern.
+
+---
+
+### L-017: `exactOptionalPropertyTypes: true` requires explicit `| undefined` in object spread and partial-init assignments
+- status: active
+- category: patterns
+- source: settings-webhooks branch, frontend tsconfig.json
+- branch: dy/feat/settings-webhooks
+
+The frontend tsconfig enables `exactOptionalPropertyTypes: true`. Under this setting, TypeScript distinguishes between a property that is absent (`{}`) and one explicitly set to `undefined` (`{foo: undefined}`). This means: (1) you cannot assign `undefined` to an optional property without adding `| undefined` to its type; (2) object spreads from partial sources may produce type errors at the assignment site even if the runtime values are identical. When adding optional fields to interface types used in spread assignments (e.g., `WorkspaceSettings`), declare them as `fieldName?: Type` and never write `fieldName: undefined` at the assignment site — omit the key entirely instead.
+
+---
+
+### L-022: Features gated by browser permissions must surface the permission state in the UI — a settings toggle is not a permission request
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: everest
+
+When a feature depends on a browser permission (Notifications, Geolocation, Camera, etc.), the settings UI must address two distinct layers: (1) the app-level opt-in (which entities should use the feature) and (2) the browser-level permission (whether the browser allows it at all). A checkbox that only controls layer 1 gives users a false sense of enablement. Always: call the browser permission API when the user enables the feature, display the current permission state (granted/denied/default), and provide guidance if permission was denied. The permission request must be triggered by a user gesture (especially on iOS PWA where this is strictly enforced).
+
+---
+
+### L-023: Silent catch blocks on browser API calls hide broken features — always log or surface permission/subscription failures
+- status: active
+- category: debugging
+- source: /harness:bug 2026-03-25
+- branch: everest
+
+When calling browser APIs that can fail due to missing permissions (e.g., `pushManager.subscribe()`, `Notification.requestPermission()`), empty `catch {}` blocks make broken features indistinguishable from working ones. The push notification pipeline had three silent catches that hid the fact that no subscription was ever created. At minimum: log the error in development, and in production surface the failure state in the UI (e.g., "Push notifications unavailable — permission denied"). Never swallow errors from permission-dependent APIs without at least recording the failure in application state.
+
+---
+
+### L-024: DnD `dragDisabled` must be device-aware — always-on for mouse, gated for touch
 - status: active
 - category: patterns
 - source: /harness:bug 2026-03-25
@@ -152,12 +192,72 @@ When using `svelte-dnd-action` on a scrollable container, `dragDisabled` must us
 
 ---
 
-### L-016: Never couple a library's technical enable/disable flag to unrelated UI visibility changes
+### L-025: Never couple a library's technical enable/disable flag to unrelated UI visibility changes
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-25
 - branch: shasta
 
 When a library provides a boolean to enable/disable its event handling (e.g., `svelte-dnd-action`'s `dragDisabled`), do not bind that same boolean to UI layout changes (hiding content, collapsing sections). The library flag exists for event management, not visual design. Coupling them means any change to the event strategy (e.g., making drag always-on for desktop) forces an unintended layout change. Keep library enable/disable flags as narrow technical controls. If a distinct UI mode is needed, use a separate state variable with its own entry/exit logic.
+
+---
+
+### L-018: Auto-generated resource names that interact with external systems must include a uniqueness token
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: kilimanjaro
+
+When generating names for resources (branches, worktrees, containers) that interact with external systems retaining permanent history (GitHub PRs, Docker registries, CI pipelines), never reuse bare names from a rotating pool. External systems associate names permanently — `gh pr view <branch>` returns the most recent PR for that branch name regardless of state. Append a short unique suffix (e.g., 4-char random hex) so each lifecycle gets a distinct identity. The cost is cosmetic (slightly longer names); the benefit is eliminating an entire class of stale-association bugs. This applies even when the name is temporary (e.g., renamed after first interaction) because the initial state matters for UX.
+
+---
+
+### L-019: When a bug analysis recommends both a short-term and long-term fix, the long-term fix needs a tracking mechanism or it will be forgotten
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-25
+- branch: kilimanjaro
+
+The 2026-03-19 stale-PR bug analysis recommended (1) filter merged/closed PRs (short-term) and (2) unique branch names (long-term). The short-term fix was partially applied but the long-term fix was never implemented, causing recurrence 6 days later. When a bug has both a symptom fix and a root-cause fix, the root-cause fix must be tracked as a separate work item (plan, issue, or TODO) — otherwise it gets lost in the "we fixed it" satisfaction of the symptom fix.
+
+---
+
+### L-015: UI status indicators derived from multiple signal sources need a formal state machine — not ad-hoc guards
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-24
+- branch: dy-fix-idle-status-regression
+
+When a display status (e.g., session dot color) is derived from multiple independent signals (PTY idle timer, hook-based agentState, parser reconciliation), ad-hoc guards and cooldown timers will always have edge cases. The root invariant — "only show attention when there's genuinely new content the user hasn't seen" — cannot be enforced by checking individual signals in isolation. Instead, model the display state as a formal state machine with a transition function that accepts semantic events and enforces valid transitions at the type level. The key insight: `seen-idle → unseen-idle` should be an **impossible transition** — the only path to `unseen-idle` must go through `running` first.
+
+---
+
+### L-018: WebSocket-driven query invalidation should be scoped to the affected resource — blanket-invalidation is strongly discouraged
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: master
+
+When WebSocket events carry a payload identifying which resource changed (e.g., `{ repo: "owner/repo" }`), the frontend invalidation handler must use that payload to target specific query keys — not call `invalidateQueries({ queryKey: ['pr'] })` which invalidates every query whose key starts with `['pr']`. TanStack Query keys already encode the resource identity (e.g., `['pr', workspacePath, branch]`), so per-resource invalidation is architecturally possible. Blanket invalidation turns a targeted event into a broadcast, causing O(N) refetches where N is the number of active queries of that type. This is especially wasteful when combined with poll-based event sources that fire periodically regardless of actual changes.
+
+---
+
+### L-019: Negative query results from external systems need longer cache TTLs than positive results — "nothing exists" rarely changes without user action
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-25
+- branch: master
+
+When a query to an external system (GitHub API, database, etc.) returns "not found" / empty / null, cache that negative result with a longer TTL than positive results. The absence of a resource (no PR for a branch) only changes when the user takes explicit action (creates a PR, pushes a ref). Polling a "does this PR exist?" endpoint every 30 seconds when the answer has been "no" for the last hour spawns subprocesses and burns API rate limits for zero information gain. Negative caching should only be invalidated by meaningful state changes: `ref-changed` events, user-initiated refresh, or incoming webhooks — not by periodic "re-check everything" timers. On the server side, endpoints that proxy to expensive external calls (subprocess spawns, API calls) should always cache their results, including negative results.
+
+---
+
+### L-020: Never use dual mechanisms (CSS media query + JS matchMedia) to implement mobile-specific behavior — use CSS alone for visibility
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-25
+- branch: hood
+
+When a UI element needs different visibility on mobile vs desktop (e.g., "always visible on mobile, hover-reveal on desktop"), implement it purely in CSS with a media query override — never add a parallel JS `matchMedia` check that also hides the element. Dual mechanisms create redundant hiding that's easy to break independently: fixing the CSS leaves the JS guard in place (or vice versa), making the bug appear unfixed. The pattern: set the desktop default in base CSS (e.g., `opacity: 0` + `:hover { opacity: 1 }`), then override in `@media (max-width: 600px) { opacity: 1 }`. Never pass a `hideTrigger={isMobile}` prop that prevents the element from rendering in the DOM — CSS can't show what JS never rendered.
 
 ---

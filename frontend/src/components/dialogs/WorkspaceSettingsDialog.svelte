@@ -608,7 +608,7 @@
 
   .error-msg {
     font-size: 0.82rem;
-    color: #e74c3c;
+    color: var(--status-error);
     margin: 0;
     padding: 6px 10px;
     background: rgba(231, 76, 60, 0.08);
@@ -663,13 +663,13 @@
 
   .btn-danger {
     background: transparent;
-    color: #c0392b;
+    color: var(--status-error);
     border-color: rgba(192, 57, 43, 0.4);
   }
 
   .btn-danger:hover {
     background: rgba(192, 57, 43, 0.1);
-    border-color: #c0392b;
+    border-color: var(--status-error);
   }
 
   .btn-ghost {

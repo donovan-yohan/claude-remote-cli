@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll, setAttention, setAgentState, clearAttention, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, handleBackendStateChanged, handleUserViewed, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
@@ -53,7 +53,7 @@
     if (session) {
       ui.activeWorkspacePath = session.workspacePath;
     }
-    clearAttention(sessionId);
+    handleUserViewed(sessionId);
     closeSidebar();
   }
 
@@ -278,23 +278,35 @@
     if (!auth.authenticated) return;
 
     const refChangedTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    let pollInvalidateTimer: ReturnType<typeof setTimeout> | null = null;
 
     function invalidatePrQueries(): void {
       queryClient.invalidateQueries({ queryKey: ['pr'] });
       queryClient.invalidateQueries({ queryKey: ['ci-status'] });
     }
 
+    /** Throttled invalidation for poll-based events (pr-updated/ci-updated).
+     *  Schedules one invalidation 500ms after the first event; subsequent
+     *  events within the window are dropped. */
+    function throttledPollInvalidate(): void {
+      if (pollInvalidateTimer) return;
+      pollInvalidateTimer = setTimeout(() => {
+        pollInvalidateTimer = null;
+        invalidatePrQueries();
+        queryClient.invalidateQueries({ queryKey: ['org-prs'] });
+      }, 500);
+    }
+
     connectEventSocket((msg) => {
       if (msg.type === 'worktrees-changed') {
         refreshAll();
-      } else if (msg.type === 'session-state-changed' && msg.sessionId && msg.state) {
-        setAgentState(msg.sessionId, msg.state as import('./lib/types.js').AgentState);
-      } else if (msg.type === 'session-idle-changed' && msg.sessionId) {
-        setAttention(msg.sessionId, msg.idle ?? false);
+      } else if (msg.type === 'session-backend-state-changed' && msg.sessionId && msg.state) {
+        handleBackendStateChanged(msg.sessionId, msg.state as import('./lib/state/display-state.js').BackendDisplayState);
       } else if (msg.type === 'session-renamed' && msg.sessionId) {
         renameSession(msg.sessionId, msg.branchName ?? '', msg.displayName ?? '');
       } else if (msg.type === 'session-ended') {
         invalidatePrQueries();
+        refreshAll();
       } else if (msg.type === 'ref-changed' && msg.cwdPath) {
         const key = msg.cwdPath;
         const existing = refChangedTimers.get(key);
@@ -304,15 +316,14 @@
           invalidatePrQueries();
         }, 5000));
       } else if (msg.type === 'pr-updated' || msg.type === 'ci-updated') {
-        queryClient.invalidateQueries({ queryKey: ['org-prs'] });
-        queryClient.invalidateQueries({ queryKey: ['pr'] });
-        queryClient.invalidateQueries({ queryKey: ['ci-status'] });
+        throttledPollInvalidate();
       }
     });
 
     return () => {
       for (const timer of refChangedTimers.values()) clearTimeout(timer);
       refChangedTimers.clear();
+      if (pollInvalidateTimer) { clearTimeout(pollInvalidateTimer); pollInvalidateTimer = null; }
     };
   });
 
@@ -382,7 +393,7 @@
     if (session) {
       ui.activeWorkspacePath = session.workspacePath;
     }
-    clearAttention(id);
+    handleUserViewed(id);
     closeSidebar();
     terminalRef?.focusTerm();
   }
@@ -846,6 +857,7 @@
     onSelectSession={(id) => handleSelectSession(id)}
     onSelectPr={handleSpotlightSelectPr}
     onCommand={handleSpotlightCommand}
+    onOpenSettings={(sectionId) => { spotlightOpen = false; settingsDialogRef?.open(sectionId); }}
   />
 
   <!-- Toasts -->
@@ -885,13 +897,7 @@
       width: 100%;
     }
 
-    .sidebar-overlay {
-      display: block;
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 99;
-    }
+    /* No overlay needed — sidebar is full-screen on mobile */
 
     .terminal-area {
       width: 100%;

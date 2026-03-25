@@ -29,11 +29,10 @@ function startServer(): Promise<void> {
     broadcasts = [];
 
     const deps = {
-      secret: TEST_SECRET,
+      secret: () => TEST_SECRET,
       broadcastEvent: (type: string, data?: Record<string, unknown>) => {
         broadcasts.push({ type, data });
       },
-      getWorkspacePaths: () => [],
     };
 
     const app = express();
@@ -150,5 +149,55 @@ describe('webhook handler', () => {
     const json = await res.json() as { ok: boolean };
     assert.equal(json.ok, true);
     assert.equal(broadcasts.length, 0, 'Should not broadcast for unknown events');
+  });
+
+  it('includes repository full_name in broadcast data', async () => {
+    broadcasts = [];
+    const body = { action: 'opened', number: 42, repository: { full_name: 'owner/repo' } };
+    const res = await postWebhook({ body, event: 'pull_request' });
+    assert.equal(res.status, 200);
+    assert.equal(broadcasts[0]?.data?.repo, 'owner/repo');
+  });
+});
+
+describe('webhook handler — no secret configured', () => {
+  let noSecretServer: Server;
+  let noSecretBaseUrl: string;
+
+  before(() => new Promise<void>((resolve) => {
+    const app = express();
+    app.use('/webhooks', createWebhookRouter({
+      secret: () => undefined,
+      broadcastEvent: () => {},
+    }));
+    noSecretServer = app.listen(0, '127.0.0.1', () => {
+      const addr = noSecretServer.address();
+      if (typeof addr === 'object' && addr) {
+        noSecretBaseUrl = `http://127.0.0.1:${addr.port}`;
+      }
+      resolve();
+    });
+  }));
+
+  after(() => new Promise<void>((resolve) => {
+    if (noSecretServer) noSecretServer.close(() => resolve());
+    else resolve();
+  }));
+
+  it('rejects with 401 when webhook secret is not configured', async () => {
+    const payload = JSON.stringify({ action: 'opened' });
+    const sig = signPayload(TEST_SECRET, payload);
+    const res = await fetch(`${noSecretBaseUrl}/webhooks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-GitHub-Event': 'pull_request',
+        'X-Hub-Signature-256': sig,
+      },
+      body: payload,
+    });
+    assert.equal(res.status, 401);
+    const json = await res.json() as { error: string };
+    assert.equal(json.error, 'Webhooks not configured');
   });
 });

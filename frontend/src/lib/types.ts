@@ -1,3 +1,5 @@
+import type { DisplayState, BackendDisplayState } from './state/display-state.js';
+
 export type AgentType = 'claude' | 'codex';
 export type AgentState = 'initializing' | 'waiting-for-input' | 'processing' | 'permission-prompt' | 'error' | 'idle';
 
@@ -193,6 +195,7 @@ export interface PrInfo {
   deletions: number;
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
   unresolvedCommentCount: number;
+  updatedAt: string;
 }
 
 export interface WorkspaceSettings {
@@ -225,4 +228,17 @@ export interface FilterPreset {
   builtIn?: boolean;
   filters: { status?: string[]; repo?: string[]; role?: string[] };
   sort: { column: string; direction: 'asc' | 'desc' };
+}
+
+export interface SidebarItem {
+  id: string;
+  kind: 'repo' | 'worktree';
+  path: string;
+  repoPath: string;
+  displayName: string;
+  branchName: string;
+  lastActivity: string;
+  displayState: DisplayState;
+  lastKnownBackendState: BackendDisplayState | null;
+  sessions: SessionSummary[];
 }

@@ -25,6 +25,9 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | Hook-driven branch rename | UserPromptSubmit hook triggers claude -p for descriptive branch names, replacing ws.ts keystroke capture | CEO review override of design doc |
 | forceOutputParser config | Escape hatch to disable hooks and use parser-only mode | Eng review |
 | Local analytics | SQLite-backed event tracking (`analytics.ts` module). Auto-capture clicks via `data-track` attributes + explicit `trackEvent()` calls. Agent-queryable via direct `sqlite3` CLI access to `~/.config/claude-remote-cli/analytics.db`. Frontend batches events to `POST /analytics/events`. | Design doc |
+| GitHub webhook self-service | `webhook-manager.ts` owns webhook CRUD, smee-client lifecycle, and health state. The webhook receiver (`/webhooks`) is mounted unconditionally so it is ready before any webhook is configured. Smart polling (`startSmartPolling`) runs a 30-second interval that broadcasts `pr-updated`/`ci-updated` only for repos that have no working webhook (`webhookEnabled !== true` or `webhookError` set) — automatically going silent once webhooks are active. Auto-provision backfill (`POST /webhooks/manage/backfill`) creates webhooks for all configured workspaces in one shot. | Design doc |
+| OAuth scope for webhooks | GitHub OAuth App authorisation requests `repo admin:repo_hook` scope (previously `repo` only). The extra scope is required for `POST /repos/{owner}/{repo}/hooks` webhook creation. | Design doc |
+| `extractOwnerRepo` + `buildRepoMap` in git.ts | Helper functions for resolving "owner/repo" from a git remote URL (SSH and HTTPS forms) and building a workspace-path lookup map. Extracted to `git.ts` so both `webhook-manager.ts` and `review-poller.ts` share one implementation. | Design doc |
 
 ## Config Precedence (canonical)
 
@@ -54,12 +57,12 @@ Sessions are typed as `'agent' | 'terminal'`. All sessions carry a `workspacePat
 - **Branch auto-rename** — New worktrees with mountain names get `needsBranchRename: true`. The rename instruction is delivered via a sideband `claude -p` invocation (a one-shot non-interactive Claude process) rather than PTY injection, keeping the main session's input stream clean. The `BranchWatcher` (`server/watcher.ts`) uses `fs.watch` on `.git/HEAD` files to detect branch changes reactively and broadcasts `session-renamed` when a branch changes. Additionally, `GET /sessions` enriches session data with live branch names (rate-limited to 10s intervals).
 - **Worktree deletion** (`DELETE /worktrees`) — Validated via `git worktree list` (supports arbitrary paths, not just `.worktrees/`). Main worktree cannot be deleted.
 
-## Idle Detection
+## Session State Detection
 
-- `idle: true` when no PTY output for 5 seconds
-- `onIdleChange(callback)` is single-subscriber (not EventEmitter)
-- `ws.ts` broadcasts `session-idle-changed` events over event WebSocket
-- For agents with a registered output parser (e.g., Claude, Codex), a richer `AgentState` (e.g., `processing`, `idle`, `waiting-for-input`, `permission-prompt`) replaces raw idle as the primary signal. Raw idle remains the fallback for unsupported agents.
+- Backend computes a merged `BackendDisplayState` (`initializing | running | idle | permission`) from `agentState` + PTY idle timer, deduplicated (only emits when state changes)
+- `session-backend-state-changed` is the single WebSocket event for all state changes (replaces the old dual `session-idle-changed` + `session-state-changed` events)
+- PTY idle timer (`5s` silence) and output parser are inputs to `computeBackendState()` in `sessions.ts`; the merge eliminates spurious idle cycling from PTY noise
+- For agents with hooks (Claude), `agentState` from hooks is authoritative. Parser reconciliation overrides after 30s of stale hooks. Raw idle is the fallback for agents without parsers (Codex stub).
 
 ## Output Parser
 

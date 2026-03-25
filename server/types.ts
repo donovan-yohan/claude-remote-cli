@@ -2,6 +2,7 @@ import type { IPty } from 'node-pty';
 import type { OutputParser } from './output-parsers/index.js';
 
 export type AgentState = 'initializing' | 'waiting-for-input' | 'processing' | 'permission-prompt' | 'error' | 'idle';
+export type BackendDisplayState = 'initializing' | 'running' | 'idle' | 'permission';
 
 export type SessionType = 'agent' | 'terminal';
 export type AgentType = 'claude' | 'codex';
@@ -60,6 +61,7 @@ export interface PtySession extends BaseSession {
   hooksActive: boolean;
   cleanedUp: boolean;
   _lastHookTime?: number | undefined;
+  _lastEmittedBackendState?: BackendDisplayState | undefined;
   lastAttentionNotifiedAt?: number | undefined;
   currentActivity?: { tool: string; detail?: string } | undefined;
   yolo: boolean;
@@ -122,6 +124,11 @@ export interface WorkspaceSettings {
 
   // Worktree naming — mountains theme
   nextMountainIndex?: number;
+
+  // Webhook tracking
+  webhookId?: number;         // GitHub webhook ID for deletion tracking
+  webhookEnabled?: boolean;   // Per-workspace webhook toggle
+  webhookError?: string;      // 'not-admin' | 'not-found' | null
 }
 
 export const MOUNTAIN_NAMES = [
@@ -163,6 +170,8 @@ export interface Config {
     username?: string;
     webhookSecret?: string;
     smeeUrl?: string;
+    autoProvision?: boolean;    // defaults to false
+    backfillOffered?: boolean;  // tracks if backfill prompt was shown
   } | undefined;
 }
 
@@ -316,6 +325,7 @@ export interface PrInfo {
   deletions: number;
   mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
   unresolvedCommentCount: number;
+  updatedAt: string;
 }
 
 export interface DashboardData {

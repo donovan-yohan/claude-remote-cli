@@ -130,7 +130,8 @@ export async function fetchCiStatusOrNull(workspacePath: string, branch: string)
 export async function fetchPrForBranchOrNull(workspacePath: string, branch: string): Promise<PrInfo | null> {
   const res = await fetch('/workspaces/pr?path=' + encodeURIComponent(workspacePath) + '&branch=' + encodeURIComponent(branch));
   if (!res.ok) return null;
-  return res.json() as Promise<PrInfo>;
+  const data = await res.json() as { pr: PrInfo | null };
+  return data.pr;
 }
 
 export async function fetchCurrentBranch(workspacePath: string): Promise<string | null> {
@@ -427,4 +428,87 @@ export async function initiateGitHubDevice(): Promise<{
 export async function disconnectGitHub(): Promise<void> {
   const res = await fetch('/auth/github/disconnect', { method: 'POST', credentials: 'include' });
   if (!res.ok) throw new Error('Failed to disconnect GitHub');
+}
+
+// ── Webhook management ────────────────────────────────────────────────────────
+
+export interface WebhookStatus {
+  configured: boolean;
+  smeeConnected: boolean;
+  lastEventAt: string | null;
+  autoProvision: boolean;
+  secretPreview: string | null;
+}
+
+export interface BackfillResult {
+  total: number;
+  success: number;
+  failed: number;
+  results: Array<{ path: string; ownerRepo: string | null; ok: boolean; error?: string }>;
+}
+
+export async function fetchWebhookStatus(): Promise<WebhookStatus> {
+  return json<WebhookStatus>(await fetch('/webhooks/manage/status', { credentials: 'include' }));
+}
+
+export async function setupWebhooks(): Promise<{ ok: boolean; smeeUrl?: string; error?: string }> {
+  return json<{ ok: boolean; smeeUrl?: string; error?: string }>(
+    await fetch('/webhooks/manage/setup', { method: 'POST', credentials: 'include' }),
+  );
+}
+
+export async function removeWebhookSetup(): Promise<{ ok: boolean }> {
+  return json<{ ok: boolean }>(
+    await fetch('/webhooks/manage/setup', { method: 'DELETE', credentials: 'include' }),
+  );
+}
+
+export async function reloadWebhooks(): Promise<{ ok: boolean }> {
+  return json<{ ok: boolean }>(
+    await fetch('/webhooks/manage/reload', { method: 'POST', credentials: 'include' }),
+  );
+}
+
+export async function pingWebhook(): Promise<{ ok: boolean; error?: string }> {
+  return json<{ ok: boolean; error?: string }>(
+    await fetch('/webhooks/manage/ping', { method: 'POST', credentials: 'include' }),
+  );
+}
+
+export async function createRepoWebhook(repoPath: string): Promise<{ ok: boolean; webhookId?: number; error?: string }> {
+  return json<{ ok: boolean; webhookId?: number; error?: string }>(
+    await fetch('/webhooks/manage/repos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ repoPath }),
+    }),
+  );
+}
+
+export async function removeRepoWebhook(repoPath: string): Promise<{ ok: boolean }> {
+  return json<{ ok: boolean }>(
+    await fetch('/webhooks/manage/repos/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ repoPath }),
+    }),
+  );
+}
+
+export async function backfillWebhooks(): Promise<BackfillResult> {
+  return json<BackfillResult>(
+    await fetch('/webhooks/manage/backfill', { method: 'POST', credentials: 'include' }),
+  );
+}
+
+export async function updateConfigAutoProvision(autoProvision: boolean): Promise<void> {
+  const res = await fetch('/config/autoProvision', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ autoProvision }),
+  });
+  if (!res.ok) throw new Error('Failed to update auto-provision setting');
 }

@@ -14,3 +14,21 @@
 **Depends on:** Linear CLI (`schpet/linear-cli`) getting `--json` support on `linear issue list` (upstream issue #127).
 
 **Added:** 2026-03-22 (from `/plan-eng-review` of Jira CLI rewrite design)
+
+## CI State Display in PrTopBar + Mobile Scaling
+
+**What:** Improve how CI status renders in the PR top bar with richer state (individual check names, progress indicators) and ensure it scales well on mobile viewports.
+
+**Why:** With real-time webhook-driven CI updates (from the webhook self-service feature), CI state changes will arrive instantly rather than on a 30s poll. The current simple badge doesn't leverage this — it could show per-check status, in-progress animations, and collapse gracefully on mobile.
+
+**Pros:** Better UX for the most-viewed CI information. Real-time updates make check-by-check progress visible. Mobile users get a usable view.
+
+**Cons:** Requires design work (component layout, responsive behavior). May need GraphQL query changes to fetch individual checks rather than just the rollup state.
+
+**Context:** Deferred from the webhook self-service CEO review (scope item #11). The webhook infrastructure must ship first so real-time events are available. Address via `/plan-design-review` to get proper design treatment before implementation.
+
+**Effort:** M (human: ~1 week / CC: ~30 min)
+**Priority:** P2
+**Depends on:** Webhook self-service feature (design doc: `docs/design-docs/2026-03-24-webhook-self-service-design.md`)
+
+**Added:** 2026-03-24 (from `/plan-ceo-review` of webhook self-service design)

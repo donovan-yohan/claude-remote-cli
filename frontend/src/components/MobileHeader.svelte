@@ -31,7 +31,7 @@
     flex-shrink: 0;
   }
 
-  @media (max-width: 768px) {
+  @media (max-width: 600px) {
     .mobile-header {
       display: flex;
     }

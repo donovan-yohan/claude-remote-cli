@@ -3,11 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { AgentType, AgentState, Session, SessionSummary, SessionMeta, SessionType } from './types.js';
+import type { AgentType, AgentState, BackendDisplayState, Session, SessionSummary, SessionMeta, SessionType } from './types.js';
+export type { BackendDisplayState };
 import { AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS } from './types.js';
 import { createPtySession } from './pty-handler.js';
 import type { CreatePtyParams } from './pty-handler.js';
-import { getPrForBranch, getWorkingTreeDiff } from './git.js';
+import { getPrForBranch, isStalePr, getWorkingTreeDiff } from './git.js';
 import { trackEvent } from './analytics.js';
 
 const execFileAsync = promisify(execFile);
@@ -65,12 +66,6 @@ function configure(opts: { port?: number; forceOutputParser?: boolean }): void {
 
 let terminalCounter = 0;
 let agentCounter = 0;
-type IdleChangeCallback = (sessionId: string, idle: boolean) => void;
-const idleChangeCallbacks: IdleChangeCallback[] = [];
-
-function onIdleChange(cb: IdleChangeCallback): void {
-  idleChangeCallbacks.push(cb);
-}
 
 type StateChangeCallback = (sessionId: string, state: AgentState) => void;
 const stateChangeCallbacks: StateChangeCallback[] = [];
@@ -111,6 +106,36 @@ export function fireStateChange(sessionId: string, state: AgentState): void {
   for (const cb of [...stateChangeCallbacks]) cb(sessionId, state);
 }
 
+export function computeBackendState(session: { agentState: AgentState; idle: boolean }): BackendDisplayState {
+  // permission-prompt takes highest priority
+  if (session.agentState === 'permission-prompt') return 'permission';
+  // processing or error = running
+  if (session.agentState === 'processing' || session.agentState === 'error') return 'running';
+  // initializing
+  if (session.agentState === 'initializing') return 'initializing';
+  // idle or waiting-for-input = idle (explicitly idle-like agent states)
+  if (session.agentState === 'idle' || session.agentState === 'waiting-for-input') return 'idle';
+  // For sessions without a recognized agentState (terminal/custom), fall back to idle flag
+  return session.idle ? 'idle' : 'running';
+}
+
+type BackendStateChangeCallback = (sessionId: string, state: BackendDisplayState) => void;
+const backendStateChangeCallbacks: BackendStateChangeCallback[] = [];
+
+export function onBackendStateChange(cb: BackendStateChangeCallback): void {
+  backendStateChangeCallbacks.push(cb);
+}
+
+export function fireBackendStateIfChanged(session: Session): void {
+  const newState = computeBackendState(session);
+  if (session._lastEmittedBackendState === newState) return;
+  session._lastEmittedBackendState = newState;
+  for (const cb of [...backendStateChangeCallbacks]) {
+    try { cb(session.id, newState); }
+    catch (err) { console.error('[sessions] backendStateChange callback error:', err); }
+  }
+}
+
 function create({ id: providedId, needsBranchRename, branchRenamePrompt, initialPrompt, agent = 'claude', cols = 80, rows = 24, args = [], port, forceOutputParser, ...rest }: CreateParams): CreateResult {
   const id = providedId || crypto.randomBytes(8).toString('hex');
 
@@ -125,7 +150,7 @@ function create({ id: providedId, needsBranchRename, branchRenamePrompt, initial
     forceOutputParser: forceOutputParser ?? defaultForceOutputParser,
   };
 
-  const { session: ptySession, result } = createPtySession(ptyParams, sessions, idleChangeCallbacks, stateChangeCallbacks, sessionEndCallbacks);
+  const { session: ptySession, result } = createPtySession(ptyParams, sessions, stateChangeCallbacks, sessionEndCallbacks, fireBackendStateIfChanged);
   trackEvent({
     category: 'session',
     action: 'created',
@@ -480,7 +505,7 @@ async function fetchMetaForSession(session: SessionSummary): Promise<SessionMeta
   if (branch) {
     try {
       const pr = await getPrForBranch(repoPath, branch);
-      if (pr) {
+      if (pr && !isStalePr(pr)) {
         prNumber = pr.number;
         additions = pr.additions;
         deletions = pr.deletions;
@@ -533,4 +558,4 @@ async function populateMetaCache(): Promise<void> {
   );
 }
 
-export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onIdleChange, onStateChange, onSessionCreate, onSessionEnd, nextTerminalName, nextAgentName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };
+export { configure, create, get, list, kill, killAllTmuxSessions, resize, updateDisplayName, write, onStateChange, onSessionCreate, onSessionEnd, nextTerminalName, nextAgentName, serializeAll, restoreFromDisk, activeTmuxSessionNames, getSessionMeta, getAllSessionMeta, populateMetaCache, AGENT_COMMANDS, AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS };

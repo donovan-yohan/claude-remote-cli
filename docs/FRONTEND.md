@@ -39,6 +39,12 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `TicketCard.svelte` | Individual ticket row: status dot, provider-native metadata (labels/sprint/cycle/priority), branch link, Start Work button |
 | `StartWorkModal.svelte` | Start Work modal: ticket info, workspace selector (for Jira/Linear), branch name input, creates worktree session with ticket context |
 | `StatusMappingModal.svelte` | Map workflow transition states (in-progress, code-review, ready-for-qa) to Jira transition IDs / Linear status IDs |
+| `dialogs/DialogShell.svelte` | Shared dialog wrapper (fullscreen/compact variants, terminal aesthetic, shared button/form CSS) |
+| `dialogs/SettingRow.svelte` | Consistent setting row (name, description, action slot) |
+| `dialogs/SettingsToc.svelte` | Settings TOC drawer with IntersectionObserver scroll tracking |
+| `dialogs/integrations/GitHubIntegration.svelte` | GitHub OAuth App connection panel within SettingsDialog |
+| `dialogs/integrations/WebhookIntegration.svelte` | GitHub webhook CRUD and smee proxy panel within SettingsDialog |
+| `dialogs/integrations/JiraIntegration.svelte` | Jira connection and project config panel within SettingsDialog |
 | `dialogs/` | Session customization, settings, workspace, and worktree deletion dialogs |
 
 ## State Management
@@ -47,17 +53,18 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 
 | Module | Role |
 |--------|------|
-| `sessions.svelte.ts` | Session list, worktrees, repos, attention flags, notification preferences, git statuses, loading state |
+| `sessions.svelte.ts` | Session list, worktrees, repos, `SidebarItem[]` with display state machine, notification preferences, loading state |
+| `display-state.ts` | Pure display state machine: `transitionDisplayState(current, event) → newState`, `shouldNotify(from, to)` — 6 states: `initializing \| running \| unseen-idle \| seen-idle \| permission \| inactive` |
+| `sidebar-items.ts` | Pure `buildSidebarItems()` function: merges sessions + worktrees + workspaces into `SidebarItem[]` with reconciliation |
 | `config.svelte.ts` | Global session defaults (continue, yolo, tmux, agent, notifications); shared by SettingsDialog, SessionList, NewSessionDialog |
 | `auth.svelte.ts` | Authentication state (PIN check, cookie token) |
 | `ui.svelte.ts` | UI state (active tab, sidebar, filters) |
-| `sessions.svelte.ts` (agentState) | `agentState` per session (`processing` \| `idle` \| `waiting-for-input` \| `permission-prompt`) updated from `session-idle-changed` events; drives sidebar dot color and attention logic |
 
 ## Conventions
 
 - Scoped `<style>` blocks in each component; global CSS variables in `frontend/src/app.css`
-- Sidebar status dots: green (processing), blue (idle), amber glow (waiting-for-input/attention), yellow pulse (permission-prompt), gray (inactive/initializing)
-- Attention state: tracked in `attentionSessions` reactive state; set when session becomes idle while not viewed; cleared when user opens session
+- Sidebar status dots driven by `SidebarItem.displayState`: green (`running`), blue (`seen-idle`), amber glow (`unseen-idle`), yellow pulse (`permission`), gray (`inactive`/`initializing`)
+- Display state machine enforces valid transitions — `seen-idle` can never become `unseen-idle` without going through `running` first. Backend emits single `session-backend-state-changed` event; frontend applies `transitionDisplayState()` to update dots
 - Loading state: tracked in `loadingItems` reactive state; `setLoading`/`clearLoading` wrap async actions (start, kill, delete); WorkspaceItem shows CSS shimmer overlay with `pointer-events: none`
 - Hover effects: fade mask on overflow text, scroll reveal animation
 - Avoid naming local variables `state` in `.svelte` files — conflicts with `$state` rune
@@ -86,6 +93,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - PR click cascade: active session → inactive worktree → create new worktree + session
 - Worktree naming convention: `mobile-<name>-<timestamp>`
 - Settings dialog close triggers `refreshAll()` for immediate sidebar update
+- All dialogs are built on `DialogShell.svelte` — use the `fullscreen` prop for the Settings modal and omit it for compact dialogs (AddWorkspace, CustomizeSession, DeleteWorktree). DialogShell uses `popover="manual"` + `showPopover()`/`hidePopover()` to guarantee top-layer stacking above xterm.js canvas elements (z-index alone is insufficient for canvas stacking contexts)
 - Cookie TTL uses human-readable format: `s` (seconds), `m` (minutes), `h` (hours), `d` (days). Default: `24h`
 - Root directory scanning: one level deep for git repos, hidden directories excluded
 
