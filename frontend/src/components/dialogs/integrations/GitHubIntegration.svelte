@@ -36,9 +36,7 @@
   });
 
   $effect(() => {
-    return () => {
-      if (pollInterval) clearInterval(pollInterval);
-    };
+    return () => { clearDeviceFlowTimers(); };
   });
 
   function toggleExpanded() {
@@ -52,34 +50,46 @@
     }
   }
 
+  let expiryTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  function clearDeviceFlowTimers() {
+    if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+    if (expiryTimeout) { clearTimeout(expiryTimeout); expiryTimeout = null; }
+  }
+
   async function connectGitHub() {
     deviceFlowError = '';
     try {
       const code = await initiateGitHubDevice();
       deviceCode = code;
 
-      if (pollInterval) clearInterval(pollInterval);
+      clearDeviceFlowTimers();
       pollInterval = setInterval(async () => {
         try {
           const status = await fetchGitHubStatus();
           if (status.connected) {
             githubStatus = { connected: true, username: status.username ?? undefined };
             deviceCode = null;
-            clearInterval(pollInterval!);
-            pollInterval = null;
+            clearDeviceFlowTimers();
           } else if (status.deviceFlowStatus === 'denied' || status.deviceFlowStatus === 'expired') {
             deviceCode = null;
             deviceFlowError =
               status.deviceFlowStatus === 'denied'
                 ? 'Authorization denied. Please try again.'
                 : 'Code expired. Please try again.';
-            clearInterval(pollInterval!);
-            pollInterval = null;
+            clearDeviceFlowTimers();
           }
         } catch {
           // keep polling on transient errors
         }
       }, 2000);
+
+      // Client-side expiry guard — stop polling if server never reports expired
+      expiryTimeout = setTimeout(() => {
+        clearDeviceFlowTimers();
+        deviceCode = null;
+        deviceFlowError = 'Code expired. Please try again.';
+      }, code.expiresIn * 1000);
     } catch {
       deviceFlowError = 'Failed to initiate GitHub authorization. Please try again.';
     }

@@ -456,48 +456,55 @@ export async function fetchWebhookStatus(): Promise<WebhookStatus> {
 }
 
 export async function setupWebhooks(): Promise<{ ok: boolean; smeeUrl?: string; error?: string }> {
-  const res = await fetch('/webhooks/manage/setup', { method: 'POST', credentials: 'include' });
-  return res.json() as Promise<{ ok: boolean; smeeUrl?: string; error?: string }>;
+  return json<{ ok: boolean; smeeUrl?: string; error?: string }>(
+    await fetch('/webhooks/manage/setup', { method: 'POST', credentials: 'include' }),
+  );
 }
 
 export async function removeWebhookSetup(): Promise<{ ok: boolean }> {
-  const res = await fetch('/webhooks/manage/setup', { method: 'DELETE', credentials: 'include' });
-  return res.json() as Promise<{ ok: boolean }>;
+  return json<{ ok: boolean }>(
+    await fetch('/webhooks/manage/setup', { method: 'DELETE', credentials: 'include' }),
+  );
 }
 
 export async function reloadWebhooks(): Promise<{ ok: boolean }> {
-  const res = await fetch('/webhooks/manage/reload', { method: 'POST', credentials: 'include' });
-  return res.json() as Promise<{ ok: boolean }>;
+  return json<{ ok: boolean }>(
+    await fetch('/webhooks/manage/reload', { method: 'POST', credentials: 'include' }),
+  );
 }
 
 export async function pingWebhook(): Promise<{ ok: boolean; error?: string }> {
-  const res = await fetch('/webhooks/manage/ping', { method: 'POST', credentials: 'include' });
-  return res.json() as Promise<{ ok: boolean; error?: string }>;
+  return json<{ ok: boolean; error?: string }>(
+    await fetch('/webhooks/manage/ping', { method: 'POST', credentials: 'include' }),
+  );
 }
 
 export async function createRepoWebhook(repoPath: string): Promise<{ ok: boolean; webhookId?: number; error?: string }> {
-  const res = await fetch('/webhooks/manage/repos', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ repoPath }),
-  });
-  return res.json() as Promise<{ ok: boolean; webhookId?: number; error?: string }>;
+  return json<{ ok: boolean; webhookId?: number; error?: string }>(
+    await fetch('/webhooks/manage/repos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ repoPath }),
+    }),
+  );
 }
 
 export async function removeRepoWebhook(repoPath: string): Promise<{ ok: boolean }> {
-  const res = await fetch('/webhooks/manage/repos/remove', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ repoPath }),
-  });
-  return res.json() as Promise<{ ok: boolean }>;
+  return json<{ ok: boolean }>(
+    await fetch('/webhooks/manage/repos/remove', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ repoPath }),
+    }),
+  );
 }
 
 export async function backfillWebhooks(): Promise<BackfillResult> {
-  const res = await fetch('/webhooks/manage/backfill', { method: 'POST', credentials: 'include' });
-  return res.json() as Promise<BackfillResult>;
+  return json<BackfillResult>(
+    await fetch('/webhooks/manage/backfill', { method: 'POST', credentials: 'include' }),
+  );
 }
 
 export async function updateConfigAutoProvision(autoProvision: boolean): Promise<void> {

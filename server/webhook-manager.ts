@@ -255,10 +255,11 @@ async function createWebhookForPath(
           return { ok: true, webhookId: existing.id, ownerRepo };
         }
       }
-    } catch {
-      // Best-effort — return generic success
+    } catch (err) {
+      console.warn('[webhook-manager] Could not retrieve existing webhook ID for', ownerRepo, err);
     }
-    return { ok: true, webhookId: -1, ownerRepo };
+    // Webhook exists on GitHub but we couldn't find its ID — don't persist a fake ID
+    return { ok: true, webhookId: 0, ownerRepo };
   }
 
   if (apiRes.status === 403) {
@@ -365,6 +366,7 @@ export function createWebhookManagerRouter(deps: WebhookManagerDeps): Router {
     if (!config.github) config.github = {};
     config.github.webhookSecret = secret;
     config.github.smeeUrl = channelUrl;
+    config.github.backfillOffered = false; // reset so backfill banner shows after fresh setup
     saveConfig(configPath, config);
 
     // Start smee client — non-blocking
@@ -644,6 +646,13 @@ export function createWebhookManagerRouter(deps: WebhookManagerDeps): Router {
 
     const success = results.filter((r) => r.ok).length;
     const failed = results.filter((r) => !r.ok).length;
+
+    // Mark backfill as offered so the banner doesn't re-show
+    const updatedConfig = getConfig();
+    if (updatedConfig.github) {
+      updatedConfig.github.backfillOffered = true;
+      saveConfig(configPath, updatedConfig);
+    }
 
     res.json({ total: paths.length, success, failed, results });
   });

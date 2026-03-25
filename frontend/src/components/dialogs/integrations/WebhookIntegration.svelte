@@ -28,8 +28,6 @@
   let backfillResults = $state<BackfillResult | null>(null);
   let showBackfillBanner = $state(false);
   let showRemoveConfirm = $state(false);
-  let showAdvanced = $state(false);
-  let customSmeeUrl = $state('');
   let error = $state('');
 
   let testResultTimer: ReturnType<typeof setTimeout> | null = null;
@@ -75,8 +73,6 @@
       if (result.ok) {
         await loadStatus();
         showBackfillBanner = true;
-        showAdvanced = false;
-        customSmeeUrl = '';
       } else {
         error = result.error ?? 'Setup failed. Could not reach smee.io.';
       }
@@ -146,16 +142,6 @@
       error = 'Backfill failed.';
     } finally {
       backfilling = false;
-    }
-  }
-
-  async function handleSaveCustomSmee() {
-    error = '';
-    try {
-      await reloadWebhooks();
-      await loadStatus();
-    } catch {
-      error = 'Failed to reload with custom URL.';
     }
   }
 
@@ -250,31 +236,6 @@
         <button class="btn btn-primary btn-sm" onclick={handleSetup} disabled={settingUp}>
           {settingUp ? 'Setting up...' : 'Setup Webhooks'}
         </button>
-
-        <!-- Advanced: custom smee URL -->
-        <button
-          class="btn btn-ghost btn-sm advanced-toggle"
-          onclick={() => showAdvanced = !showAdvanced}
-        >
-          {showAdvanced ? '▾' : '▸'} Advanced: Use custom smee URL
-        </button>
-        {#if showAdvanced}
-          <div class="advanced-panel">
-            <input
-              class="smee-input"
-              type="url"
-              placeholder="https://smee.io/your-channel"
-              bind:value={customSmeeUrl}
-            />
-            <button
-              class="btn btn-ghost btn-sm"
-              onclick={handleSaveCustomSmee}
-              disabled={!customSmeeUrl}
-            >
-              Save
-            </button>
-          </div>
-        {/if}
 
       {:else}
         <!-- State: Configured -->
@@ -527,39 +488,6 @@
     gap: 8px;
     align-items: center;
     flex-wrap: wrap;
-  }
-
-  .advanced-toggle {
-    align-self: flex-start;
-    padding-left: 0;
-    border-color: transparent;
-    color: var(--text-muted);
-  }
-
-  .advanced-panel {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .smee-input {
-    flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    padding: 5px 8px;
-    min-width: 0;
-  }
-
-  .smee-input:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
-
-  .smee-input::placeholder {
-    color: var(--text-muted);
   }
 
   /* Backfill */
