@@ -46,5 +46,6 @@ export const isMobileDevice =
   /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 export function estimateTerminalDimensions(): { cols: number; rows: number } {
-  return scaledTerminalDimensions(window.innerWidth, window.innerHeight, getUi().terminalFontSize);
+  const fontSize = isMobileDevice ? 12 : getUi().terminalFontSize;
+  return scaledTerminalDimensions(window.innerWidth, window.innerHeight, fontSize);
 }

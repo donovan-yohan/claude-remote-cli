@@ -1,6 +1,6 @@
 # Plan: Separate Terminal Zoom
 
-> **Status**: Active | **Created**: 2026-03-24
+> **Status**: Completed | **Created**: 2026-03-24
 > **Design**: `docs/design-docs/2026-03-24-xterm-separate-zoom-design.md`
 
 ## Progress
