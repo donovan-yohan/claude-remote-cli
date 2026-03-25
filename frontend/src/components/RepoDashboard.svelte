@@ -116,7 +116,9 @@
           <a href="https://cli.github.com" target="_blank" rel="noopener noreferrer">cli.github.com</a>
         </div>
       {:else}
-        {#snippet prActionPills(pr: PullRequest, action: ReturnType<typeof prActionForRow>, actionColor: string, darkText: boolean)}
+        {#snippet prActionPills(pr: PullRequest, action: ReturnType<typeof prActionForRow>)}
+          {@const actionColor = getStatusCssVar(action.color)}
+          {@const darkText = shouldUseDarkText(action.color)}
           <button
             class="pr-session-btn"
             title="Open session on this branch"
@@ -171,8 +173,6 @@
         >
           {#snippet row(pr, _index)}
             {@const action = prActionForRow(pr)}
-            {@const actionColor = getStatusCssVar(action.color)}
-            {@const darkText = shouldUseDarkText(action.color)}
             <div class="pr-cell pr-cell--status" style:width="36px" style:flex="none">
               <StatusDot status={derivePrDotStatus(pr)} />
             </div>
@@ -196,15 +196,13 @@
             </div>
             <div class="pr-cell pr-cell--action" style:width="160px" style:flex="none">
               <div class="pr-row-actions">
-                {@render prActionPills(pr, action, actionColor, darkText)}
+                {@render prActionPills(pr, action)}
               </div>
             </div>
           {/snippet}
 
           {#snippet mobileCard(pr, _index)}
             {@const action = prActionForRow(pr)}
-            {@const actionColor = getStatusCssVar(action.color)}
-            {@const darkText = shouldUseDarkText(action.color)}
             <div class="mobile-pr-card">
               <div class="mobile-pr-top">
                 <StatusDot status={derivePrDotStatus(pr)} />
@@ -220,7 +218,7 @@
                 <span class="pr-time">{formatRelativeTime(pr.updatedAt)}</span>
               </div>
               <div class="pr-row-actions mobile-pr-actions">
-                {@render prActionPills(pr, action, actionColor, darkText)}
+                {@render prActionPills(pr, action)}
               </div>
             </div>
           {/snippet}
