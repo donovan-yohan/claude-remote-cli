@@ -28,6 +28,10 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 | GitHub webhook self-service | `webhook-manager.ts` owns webhook CRUD, smee-client lifecycle, and health state. The webhook receiver (`/webhooks`) is mounted unconditionally so it is ready before any webhook is configured. Smart polling (`startSmartPolling`) runs a 30-second interval that broadcasts `pr-updated`/`ci-updated` only for repos that have no working webhook (`webhookEnabled !== true` or `webhookError` set) — automatically going silent once webhooks are active. Auto-provision backfill (`POST /webhooks/manage/backfill`) creates webhooks for all configured workspaces in one shot. | Design doc |
 | OAuth scope for webhooks | GitHub OAuth App authorisation requests `repo admin:repo_hook` scope (previously `repo` only). The extra scope is required for `POST /repos/{owner}/{repo}/hooks` webhook creation. | Design doc |
 | `extractOwnerRepo` + `buildRepoMap` in git.ts | Helper functions for resolving "owner/repo" from a git remote URL (SSH and HTTPS forms) and building a workspace-path lookup map. Extracted to `git.ts` so both `webhook-manager.ts` and `review-poller.ts` share one implementation. | Design doc |
+| Enriched branch API | `GET /branches` returns `BranchInfo[]` with `isLocal`, `isRemote`, and `checkedOutIn` (worktree path + session ID). Cross-references `git worktree list --porcelain` with active sessions. | Design doc |
+| Agent-running guard on branch ops | Branch switching, rename, and PR base change are disabled when `agentState === 'processing'`. Copy branch name is always available (read-only). | Design doc |
+| PR base branch change | `POST /workspaces/pr-base` runs `gh pr edit --base` to change a PR's target branch from the UI. TargetBranchSwitcher dropdown shows remote-only branches. | Design doc |
+| Inline branch rename + PR warning modal | Pencil icon triggers inline rename input. If a PR exists for the old branch, a warning modal offers Push (to remote), Ignore, or Cancel (undo rename). | Design doc |
 
 ## Config Precedence (canonical)
 

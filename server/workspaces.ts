@@ -9,7 +9,7 @@ import type { Request, Response } from 'express';
 
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
 import { trackEvent } from './analytics.js';
-import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
+import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo, renameBranch, createBranch, changePrBase, pushBranch } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
@@ -825,6 +825,67 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
 
     res.json({ suggestions });
+  });
+
+  // POST /workspaces/rename-branch — rename the current branch for a workspace
+  router.post('/rename-branch', async (req: Request, res: Response) => {
+    const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
+    const { newName } = req.body as { newName?: string };
+    if (!workspacePath) { res.status(400).json({ error: 'path query parameter required' }); return; }
+    if (!newName || typeof newName !== 'string') { res.status(400).json({ error: 'newName is required' }); return; }
+
+    const result = await renameBranch(workspacePath, newName);
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  });
+
+  // POST /workspaces/create-branch — create and checkout a new branch for a workspace
+  router.post('/create-branch', async (req: Request, res: Response) => {
+    const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
+    const { branchName } = req.body as { branchName?: string };
+    if (!workspacePath) { res.status(400).json({ error: 'path query parameter required' }); return; }
+    if (!branchName || typeof branchName !== 'string') { res.status(400).json({ error: 'branchName is required' }); return; }
+
+    const result = await createBranch(workspacePath, branchName);
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  });
+
+  // POST /workspaces/pr-base — change the base branch of a PR for a workspace
+  router.post('/pr-base', async (req: Request, res: Response) => {
+    const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
+    const { prNumber, baseBranch } = req.body as { prNumber?: number; baseBranch?: string };
+    if (!workspacePath) { res.status(400).json({ error: 'path query parameter required' }); return; }
+    if (!prNumber || typeof prNumber !== 'number') { res.status(400).json({ error: 'prNumber is required' }); return; }
+    if (!baseBranch || typeof baseBranch !== 'string') { res.status(400).json({ error: 'baseBranch is required' }); return; }
+
+    const result = await changePrBase(workspacePath, prNumber, baseBranch);
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  });
+
+  // POST /workspaces/push-branch — push a branch to origin for a workspace
+  router.post('/push-branch', async (req: Request, res: Response) => {
+    const workspacePath = typeof req.query.path === 'string' ? req.query.path : undefined;
+    const { branch, deleteOldBranch } = req.body as { branch?: string; deleteOldBranch?: string };
+    if (!workspacePath) { res.status(400).json({ error: 'path query parameter required' }); return; }
+    if (!branch || typeof branch !== 'string') { res.status(400).json({ error: 'branch is required' }); return; }
+
+    const result = await pushBranch(workspacePath, branch, deleteOldBranch);
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json({ error: result.error });
+    }
   });
 
   return router;

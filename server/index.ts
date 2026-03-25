@@ -18,7 +18,7 @@ import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, BranchWatcher, RefWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
 import { extensionForMime, setClipboardImage } from './clipboard.js';
-import { listBranches } from './git.js';
+import { listBranches, listBranchesEnriched } from './git.js';
 import * as push from './push.js';
 import { initAnalytics, closeAnalytics, createAnalyticsRouter } from './analytics.js';
 import { createWorkspaceRouter } from './workspaces.js';
@@ -595,7 +595,8 @@ async function main(): Promise<void> {
       return;
     }
 
-    res.json(await listBranches(repoPath, { refresh }));
+    const sessionList = sessions.list().map((s) => ({ id: s.id, worktreePath: s.worktreePath ?? s.cwd }));
+    res.json(await listBranchesEnriched(repoPath, { refresh, sessions: sessionList }));
   });
 
   // GET /worktrees?repo=<path> — list worktrees; omit repo to scan all repos in all rootDirs

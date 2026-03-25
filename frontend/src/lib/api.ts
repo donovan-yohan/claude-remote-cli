@@ -1,4 +1,4 @@
-import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, JiraStatus, AutomationSettings, FilterPreset } from './types.js';
+import type { SessionSummary, WorktreeInfo, Workspace, DashboardData, CiStatus, PrInfo, PullRequest, ActivityEntry, WorkspaceSettings, OrgPrsResponse, GitHubIssuesResponse, BranchLinksResponse, JiraIssuesResponse, JiraStatus, AutomationSettings, FilterPreset, BranchInfo } from './types.js';
 
 export class ConflictError extends Error {
   sessionId: string;
@@ -163,10 +163,10 @@ export async function switchBranch(workspacePath: string, branch: string): Promi
   return res.json() as Promise<{ success: boolean; error?: string }>;
 }
 
-export async function fetchBranches(repoPath: string, options: { refresh?: boolean } = {}): Promise<string[]> {
+export async function fetchBranches(repoPath: string, options: { refresh?: boolean } = {}): Promise<BranchInfo[]> {
   const params = new URLSearchParams({ repo: repoPath });
   if (options.refresh) params.set('refresh', '1');
-  return json<string[]>(await fetch('/branches?' + params.toString()));
+  return json<BranchInfo[]>(await fetch('/branches?' + params.toString()));
 }
 
 export async function createSession(body: {

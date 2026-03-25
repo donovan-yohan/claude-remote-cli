@@ -17,10 +17,11 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `Sidebar.svelte` | Flat workspace list with smart search, no tabs |
 | `WorkspaceItem.svelte` | Workspace tree item: letter icon, sessions, inactive worktrees, context menus |
 | `SmartSearch.svelte` | Terminal-style typeahead search with `>` prompt |
-| `PrTopBar.svelte` | Dynamic PR/CI bar with branch switcher, diff stats, merge conflict detection, dual action buttons (resolve+review), archive flow |
+| `PrTopBar.svelte` | Dynamic PR/CI bar with branch switcher, target branch switcher, hover-reveal icons (copy/rename), inline rename flow, diff stats, merge conflict detection, dual action buttons (resolve+review), archive flow |
 | `SessionTabBar.svelte` | Multi-tab session management per worktree (role=tablist) |
 | `RepoDashboard.svelte` | Workspace dashboard: PRs with merge status, activity feed, CTAs |
-| `BranchSwitcher.svelte` | Branch dropdown with filter for PR top bar |
+| `BranchSwitcher.svelte` | Worktree-aware branch dropdown: filter, create new branch, strikethrough for checked-out branches, jump-to-session links, agent-running guard |
+| `TargetBranchSwitcher.svelte` | PR base branch dropdown: remote-only branches, changes base via `gh pr edit` |
 | `FileBrowser.svelte` | Lazy-loading tree-view filesystem browser with multi-select, filter, keyboard nav |
 | `EmptyState.svelte` | Reusable empty state with icon, heading, description, CTA |
 | `Terminal.svelte` | xterm.js terminal wrapper with WebSocket connection |
@@ -45,6 +46,7 @@ Svelte 5 SPA for claude-remote-cli. Built with runes syntax, TypeScript, and Vit
 | `dialogs/integrations/GitHubIntegration.svelte` | GitHub OAuth App connection panel within SettingsDialog |
 | `dialogs/integrations/WebhookIntegration.svelte` | GitHub webhook CRUD and smee proxy panel within SettingsDialog |
 | `dialogs/integrations/JiraIntegration.svelte` | Jira connection and project config panel within SettingsDialog |
+| `dialogs/RenameWarningModal.svelte` | Rename + PR warning: push renamed branch, ignore, or undo rename |
 | `dialogs/` | Session customization, settings, workspace, and worktree deletion dialogs |
 
 ## State Management

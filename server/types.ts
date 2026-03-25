@@ -274,6 +274,17 @@ export interface JiraStatus {
   name: string;
 }
 
+export interface BranchInfo {
+  name: string;
+  isLocal: boolean;
+  isRemote: boolean;
+  checkedOutIn?: {
+    worktreePath: string;
+    worktreeName: string;
+    sessionId?: string;
+  };
+}
+
 export interface BranchLink {
   repoPath: string;
   repoName: string;

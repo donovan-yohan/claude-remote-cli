@@ -13,16 +13,20 @@
   import type { PrAction } from '../lib/pr-state.js';
   import type { PrInfo, CiStatus } from '../lib/types.js';
   import BranchSwitcher from './BranchSwitcher.svelte';
+  import TargetBranchSwitcher from './TargetBranchSwitcher.svelte';
+  import RenameWarningModal from './dialogs/RenameWarningModal.svelte';
 
   let {
     workspacePath,
     branchName,
     sessionId,
+    agentRunning = false,
     onArchive,
   }: {
     workspacePath: string;
     branchName: string;
     sessionId: string | null;
+    agentRunning?: boolean;
     onArchive?: () => void;
   } = $props();
 
@@ -115,20 +119,147 @@
   function handleBranchSwitch(branch: string) {
     currentBranch = branch;
   }
+
+  let copyFeedback = $state(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(currentBranch);
+      copyFeedback = true;
+      setTimeout(() => copyFeedback = false, 1500);
+    } catch { /* clipboard may not be available */ }
+  }
+
+  // ── Inline rename ──────────────────────────────────
+  let renaming = $state(false);
+  let renameValue = $state('');
+  let renameInputEl = $state<HTMLInputElement | null>(null);
+  let renameWarning = $state<{ oldName: string; newName: string } | null>(null);
+
+  function startRename() {
+    if (agentRunning) return;
+    renaming = true;
+    renameValue = currentBranch;
+    requestAnimationFrame(() => renameInputEl?.focus());
+  }
+
+  function cancelRename() {
+    renaming = false;
+    renameValue = '';
+  }
+
+  async function confirmRename() {
+    const trimmed = renameValue.trim();
+    if (!trimmed || trimmed === currentBranch) {
+      cancelRename();
+      return;
+    }
+
+    try {
+      const res = await fetch('/workspaces/rename-branch?path=' + encodeURIComponent(workspacePath), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName: trimmed }),
+      });
+      const data = await res.json() as { success?: boolean; oldName?: string; newName?: string; error?: string };
+      if (data.success && data.oldName && data.newName) {
+        const oldName = data.oldName;
+        currentBranch = data.newName;
+        renaming = false;
+        renameValue = '';
+
+        // If PR exists, show warning modal
+        if (pr) {
+          renameWarning = { oldName, newName: data.newName };
+        }
+      }
+    } catch {
+      // Silent fail — branch name stays unchanged
+    }
+  }
+
+  function handleRenameKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      confirmRename();
+    } else if (e.key === 'Escape') {
+      cancelRename();
+    }
+  }
 </script>
 
 <div class="pr-top-bar" class:bar-merged={pr?.state === 'MERGED'} class:bar-conflicts={pr?.mergeable === 'CONFLICTING'}>
   <!-- Left section: branch switcher + target branch -->
   <div class="bar-left">
-    <BranchSwitcher
-      {workspacePath}
-      currentBranch={currentBranch}
-      onSwitch={handleBranchSwitch}
-    />
+    {#if renaming}
+      <div class="rename-input-wrap">
+        <span class="branch-icon">⑂</span>
+        <input
+          bind:this={renameInputEl}
+          type="text"
+          class="rename-input"
+          bind:value={renameValue}
+          onkeydown={handleRenameKeydown}
+          onblur={cancelRename}
+        />
+      </div>
+    {:else}
+      <BranchSwitcher
+        {workspacePath}
+        currentBranch={currentBranch}
+        disabled={agentRunning}
+        onSwitch={handleBranchSwitch}
+      />
+
+      <!-- Hover-reveal icons -->
+      <div class="hover-icons">
+        <button
+          class="hover-icon"
+          onclick={handleCopy}
+          title={copyFeedback ? 'Copied!' : 'Copy branch name'}
+          aria-label="Copy branch name"
+        >
+          {#if copyFeedback}
+            <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 8l3 3 7-7" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          {:else}
+            <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" fill="none" stroke-width="1.5"/>
+              <path d="M3 11V3a1.5 1.5 0 011.5-1.5H11" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          {/if}
+        </button>
+        <button
+          class="hover-icon"
+          onclick={startRename}
+          disabled={agentRunning}
+          title={agentRunning ? 'Unavailable while agent is running' : 'Rename branch'}
+          aria-label="Rename branch"
+        >
+          <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    {/if}
+
     {#if pr?.baseRefName}
-      <span class="target-branch" aria-label="target branch">
-        <span class="target-sep">›</span>
-        <span class="target-name">{pr.baseRefName}</span>
+      <span class="target-section">
+        <span class="target-arrow" aria-hidden="true">
+          <svg width="14" height="10" viewBox="0 0 14 10" aria-hidden="true">
+            <path d="M1 5h10M8 2l3 3-3 3" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <TargetBranchSwitcher
+          {workspacePath}
+          currentBase={pr.baseRefName}
+          prNumber={pr.number}
+          disabled={agentRunning}
+          onBaseChanged={() => {
+            prQuery.refetch();
+          }}
+        />
       </span>
     {/if}
   </div>
@@ -200,6 +331,18 @@
       {/if}
     {/if}
   </div>
+
+  {#if renameWarning}
+    <RenameWarningModal
+      oldName={renameWarning.oldName}
+      newName={renameWarning.newName}
+      {workspacePath}
+      onClose={() => {
+        renameWarning = null;
+        prQuery.refetch();
+      }}
+    />
+  {/if}
 </div>
 
 <style>
@@ -229,25 +372,18 @@
     border-right: 1px solid var(--border);
   }
 
-  .target-branch {
+  .target-section {
     display: flex;
     align-items: center;
-    gap: 3px;
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
     flex-shrink: 0;
-    white-space: nowrap;
   }
 
-  .target-sep {
-    color: var(--border);
-    font-size: 0.75rem;
-  }
-
-  .target-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100px;
+  .target-arrow {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    padding: 0 2px;
   }
 
   /* ── Middle ────────────────────────── */
@@ -390,9 +526,78 @@
     margin-right: 6px;
   }
 
-  /* ── Mobile: hide target branch + pr link ─── */
+  /* ── Rename ──────────────────────────── */
+  .rename-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 4px;
+  }
+
+  .rename-input {
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    padding: 2px 6px;
+    outline: none;
+    min-width: 120px;
+    max-width: 250px;
+  }
+
+  /* Hover-reveal icons */
+  .hover-icons {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .bar-left:hover .hover-icons {
+    opacity: 1;
+  }
+
+  .hover-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.12s, background 0.12s;
+  }
+
+  .hover-icon:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--surface-hover);
+  }
+
+  .hover-icon:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .branch-icon {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+
+  /* ── Mobile ─────────────────────────── */
   @media (max-width: 600px) {
-    .target-branch,
+    .hover-icons {
+      opacity: 1;
+    }
+
+    .target-section,
     .bar-middle,
     .diff-stats {
       display: none;

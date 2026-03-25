@@ -787,6 +787,7 @@
           workspacePath={ui.activeWorkspacePath ?? ''}
           branchName={activeSession?.branchName ?? ''}
           sessionId={sessionState.activeSessionId}
+          agentRunning={activeSession?.agentState === 'processing'}
           onArchive={handleArchive}
         />
 
