@@ -22,7 +22,7 @@ All unit tests MUST use the `node:test` module and `node:assert` for assertions.
 - Individual compiled test files MUST be runnable via `node --test dist/test/<file>.test.js`
 
 ### Current Test Coverage
-Nine test files MUST exist:
+Test files MUST exist (non-exhaustive — see `test/` for full set):
 
 | File | Coverage |
 |------|----------|
@@ -35,6 +35,7 @@ Nine test files MUST exist:
 | `test/version.test.ts` | Semantic version comparison (`semverLessThan`) |
 | `test/worktrees.test.ts` | DELETE /worktrees path validation (rejects paths outside `.worktrees/`), branch-to-directory name conversion |
 | `test/pull-requests.test.ts` | PullRequest type construction (author/reviewer), PullRequestsResponse with/without error |
+| `test/terminal-zoom.test.ts` | Font size clamping (bounds, NaN), zoom percentage calculation, scaled terminal dimension estimates |
 
 ### Test Isolation
 - `auth.test.ts` MUST call the `_resetForTesting()` export from `auth.ts` before each test to get fresh rate-limit state

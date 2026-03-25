@@ -143,19 +143,37 @@ async function main(): Promise<void> {
 
   ensureMetaDir(CONFIG_PATH);
 
-  let config: Config;
+  // Runtime config — always reads fresh from disk.
+  // Use this for ALL config access in route handlers, pollers, and event callbacks.
+  let lastGoodConfig: Config | null = null;
+  function getConfig(): Config {
+    try {
+      const fresh = loadConfig(CONFIG_PATH);
+      lastGoodConfig = fresh;
+      return structuredClone(fresh);
+    } catch (err) {
+      console.warn('[config] Failed to load config, using last good config:', err);
+      const fallback = lastGoodConfig ?? ({ ...DEFAULTS } as Config);
+      return structuredClone(fallback);
+    }
+  }
+
+  // Startup-only config — captured once at boot.
+  // Use ONLY for values wired into the listening socket or long-lived connections
+  // (port, host, webhookSecret, smeeUrl, githubToken, forceOutputParser).
+  let startupConfig: Config;
   try {
-    config = loadConfig(CONFIG_PATH);
+    startupConfig = loadConfig(CONFIG_PATH);
   } catch (_) {
-    config = { ...DEFAULTS } as Config;
-    saveConfig(CONFIG_PATH, config);
+    startupConfig = { ...DEFAULTS } as Config;
+    saveConfig(CONFIG_PATH, startupConfig);
   }
 
   // CLI flag overrides
-  if (process.env.CLAUDE_REMOTE_PORT) config.port = parseInt(process.env.CLAUDE_REMOTE_PORT, 10);
-  if (process.env.CLAUDE_REMOTE_HOST) config.host = process.env.CLAUDE_REMOTE_HOST;
+  if (process.env.CLAUDE_REMOTE_PORT) startupConfig.port = parseInt(process.env.CLAUDE_REMOTE_PORT, 10);
+  if (process.env.CLAUDE_REMOTE_HOST) startupConfig.host = process.env.CLAUDE_REMOTE_HOST;
 
-  push.ensureVapidKeys(config, CONFIG_PATH, saveConfig);
+  push.ensureVapidKeys(startupConfig, CONFIG_PATH, saveConfig);
 
   const configDir = path.dirname(CONFIG_PATH);
   try {
@@ -164,20 +182,20 @@ async function main(): Promise<void> {
     console.warn('Analytics disabled: failed to initialize:', err instanceof Error ? err.message : err);
   }
 
-  if (config.pinHash && auth.isLegacyHash(config.pinHash)) {
+  if (startupConfig.pinHash && auth.isLegacyHash(startupConfig.pinHash)) {
     console.log('Migrating legacy PIN hash to scrypt. You will need to set a new PIN.');
-    delete config.pinHash;
-    saveConfig(CONFIG_PATH, config);
+    delete startupConfig.pinHash;
+    saveConfig(CONFIG_PATH, startupConfig);
   }
 
-  if (!config.pinHash) {
+  if (!startupConfig.pinHash) {
     if (!process.stdin.isTTY) {
       console.error('No PIN configured. Run claude-remote-cli interactively first to set a PIN.');
       process.exit(1);
     }
     const pin = await promptPin('Set up a PIN for claude-remote-cli:');
-    config.pinHash = await auth.hashPin(pin);
-    saveConfig(CONFIG_PATH, config);
+    startupConfig.pinHash = await auth.hashPin(pin);
+    saveConfig(CONFIG_PATH, startupConfig);
     console.log('PIN set successfully.');
   }
 
@@ -207,7 +225,7 @@ async function main(): Promise<void> {
   // can capture the raw body for HMAC signature verification.
   // broadcastEvent is wired up after setupWebSocket via the delegate closure below.
   let broadcastEventDelegate: ((type: string, data?: Record<string, unknown>) => void) | null = null;
-  const webhookSecret = config.github?.webhookSecret;
+  const webhookSecret = startupConfig.github?.webhookSecret;
   if (webhookSecret) {
     const webhookRouter = createWebhookRouter({
       secret: webhookSecret,
@@ -231,7 +249,7 @@ async function main(): Promise<void> {
 
   function boolConfigEndpoints(name: string, defaultValue: boolean, onEnable?: () => Promise<void>) {
     app.get(`/config/${name}`, requireAuth, (_req: express.Request, res: express.Response) => {
-      res.json({ [name]: (config as unknown as Record<string, unknown>)[name] ?? defaultValue });
+      res.json({ [name]: (getConfig() as unknown as Record<string, unknown>)[name] ?? defaultValue });
     });
     app.patch(`/config/${name}`, requireAuth, async (req: express.Request, res: express.Response) => {
       const value = (req.body as Record<string, unknown>)[name];
@@ -245,14 +263,15 @@ async function main(): Promise<void> {
           return;
         }
       }
-      (config as unknown as Record<string, unknown>)[name] = value;
-      saveConfig(CONFIG_PATH, config);
+      const c = getConfig();
+      (c as unknown as Record<string, unknown>)[name] = value;
+      saveConfig(CONFIG_PATH, c);
       res.json({ [name]: value });
     });
   }
 
   const watcher = new WorktreeWatcher();
-  watcher.rebuild(config.workspaces || []);
+  watcher.rebuild(getConfig().workspaces || []);
 
   const server = http.createServer(app);
   const { broadcastEvent } = setupWebSocket(server, authenticatedTokens, watcher, CONFIG_PATH);
@@ -278,9 +297,9 @@ async function main(): Promise<void> {
     // Rebuild ref watchers when branches change (new upstream to watch)
     rebuildRefWatcher();
   });
-  branchWatcher.rebuild(config.workspaces || []);
+  branchWatcher.rebuild(getConfig().workspaces || []);
   watcher.on('worktrees-changed', () => {
-    branchWatcher.rebuild(config.workspaces || []);
+    branchWatcher.rebuild(getConfig().workspaces || []);
   });
 
   // Watch upstream tracking refs for push/fetch and broadcast ref-changed events
@@ -310,8 +329,8 @@ async function main(): Promise<void> {
   sessions.onSessionCreate(() => rebuildRefWatcher());
   sessions.onSessionEnd(() => rebuildRefWatcher());
 
-  // Configure session defaults for hooks injection
-  sessions.configure({ port: config.port, forceOutputParser: config.forceOutputParser ?? false });
+  // Configure session defaults for hooks injection (startup-only — changing these requires restart)
+  sessions.configure({ port: startupConfig.port, forceOutputParser: startupConfig.forceOutputParser ?? false });
 
   // Mount hooks router BEFORE auth middleware — hook callbacks come from localhost Claude Code
   const hooksRouter = createHooksRouter({
@@ -323,8 +342,21 @@ async function main(): Promise<void> {
   });
   app.use('/hooks', hooksRouter);
 
-  // Mount workspace router
-  const workspaceRouter = createWorkspaceRouter({ configPath: CONFIG_PATH });
+  // Mount workspace router — rebuild watchers when workspaces are added or removed
+  const workspaceRouter = createWorkspaceRouter({
+    configPath: CONFIG_PATH,
+    onWorkspacesChanged: () => {
+      setImmediate(() => {
+        try {
+          const workspaces = getConfig().workspaces || [];
+          watcher.rebuild(workspaces);
+          branchWatcher.rebuild(workspaces);
+        } catch (err) {
+          console.error('Failed to rebuild workspace watchers:', err);
+        }
+      });
+    },
+  });
   app.use('/workspaces', requireAuth, workspaceRouter);
 
   // Mount GitHub integration router
@@ -383,7 +415,7 @@ async function main(): Promise<void> {
   app.use('/analytics', requireAuth, createAnalyticsRouter(configDir));
 
   // Restore sessions from a previous update restart
-  const restoredCount = await restoreFromDisk(configDir, config.workspaces ?? []);
+  const restoredCount = await restoreFromDisk(configDir, getConfig().workspaces ?? []);
   if (restoredCount > 0) {
     console.log(`Restored ${restoredCount} session(s) from previous update.`);
   }
@@ -395,10 +427,10 @@ async function main(): Promise<void> {
   function buildPollerDeps() {
     return {
       configPath: CONFIG_PATH,
-      getWorkspacePaths: () => config.workspaces ?? [],
-      getWorkspaceSettings: (wsPath: string) => config.workspaceSettings?.[wsPath],
+      getWorkspacePaths: () => getConfig().workspaces ?? [],
+      getWorkspaceSettings: (wsPath: string) => getConfig().workspaceSettings?.[wsPath],
       createSession: async (opts: { workspacePath: string; worktreePath: string; branchName: string; initialPrompt?: string }) => {
-        const resolved = resolveSessionSettings(config, opts.workspacePath, {});
+        const resolved = resolveSessionSettings(getConfig(), opts.workspacePath, {});
         const repoName = opts.workspacePath.split('/').filter(Boolean).pop() || 'session';
         const displayName = sessions.nextAgentName();
         sessions.create({
@@ -423,13 +455,13 @@ async function main(): Promise<void> {
   }
 
   // Start review request poller if enabled
-  if (config.automations?.autoCheckoutReviewRequests) {
+  if (getConfig().automations?.autoCheckoutReviewRequests) {
     startPolling(buildPollerDeps());
   }
 
   // Start smee-client for webhook delivery (with polling fallback)
-  const smeeUrl = config.github?.smeeUrl;
-  const githubToken = config.github?.accessToken;
+  const smeeUrl = startupConfig.github?.smeeUrl;
+  const githubToken = startupConfig.github?.accessToken;
   let webhookPollingInterval: ReturnType<typeof setInterval> | null = null;
   let smeeErrorCount = 0;
 
@@ -452,7 +484,7 @@ async function main(): Promise<void> {
     import('smee-client').then(({ default: SmeeClient }) => {
       const smee = new SmeeClient({
         source: smeeUrl,
-        target: `http://127.0.0.1:${config.port}/webhooks`,
+        target: `http://127.0.0.1:${startupConfig.port}/webhooks`,
         logger: {
           info: () => {},
           error: (msg: string) => {
@@ -517,7 +549,8 @@ async function main(): Promise<void> {
       return;
     }
 
-    const valid = await auth.verifyPin(pin, config.pinHash as string);
+    const authConfig = getConfig();
+    const valid = await auth.verifyPin(pin, authConfig.pinHash as string);
     if (!valid) {
       auth.recordFailedAttempt(ip);
       res.status(401).json({ error: 'Invalid PIN' });
@@ -528,7 +561,7 @@ async function main(): Promise<void> {
     const token = auth.generateCookieToken();
     authenticatedTokens.add(token);
 
-    const ttlMs = parseTTL(config.cookieTTL);
+    const ttlMs = parseTTL(authConfig.cookieTTL);
     setTimeout(() => authenticatedTokens.delete(token), ttlMs);
 
     res.cookie('token', token, {
@@ -575,10 +608,11 @@ async function main(): Promise<void> {
 
   // GET /repos — scan root dirs for repos
   app.get('/repos', requireAuth, async (_req, res) => {
-    const repos = scanAllRepos(config.rootDirs || []);
+    const freshConfig = getConfig();
+    const repos = scanAllRepos(freshConfig.rootDirs || []);
     // Also include legacy manually-added repos
-    if (config.repos) {
-      for (const repo of config.repos as unknown as RepoEntry[]) {
+    if (freshConfig.repos) {
+      for (const repo of freshConfig.repos as unknown as RepoEntry[]) {
         if (!repos.some((r) => r.path === repo.path)) {
           repos.push(repo);
         }
@@ -611,7 +645,7 @@ async function main(): Promise<void> {
   // GET /worktrees?repo=<path> — list worktrees; omit repo to scan all repos in all rootDirs
   app.get('/worktrees', requireAuth, async (req, res) => {
     const repoParam = typeof req.query.repo === 'string' ? req.query.repo : undefined;
-    const roots = config.rootDirs || [];
+    const roots = getConfig().rootDirs || [];
     const worktrees: Array<{ name: string; path: string; repoName: string; repoPath: string; root: string; displayName: string; lastActivity: string; branchName: string }> = [];
 
     let reposToScan: RepoEntry[];
@@ -703,7 +737,7 @@ async function main(): Promise<void> {
 
   // GET /config/defaultAgent — get default coding agent
   app.get('/config/defaultAgent', requireAuth, (_req, res) => {
-    res.json({ defaultAgent: config.defaultAgent || 'claude' });
+    res.json({ defaultAgent: getConfig().defaultAgent || 'claude' });
   });
 
   // PATCH /config/defaultAgent — set default coding agent
@@ -713,9 +747,10 @@ async function main(): Promise<void> {
       res.status(400).json({ error: 'defaultAgent must be "claude" or "codex"' });
       return;
     }
-    config.defaultAgent = defaultAgent;
-    saveConfig(CONFIG_PATH, config);
-    res.json({ defaultAgent: config.defaultAgent });
+    const c = getConfig();
+    c.defaultAgent = defaultAgent;
+    saveConfig(CONFIG_PATH, c);
+    res.json({ defaultAgent: c.defaultAgent });
   });
 
   boolConfigEndpoints('defaultContinue', true);
@@ -727,13 +762,14 @@ async function main(): Promise<void> {
 
   // GET /config/automations — get automation settings
   app.get('/config/automations', requireAuth, (_req: express.Request, res: express.Response) => {
-    res.json(config.automations ?? {});
+    res.json(getConfig().automations ?? {});
   });
 
   // PATCH /config/automations — update automation settings and start/stop poller
   app.patch('/config/automations', requireAuth, (req: express.Request, res: express.Response) => {
     const body = req.body as Partial<AutomationSettings>;
-    const prev = config.automations ?? {};
+    const c = getConfig();
+    const prev = c.automations ?? {};
     const next: AutomationSettings = { ...prev };
 
     if (typeof body.autoCheckoutReviewRequests === 'boolean') {
@@ -751,11 +787,10 @@ async function main(): Promise<void> {
       next.autoReviewOnCheckout = false;
     }
 
-    config.automations = next;
+    c.automations = next;
     try {
-      saveConfig(CONFIG_PATH, config);
+      saveConfig(CONFIG_PATH, c);
     } catch (err) {
-      config.automations = prev;
       console.error('[config] Failed to save automation settings:', err);
       res.status(500).json({ error: 'Failed to save settings' });
       return;
@@ -773,12 +808,12 @@ async function main(): Promise<void> {
 
   // GET /config/workspace-groups — return workspace group configuration
   app.get('/config/workspace-groups', requireAuth, (_req, res) => {
-    res.json({ groups: config.workspaceGroups ?? {} });
+    res.json({ groups: getConfig().workspaceGroups ?? {} });
   });
 
   // GET /presets — return all filter presets (built-in merged with user presets)
   app.get('/presets', requireAuth, (_req: express.Request, res: express.Response) => {
-    res.json(config.filterPresets ?? []);
+    res.json(getConfig().filterPresets ?? []);
   });
 
   // POST /presets — add a new user filter preset
@@ -801,23 +836,25 @@ async function main(): Promise<void> {
       }
     }
     const trimmedName = name.trim();
-    const existingPresets = config.filterPresets ?? [];
+    const c = getConfig();
+    const existingPresets = c.filterPresets ?? [];
     const duplicate = existingPresets.some((p) => p.name.toLowerCase() === trimmedName.toLowerCase());
     if (duplicate) {
       res.status(409).json({ error: `A preset named "${trimmedName}" already exists` });
       return;
     }
     const preset = { name: trimmedName, filters: (filters as { status?: string[]; repo?: string[]; role?: string[] }) ?? {}, sort: (sort as { column: string; direction: 'asc' | 'desc' }) ?? { column: 'role', direction: 'asc' as const } };
-    if (!config.filterPresets) config.filterPresets = [];
-    config.filterPresets.push(preset);
-    saveConfig(CONFIG_PATH, config);
+    if (!c.filterPresets) c.filterPresets = [];
+    c.filterPresets.push(preset);
+    saveConfig(CONFIG_PATH, c);
     res.json(preset);
   });
 
   // DELETE /presets/:name — remove a user preset (built-in presets cannot be deleted)
   app.delete('/presets/:name', requireAuth, (req: express.Request, res: express.Response) => {
     const name = decodeURIComponent(req.params['name'] ?? '');
-    const presets = config.filterPresets ?? [];
+    const c = getConfig();
+    const presets = c.filterPresets ?? [];
     const target = presets.find((p) => p.name === name);
     if (!target) {
       res.status(404).json({ error: 'Preset not found' });
@@ -827,8 +864,8 @@ async function main(): Promise<void> {
       res.status(400).json({ error: 'Cannot delete a built-in preset' });
       return;
     }
-    config.filterPresets = presets.filter((p) => p.name !== name);
-    saveConfig(CONFIG_PATH, config);
+    c.filterPresets = presets.filter((p) => p.name !== name);
+    saveConfig(CONFIG_PATH, c);
     res.json({ ok: true });
   });
 
@@ -963,8 +1000,11 @@ async function main(): Promise<void> {
       return;
     }
 
+    // Read config once for the lifetime of this request
+    const freshConfig = getConfig();
+
     // Validate workspacePath is a configured workspace
-    const configuredWorkspaces = config.workspaces ?? [];
+    const configuredWorkspaces = freshConfig.workspaces ?? [];
     if (!configuredWorkspaces.includes(workspacePath)) {
       res.status(400).json({ error: 'workspacePath is not a configured workspace' });
       return;
@@ -1006,7 +1046,7 @@ async function main(): Promise<void> {
     }
 
     // Agent session
-    const resolved = resolveSessionSettings(config, workspacePath, { agent, yolo, useTmux, claudeArgs });
+    const resolved = resolveSessionSettings(freshConfig, workspacePath, { agent, yolo, useTmux, claudeArgs });
     const resolvedAgent = resolved.agent;
 
     const baseArgs = [
@@ -1051,7 +1091,7 @@ async function main(): Promise<void> {
         res.status(400).json({ error: 'ticketContext.ticketId must match <PROJECT>-<number>' });
         return;
       }
-      const settings = config.workspaceSettings?.[ticketContext.repoPath];
+      const settings = freshConfig.workspaceSettings?.[ticketContext.repoPath];
       const template = settings?.promptStartWork ??
         'You are working on ticket {ticketId}: {title}\n\nTicket URL: {ticketUrl}\n\nPlease start by understanding the issue and proposing an approach.';
       computedInitialPrompt = template
@@ -1244,8 +1284,8 @@ async function main(): Promise<void> {
   process.on('SIGTERM', gracefulShutdown);
   process.on('SIGINT', gracefulShutdown);
 
-  server.listen(config.port, config.host, () => {
-    console.log(`claude-remote-cli listening on ${config.host}:${config.port}`);
+  server.listen(startupConfig.port, startupConfig.host, () => {
+    console.log(`claude-remote-cli listening on ${startupConfig.host}:${startupConfig.port}`);
   });
 }
 

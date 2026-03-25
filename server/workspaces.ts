@@ -28,6 +28,8 @@ export interface WorkspaceDeps {
   configPath: string;
   /** Injected so tests can override execFile calls */
   execAsync?: typeof execFileAsync;
+  /** Called after any workspace mutation (add, remove, reorder, bulk-add) so watchers can rebuild */
+  onWorkspacesChanged?: () => void;
 }
 
 // Exported helpers
@@ -170,6 +172,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     }
 
     saveConfig(configPath, config);
+    try { deps.onWorkspacesChanged?.(); } catch (err) { console.error('onWorkspacesChanged failed:', err); }
     trackEvent({ category: 'workspace', action: 'added', target: resolved, properties: { name: path.basename(resolved) } });
 
     const workspace: Workspace = {
@@ -204,6 +207,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
 
     config.workspaces = workspaces.filter((p) => p !== resolved);
     saveConfig(configPath, config);
+    try { deps.onWorkspacesChanged?.(); } catch (err) { console.error('onWorkspacesChanged failed:', err); }
     trackEvent({ category: 'workspace', action: 'removed', target: resolved });
 
     res.json({ removed: resolved });
@@ -238,6 +242,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
 
     config.workspaces = rawPaths as string[];
     saveConfig(configPath, config);
+    try { deps.onWorkspacesChanged?.(); } catch (err) { console.error('onWorkspacesChanged failed:', err); }
 
     const results: Workspace[] = await Promise.all(
       (rawPaths as string[]).map(async (p) => {
@@ -307,6 +312,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     if (added.length > 0) {
       config.workspaces = [...(config.workspaces ?? []), ...added.map((a) => a.path)];
       saveConfig(configPath, config);
+      try { deps.onWorkspacesChanged?.(); } catch (err) { console.error('onWorkspacesChanged failed:', err); }
     }
 
     res.status(201).json({ added, errors });

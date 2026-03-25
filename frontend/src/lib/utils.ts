@@ -1,3 +1,6 @@
+import { getUi } from './state/ui.svelte.js';
+import { scaledTerminalDimensions } from './terminal-zoom.js';
+
 export function rootShortName(path: string): string {
   return path.split('/').filter(Boolean).pop() || path;
 }
@@ -43,8 +46,6 @@ export const isMobileDevice =
   /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 export function estimateTerminalDimensions(): { cols: number; rows: number } {
-  return {
-    cols: Math.max(80, Math.floor((window.innerWidth - 60) / 8)),
-    rows: Math.max(24, Math.floor((window.innerHeight - 120) / 17)),
-  };
+  const fontSize = isMobileDevice ? 12 : getUi().terminalFontSize;
+  return scaledTerminalDimensions(window.innerWidth, window.innerHeight, fontSize);
 }
