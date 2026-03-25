@@ -181,15 +181,17 @@
     const prev = config.defaultNotifications;
     error = '';
 
-    // When toggling ON, request browser permission first
-    if (config.defaultNotifications) {
+    // When toggling ON, request browser permission if not already granted
+    if (config.defaultNotifications && notificationPermission !== 'granted') {
       const permission = await requestPermission();
       notificationPermission = permission;
 
-      if (permission === 'denied' || permission === 'unsupported') {
+      if (permission !== 'granted') {
         config.defaultNotifications = prev;
         error = permission === 'unsupported'
           ? 'Notifications are not supported in this browser.'
+          : permission === 'default'
+          ? 'Notification permission is required. Please allow when prompted.'
           : 'Notifications blocked by browser. Check site settings to enable.';
         return;
       }
@@ -198,9 +200,9 @@
     try {
       await setDefaultNotifications(config.defaultNotifications);
 
-      // After permission granted + setting saved, register push subscription
-      if (config.defaultNotifications && notificationPermission === 'granted') {
-        syncPushSubscription(getNotificationSessionIds());
+      // Register push subscription whenever notifications are enabled and permission is granted
+      if (notificationPermission === 'granted') {
+        await syncPushSubscription(getNotificationSessionIds());
       }
     } catch {
       config.defaultNotifications = prev;
