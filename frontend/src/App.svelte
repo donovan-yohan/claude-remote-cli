@@ -285,15 +285,15 @@
       queryClient.invalidateQueries({ queryKey: ['ci-status'] });
     }
 
-    /** Debounced invalidation for poll-based events (pr-updated/ci-updated).
-     *  Coalesces rapid events into a single invalidation cycle. */
-    function debouncedPollInvalidate(): void {
-      if (pollInvalidateTimer) return; // already scheduled
+    /** Throttled invalidation for poll-based events (pr-updated/ci-updated).
+     *  Schedules one invalidation 500ms after the first event; subsequent
+     *  events within the window are dropped. */
+    function throttledPollInvalidate(): void {
+      if (pollInvalidateTimer) return;
       pollInvalidateTimer = setTimeout(() => {
         pollInvalidateTimer = null;
+        invalidatePrQueries();
         queryClient.invalidateQueries({ queryKey: ['org-prs'] });
-        queryClient.invalidateQueries({ queryKey: ['pr'] });
-        queryClient.invalidateQueries({ queryKey: ['ci-status'] });
       }, 500);
     }
 
@@ -316,7 +316,7 @@
           invalidatePrQueries();
         }, 5000));
       } else if (msg.type === 'pr-updated' || msg.type === 'ci-updated') {
-        debouncedPollInvalidate();
+        throttledPollInvalidate();
       }
     });
 

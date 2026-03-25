@@ -182,7 +182,7 @@ When a display status (e.g., session dot color) is derived from multiple indepen
 
 ---
 
-### L-018: WebSocket-driven query invalidation must be scoped to the affected resource — never blanket-invalidate all queries of a type
+### L-018: WebSocket-driven query invalidation should be scoped to the affected resource — blanket-invalidation is strongly discouraged
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-25

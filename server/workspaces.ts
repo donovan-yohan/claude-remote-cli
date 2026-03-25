@@ -10,7 +10,7 @@ import type { Request, Response } from 'express';
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
 import { trackEvent } from './analytics.js';
 import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
-import type { Config, PullRequest, PullRequestsResponse, Workspace } from './types.js';
+import type { Config, PrInfo, PullRequest, PullRequestsResponse, Workspace } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -31,7 +31,7 @@ const PR_CACHE_POSITIVE_TTL_MS = 60_000;   // 60s — same as org-dashboard
 const PR_CACHE_NEGATIVE_TTL_MS = 300_000;  // 5 min — "no PR" rarely changes without user action
 
 interface PrCacheEntry {
-  result: import('./types.js').PrInfo | null;
+  result: PrInfo | null;
   fetchedAt: number;
 }
 
@@ -53,7 +53,7 @@ function getPrCached(workspacePath: string, branch: string): PrCacheEntry | unde
   return entry;
 }
 
-function setPrCached(workspacePath: string, branch: string, result: import('./types.js').PrInfo | null): void {
+function setPrCached(workspacePath: string, branch: string, result: PrInfo | null): void {
   prCache.set(prCacheKey(workspacePath, branch), { result, fetchedAt: Date.now() });
 }
 
@@ -578,35 +578,30 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       return;
     }
 
-    // Check cache first to avoid spawning a `gh` subprocess on every request
     const cached = getPrCached(workspacePath, branch);
     if (cached) {
-      if (cached.result) {
-        res.json(cached.result);
-      } else {
-        res.json({ pr: null });
-      }
+      res.json({ pr: cached.result });
       return;
     }
 
     try {
       const pr = await getPrForBranch(workspacePath, branch);
-      setPrCached(workspacePath, branch, pr);
       if (pr) {
+        let unresolvedCommentCount = 0;
         if (pr.state === 'OPEN') {
-          const unresolvedCommentCount = await getUnresolvedCommentCount(workspacePath, pr.number);
-          const prWithComments = { ...pr, unresolvedCommentCount };
-          setPrCached(workspacePath, branch, prWithComments);
-          res.json(prWithComments);
-        } else {
-          res.json({ ...pr, unresolvedCommentCount: 0 });
+          try {
+            unresolvedCommentCount = await getUnresolvedCommentCount(workspacePath, pr.number);
+          } catch { /* degrade gracefully — show PR without comment count */ }
         }
+        const enriched = { ...pr, unresolvedCommentCount };
+        setPrCached(workspacePath, branch, enriched);
+        res.json({ pr: enriched });
       } else {
+        setPrCached(workspacePath, branch, null);
         res.json({ pr: null });
       }
     } catch {
-      // Cache the negative result so we don't retry for 5 minutes
-      setPrCached(workspacePath, branch, null);
+      // Do NOT cache transient errors — only cache clean null from getPrForBranch
       res.json({ pr: null });
     }
   });

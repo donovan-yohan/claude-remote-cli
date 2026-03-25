@@ -313,8 +313,8 @@ async function main(): Promise<void> {
   // Watch upstream tracking refs for push/fetch and broadcast ref-changed events
   const refWatcher = new RefWatcher((cwdPath, branch) => {
     broadcastEvent('ref-changed', { cwdPath, branch });
-    // Clear PR cache for this workspace — a ref change may mean a new PR was created/pushed
-    clearPrCache(cwdPath);
+    // Clear all PR cache — cwdPath may be a worktree path that doesn't match workspace cache keys
+    clearPrCache();
   });
 
   let refWatcherRebuildPending = false;

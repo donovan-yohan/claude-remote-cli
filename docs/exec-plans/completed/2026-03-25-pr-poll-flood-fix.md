@@ -16,7 +16,7 @@ Fix excessive PR polling by adding server-side negative caching for `/workspaces
 - [x] Task 3: Fix HTTP semantics — return 200 for "no PR"
 
 ### Frontend fixes (Tasks 4-5)
-- [x] Task 4: Debounce frontend invalidation + scope to affected workspace
+- [x] Task 4: Throttle frontend invalidation (per-workspace scoping deferred)
 - [x] Task 5: Update frontend to handle new 200 response for "no PR"
 
 ### Verification (Task 6)
