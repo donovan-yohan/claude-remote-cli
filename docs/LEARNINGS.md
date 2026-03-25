@@ -181,3 +181,13 @@ When using `svelte-dnd-action` (or any drag-and-drop library) on a scrollable co
 When a display status (e.g., session dot color) is derived from multiple independent signals (PTY idle timer, hook-based agentState, parser reconciliation), ad-hoc guards and cooldown timers will always have edge cases. The root invariant — "only show attention when there's genuinely new content the user hasn't seen" — cannot be enforced by checking individual signals in isolation. Instead, model the display state as a formal state machine with a transition function that accepts semantic events and enforces valid transitions at the type level. The key insight: `seen-idle → unseen-idle` should be an **impossible transition** — the only path to `unseen-idle` must go through `running` first.
 
 ---
+
+### L-018: Never use dual mechanisms (CSS media query + JS matchMedia) to implement mobile-specific behavior — use CSS alone for visibility
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-25
+- branch: hood
+
+When a UI element needs different visibility on mobile vs desktop (e.g., "always visible on mobile, hover-reveal on desktop"), implement it purely in CSS with a media query override — never add a parallel JS `matchMedia` check that also hides the element. Dual mechanisms create redundant hiding that's easy to break independently: fixing the CSS leaves the JS guard in place (or vice versa), making the bug appear unfixed. The pattern: set the desktop default in base CSS (e.g., `opacity: 0` + `:hover { opacity: 1 }`), then override in `@media (max-width: 600px) { opacity: 1 }`. Never pass a `hideTrigger={isMobile}` prop that prevents the element from rendering in the DOM — CSS can't show what JS never rendered.
+
+---

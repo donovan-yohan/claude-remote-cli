@@ -40,3 +40,4 @@
 | [sidebar-touch-scroll-blocked-by-dnd-bug-analysis.md](2026-03-24-sidebar-touch-scroll-blocked-by-dnd-bug-analysis.md) | Sidebar can't scroll on mobile — svelte-dnd-action intercepts touches because dragDisabled not set | 2026-03-24 |
 | [stale-config-workspace-validation-bug-analysis.md](2026-03-24-stale-config-workspace-validation-bug-analysis.md) | POST /sessions rejects newly added workspaces — stale in-memory config never reloaded after workspace mutations | 2026-03-24 |
 | [idle-to-attention-spurious-transition-bug-analysis.md](2026-03-24-idle-to-attention-spurious-transition-bug-analysis.md) | Idle (blue) dot spuriously transitions to attention (orange) after 30s cooldown — no state machine, no "seen" tracking | 2026-03-24 |
+| [mobile-triple-dots-hidden-bug-analysis.md](2026-03-25-mobile-triple-dots-hidden-bug-analysis.md) | Triple dots menu hidden on mobile — dual CSS+JS hiding mechanism, no visible affordance for context menu | 2026-03-25 |
