@@ -321,7 +321,7 @@
         : 'Notify when sessions need attention'
       }>
         <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultNotifications} onchange={handleNotificationsChange}
-          disabled={notificationPermission === 'denied' || notificationPermission === 'unsupported'} />
+          disabled={(notificationPermission === 'denied' || notificationPermission === 'unsupported') && !config.defaultNotifications} />
       </SettingRow>
     </section>
 

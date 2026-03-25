@@ -67,7 +67,11 @@ export async function initPushNotifications(): Promise<void> {
 }
 
 export async function syncPushSubscription(sessionIds: string[]): Promise<void> {
-  if (!swRegistration) return;
+  // Fall back to navigator.serviceWorker.ready if initPushNotifications hasn't completed yet
+  if (!swRegistration) {
+    if (!hasPushSupport()) return;
+    swRegistration = await navigator.serviceWorker.ready;
+  }
 
   try {
     let subscription = await swRegistration.pushManager.getSubscription();
