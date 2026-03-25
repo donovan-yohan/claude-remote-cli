@@ -367,11 +367,6 @@ export async function fetchJiraStatuses(projectKey: string): Promise<JiraStatus[
   return data.statuses;
 }
 
-export async function fetchWorkspaceGroups(): Promise<Record<string, string[]>> {
-  const data = await json<{ groups: Record<string, string[]> }>(await fetch('/config/workspace-groups'));
-  return data.groups;
-}
-
 export async function fetchAnalyticsSize(): Promise<{ bytes: number }> {
   return json<{ bytes: number }>(await fetch('/analytics/size'));
 }

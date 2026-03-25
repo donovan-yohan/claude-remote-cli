@@ -39,3 +39,4 @@
 | [new-worktree-button-regression-bug-analysis.md](2026-03-23-new-worktree-button-regression-bug-analysis.md) | New worktree button opens session dialog — mountain name collision + dual counter desync + silent error fallback | 2026-03-23 |
 | [sidebar-touch-scroll-blocked-by-dnd-bug-analysis.md](2026-03-24-sidebar-touch-scroll-blocked-by-dnd-bug-analysis.md) | Sidebar can't scroll on mobile — svelte-dnd-action intercepts touches because dragDisabled not set | 2026-03-24 |
 | [stale-config-workspace-validation-bug-analysis.md](2026-03-24-stale-config-workspace-validation-bug-analysis.md) | POST /sessions rejects newly added workspaces — stale in-memory config never reloaded after workspace mutations | 2026-03-24 |
+| [desktop-drag-broken-reorder-mode-jarring-bug-analysis.md](2026-03-25-desktop-drag-broken-reorder-mode-jarring-bug-analysis.md) | Desktop drag broken — reorder mode has no mouse entry point; reorder UI jarringly hides all sidebar content | 2026-03-25 |
