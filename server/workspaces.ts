@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
-import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
+import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys, writeMeta } from './config.js';
 import { trackEvent } from './analytics.js';
 import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, isStalePr, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace } from './types.js';
@@ -682,6 +682,14 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     if (nextMountainIndex !== undefined) {
       setWorkspaceSettings(configPath, config, resolved, { nextMountainIndex });
     }
+
+    // Write metadata so DELETE /worktrees can find the suffixed branch name
+    writeMeta(configPath, {
+      worktreePath,
+      displayName: mountainName,
+      lastActivity: new Date().toISOString(),
+      branchName,
+    });
 
     res.json({ branchName, mountainName, worktreePath });
   });
