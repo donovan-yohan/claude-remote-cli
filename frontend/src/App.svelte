@@ -303,6 +303,10 @@
           invalidatePrQueries();
         }, 5000));
       } else if (msg.type === 'pr-updated' || msg.type === 'ci-updated') {
+        if (msg.repo) {
+          console.debug(`[ws] ${msg.type} for repo: ${msg.repo}`);
+        }
+        // Invalidate all queries — targeted per-repo invalidation is a follow-up optimization
         queryClient.invalidateQueries({ queryKey: ['org-prs'] });
         queryClient.invalidateQueries({ queryKey: ['pr'] });
         queryClient.invalidateQueries({ queryKey: ['ci-status'] });
@@ -845,6 +849,7 @@
     onSelectSession={(id) => handleSelectSession(id)}
     onSelectPr={handleSpotlightSelectPr}
     onCommand={handleSpotlightCommand}
+    onOpenSettings={(sectionId) => { spotlightOpen = false; settingsDialogRef?.open(sectionId); }}
   />
 
   <!-- Toasts -->

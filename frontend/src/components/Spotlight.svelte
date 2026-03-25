@@ -13,6 +13,7 @@
     onSelectSession,
     onSelectPr,
     onCommand,
+    onOpenSettings,
   }: {
     open: boolean;
     workspaces: Workspace[];
@@ -22,6 +23,7 @@
     onSelectSession: (id: string) => void;
     onSelectPr: (pr: PullRequest) => void;
     onCommand: (cmd: string) => void;
+    onOpenSettings?: (sectionId: string) => void;
   } = $props();
 
   const queryClient = useQueryClient();
@@ -42,6 +44,21 @@
   let cachedJiraIssues = $derived<JiraIssue[]>(
     (queryClient.getQueryData<JiraIssuesResponse>(['jira-issues'])?.issues ?? [])
   );
+
+  // Settings entries
+  const SETTINGS_ENTRIES = [
+    { id: 'setting-agent', label: 'Default Coding Agent', description: 'Which AI agent to use', section: 'section-general' },
+    { id: 'setting-continue', label: 'Continue Session', description: 'Resume last session when opening a repo', section: 'section-general' },
+    { id: 'setting-yolo', label: 'YOLO Mode', description: 'Skip permission checks', section: 'section-general' },
+    { id: 'setting-tmux', label: 'Launch in tmux', description: 'Wrap sessions in tmux', section: 'section-general' },
+    { id: 'setting-notifications', label: 'Notifications', description: 'Push notifications for sessions', section: 'section-general' },
+    { id: 'setting-github', label: 'GitHub Connection', description: 'Connect GitHub account for PRs and CI', section: 'section-integrations' },
+    { id: 'setting-webhooks', label: 'Webhooks', description: 'Real-time CI and PR updates', section: 'section-integrations' },
+    { id: 'setting-jira', label: 'Jira', description: 'See Jira tickets in the sidebar', section: 'section-integrations' },
+    { id: 'setting-devtools', label: 'Developer Tools', description: 'Mobile debug panel', section: 'section-advanced' },
+    { id: 'setting-analytics', label: 'Analytics', description: 'Local usage data', section: 'section-advanced' },
+    { id: 'setting-version', label: 'Version', description: 'Check for updates', section: 'section-about' },
+  ];
 
   // Commands
   const commands = [
@@ -66,7 +83,8 @@
     | { type: 'session'; id: string; label: string; sublabel?: string; data: SessionSummary }
     | { type: 'pr' | 'attention'; id: string; label: string; sublabel?: string; data: PullRequest }
     | { type: 'ticket'; id: string; label: string; sublabel?: string; data: GitHubIssue | JiraIssue }
-    | { type: 'command'; id: string; label: string; sublabel?: string; data: { id: string; label: string; icon: string } };
+    | { type: 'command'; id: string; label: string; sublabel?: string; data: { id: string; label: string; icon: string } }
+    | { type: 'setting'; id: string; label: string; sublabel?: string; data: { id: string; label: string; description: string; section: string } };
 
   let results = $derived.by((): SpotlightResult[] => {
     const q = debouncedQuery.toLowerCase().trim();
@@ -201,6 +219,22 @@
       });
     }
 
+    // Settings
+    const settingMatches = SETTINGS_ENTRIES
+      .filter(s =>
+        s.label.toLowerCase().includes(q) ||
+        s.description.toLowerCase().includes(q)
+      );
+    for (const s of settingMatches) {
+      items.push({
+        type: 'setting',
+        id: s.id,
+        label: s.label,
+        sublabel: s.description,
+        data: s,
+      });
+    }
+
     return items;
   });
 
@@ -220,6 +254,7 @@
           { type: 'pr', label: 'PULL REQUESTS' },
           { type: 'ticket', label: 'TICKETS' },
           { type: 'command', label: 'COMMANDS' },
+          { type: 'setting', label: 'SETTINGS' },
         ]
       : [
           { type: 'attention', label: 'NEEDS ATTENTION' },
@@ -283,6 +318,9 @@
       case 'command':
         onCommand(item.data.id);
         break;
+      case 'setting':
+        onOpenSettings?.(item.data.section);
+        break;
     }
   }
 
@@ -332,6 +370,7 @@
       case 'pr': case 'attention': return '●';
       case 'ticket': return '◆';
       case 'command': return '>';
+      case 'setting': return '⚙';
       default: return '';
     }
   }

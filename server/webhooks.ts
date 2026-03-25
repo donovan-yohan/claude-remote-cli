@@ -9,7 +9,7 @@ import type { Request, Response } from 'express';
 // ---------------------------------------------------------------------------
 
 export interface WebhookDeps {
-  secret: string;
+  secret: () => string | undefined;
   broadcastEvent: (type: string, data?: Record<string, unknown>) => void;
 }
 
@@ -44,6 +44,14 @@ export function createWebhookRouter(deps: WebhookDeps): Router {
 
   // POST / — receive GitHub webhook events
   router.post('/', (req: Request, res: Response) => {
+    const secret = deps.secret();
+
+    // If no secret configured, webhooks are not set up yet
+    if (!secret) {
+      res.status(401).json({ error: 'Webhooks not configured' });
+      return;
+    }
+
     const signature = req.headers['x-hub-signature-256'];
 
     // Reject if signature header is missing
@@ -54,7 +62,7 @@ export function createWebhookRouter(deps: WebhookDeps): Router {
 
     // Verify signature against raw body
     const rawBody = (req as unknown as Record<string, unknown>).rawBody as string | undefined ?? '';
-    if (!verifySignature(deps.secret, rawBody, signature)) {
+    if (!verifySignature(secret, rawBody, signature)) {
       res.status(401).json({ error: 'Invalid signature' });
       return;
     }
@@ -62,10 +70,14 @@ export function createWebhookRouter(deps: WebhookDeps): Router {
     // Route based on event type
     const event = req.headers['x-github-event'];
 
+    const repoFullName = (req.body as Record<string, unknown>)?.repository
+      ? ((req.body as Record<string, unknown>).repository as Record<string, unknown>)?.full_name as string | undefined
+      : undefined;
+
     if (event === 'pull_request' || event === 'pull_request_review') {
-      deps.broadcastEvent('pr-updated');
+      deps.broadcastEvent('pr-updated', repoFullName ? { repo: repoFullName } : undefined);
     } else if (event === 'check_suite' || event === 'check_run') {
-      deps.broadcastEvent('ci-updated');
+      deps.broadcastEvent('ci-updated', repoFullName ? { repo: repoFullName } : undefined);
     }
     // Unknown events: ignore, return 200 OK
 

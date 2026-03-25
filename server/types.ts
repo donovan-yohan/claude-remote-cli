@@ -124,6 +124,11 @@ export interface WorkspaceSettings {
 
   // Worktree naming — mountains theme
   nextMountainIndex?: number;
+
+  // Webhook tracking
+  webhookId?: number;         // GitHub webhook ID for deletion tracking
+  webhookEnabled?: boolean;   // Per-workspace webhook toggle
+  webhookError?: string;      // 'not-admin' | 'not-found' | null
 }
 
 export const MOUNTAIN_NAMES = [
@@ -165,6 +170,8 @@ export interface Config {
     username?: string;
     webhookSecret?: string;
     smeeUrl?: string;
+    autoProvision?: boolean;    // defaults to false
+    backfillOffered?: boolean;  // tracks if backfill prompt was shown
   } | undefined;
 }
 

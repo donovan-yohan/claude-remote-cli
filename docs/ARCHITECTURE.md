@@ -16,7 +16,7 @@ The system has two compilation targets: a TypeScript + ESM backend (Express + no
 
 ### `server/`
 
-Twenty-six TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
+Twenty-seven TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
 
 | Module | Role |
 |--------|------|
@@ -24,7 +24,7 @@ Twenty-six TypeScript modules compiled to `dist/server/` via `tsc`. Modules comm
 | `workspaces.ts` | Workspace CRUD (replaces roots), Express Router: dashboard, settings, CI status, branch switch, path autocomplete |
 | `sessions.ts` | Session registry: routes `create()` to pty-handler, lifecycle ops, idle sweep |
 | `pty-handler.ts` | PTY session creation via node-pty, scrollback buffering (256KB), tmux wrapping, continue-retry |
-| `git.ts` | Git/GitHub CLI integration: branches, activity feed, CI status, PR lookup, branch switch |
+| `git.ts` | Git/GitHub CLI integration: branches, activity feed, CI status, PR lookup, branch switch; exports `extractOwnerRepo` and `buildRepoMap` for webhook-manager |
 | `ws.ts` | WebSocket upgrade handler: binary relay for PTY I/O + resize JSON, event broadcast channel |
 | `mobile-input-pipeline.ts` | Pure-function event-intent pipeline for mobile virtual keyboard input; unit-tested via JSON fixtures |
 | `utils.ts` | Shared server utilities |
@@ -42,8 +42,9 @@ Twenty-six TypeScript modules compiled to `dist/server/` via `tsc`. Modules comm
 | `github-app.ts` | GitHub OAuth App flow: authorization URL generation (with CSRF state), token exchange callback, connection status, disconnect |
 | `github-graphql.ts` | GitHub GraphQL client: PR search query, response mapping (PRs → PullRequest[]), fetchPrsGraphQL() |
 | `webhooks.ts` | GitHub webhook receiver: HMAC signature verification, event routing, broadcast to frontend |
+| `webhook-manager.ts` | GitHub webhook CRUD, smee client lifecycle, health state, auto-provision backfill |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` consumes `sessions`, `git`, `config`, and `push` via injected dependencies (not direct imports); all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on crypto.scrypt, only `pty-handler.ts` depends on node-pty, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and may depend on `types.ts` only — it MUST NOT import from `utils.ts` or any other server module. There are currently twenty-six server modules.
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` consumes `sessions`, `git`, `config`, and `push` via injected dependencies (not direct imports); all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on crypto.scrypt, only `pty-handler.ts` depends on node-pty, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and may depend on `types.ts` only — it MUST NOT import from `utils.ts` or any other server module. There are currently twenty-seven server modules.
 
 ### `frontend/`
 
@@ -136,6 +137,14 @@ PTY flow:
 | `POST` | `/hooks/session-end` | Hook callback: session cleanup dedup (localhost-only, per-session token auth) |
 | `POST` | `/hooks/tool-use` | Hook callback: set currentActivity (tool name + detail) (localhost-only, per-session token auth) |
 | `POST` | `/hooks/tool-result` | Hook callback: clear currentActivity (localhost-only, per-session token auth) |
+| `POST` | `/webhooks/manage/setup` | Create GitHub webhook + start smee client for current workspace (`?path=X`) |
+| `DELETE` | `/webhooks/manage/setup` | Delete GitHub webhook and stop smee client (`?path=X`) |
+| `GET` | `/webhooks/manage/status` | Webhook health state (smee connected, last event timestamp) |
+| `POST` | `/webhooks/manage/reload` | Reload smee client from saved config |
+| `POST` | `/webhooks/manage/ping` | Send test ping to smee channel |
+| `POST` | `/webhooks/manage/repos` | Add a repo to the webhook-managed set (body: `{path}`) |
+| `POST` | `/webhooks/manage/repos/remove` | Remove a repo from the webhook-managed set (body: `{path}`) |
+| `POST` | `/webhooks/manage/backfill` | Auto-provision webhooks for all repos that don't have one |
 
 ## WebSocket Channels
 

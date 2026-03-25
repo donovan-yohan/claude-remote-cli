@@ -9,7 +9,7 @@ import type { Request, Response } from 'express';
 
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
 import { trackEvent } from './analytics.js';
-import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch } from './git.js';
+import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
@@ -203,6 +203,35 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     if (idx === -1) {
       res.status(404).json({ error: 'Workspace not found' });
       return;
+    }
+
+    // Clean up GitHub webhook if one exists for this workspace
+    const wsSettings = config.workspaceSettings?.[resolved];
+    if (wsSettings?.webhookId && config.github?.accessToken) {
+      try {
+        const { stdout } = await exec('git', ['remote', 'get-url', 'origin'], { cwd: resolved, timeout: 5000 });
+        const ownerRepo = extractOwnerRepo(stdout.trim());
+        if (ownerRepo) {
+          await globalThis.fetch(`https://api.github.com/repos/${ownerRepo}/hooks/${wsSettings.webhookId}`, {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${config.github.accessToken}`,
+              Accept: 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+            },
+          });
+        }
+      } catch (err) {
+        // Best-effort — log but don't block workspace removal
+        console.warn('[workspaces] Failed to delete webhook for', resolved, err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    // Also clean up webhook-related workspaceSettings
+    if (config.workspaceSettings?.[resolved]) {
+      delete config.workspaceSettings[resolved].webhookId;
+      delete config.workspaceSettings[resolved].webhookEnabled;
+      delete config.workspaceSettings[resolved].webhookError;
     }
 
     config.workspaces = workspaces.filter((p) => p !== resolved);

@@ -31,6 +31,7 @@ import { createIntegrationJiraRouter } from './integration-jira.js';
 import { startPolling, stopPolling } from './review-poller.js';
 import { createGitHubAppRouter } from './github-app.js';
 import { createWebhookRouter } from './webhooks.js';
+import { createWebhookManagerRouter, reloadSmee, startSmartPolling } from './webhook-manager.js';
 import { fetchPrsGraphQL } from './github-graphql.js';
 import type { AgentType, AutomationSettings, Config } from './types.js';
 import { semverLessThan } from './utils.js';
@@ -221,18 +222,14 @@ async function main(): Promise<void> {
 
   const app = express();
 
-  // Mount webhooks BEFORE global express.json() so the router's own json({ verify })
-  // can capture the raw body for HMAC signature verification.
-  // broadcastEvent is wired up after setupWebSocket via the delegate closure below.
+  // Mount webhooks BEFORE global express.json() — unconditionally.
+  // Secret is validated at request time (returns 401 if not configured).
   let broadcastEventDelegate: ((type: string, data?: Record<string, unknown>) => void) | null = null;
-  const webhookSecret = startupConfig.github?.webhookSecret;
-  if (webhookSecret) {
-    const webhookRouter = createWebhookRouter({
-      secret: webhookSecret,
-      broadcastEvent: (type, data) => { broadcastEventDelegate?.(type, data); },
-    });
-    app.use('/webhooks', webhookRouter);
-  }
+  const webhookRouter = createWebhookRouter({
+    secret: () => loadConfig(CONFIG_PATH).github?.webhookSecret,
+    broadcastEvent: (type, data) => { broadcastEventDelegate?.(type, data); },
+  });
+  app.use('/webhooks', webhookRouter);
 
   app.use(express.json({ limit: '15mb' }));
   app.use(cookieParser());
@@ -246,6 +243,13 @@ async function main(): Promise<void> {
     }
     next();
   };
+
+  const webhookManagerRouter = createWebhookManagerRouter({
+    configPath: CONFIG_PATH,
+    broadcastEvent: (type, data) => { broadcastEventDelegate?.(type, data); },
+    requireAuth,
+  });
+  app.use('/webhooks/manage', webhookManagerRouter);
 
   function boolConfigEndpoints(name: string, defaultValue: boolean, onEnable?: () => Promise<void>) {
     app.get(`/config/${name}`, requireAuth, (_req: express.Request, res: express.Response) => {
@@ -393,12 +397,11 @@ async function main(): Promise<void> {
   app.use('/ticket-transitions', requireAuth, ticketTransitionsRouter);
 
   // Mount GitHub device flow auth
-  // onConnected is called after token save; startWebhookPolling is defined below
-  // and safe to call here since this callback only fires at runtime (not startup).
+  // onConnected is called after token save; reload smee so it picks up any new config.
   const githubAppRouter = createGitHubAppRouter({
     configPath: CONFIG_PATH,
     clientId: process.env.GITHUB_CLIENT_ID || DEFAULT_GITHUB_CLIENT_ID,
-    onConnected: () => { startWebhookPolling(); },
+    onConnected: () => { reloadSmee(CONFIG_PATH, startupConfig.port); },
   });
   app.use('/auth/github', requireAuth, githubAppRouter);
 
@@ -459,58 +462,11 @@ async function main(): Promise<void> {
     startPolling(buildPollerDeps());
   }
 
-  // Start smee-client for webhook delivery (with polling fallback)
-  const smeeUrl = startupConfig.github?.smeeUrl;
-  const githubToken = startupConfig.github?.accessToken;
-  let webhookPollingInterval: ReturnType<typeof setInterval> | null = null;
-  let smeeErrorCount = 0;
+  // Start smee-client via webhook-manager
+  reloadSmee(CONFIG_PATH, startupConfig.port);
 
-  function startWebhookPolling(): void {
-    if (webhookPollingInterval) return;
-    webhookPollingInterval = setInterval(() => {
-      broadcastEvent('pr-updated');
-      broadcastEvent('ci-updated');
-    }, 30_000);
-  }
-
-  function stopWebhookPolling(): void {
-    if (webhookPollingInterval) {
-      clearInterval(webhookPollingInterval);
-      webhookPollingInterval = null;
-    }
-  }
-
-  if (smeeUrl) {
-    import('smee-client').then(({ default: SmeeClient }) => {
-      const smee = new SmeeClient({
-        source: smeeUrl,
-        target: `http://127.0.0.1:${startupConfig.port}/webhooks`,
-        logger: {
-          info: () => {},
-          error: (msg: string) => {
-            console.warn('[smee] connection error:', msg);
-            smeeErrorCount++;
-            if (smeeErrorCount >= 3) startWebhookPolling();
-          },
-        },
-      });
-      smee.start().then((events) => {
-        events.addEventListener('open', () => {
-          smeeErrorCount = 0;
-          stopWebhookPolling();
-        });
-      }).catch((err: unknown) => {
-        console.warn('[smee] start failed:', err instanceof Error ? err.message : String(err));
-        if (githubToken) startWebhookPolling();
-      });
-    }).catch((err: unknown) => {
-      console.warn('[smee] smee-client not available:', err instanceof Error ? err.message : String(err));
-      if (githubToken) startWebhookPolling();
-    });
-  } else if (githubToken) {
-    // No smee URL configured — use polling
-    startWebhookPolling();
-  }
+  // Start smart polling — broadcasts pr-updated/ci-updated only for repos without webhooks
+  startSmartPolling(CONFIG_PATH, broadcastEvent);
 
   // Invalidate branch linker cache on session lifecycle changes
   sessions.onSessionCreate(() => { invalidateBranchLinkerCache(); });
@@ -759,6 +715,7 @@ async function main(): Promise<void> {
     await execFileAsync('tmux', ['-V']);
   });
   boolConfigEndpoints('defaultNotifications', true);
+  boolConfigEndpoints('autoProvision', false);
 
   // GET /config/automations — get automation settings
   app.get('/config/automations', requireAuth, (_req: express.Request, res: express.Response) => {
@@ -1265,7 +1222,6 @@ async function main(): Promise<void> {
   }
 
   async function gracefulShutdown() {
-    stopWebhookPolling();
     await stopPolling();
     closeAnalytics();
     branchWatcher.close();

@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { loadConfig, saveConfig } from './config.js';
+import { extractOwnerRepo } from './git.js';
 import type { Config, WorkspaceSettings } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -81,18 +82,6 @@ export function isPolling(): boolean {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Extracts "owner/repo" from a git remote URL.
- * Handles SSH (git@github.com:owner/repo.git) and HTTPS forms.
- */
-function extractOwnerRepo(remoteUrl: string): string | null {
-  const sshMatch = remoteUrl.match(/git@[^:]+:([^/]+\/[^/]+?)(?:\.git)?$/);
-  if (sshMatch) return sshMatch[1] ?? null;
-  const httpsMatch = remoteUrl.match(/https?:\/\/[^/]+\/([^/]+\/[^/]+?)(?:\.git)?$/);
-  if (httpsMatch) return httpsMatch[1] ?? null;
-  return null;
-}
 
 /** Extracts the PR number from a GitHub API URL like .../pulls/123 */
 function extractPrNumber(subjectUrl: string): number | null {
