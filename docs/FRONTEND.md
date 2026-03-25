@@ -93,6 +93,7 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 - PR click cascade: active session → inactive worktree → create new worktree + session
 - Worktree naming convention: `mobile-<name>-<timestamp>`
 - Settings dialog close triggers `refreshAll()` for immediate sidebar update
+- All dialogs are built on `DialogShell.svelte` — use the `fullscreen` prop for the Settings modal and omit it for compact dialogs (AddWorkspace, CustomizeSession, DeleteWorktree). DialogShell uses `popover="manual"` + `showPopover()`/`hidePopover()` to guarantee top-layer stacking above xterm.js canvas elements (z-index alone is insufficient for canvas stacking contexts)
 - Cookie TTL uses human-readable format: `s` (seconds), `m` (minutes), `h` (hours), `d` (days). Default: `24h`
 - Root directory scanning: one level deep for git repos, hidden directories excluded
 

@@ -24,7 +24,7 @@ Twenty-seven TypeScript modules compiled to `dist/server/` via `tsc`. Modules co
 | `workspaces.ts` | Workspace CRUD (replaces roots), Express Router: dashboard, settings, CI status, branch switch, path autocomplete |
 | `sessions.ts` | Session registry: routes `create()` to pty-handler, lifecycle ops, idle sweep |
 | `pty-handler.ts` | PTY session creation via node-pty, scrollback buffering (256KB), tmux wrapping, continue-retry |
-| `git.ts` | Git/GitHub CLI integration: branches, activity feed, CI status, PR lookup, branch switch |
+| `git.ts` | Git/GitHub CLI integration: branches, activity feed, CI status, PR lookup, branch switch; exports `extractOwnerRepo` and `buildRepoMap` for webhook-manager |
 | `ws.ts` | WebSocket upgrade handler: binary relay for PTY I/O + resize JSON, event broadcast channel |
 | `mobile-input-pipeline.ts` | Pure-function event-intent pipeline for mobile virtual keyboard input; unit-tested via JSON fixtures |
 | `utils.ts` | Shared server utilities |
@@ -137,6 +137,14 @@ PTY flow:
 | `POST` | `/hooks/session-end` | Hook callback: session cleanup dedup (localhost-only, per-session token auth) |
 | `POST` | `/hooks/tool-use` | Hook callback: set currentActivity (tool name + detail) (localhost-only, per-session token auth) |
 | `POST` | `/hooks/tool-result` | Hook callback: clear currentActivity (localhost-only, per-session token auth) |
+| `POST` | `/webhooks/manage/setup` | Create GitHub webhook + start smee client for current workspace (`?path=X`) |
+| `DELETE` | `/webhooks/manage/setup` | Delete GitHub webhook and stop smee client (`?path=X`) |
+| `GET` | `/webhooks/manage/status` | Webhook health state (smee connected, last event timestamp) |
+| `POST` | `/webhooks/manage/reload` | Reload smee client from saved config |
+| `POST` | `/webhooks/manage/ping` | Send test ping to smee channel |
+| `POST` | `/webhooks/manage/repos` | Add a repo to the webhook-managed set (body: `{path}`) |
+| `POST` | `/webhooks/manage/repos/remove` | Remove a repo from the webhook-managed set (body: `{path}`) |
+| `POST` | `/webhooks/manage/backfill` | Auto-provision webhooks for all repos that don't have one |
 
 ## WebSocket Channels
 

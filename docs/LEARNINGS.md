@@ -142,6 +142,26 @@ When multiple server modules access the same config file, ensure they all use th
 
 ---
 
+### L-016: `position: fixed` inside a `<dialog>` top-layer element uses the dialog as the containing block, not the viewport
+- status: active
+- category: debugging
+- source: commit f88d830 (settings-webhooks branch, 2026-03-24)
+- branch: dy/feat/settings-webhooks
+
+When an element with `position: fixed` is a descendant of a `<dialog>` that is in the browser's top layer, the dialog becomes the CSS containing block — not the viewport. This means `inset: 0` fills the dialog, not the screen, and `height: 100%` refers to the dialog's height. The fix: use `position: absolute` on drawers/backdrops inside dialogs, ensure the ancestor dialog content wrapper has `position: relative`, and set `bottom: 0` instead of `height: 100%`. This affects `SettingsToc.svelte` and any future drawer-inside-dialog pattern.
+
+---
+
+### L-017: `exactOptionalPropertyTypes: true` requires explicit `| undefined` in object spread and partial-init assignments
+- status: active
+- category: patterns
+- source: settings-webhooks branch, frontend tsconfig.json
+- branch: dy/feat/settings-webhooks
+
+The frontend tsconfig enables `exactOptionalPropertyTypes: true`. Under this setting, TypeScript distinguishes between a property that is absent (`{}`) and one explicitly set to `undefined` (`{foo: undefined}`). This means: (1) you cannot assign `undefined` to an optional property without adding `| undefined` to its type; (2) object spreads from partial sources may produce type errors at the assignment site even if the runtime values are identical. When adding optional fields to interface types used in spread assignments (e.g., `WorkspaceSettings`), declare them as `fieldName?: Type` and never write `fieldName: undefined` at the assignment site — omit the key entirely instead.
+
+---
+
 ### L-014: Always gate drag-and-drop library activation behind an explicit mode toggle — never leave it always-on
 - status: active
 - category: patterns

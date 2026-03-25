@@ -172,6 +172,16 @@ The PIN hash is stored in config under `pinHash`. To reset:
 ### Pull Requests
 - **Pull requests tab** — view your open PRs (authored and review-requested) via `gh` CLI, organized in collapsible per-repo groups with count badges, Author/Reviewer filter, and one-click session creation from any PR branch
 
+### GitHub Webhooks (real-time PR / CI updates)
+
+By default the app polls GitHub every 30 seconds for PR and CI status. Connect a webhook for instant updates instead:
+
+1. **Connect GitHub** — open **Settings → Integrations → GitHub** and authorise the OAuth App. This requests the `repo` and `admin:repo_hook` scopes so the app can manage webhooks on your behalf.
+2. **Set up webhooks** — open **Settings → Integrations → Webhooks**. Click **Setup Webhook** next to any repo. The app creates a GitHub webhook pointing at a [smee.io](https://smee.io/) proxy channel and starts a local smee client to relay events.
+3. **Verify** — the webhook panel shows a health indicator (last event timestamp). Once connected, polling stops for that repo and updates arrive in real time.
+
+> No public server is required. The smee.io proxy forwards GitHub webhook payloads to your local instance over a persistent SSE connection.
+
 ### UI
 - **Tabbed sidebar** — switch between Repos, Worktrees, and PRs views with shared filters and item counts
 - **Sidebar filters** — filter by root directory, repo, or text search
@@ -181,9 +191,16 @@ The PIN hash is stored in config under `pinHash`. To reset:
 - **Touch toolbar** — mobile-friendly buttons for special keys (hidden on desktop)
 - **Clipboard image paste** — paste screenshots directly into remote terminal sessions (macOS clipboard + xclip on Linux)
 
+### Settings
+- **Full-screen Settings dialog** — redesigned as a scrollable full-screen modal with a table-of-contents drawer for quick section navigation
+- **GitHub integration** — connect via OAuth App (Device Flow) for PR data, CI status, and webhook management
+- **Webhook management** — self-service webhook CRUD per repo with smee.io proxy, health state, and auto-provision backfill
+- **Jira integration** — connect Jira and configure project mappings for the org dashboard tickets panel
+
 ### Operations
 - **PIN-protected access** with rate limiting
 - **Real-time updates** — worktree changes on disk are pushed to the browser instantly via WebSocket
+- **Smart polling** — falls back to 30-second polling for repos without webhooks; switches off automatically once a webhook is active
 - **Update notifications** — toast notification when a new version is available, with one-click update
 - **CLI self-update** — `claude-remote-cli update` to update from npm
 
