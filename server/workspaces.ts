@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,7 +10,7 @@ import type { Request, Response } from 'express';
 
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
 import { trackEvent } from './analytics.js';
-import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
+import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, isStalePr, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
@@ -533,7 +534,7 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
 
     try {
       const pr = await getPrForBranch(workspacePath, branch);
-      if (pr) {
+      if (pr && !isStalePr(pr)) {
         if (pr.state === 'OPEN') {
           const unresolvedCommentCount = await getUnresolvedCommentCount(workspacePath, pr.number);
           res.json({ ...pr, unresolvedCommentCount });
@@ -624,7 +625,8 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
       for (let attempt = 0; attempt < MOUNTAIN_NAMES.length; attempt++) {
         const candidateIndex = (baseIndex + attempt) % MOUNTAIN_NAMES.length;
         const candidateName = MOUNTAIN_NAMES[candidateIndex] ?? 'everest';
-        const candidateBranch = (settings.branchPrefix ?? '') + candidateName;
+        const suffix = crypto.randomBytes(2).toString('hex');
+        const candidateBranch = (settings.branchPrefix ?? '') + candidateName + '-' + suffix;
         const candidatePath = path.join(resolved, '.worktrees', candidateName);
 
         // Check if branch or directory already exists
