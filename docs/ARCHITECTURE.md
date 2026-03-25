@@ -16,7 +16,7 @@ The system has two compilation targets: a TypeScript + ESM backend (Express + no
 
 ### `server/`
 
-Twenty-five TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
+Twenty-seven TypeScript modules compiled to `dist/server/` via `tsc`. Modules communicate via ESM `import` statements.
 
 | Module | Role |
 |--------|------|
@@ -44,7 +44,7 @@ Twenty-five TypeScript modules compiled to `dist/server/` via `tsc`. Modules com
 | `webhooks.ts` | GitHub webhook receiver: HMAC signature verification, event routing, broadcast to frontend |
 | `webhook-manager.ts` | GitHub webhook CRUD, smee client lifecycle, health state, auto-provision backfill |
 
-**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` consumes `sessions`, `git`, `config`, and `push` via injected dependencies (not direct imports); all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on crypto.scrypt, only `pty-handler.ts` depends on node-pty, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and may depend on `types.ts` only — it MUST NOT import from `utils.ts` or any other server module. There are currently twenty-five server modules.
+**Architecture Invariant:** `index.ts` is the composition root and MUST NOT be imported by other modules. Cross-module dependencies flow downward: `index.ts` imports all others; `ws.ts` may import `sessions`; `sessions.ts` imports `pty-handler`; `workspaces.ts` imports `git` and `config`; `hooks.ts` consumes `sessions`, `git`, `config`, and `push` via injected dependencies (not direct imports); all other modules are self-contained. **Exception:** `analytics.ts` and `push.ts` are pure output dependencies (fire-and-forget) imported by multiple modules — this is acceptable because they have no effect on callers' control flow. Each module owns a single concern and confines its npm dependencies (e.g., only `auth.ts` depends on crypto.scrypt, only `pty-handler.ts` depends on node-pty, only `analytics.ts` depends on better-sqlite3, only `push.ts` depends on web-push). The `output-parsers/` module confines all output-parsing logic and may depend on `types.ts` only — it MUST NOT import from `utils.ts` or any other server module. There are currently twenty-seven server modules.
 
 ### `frontend/`
 
@@ -53,7 +53,7 @@ Svelte 5 SPA built by Vite, output to `dist/frontend/`. Express serves the compi
 | Path | Role |
 |------|------|
 | `frontend/src/components/` | Svelte 5 components (Terminal, Sidebar, WorkspaceItem, PrTopBar, SessionTabBar, RepoDashboard, Spotlight, dialogs, etc.) |
-| `frontend/src/lib/state/` | Reactive state modules (`.svelte.ts` files) exporting state + mutations |
+| `frontend/src/lib/state/` | Reactive state modules (`.svelte.ts` files) exporting state + mutations; includes pure logic modules (`display-state.ts` — 6-state display state machine, `sidebar-items.ts` — unified SidebarItem construction with reconciliation) |
 | `frontend/src/lib/api.ts` | REST API client functions |
 | `frontend/src/lib/ws.ts` | WebSocket connection management (PTY relay + event channel) |
 | `frontend/src/lib/types.ts` | Frontend TypeScript interfaces |

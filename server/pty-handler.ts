@@ -87,9 +87,9 @@ export type CreatePtyResult = SessionSummary & { pid: number | undefined };
 export function createPtySession(
   params: CreatePtyParams,
   sessionsMap: Map<string, import('./types.js').Session>,
-  idleChangeCallbacks: Array<(sessionId: string, idle: boolean) => void>,
   stateChangeCallbacks: Array<(sessionId: string, state: AgentState) => void> = [],
   sessionEndCallbacks: Array<(sessionId: string, cwd: string, branchName?: string) => void> = [],
+  fireBackendStateIfChanged?: (session: import('./types.js').Session) => void,
 ): { session: PtySession; result: CreatePtyResult } {
   const {
     id,
@@ -213,13 +213,13 @@ export function createPtySession(
   function resetIdleTimer(): void {
     if (session.idle) {
       session.idle = false;
-      for (const cb of idleChangeCallbacks) cb(session.id, false);
+      fireBackendStateIfChanged?.(session);
     }
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       if (!session.idle) {
         session.idle = true;
-        for (const cb of idleChangeCallbacks) cb(session.id, true);
+        fireBackendStateIfChanged?.(session);
       }
     }, IDLE_TIMEOUT_MS);
   }
@@ -258,16 +258,19 @@ export function createPtySession(
             // No hook for 30s and parser disagrees — parser overrides
             session.agentState = parseResult.state;
             for (const cb of stateChangeCallbacks) cb(session.id, parseResult.state);
+            fireBackendStateIfChanged?.(session);
           } else if (!lastHook && sessionAge > 30000) {
             // Hooks active but never fired in 30s — allow parser to override to prevent permanent suppression
             session.agentState = parseResult.state;
             for (const cb of stateChangeCallbacks) cb(session.id, parseResult.state);
+            fireBackendStateIfChanged?.(session);
           }
           // else: suppress parser — hooks are still fresh
         } else {
           // No hooks — parser is primary (current behavior)
           session.agentState = parseResult.state;
           for (const cb of stateChangeCallbacks) cb(session.id, parseResult.state);
+          fireBackendStateIfChanged?.(session);
         }
       }
     });

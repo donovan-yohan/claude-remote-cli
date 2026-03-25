@@ -340,7 +340,7 @@ async function main(): Promise<void> {
   const hooksRouter = createHooksRouter({
     getSession: sessions.get,
     broadcastEvent,
-    fireStateChange: sessions.fireStateChange,
+    fireBackendStateIfChanged: sessions.fireBackendStateIfChanged,
     notifySessionAttention: push.notifySessionAttention,
     configPath: CONFIG_PATH,
   });
@@ -470,11 +470,16 @@ async function main(): Promise<void> {
 
   // Invalidate branch linker cache on session lifecycle changes
   sessions.onSessionCreate(() => { invalidateBranchLinkerCache(); });
-  sessions.onSessionEnd(() => { invalidateBranchLinkerCache(); });
+  sessions.onSessionEnd((sessionId) => { invalidateBranchLinkerCache(); lastPushState.delete(sessionId); });
 
-  // Push notifications on session idle (skip when hooks already sent attention notification)
-  sessions.onIdleChange((sessionId, idle) => {
-    if (idle) {
+  // Push notifications on meaningful state transitions (skip when hooks already sent attention notification)
+  const lastPushState = new Map<string, string>();
+  sessions.onBackendStateChange((sessionId, state) => {
+    const prevState = lastPushState.get(sessionId);
+    lastPushState.set(sessionId, state);
+
+    // Only notify on meaningful transitions: running → idle or running → permission
+    if (prevState === 'running' && (state === 'idle' || state === 'permission')) {
       const session = sessions.get(sessionId);
       if (session && session.type !== 'terminal') {
         // Dedup: if hooks fired an attention notification within last 10s, skip

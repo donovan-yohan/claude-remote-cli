@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { getAuth, checkExistingAuth } from './lib/state/auth.svelte.js';
   import { getUi, openSidebar, closeSidebar } from './lib/state/ui.svelte.js';
-  import { getSessionState, refreshAll, setAttention, setAgentState, clearAttention, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
+  import { getSessionState, refreshAll, handleBackendStateChanged, handleUserViewed, renameSession, initSessionNotification, getNotificationSessionIds, getSessionsForWorkspace, setLoading, clearLoading, isItemLoading } from './lib/state/sessions.svelte.js';
   import { connectEventSocket, sendPtyData } from './lib/ws.js';
   import { initNotifications, initPushNotifications, resubscribeIfNeeded } from './lib/notifications.js';
   import { getConfigState } from './lib/state/config.svelte.js';
@@ -53,7 +53,7 @@
     if (session) {
       ui.activeWorkspacePath = session.workspacePath;
     }
-    clearAttention(sessionId);
+    handleUserViewed(sessionId);
     closeSidebar();
   }
 
@@ -287,14 +287,13 @@
     connectEventSocket((msg) => {
       if (msg.type === 'worktrees-changed') {
         refreshAll();
-      } else if (msg.type === 'session-state-changed' && msg.sessionId && msg.state) {
-        setAgentState(msg.sessionId, msg.state as import('./lib/types.js').AgentState);
-      } else if (msg.type === 'session-idle-changed' && msg.sessionId) {
-        setAttention(msg.sessionId, msg.idle ?? false);
+      } else if (msg.type === 'session-backend-state-changed' && msg.sessionId && msg.state) {
+        handleBackendStateChanged(msg.sessionId, msg.state as import('./lib/state/display-state.js').BackendDisplayState);
       } else if (msg.type === 'session-renamed' && msg.sessionId) {
         renameSession(msg.sessionId, msg.branchName ?? '', msg.displayName ?? '');
       } else if (msg.type === 'session-ended') {
         invalidatePrQueries();
+        refreshAll();
       } else if (msg.type === 'ref-changed' && msg.cwdPath) {
         const key = msg.cwdPath;
         const existing = refChangedTimers.get(key);
@@ -386,7 +385,7 @@
     if (session) {
       ui.activeWorkspacePath = session.workspacePath;
     }
-    clearAttention(id);
+    handleUserViewed(id);
     closeSidebar();
     terminalRef?.focusTerm();
   }

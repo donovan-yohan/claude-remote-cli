@@ -147,14 +147,10 @@ function setupWebSocket(server: http.Server, authenticatedTokens: Set<string>, w
     });
   });
 
-  sessions.onIdleChange((sessionId, idle) => {
-    broadcastEvent('session-idle-changed', { sessionId, idle });
-    if (idle) { trackEvent({ category: 'agent', action: 'idle', target: sessionId, session_id: sessionId }); }
-  });
-
-  sessions.onStateChange((sessionId, state) => {
-    broadcastEvent('session-state-changed', { sessionId, state });
-    if (state === 'waiting-for-input') { trackEvent({ category: 'agent', action: 'waiting-for-input', target: sessionId, session_id: sessionId }); }
+  sessions.onBackendStateChange((sessionId, state) => {
+    broadcastEvent('session-backend-state-changed', { sessionId, state });
+    if (state === 'idle') { trackEvent({ category: 'agent', action: 'idle', target: sessionId, session_id: sessionId }); }
+    if (state === 'permission') { trackEvent({ category: 'agent', action: 'waiting-for-input', target: sessionId, session_id: sessionId }); }
   });
 
   sessions.onSessionEnd((sessionId, cwd, branchName) => {

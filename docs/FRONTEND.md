@@ -53,17 +53,18 @@ State lives in `.svelte.ts` modules under `frontend/src/lib/state/` exporting re
 
 | Module | Role |
 |--------|------|
-| `sessions.svelte.ts` | Session list, worktrees, repos, attention flags, notification preferences, git statuses, loading state |
+| `sessions.svelte.ts` | Session list, worktrees, repos, `SidebarItem[]` with display state machine, notification preferences, loading state |
+| `display-state.ts` | Pure display state machine: `transitionDisplayState(current, event) → newState`, `shouldNotify(from, to)` — 6 states: `initializing \| running \| unseen-idle \| seen-idle \| permission \| inactive` |
+| `sidebar-items.ts` | Pure `buildSidebarItems()` function: merges sessions + worktrees + workspaces into `SidebarItem[]` with reconciliation |
 | `config.svelte.ts` | Global session defaults (continue, yolo, tmux, agent, notifications); shared by SettingsDialog, SessionList, NewSessionDialog |
 | `auth.svelte.ts` | Authentication state (PIN check, cookie token) |
 | `ui.svelte.ts` | UI state (active tab, sidebar, filters) |
-| `sessions.svelte.ts` (agentState) | `agentState` per session (`processing` \| `idle` \| `waiting-for-input` \| `permission-prompt`) updated from `session-idle-changed` events; drives sidebar dot color and attention logic |
 
 ## Conventions
 
 - Scoped `<style>` blocks in each component; global CSS variables in `frontend/src/app.css`
-- Sidebar status dots: green (processing), blue (idle), amber glow (waiting-for-input/attention), yellow pulse (permission-prompt), gray (inactive/initializing)
-- Attention state: tracked in `attentionSessions` reactive state; set when session becomes idle while not viewed; cleared when user opens session
+- Sidebar status dots driven by `SidebarItem.displayState`: green (`running`), blue (`seen-idle`), amber glow (`unseen-idle`), yellow pulse (`permission`), gray (`inactive`/`initializing`)
+- Display state machine enforces valid transitions — `seen-idle` can never become `unseen-idle` without going through `running` first. Backend emits single `session-backend-state-changed` event; frontend applies `transitionDisplayState()` to update dots
 - Loading state: tracked in `loadingItems` reactive state; `setLoading`/`clearLoading` wrap async actions (start, kill, delete); WorkspaceItem shows CSS shimmer overlay with `pointer-events: none`
 - Hover effects: fade mask on overflow text, scroll reveal animation
 - Avoid naming local variables `state` in `.svelte` files — conflicts with `$state` rune

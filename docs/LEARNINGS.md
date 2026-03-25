@@ -151,3 +151,13 @@ When multiple server modules access the same config file, ensure they all use th
 When using `svelte-dnd-action` (or any drag-and-drop library) on a scrollable container, pass `dragDisabled: true` by default and only enable it when the user explicitly enters reorder mode. Libraries like `svelte-dnd-action` attach touch event listeners to draggable children and `preventDefault()` on `touchmove`, which blocks native scroll. Having an application-level reorder mode toggle (e.g., `ui.reorderMode`) without wiring it to the library's `dragDisabled` option creates a disconnect — your mode gate is purely cosmetic while the library still steals events. Always check library docs for disable/enable APIs and wire them to your mode state.
 
 ---
+
+### L-015: UI status indicators derived from multiple signal sources need a formal state machine — not ad-hoc guards
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-24
+- branch: dy-fix-idle-status-regression
+
+When a display status (e.g., session dot color) is derived from multiple independent signals (PTY idle timer, hook-based agentState, parser reconciliation), ad-hoc guards and cooldown timers will always have edge cases. The root invariant — "only show attention when there's genuinely new content the user hasn't seen" — cannot be enforced by checking individual signals in isolation. Instead, model the display state as a formal state machine with a transition function that accepts semantic events and enforces valid transitions at the type level. The key insight: `seen-idle → unseen-idle` should be an **impossible transition** — the only path to `unseen-idle` must go through `running` first.
+
+---

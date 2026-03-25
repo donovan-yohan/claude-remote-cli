@@ -30,7 +30,7 @@ const RENAME_RETRY_DELAY_MS = 5000;
 export interface HookDeps {
   getSession: (id: string) => Session | undefined;
   broadcastEvent: (type: string, data?: Record<string, unknown>) => void;
-  fireStateChange: (sessionId: string, state: AgentState) => void;
+  fireBackendStateIfChanged: (session: Session) => void;
   notifySessionAttention: (sessionId: string, session: { displayName: string; type: string }) => void;
   configPath?: string;
 }
@@ -41,7 +41,7 @@ export interface HookDeps {
 
 function setAgentState(session: Session, state: AgentState, deps: HookDeps): void {
   session.agentState = state;
-  deps.fireStateChange(session.id, state);
+  deps.fireBackendStateIfChanged(session);
   session._lastHookTime = Date.now();
 }
 
