@@ -59,8 +59,8 @@
       {:else}
         <span class="integration-status integration-status--muted">CLI not installed</span>
       {/if}
+      <span class="integration-description">See your Jira tickets in the sidebar</span>
     </div>
-    <span class="integration-description">See your Jira tickets in the sidebar</span>
   </div>
 
   <div class="integration-body" class:integration-body--open={expanded} aria-hidden={!expanded}>

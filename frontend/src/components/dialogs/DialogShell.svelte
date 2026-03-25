@@ -20,17 +20,30 @@
   }: Props = $props();
 
   let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
+  let scrolledBottom = $state(false);
+
+  function onBodyScroll(e: Event) {
+    const el = e.target as HTMLElement;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+    const noOverflow = el.scrollHeight <= el.clientHeight;
+    scrolledBottom = atBottom || noOverflow;
+  }
 
   export function open() {
     if (!dialogEl) return;
     dialogEl.showModal();
-    // Focus first interactive element after the dialog opens
+    // Focus first interactive element and check scroll state after the dialog opens
     requestAnimationFrame(() => {
       if (!dialogEl) return;
       const firstFocusable = dialogEl.querySelector<HTMLElement>(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
       );
       firstFocusable?.focus();
+      // Check if content fits without scrolling
+      const body = dialogEl.querySelector('.dialog-shell__body');
+      if (body) {
+        scrolledBottom = body.scrollHeight <= body.clientHeight;
+      }
     });
   }
 
@@ -71,7 +84,7 @@
       >✕</button>
     </header>
 
-    <div class="dialog-shell__body">
+    <div class="dialog-shell__body" class:scrolled-bottom={scrolledBottom} onscroll={onBodyScroll}>
       {@render children()}
     </div>
 
@@ -219,6 +232,18 @@
     margin: 0 auto;
     width: 100%;
     box-sizing: border-box;
+  }
+
+  /* Scroll fade indicator — subtle gradient at bottom when content overflows */
+  .dialog-shell__body {
+    mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent 100%);
+  }
+
+  /* Remove fade when scrolled to bottom (JS toggles this class) */
+  .dialog-shell__body.scrolled-bottom {
+    mask-image: none;
+    -webkit-mask-image: none;
   }
 
   /* ── Footer ── */
