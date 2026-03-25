@@ -113,8 +113,10 @@ export function computeBackendState(session: { agentState: AgentState; idle: boo
   if (session.agentState === 'processing' || session.agentState === 'error') return 'running';
   // initializing
   if (session.agentState === 'initializing') return 'initializing';
-  // idle or waiting-for-input = idle
-  return 'idle';
+  // idle or waiting-for-input = idle (explicitly idle-like agent states)
+  if (session.agentState === 'idle' || session.agentState === 'waiting-for-input') return 'idle';
+  // For sessions without a recognized agentState (terminal/custom), fall back to idle flag
+  return session.idle ? 'idle' : 'running';
 }
 
 type BackendStateChangeCallback = (sessionId: string, state: BackendDisplayState) => void;

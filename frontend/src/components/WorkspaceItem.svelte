@@ -48,14 +48,18 @@
   let collapsed = $derived(isWorkspaceCollapsed(workspace.path));
   let totalItems = $derived(allSessions.length + inactiveWorktrees.length);
 
+  // Precompute O(1) lookup map to avoid O(n²) linear finds in the render path
+  let sidebarItemById = $derived(
+    new Map(sessionState.sidebarItems.map(i => [i.id, i]))
+  );
+
   function statusDotClass(groupPath: string): string {
-    const item = sessionState.sidebarItems.find(i => i.id === groupPath);
-    const state = item?.displayState ?? 'inactive';
+    const state = sidebarItemById.get(groupPath)?.displayState ?? 'inactive';
     return 'status-dot status-dot--' + state;
   }
 
   function itemHasAttention(groupPath: string): boolean {
-    const item = sessionState.sidebarItems.find(i => i.id === groupPath);
+    const item = sidebarItemById.get(groupPath);
     return item !== undefined && isAttentionState(item.displayState);
   }
 

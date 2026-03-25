@@ -134,7 +134,9 @@ export function handleBackendStateChanged(sessionId: string, backendState: Backe
 
     // Fire notification if appropriate
     if (shouldNotify(oldDisplayState, newDisplayState)) {
-      const notifySession = item.sessions[0];
+      // Prefer the session that triggered this event; fall back to any with notifications enabled
+      const notifySession = item.sessions.find(s => s.id === sessionId)
+        ?? item.sessions.find(s => notificationSessions[s.id]);
       if (notifySession && notificationSessions[notifySession.id] && shouldFireNotification()) {
         fireNotification(notifySession);
       }

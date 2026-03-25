@@ -217,7 +217,7 @@ function reconcileDisplayState(
   // No sessions → always inactive regardless of history
   if (sessions.length === 0) return 'inactive';
 
-  if (!existing) return initialDisplayState(sessions);
+  if (!existing || existing.displayState === 'inactive') return initialDisplayState(sessions);
 
   // Backend state unchanged — preserve the existing display state
   if (existing.lastKnownBackendState === newBackendState) return existing.displayState;
