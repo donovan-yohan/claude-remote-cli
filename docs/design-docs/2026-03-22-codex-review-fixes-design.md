@@ -1,3 +1,6 @@
+---
+status: implemented
+---
 # Codex Review Fixes — Org Dashboard
 
 > **Status**: Active

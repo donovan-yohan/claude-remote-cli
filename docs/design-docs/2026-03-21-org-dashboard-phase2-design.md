@@ -1,3 +1,6 @@
+---
+status: implemented
+---
 # GitHub Issues + Branch Linking
 
 > **Status**: Planned

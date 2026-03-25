@@ -1,5 +1,5 @@
 ---
-status: ACTIVE
+status: current
 created: 2026-03-25
 branch: master
 ---

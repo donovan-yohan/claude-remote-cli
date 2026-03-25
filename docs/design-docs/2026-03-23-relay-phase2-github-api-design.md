@@ -1,3 +1,6 @@
+---
+status: current
+---
 # Relay Phase 2: GitHub App + GraphQL API + Webhooks
 
 > **Status**: Planned

@@ -7,7 +7,7 @@ Categories: `architecture` | `testing` | `patterns` | `workflow` | `debugging` |
 
 ---
 
-### L-001: Non-tmux alternate screen sessions need a viewport freeze layer to support scroll during streaming
+### L-20260320-alternate-screen-scroll: Non-tmux alternate screen sessions need a viewport freeze layer to support scroll during streaming
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-20
@@ -17,7 +17,7 @@ When building terminal features for alternate screen apps (Claude Code, vim), re
 
 ---
 
-### L-002: Mobile WebSocket reconnection must not rely solely on `onclose` — use `visibilitychange` + heartbeat
+### L-20260321-mobile-ws-reconnect: Mobile WebSocket reconnection must not rely solely on `onclose` — use `visibilitychange` + heartbeat
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-21
@@ -27,7 +27,7 @@ When a mobile browser backgrounds an app, the OS silently kills TCP connections 
 
 ---
 
-### L-003: UI flows must be updated when the navigation model changes — dead code paths become user-facing bugs
+### L-20260321-nav-model-ui-flows: UI flows must be updated when the navigation model changes — dead code paths become user-facing bugs
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-21
@@ -37,7 +37,7 @@ When migrating from a selection-based model (user picks repo/worktree at creatio
 
 ---
 
-### L-004: Session state derived from external systems (git, filesystem) must have a refresh mechanism — snapshot-at-creation is insufficient
+### L-20260322-session-state-refresh: Session state derived from external systems (git, filesystem) must have a refresh mechanism — snapshot-at-creation is insufficient
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-22
@@ -47,7 +47,7 @@ When storing state that mirrors an external system (e.g., `session.branchName` f
 
 ---
 
-### L-005: Check `err.code` not `err.message` for Node.js execFile errors
+### L-20260321-execfile-err-code: Check `err.code` not `err.message` for Node.js execFile errors
 - status: active
 - category: debugging
 - source: /harness:loop Phase 1 org-dashboard 2026-03-21
@@ -56,7 +56,7 @@ Node.js `child_process.execFile` throws with `code: 'ENOENT'` and message `'spaw
 
 ---
 
-### L-006: GitHub Search API returns issues AND PRs — filter on `pull_request` field
+### L-20260321-github-search-pr-filter: GitHub Search API returns issues AND PRs — filter on `pull_request` field
 - status: active
 - category: patterns
 - source: /harness:loop Phase 1 org-dashboard 2026-03-21
@@ -65,7 +65,7 @@ Node.js `child_process.execFile` throws with `code: 'ENOENT'` and message `'spaw
 
 ---
 
-### L-007: GitHub Search API does not return `requested_reviewers` — reviewer detection is best-effort
+### L-20260321-github-search-reviewers: GitHub Search API does not return `requested_reviewers` — reviewer detection is best-effort
 - status: active
 - category: patterns
 - source: PR #38 review (org-dashboard Phase 1)
@@ -74,7 +74,7 @@ The `search/issues` endpoint returns a subset of PR metadata. Notably, `requeste
 
 ---
 
-### L-008: GitHub Search API does not return `reviewDecision` — PR status dot defaults to success
+### L-20260321-github-search-review-decision: GitHub Search API does not return `reviewDecision` — PR status dot defaults to success
 - status: active
 - category: patterns
 - source: PR #38 review (org-dashboard Phase 1)
@@ -83,7 +83,7 @@ The `search/issues` endpoint does not include `reviewDecision` (APPROVED, CHANGE
 
 ---
 
-### L-009: Org dashboard "All" filter operates on `is:open` backend data — cannot show closed PRs
+### L-20260321-github-search-open-only: Org dashboard "All" filter operates on `is:open` backend data — cannot show closed PRs
 - status: active
 - category: patterns
 - source: PR #38 review (org-dashboard Phase 1)
@@ -92,7 +92,7 @@ The org dashboard backend queries `is:open` in its GitHub search. The frontend "
 
 ---
 
-### L-010: Sidebar group rows must derive identity from the group, not from individual sessions within it
+### L-20260322-sidebar-group-identity: Sidebar group rows must derive identity from the group, not from individual sessions within it
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-22
@@ -102,7 +102,7 @@ When a sidebar row represents a group of sessions (e.g., all tabs for a worktree
 
 ---
 
-### L-011: Session creation parameters must be stored on the session object if they need to survive restarts
+### L-20260322-session-creation-params: Session creation parameters must be stored on the session object if they need to survive restarts
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-22
@@ -112,7 +112,7 @@ When session creation accepts flags that affect runtime behavior (yolo mode, cus
 
 ---
 
-### L-012: Never call `.refetch()` on a TanStack Query store inside a Svelte 5 `$effect` without `untrack()`
+### L-20260323-tanstack-query-untrack: Never call `.refetch()` on a TanStack Query store inside a Svelte 5 `$effect` without `untrack()`
 - status: active
 - category: debugging
 - source: /harness:bug 2026-03-23
@@ -122,7 +122,7 @@ TanStack Query's `createQuery` returns a Svelte 5 reactive proxy. Accessing `.re
 
 ---
 
-### L-014: When one module mutates shared config on disk, all modules that read that config must reload — never validate against a startup snapshot
+### L-20260324-config-stale-read: When one module mutates shared config on disk, all modules that read that config must reload — never validate against a startup snapshot
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-24
@@ -132,7 +132,7 @@ When multiple server modules access the same config file, ensure they all use th
 
 ---
 
-### L-013: When multiple code paths create the same resource type, they must share a single counter/naming mechanism
+### L-20260323-shared-naming-counter: When multiple code paths create the same resource type, they must share a single counter/naming mechanism
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-23
@@ -142,7 +142,7 @@ When multiple server modules access the same config file, ensure they all use th
 
 ---
 
-### L-016: `position: fixed` inside a `<dialog>` top-layer element uses the dialog as the containing block, not the viewport
+### L-20260324-fixed-in-dialog: `position: fixed` inside a `<dialog>` top-layer element uses the dialog as the containing block, not the viewport
 - status: active
 - category: debugging
 - source: commit f88d830 (settings-webhooks branch, 2026-03-24)
@@ -152,7 +152,7 @@ When an element with `position: fixed` is a descendant of a `<dialog>` that is i
 
 ---
 
-### L-017: `exactOptionalPropertyTypes: true` requires explicit `| undefined` in object spread and partial-init assignments
+### L-20260324-exact-optional-types: `exactOptionalPropertyTypes: true` requires explicit `| undefined` in object spread and partial-init assignments
 - status: active
 - category: patterns
 - source: settings-webhooks branch, frontend tsconfig.json
@@ -162,7 +162,7 @@ The frontend tsconfig enables `exactOptionalPropertyTypes: true`. Under this set
 
 ---
 
-### L-022: Features gated by browser permissions must surface the permission state in the UI — a settings toggle is not a permission request
+### L-20260325-browser-permission-ui: Features gated by browser permissions must surface the permission state in the UI — a settings toggle is not a permission request
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-25
@@ -172,7 +172,7 @@ When a feature depends on a browser permission (Notifications, Geolocation, Came
 
 ---
 
-### L-023: Silent catch blocks on browser API calls hide broken features — always log or surface permission/subscription failures
+### L-20260325-silent-catch-blocks: Silent catch blocks on browser API calls hide broken features — always log or surface permission/subscription failures
 - status: active
 - category: debugging
 - source: /harness:bug 2026-03-25
@@ -182,7 +182,7 @@ When calling browser APIs that can fail due to missing permissions (e.g., `pushM
 
 ---
 
-### L-024: DnD `dragDisabled` must be device-aware — always-on for mouse, gated for touch
+### L-20260325-dnd-device-aware: DnD `dragDisabled` must be device-aware — always-on for mouse, gated for touch
 - status: active
 - category: patterns
 - source: /harness:bug 2026-03-25
@@ -192,7 +192,7 @@ When using `svelte-dnd-action` on a scrollable container, `dragDisabled` must us
 
 ---
 
-### L-025: Never couple a library's technical enable/disable flag to unrelated UI visibility changes
+### L-20260325-library-flag-coupling: Never couple a library's technical enable/disable flag to unrelated UI visibility changes
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-25
@@ -202,7 +202,7 @@ When a library provides a boolean to enable/disable its event handling (e.g., `s
 
 ---
 
-### L-018: Auto-generated resource names that interact with external systems must include a uniqueness token
+### L-20260325-resource-name-uniqueness: Auto-generated resource names that interact with external systems must include a uniqueness token
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-25
@@ -212,7 +212,7 @@ When generating names for resources (branches, worktrees, containers) that inter
 
 ---
 
-### L-019: When a bug analysis recommends both a short-term and long-term fix, the long-term fix needs a tracking mechanism or it will be forgotten
+### L-20260325-bug-fix-tracking: When a bug analysis recommends both a short-term and long-term fix, the long-term fix needs a tracking mechanism or it will be forgotten
 - status: active
 - category: patterns
 - source: /harness:bug 2026-03-25
@@ -222,7 +222,7 @@ The 2026-03-19 stale-PR bug analysis recommended (1) filter merged/closed PRs (s
 
 ---
 
-### L-015: UI status indicators derived from multiple signal sources need a formal state machine — not ad-hoc guards
+### L-20260324-status-state-machine: UI status indicators derived from multiple signal sources need a formal state machine — not ad-hoc guards
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-24
@@ -232,7 +232,7 @@ When a display status (e.g., session dot color) is derived from multiple indepen
 
 ---
 
-### L-018: WebSocket-driven query invalidation should be scoped to the affected resource — blanket-invalidation is strongly discouraged
+### L-20260325-ws-query-invalidation: WebSocket-driven query invalidation should be scoped to the affected resource — blanket-invalidation is strongly discouraged
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-25
@@ -242,7 +242,7 @@ When WebSocket events carry a payload identifying which resource changed (e.g., 
 
 ---
 
-### L-019: Negative query results from external systems need longer cache TTLs than positive results — "nothing exists" rarely changes without user action
+### L-20260325-negative-cache-ttl: Negative query results from external systems need longer cache TTLs than positive results — "nothing exists" rarely changes without user action
 - status: active
 - category: patterns
 - source: /harness:bug 2026-03-25
@@ -252,7 +252,7 @@ When a query to an external system (GitHub API, database, etc.) returns "not fou
 
 ---
 
-### L-020: Never use dual mechanisms (CSS media query + JS matchMedia) to implement mobile-specific behavior — use CSS alone for visibility
+### L-20260325-dual-mobile-mechanism: Never use dual mechanisms (CSS media query + JS matchMedia) to implement mobile-specific behavior — use CSS alone for visibility
 - status: active
 - category: patterns
 - source: /harness:bug 2026-03-25
@@ -262,7 +262,7 @@ When a UI element needs different visibility on mobile vs desktop (e.g., "always
 
 ---
 
-### L-021: When a template adds explicit checks for a state already handled by a state machine, use `{:else if}` — never independent `{#if}` blocks for mutually exclusive states
+### L-20260325-template-state-chain: When a template adds explicit checks for a state already handled by a state machine, use `{:else if}` — never independent `{#if}` blocks for mutually exclusive states
 - status: active
 - category: architecture
 - source: /harness:bug 2026-03-25

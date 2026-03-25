@@ -1,3 +1,6 @@
+---
+status: implemented
+---
 # Start Work Flow + Ticket Status Transitions
 
 > **Status**: Planned

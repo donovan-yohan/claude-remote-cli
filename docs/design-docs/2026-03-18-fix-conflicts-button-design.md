@@ -1,3 +1,6 @@
+---
+status: implemented
+---
 # Fix Conflicts Button Design
 
 > **Status**: Approved | **Created**: 2026-03-18

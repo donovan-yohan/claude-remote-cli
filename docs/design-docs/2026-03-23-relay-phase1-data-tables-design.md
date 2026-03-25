@@ -1,3 +1,6 @@
+---
+status: current
+---
 # Relay Phase 1: DataTable Component + Table UI Redesign
 
 > **Status**: Planned

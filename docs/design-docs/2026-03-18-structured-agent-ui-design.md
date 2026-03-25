@@ -1,3 +1,6 @@
+---
+status: superseded
+---
 # Structured Agent UI Design
 
 CEO plan review for transforming claude-remote-cli from a remote terminal into a structured agent interface, inspired by how Conductor works under the hood.

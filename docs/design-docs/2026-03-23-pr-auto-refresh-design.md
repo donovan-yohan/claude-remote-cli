@@ -1,3 +1,6 @@
+---
+status: implemented
+---
 # PR Auto-Refresh Design
 
 **Date:** 2026-03-23

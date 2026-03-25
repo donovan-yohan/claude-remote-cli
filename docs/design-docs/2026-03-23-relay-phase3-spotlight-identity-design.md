@@ -1,3 +1,6 @@
+---
+status: current
+---
 # Relay Phase 3: Spotlight Command Palette + Sidebar Header + Product Identity
 
 > **Status**: Planned

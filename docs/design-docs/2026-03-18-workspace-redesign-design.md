@@ -1,3 +1,6 @@
+---
+status: implemented
+---
 # Workspace Redesign — v3 Rearchitecture
 
 > CEO plan review output. Base: v2.15.17. Discards v3.0 Agent SDK work.

@@ -1,3 +1,6 @@
+---
+status: implemented
+---
 # Jira + Linear Integrations + Status Mapping UI
 
 > **Status**: Implemented

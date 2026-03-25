@@ -16,10 +16,13 @@ Execution plans for active and completed work.
 | `repo-root-click-dashboard` | 2026-03-19 | Fix clicking inactive repo root going to dashboard instead of creating session |
 | `sidebar-session-model-mismatch` | 2026-03-19 | Fix sidebar showing 1 row per session instead of 1 row per folder |
 | `workspace-reorder` | 2026-03-19 | Drag-and-drop workspace reordering, sidebar header simplification |
-| `org-dashboard-phase3` | 2026-03-21 | Start Work flow + ticket status transitions (Phase 3 of org dashboard) |
+| `org-dashboard-phase4` | 2026-03-21 | Jira + Linear integrations + status mapping UI (Phase 4 of org dashboard) |
+| `codex-review-fixes` | 2026-03-22 | Codex review fixes — org dashboard cleanup (premature idempotency, BranchLink source, etc.) |
+| `jira-acli-rewrite-plan` | 2026-03-22 | Rewrite Jira integration to use acli CLI, remove Linear integration |
 | `relay-phase1-data-tables` | 2026-03-23 | Shared DataTable component, filter chips, sortable columns, keyboard nav, row grouping, saved presets |
 | `session-worktree-separation` | 2026-03-23 | Separate session and worktree concerns — unified POST /sessions, collision retry, v2→v3 migration |
 | `github-device-flow` | 2026-03-24 | Replace OAuth web flow with GitHub Device Flow for zero-config auth |
+| `desktop-drag-broken-reorder-mode-jarring` | 2026-03-25 | Remove reorderMode, restore always-on desktop drag-and-drop, add mobile-only long-press gating |
 
 ## Tech Debt
 

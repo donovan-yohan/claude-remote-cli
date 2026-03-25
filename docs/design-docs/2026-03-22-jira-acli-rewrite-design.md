@@ -1,3 +1,6 @@
+---
+status: current
+---
 # Jira Integration — CLI-Based Rewrite via acli
 
 > **Status**: Current

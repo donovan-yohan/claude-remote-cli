@@ -6,7 +6,7 @@ Testing patterns and quality standards for claude-remote-cli.
 
 - Node.js built-in `node:test` + `node:assert` — no external test framework
 - TypeScript test files in `test/`, compiled via `tsc -p tsconfig.test.json`
-- Thirty-four test files covering all server modules
+- Thirty-six test files covering all server modules
 - `svelte-check` runs in `build`, `test`, and standalone `check` — catches type errors in `.svelte` files
 - E2E tests (Playwright) planned but not yet implemented
 
@@ -56,6 +56,21 @@ Both `build` and `test` fail on type errors. CI runs both via `npm run build && 
 | `test/display-state.test.ts` | Display state machine transitions (6 states), shouldNotify gating, critical seen-idle invariant |
 | `test/backend-state.test.ts` | Backend display state mapping from agentState+idle, deduplication (fireBackendStateIfChanged) |
 | `test/sidebar-items.test.ts` | SidebarItem construction from sessions+worktrees+workspaces, reconciliation across refresh |
+| `test/branch-linker.test.ts` | Ticket ID extraction from branch names, branch-linker router (link building, caching, active session flags) |
+| `test/config-freshness.test.ts` | Config file re-read between requests — verifies `loadConfig` sees disk changes without server restart |
+| `test/git-utils.test.ts` | `extractOwnerRepo` URL parsing (SSH + HTTPS, with/without .git), `isStalePr` staleness detection |
+| `test/github-app.test.ts` | GitHub OAuth App device flow: auth URL generation, token exchange, CSRF state, connection status, disconnect |
+| `test/github-graphql.test.ts` | GraphQL PR search query building, response mapping (`mapGraphQLResponse`), `fetchPrsGraphQL` integration |
+| `test/integration-github.test.ts` | GitHub Issues router: `gh` CLI mock, per-repo caching, error codes (not_in_path, not_authenticated) |
+| `test/integration-jira.test.ts` | Jira integration router: `acli` mock, site URL parsing, issues fetch, statuses endpoint, error handling |
+| `test/org-dashboard.test.ts` | Org dashboard PR aggregation: `gh` search API mock, workspace filtering, role detection (author/reviewer), caching |
+| `test/pr-status.test.ts` | `derivePrDotStatus` function: dot indicator derivation from PR state, CI status, mergeable, and review decision |
+| `test/presets.test.ts` | Filter preset CRUD: `DEFAULT_PRESETS` defaults, config persistence, preset validation logic |
+| `test/review-poller.test.ts` | Review poller lifecycle: `startPolling`/`stopPolling`, notification polling, worktree creation, session creation |
+| `test/terminal-zoom.test.ts` | Terminal zoom pure functions: `clampFontSize`, `zoomPercentage`, `scaledTerminalDimensions` |
+| `test/ticket-transitions.test.ts` | Ticket transition state machine: GitHub label add/remove, Jira transitions via `acli`, idempotency guard |
+| `test/webhook-manager.test.ts` | Webhook manager router: GitHub webhook CRUD, smee client lifecycle, health state, mock fetch integration |
+| `test/webhooks.test.ts` | GitHub webhook receiver: HMAC signature verification, event routing, broadcast to frontend |
 
 ## Test Isolation Patterns
 

@@ -1,3 +1,6 @@
+---
+status: current
+---
 # Design: Separate Terminal Zoom
 
 ## Goal

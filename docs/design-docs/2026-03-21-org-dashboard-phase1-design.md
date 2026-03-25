@@ -1,3 +1,6 @@
+---
+status: implemented
+---
 # Workspace Grouping + Global Dashboard + Cross-Repo PRs
 
 > **Status**: Current
