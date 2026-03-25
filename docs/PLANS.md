@@ -31,6 +31,7 @@ See `docs/exec-plans/completed/` for historical plans (47 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `push-notification-permission-fix` | 2026-03-25 | Fix push notifications — wire permission request, show state, chain subscription |
 | `settings-webhooks` | 2026-03-25 | Full-screen Settings modal, DialogShell + SettingRow + SettingsToc components, webhook self-service backend (webhook-manager.ts), GitHub/Webhook/Jira integration panels |
 | `relay-phase2-github-api` | 2026-03-23 | GitHub App OAuth, GraphQL API, smee.io webhooks, real-time updates, CI status, sidebar PR enrichment |
 | `session-flags-lost-on-restart` | 2026-03-22 | Preserve yolo/claudeArgs flags across auto-update restart |

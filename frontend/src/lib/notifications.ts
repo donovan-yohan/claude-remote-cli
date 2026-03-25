@@ -60,7 +60,8 @@ export async function initPushNotifications(): Promise<void> {
 
   try {
     swRegistration = await navigator.serviceWorker.register('/sw.js');
-  } catch {
+  } catch (err) {
+    console.warn('Service worker registration failed:', err);
     return;
   }
 }
@@ -83,8 +84,8 @@ export async function syncPushSubscription(sessionIds: string[]): Promise<void> 
     }
 
     await pushSubscribe(subscription.toJSON(), sessionIds);
-  } catch {
-    // Push subscription failed — browser notifications still work
+  } catch (err) {
+    console.warn('Push subscription failed:', err);
   }
 }
 
@@ -97,8 +98,8 @@ export async function resubscribeIfNeeded(sessionIds: string[]): Promise<void> {
     if (subscription) {
       await pushSubscribe(subscription.toJSON(), sessionIds);
     }
-  } catch {
-    // Silent — push re-subscription is best-effort
+  } catch (err) {
+    console.warn('Push re-subscription failed:', err);
   }
 }
 

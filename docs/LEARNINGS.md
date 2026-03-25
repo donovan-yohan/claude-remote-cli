@@ -162,6 +162,26 @@ The frontend tsconfig enables `exactOptionalPropertyTypes: true`. Under this set
 
 ---
 
+### L-018: Features gated by browser permissions must surface the permission state in the UI — a settings toggle is not a permission request
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-25
+- branch: everest
+
+When a feature depends on a browser permission (Notifications, Geolocation, Camera, etc.), the settings UI must address two distinct layers: (1) the app-level opt-in (which entities should use the feature) and (2) the browser-level permission (whether the browser allows it at all). A checkbox that only controls layer 1 gives users a false sense of enablement. Always: call the browser permission API when the user enables the feature, display the current permission state (granted/denied/default), and provide guidance if permission was denied. The permission request must be triggered by a user gesture (especially on iOS PWA where this is strictly enforced).
+
+---
+
+### L-019: Silent catch blocks on browser API calls hide broken features — always log or surface permission/subscription failures
+- status: active
+- category: debugging
+- source: /harness:bug 2026-03-25
+- branch: everest
+
+When calling browser APIs that can fail due to missing permissions (e.g., `pushManager.subscribe()`, `Notification.requestPermission()`), empty `catch {}` blocks make broken features indistinguishable from working ones. The push notification pipeline had three silent catches that hid the fact that no subscription was ever created. At minimum: log the error in development, and in production surface the failure state in the UI (e.g., "Push notifications unavailable — permission denied"). Never swallow errors from permission-dependent APIs without at least recording the failure in application state.
+
+---
+
 ### L-014: Always gate drag-and-drop library activation behind an explicit mode toggle — never leave it always-on
 - status: active
 - category: patterns
