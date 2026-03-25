@@ -5,14 +5,13 @@
   import StatusDot from './StatusDot.svelte';
   import { getSessionState, refreshAll, setLoading, clearLoading, isItemLoading } from '../lib/state/sessions.svelte.js';
   import { isAttentionState } from '../lib/state/display-state.js';
-  import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick, getUi } from '../lib/state/ui.svelte.js';
+  import { toggleWorkspaceCollapse, isWorkspaceCollapsed, getTimeTick } from '../lib/state/ui.svelte.js';
   import { formatRelativeTimeCompact } from '../lib/utils.js';
-  import { createSession } from '../lib/api.js';
+  import { createSession, renameSession } from '../lib/api.js';
   import ContextMenu from './ContextMenu.svelte';
   import type { MenuItem } from './ContextMenu.svelte';
 
   const sessionState = getSessionState();
-  const ui = getUi();
 
   let {
     workspace,
@@ -95,7 +94,6 @@
       .some(i => isAttentionState(i.displayState))
   );
   let creatingWorktree = $derived(isItemLoading(`new-worktree:${workspace.path}`));
-  let inReorderMode = $derived(ui.reorderMode);
 
   // Detect mobile for context menu behavior
   let isMobile = $state(typeof window !== 'undefined' && window.matchMedia('(max-width: 600px)').matches);
@@ -114,14 +112,7 @@
     }, 500);
   }
 
-  function handleRowTouchEnd() {
-    if (longPressTimer) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-    }
-  }
-
-  function handleRowTouchMove() {
+  function cancelLongPress() {
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
@@ -148,11 +139,7 @@
   async function handleRename(session: SessionSummary) {
     const newName = prompt('Rename session:', sessionDisplayName(session));
     if (newName && newName.trim()) {
-      await fetch(`/sessions/${session.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: newName.trim() }),
-      });
+      await renameSession(session.id, newName.trim());
       await refreshAll();
     }
   }
@@ -220,40 +207,35 @@
   <div
     class="workspace-header"
     class:attention={hasAttention}
-    class:reorder-mode={inReorderMode}
     data-track="sidebar.workspace.click"
-    onclick={() => { if (!inReorderMode) onSelectWorkspace(workspace.path); }}
+    onclick={() => { onSelectWorkspace(workspace.path); }}
   >
     <div class="workspace-left">
-      {#if !inReorderMode}
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <span
-          class="collapse-chevron"
-          class:collapsed
-          onclick={(e) => { e.stopPropagation(); toggleWorkspaceCollapse(workspace.path); }}
-        >{collapsed ? '›' : '⌄'}</span>
-      {/if}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span
+        class="collapse-chevron"
+        class:collapsed
+        onclick={(e) => { e.stopPropagation(); toggleWorkspaceCollapse(workspace.path); }}
+      >{collapsed ? '›' : '⌄'}</span>
       <span class="initial-block" style:background={initialColor}>{initial}</span>
       <span class="workspace-name">{workspace.name}</span>
-      {#if collapsed && totalItems > 0 && !inReorderMode}
+      {#if collapsed && totalItems > 0}
         <span class="collapse-count">{totalItems}</span>
       {/if}
     </div>
-    {#if !inReorderMode}
-      <div class="workspace-actions">
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <span
-          class="action-btn"
-          title="Settings"
-          onclick={(e) => { e.stopPropagation(); onOpenSettings(workspace); }}
-        >⚙</span>
-      </div>
-    {/if}
+    <div class="workspace-actions">
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <span
+        class="action-btn"
+        title="Settings"
+        onclick={(e) => { e.stopPropagation(); onOpenSettings(workspace); }}
+      >⚙</span>
+    </div>
   </div>
 
-  {#if !collapsed && !inReorderMode}
+  {#if !collapsed}
     <ul class="session-list">
       {#each [...sessionGroups.entries()] as [groupPath, groupSessions] (groupPath)}
         {@const representative = groupSessions.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity))[0]}
@@ -271,8 +253,8 @@
             data-track="sidebar.session.click"
             onclick={() => onSelectSession(representative.id)}
             ontouchstart={(e) => handleRowTouchStart(representative.id, e.currentTarget as HTMLElement)}
-            ontouchend={handleRowTouchEnd}
-            ontouchmove={handleRowTouchMove}
+            ontouchend={cancelLongPress}
+            ontouchmove={cancelLongPress}
           >
             <div class="session-row-primary">
               <span class={statusDotClass(groupPath)}></span>
@@ -297,7 +279,7 @@
               {/if}
             </div>
             <div class="row-menu-overlay">
-              <ContextMenu items={sessionMenuItems(representative)} hideTrigger={isMobile} bind:this={menuRefs[representative.id]} />
+              <ContextMenu items={sessionMenuItems(representative)} bind:this={menuRefs[representative.id]} />
             </div>
           </li>
         {:else if isRepoRoot}
@@ -361,8 +343,8 @@
             }
           }}
           ontouchstart={(e) => handleRowTouchStart(wt.path, e.currentTarget as HTMLElement)}
-          ontouchend={handleRowTouchEnd}
-          ontouchmove={handleRowTouchMove}
+          ontouchend={cancelLongPress}
+          ontouchmove={cancelLongPress}
         >
           <div class="session-row-primary">
             <span class="dot dot-inactive"></span>
@@ -375,14 +357,14 @@
             {/if}
           </div>
           <div class="row-menu-overlay">
-            <ContextMenu items={worktreeMenuItems(wt)} hideTrigger={isMobile} bind:this={menuRefs[wt.path]} />
+            <ContextMenu items={worktreeMenuItems(wt)} bind:this={menuRefs[wt.path]} />
           </div>
         </li>
       {/each}
     </ul>
   {/if}
 
-  {#if !collapsed && !inReorderMode}
+  {#if !collapsed}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="add-worktree-row" class:disabled={creatingWorktree} data-track="sidebar.new-worktree" onclick={() => { if (!creatingWorktree) onNewWorktree(workspace); }}>
@@ -390,9 +372,7 @@
     </div>
   {/if}
 
-  {#if !inReorderMode}
-    <div class="workspace-divider"></div>
-  {/if}
+  <div class="workspace-divider"></div>
 </div>
 
 <style>
@@ -426,14 +406,6 @@
     gap: 8px;
     min-width: 0;
     flex: 1;
-  }
-
-  .workspace-header.reorder-mode {
-    cursor: grab;
-  }
-
-  .workspace-header.reorder-mode:active {
-    cursor: grabbing;
   }
 
   .collapse-chevron {
@@ -670,9 +642,9 @@
     box-shadow: 0 0 5px 1px rgba(234, 179, 8, 0.45);
     animation: attention-glow 1.5s ease-in-out infinite;
   }
-  .status-dot--inactive     { background: #555; }
+  .status-dot--inactive     { background: transparent; border: 1.5px solid #555; }
 
-  .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: #555; flex-shrink: 0; }
+  .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: transparent; border: 1.5px solid #555; flex-shrink: 0; }
   .session-row.inactive .session-name { color: var(--text-muted); }
   .session-row.inactive:hover .session-name { color: var(--text); }
   .session-row.loading { pointer-events: none; opacity: 0.7; }
@@ -745,9 +717,9 @@
       opacity: 1;
     }
 
-    /* On mobile, hide the dots overlay — long-press opens menu instead */
+    /* On mobile, always show dots (no hover) */
     .row-menu-overlay {
-      display: none;
+      opacity: 1;
     }
   }
 </style>

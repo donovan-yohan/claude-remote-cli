@@ -130,7 +130,8 @@ export async function fetchCiStatusOrNull(workspacePath: string, branch: string)
 export async function fetchPrForBranchOrNull(workspacePath: string, branch: string): Promise<PrInfo | null> {
   const res = await fetch('/workspaces/pr?path=' + encodeURIComponent(workspacePath) + '&branch=' + encodeURIComponent(branch));
   if (!res.ok) return null;
-  return res.json() as Promise<PrInfo>;
+  const data = await res.json() as { pr: PrInfo | null };
+  return data.pr;
 }
 
 export async function fetchCurrentBranch(workspacePath: string): Promise<string | null> {
@@ -365,11 +366,6 @@ export async function fetchJiraIssues(): Promise<JiraIssuesResponse> {
 export async function fetchJiraStatuses(projectKey: string): Promise<JiraStatus[]> {
   const data = await json<{ statuses: JiraStatus[] }>(await fetch('/integration-jira/statuses?projectKey=' + encodeURIComponent(projectKey)));
   return data.statuses;
-}
-
-export async function fetchWorkspaceGroups(): Promise<Record<string, string[]>> {
-  const data = await json<{ groups: Record<string, string[]> }>(await fetch('/config/workspace-groups'));
-  return data.groups;
 }
 
 export async function fetchAnalyticsSize(): Promise<{ bytes: number }> {

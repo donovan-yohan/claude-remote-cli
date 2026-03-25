@@ -278,10 +278,23 @@
     if (!auth.authenticated) return;
 
     const refChangedTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    let pollInvalidateTimer: ReturnType<typeof setTimeout> | null = null;
 
     function invalidatePrQueries(): void {
       queryClient.invalidateQueries({ queryKey: ['pr'] });
       queryClient.invalidateQueries({ queryKey: ['ci-status'] });
+    }
+
+    /** Throttled invalidation for poll-based events (pr-updated/ci-updated).
+     *  Schedules one invalidation 500ms after the first event; subsequent
+     *  events within the window are dropped. */
+    function throttledPollInvalidate(): void {
+      if (pollInvalidateTimer) return;
+      pollInvalidateTimer = setTimeout(() => {
+        pollInvalidateTimer = null;
+        invalidatePrQueries();
+        queryClient.invalidateQueries({ queryKey: ['org-prs'] });
+      }, 500);
     }
 
     connectEventSocket((msg) => {
@@ -303,19 +316,14 @@
           invalidatePrQueries();
         }, 5000));
       } else if (msg.type === 'pr-updated' || msg.type === 'ci-updated') {
-        if (msg.repo) {
-          console.debug(`[ws] ${msg.type} for repo: ${msg.repo}`);
-        }
-        // Invalidate all queries — targeted per-repo invalidation is a follow-up optimization
-        queryClient.invalidateQueries({ queryKey: ['org-prs'] });
-        queryClient.invalidateQueries({ queryKey: ['pr'] });
-        queryClient.invalidateQueries({ queryKey: ['ci-status'] });
+        throttledPollInvalidate();
       }
     });
 
     return () => {
       for (const timer of refChangedTimers.values()) clearTimeout(timer);
       refChangedTimers.clear();
+      if (pollInvalidateTimer) { clearTimeout(pollInvalidateTimer); pollInvalidateTimer = null; }
     };
   });
 
