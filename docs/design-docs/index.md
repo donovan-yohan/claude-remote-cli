@@ -48,3 +48,4 @@
 | [2026-03-23-github-device-flow-design.md](2026-03-23-github-device-flow-design.md) | Replace OAuth web flow with device flow for zero-config GitHub auth | 2026-03-23 | current |
 | [2026-03-24-webhook-self-service-design.md](2026-03-24-webhook-self-service-design.md) | GitHub webhook self-service: CRUD UI, smee proxy lifecycle, health state, auto-provision backfill | 2026-03-24 | current |
 | [2026-03-25-settings-redesign-design.md](2026-03-25-settings-redesign-design.md) | Settings dialog redesign: DialogShell wrapper, SettingRow/SettingsToc components, integrations tab | 2026-03-25 | current |
+| [2026-03-25-branch-bar-redesign-design.md](2026-03-25-branch-bar-redesign-design.md) | Branch bar redesign: worktree-aware switcher, target branch dropdown, hover icons, rename flow | 2026-03-25 | implemented |

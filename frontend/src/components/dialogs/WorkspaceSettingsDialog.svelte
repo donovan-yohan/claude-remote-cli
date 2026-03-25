@@ -1,6 +1,6 @@
 <script lang="ts">
   import { updateWorkspaceSettings, fetchBranches, fetchMergedWorkspaceSettings } from '../../lib/api.js';
-  import type { WorkspaceSettings } from '../../lib/types.js';
+  import type { WorkspaceSettings, BranchInfo } from '../../lib/types.js';
 
   interface Props {
     onRemoveWorkspace: (path: string) => void;
@@ -15,7 +15,7 @@
   let error = $state('');
   let saveSuccess = $state(false);
 
-  let branches = $state<string[]>([]);
+  let branches = $state<BranchInfo[]>([]);
 
   // Settings fields
   let defaultBranch = $state('');
@@ -64,7 +64,7 @@
     try {
       const [mergedResult, branchList] = await Promise.all([
         fetchMergedWorkspaceSettings(path),
-        fetchBranches(path).catch(() => [] as string[]),
+        fetchBranches(path).catch(() => [] as BranchInfo[]),
       ]);
 
       branches = branchList;
@@ -200,9 +200,9 @@
           <select id="ws-default-branch" class="field-select" bind:value={defaultBranch}>
             <option value="">-- auto --</option>
             {#each branches as branch}
-              <option value={branch}>{branch}</option>
+              <option value={branch.name}>{branch.name}</option>
             {/each}
-            {#if defaultBranch && !branches.includes(defaultBranch)}
+            {#if defaultBranch && !branches.some(b => b.name === defaultBranch)}
               <option value={defaultBranch}>{defaultBranch}</option>
             {/if}
           </select>

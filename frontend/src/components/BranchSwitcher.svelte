@@ -1,15 +1,26 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { fetchBranches, switchBranch } from '../lib/api.js';
+  import type { BranchInfo } from '../lib/types.js';
 
   let {
     workspacePath,
     currentBranch,
     onSwitch,
+    disabled = false,
+    currentWorktreePath,
+    onJumpToSession,
+    onStartSession,
+    onCreateBranch,
   }: {
     workspacePath: string;
     currentBranch: string;
     onSwitch: (branch: string) => void;
+    disabled?: boolean;
+    currentWorktreePath?: string;
+    onJumpToSession?: (sessionId: string) => void;
+    onStartSession?: (worktreePath: string) => void;
+    onCreateBranch?: (branchName: string) => void;
   } = $props();
 
   let open = $state(false);
@@ -19,7 +30,7 @@
   let switching = $state<string | null>(null);
   let switchError = $state<string | null>(null);
 
-  const branchQuery = createQuery<string[]>(() => ({
+  const branchQuery = createQuery<BranchInfo[]>(() => ({
     queryKey: ['branches', workspacePath],
     queryFn: () => fetchBranches(workspacePath),
     staleTime: 30_000,
@@ -30,10 +41,17 @@
     const branches = branchQuery.data ?? [];
     if (!filterText.trim()) return branches;
     const lower = filterText.toLowerCase();
-    return branches.filter(b => b.toLowerCase().includes(lower));
+    return branches.filter(b => b.name.toLowerCase().includes(lower));
+  });
+
+  let showCreateOption = $derived.by(() => {
+    if (!filterText.trim()) return false;
+    const branches = branchQuery.data ?? [];
+    return !branches.some(b => b.name === filterText.trim());
   });
 
   function openDropdown() {
+    if (disabled) return;
     open = true;
     filterText = '';
     switchError = null;
@@ -45,18 +63,18 @@
     filterText = '';
   }
 
-  async function handleSelect(branch: string) {
-    if (branch === currentBranch) {
+  async function handleSelect(branchName: string) {
+    if (branchName === currentBranch) {
       closeDropdown();
       return;
     }
-    switching = branch;
+    switching = branchName;
     switchError = null;
     try {
-      const result = await switchBranch(workspacePath, branch);
+      const result = await switchBranch(workspacePath, branchName);
       if (result.success) {
         closeDropdown();
-        onSwitch(branch);
+        onSwitch(branchName);
       } else {
         switchError = result.error ?? 'Failed to switch branch';
       }
@@ -64,6 +82,22 @@
       switchError = 'Failed to switch branch';
     } finally {
       switching = null;
+    }
+  }
+
+  function isCheckedOutElsewhere(branch: BranchInfo): boolean {
+    if (!currentWorktreePath || !branch.checkedOutIn) return false;
+    return branch.checkedOutIn.worktreePath !== currentWorktreePath;
+  }
+
+  function handleJump(branch: BranchInfo, e: MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!branch.checkedOutIn) return;
+    if (branch.checkedOutIn.sessionId && onJumpToSession) {
+      onJumpToSession(branch.checkedOutIn.sessionId);
+    } else if (onStartSession) {
+      onStartSession(branch.checkedOutIn.worktreePath);
     }
   }
 
@@ -86,7 +120,9 @@
 <div class="branch-switcher" bind:this={wrapperEl}>
   <button
     class="branch-trigger"
+    class:branch-disabled={disabled}
     onclick={openDropdown}
+    title={disabled ? 'Unavailable while agent is running' : undefined}
     aria-label="Switch branch"
     aria-expanded={open}
     aria-haspopup="listbox"
@@ -116,30 +152,52 @@
         <div class="branch-error">{switchError}</div>
       {/if}
 
+      {#if showCreateOption && onCreateBranch}
+        <div class="branch-create" role="option" aria-selected={false} tabindex="-1" onmousedown={() => onCreateBranch?.(filterText.trim())}>
+          <span class="branch-create-icon">+</span>
+          <span>Create "<strong>{filterText.trim()}</strong>"</span>
+        </div>
+      {/if}
+
       {#if branchQuery.isLoading}
         <div class="branch-loading">Loading...</div>
-      {:else if filteredBranches.length === 0}
+      {:else if filteredBranches.length === 0 && !showCreateOption}
         <div class="branch-empty">No branches match</div>
       {:else}
         <ul class="branch-list">
-          {#each filteredBranches as branch (branch)}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
+          {#each filteredBranches as branch (branch.name)}
+            {@const checkedOutElsewhere = isCheckedOutElsewhere(branch)}
             <li
               class="branch-option"
-              class:branch-current={branch === currentBranch}
-              class:branch-switching={switching === branch}
+              class:branch-current={branch.name === currentBranch}
+              class:branch-switching={switching === branch.name}
+              class:branch-checked-out={checkedOutElsewhere}
               role="option"
-              aria-selected={branch === currentBranch}
-              onmousedown={() => handleSelect(branch)}
+              aria-selected={branch.name === currentBranch}
+              onmousedown={checkedOutElsewhere ? undefined : () => handleSelect(branch.name)}
             >
-              {#if branch === currentBranch}
-                <span class="branch-check">✓</span>
+              {#if branch.name === currentBranch}
+                <span class="branch-check">&#10003;</span>
               {:else}
                 <span class="branch-check branch-check--empty"></span>
               {/if}
-              <span class="branch-option-name">{branch}</span>
-              {#if switching === branch}
-                <span class="branch-spinner">…</span>
+              <span class="branch-option-name">{branch.name}</span>
+              {#if checkedOutElsewhere && branch.checkedOutIn && (onJumpToSession || onStartSession)}
+                <span class="branch-worktree-name">({branch.checkedOutIn.worktreeName})</span>
+                <button
+                  class="branch-jump-btn"
+                  title="Jump to worktree"
+                  onmousedown={(e) => handleJump(branch, e)}
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M4.5 2H2.5C2.22 2 2 2.22 2 2.5V9.5C2 9.78 2.22 10 2.5 10H9.5C9.78 10 10 9.78 10 9.5V7.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                    <path d="M7 2H10V5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  </svg>
+                </button>
+              {/if}
+              {#if switching === branch.name}
+                <span class="branch-spinner">&hellip;</span>
               {/if}
             </li>
           {/each}
@@ -173,6 +231,15 @@
 
   .branch-trigger:hover {
     background: var(--surface-hover);
+  }
+
+  .branch-trigger.branch-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .branch-trigger.branch-disabled:hover {
+    background: none;
   }
 
   .branch-icon {
@@ -244,6 +311,27 @@
     font-style: italic;
   }
 
+  .branch-create {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+    color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+
+  .branch-create:hover {
+    background: var(--surface-hover);
+  }
+
+  .branch-create-icon {
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+
   .branch-list {
     list-style: none;
     margin: 0;
@@ -281,6 +369,48 @@
   .branch-switching {
     opacity: 0.6;
     pointer-events: none;
+  }
+
+  .branch-checked-out .branch-option-name {
+    text-decoration: line-through;
+    opacity: 0.5;
+  }
+
+  .branch-checked-out {
+    cursor: default;
+  }
+
+  .branch-checked-out:hover {
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  .branch-worktree-name {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+
+  .branch-jump-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+    border-radius: 3px;
+    transition: color 0.12s, background 0.12s;
+  }
+
+  .branch-jump-btn:hover {
+    color: var(--accent);
+    background: var(--surface-hover);
   }
 
   .branch-check {

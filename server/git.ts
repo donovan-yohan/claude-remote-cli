@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import type { ActivityEntry, CiStatus, PrInfo } from './types.js';
+import type { ActivityEntry, BranchInfo, CiStatus, PrInfo } from './types.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -494,6 +494,186 @@ async function buildRepoMap(
   return map;
 }
 
+async function listBranchesEnriched(
+  repoPath: string,
+  options: {
+    refresh?: boolean;
+    exec?: ExecFileAsyncLike;
+    sessions?: Array<{ id: string; worktreePath: string | null }>;
+  } = {},
+): Promise<BranchInfo[]> {
+  const run: ExecFileAsyncLike = options.exec || execFileAsync as ExecFileAsyncLike;
+
+  if (options.refresh) {
+    try {
+      await run('git', ['fetch', '--all', '--prune'], { cwd: repoPath });
+    } catch {
+      // Best effort — still return the locally-known refs below.
+    }
+  }
+
+  // Get local branches
+  let localBranches: string[] = [];
+  try {
+    const { stdout } = await run('git', ['branch', '--format=%(refname:short)'], { cwd: repoPath });
+    localBranches = stdout
+      .split('\n')
+      .map((b) => b.trim())
+      .filter((b) => b.length > 0);
+  } catch {
+    // continue with empty list
+  }
+
+  // Get remote branches (strip origin/ prefix, skip HEAD)
+  let remoteBranches: string[] = [];
+  try {
+    const { stdout } = await run('git', ['branch', '-r', '--format=%(refname:short)'], { cwd: repoPath });
+    remoteBranches = stdout
+      .split('\n')
+      .map((b) => b.trim())
+      .filter((b) => b.length > 0 && !b.includes('HEAD') && b.startsWith('origin/'))
+      .map((b) => b.replace(/^origin\//, ''));
+  } catch {
+    // continue with empty list
+  }
+
+  // Get worktree → branch mapping via porcelain output
+  const worktreeBranchMap = new Map<string, string>(); // worktreePath → branchName
+  try {
+    const { stdout } = await run('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });
+    const blocks = stdout.split(/\n\n+/);
+    for (const block of blocks) {
+      const lines = block.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+      let worktreePath: string | null = null;
+      let branchName: string | null = null;
+      for (const line of lines) {
+        if (line.startsWith('worktree ')) {
+          worktreePath = line.slice('worktree '.length);
+        } else if (line.startsWith('branch ')) {
+          // "branch refs/heads/branchname"
+          branchName = line.slice('branch '.length).replace(/^refs\/heads\//, '');
+        }
+      }
+      if (worktreePath && branchName) {
+        worktreeBranchMap.set(worktreePath, branchName);
+      }
+    }
+  } catch {
+    // continue without worktree data
+  }
+
+  // Build reverse map: branchName → worktree info
+  const branchWorktreeMap = new Map<string, { worktreePath: string; worktreeName: string; sessionId?: string }>();
+  for (const [wtPath, branchName] of worktreeBranchMap) {
+    const worktreeName = wtPath.split('/').at(-1) ?? wtPath;
+    const matchingSession = (options.sessions ?? []).find(
+      (s) => s.worktreePath === wtPath,
+    );
+    const entry: { worktreePath: string; worktreeName: string; sessionId?: string } = {
+      worktreePath: wtPath,
+      worktreeName,
+    };
+    if (matchingSession?.id !== undefined) {
+      entry.sessionId = matchingSession.id;
+    }
+    branchWorktreeMap.set(branchName, entry);
+  }
+
+  // Deduplicate by name across local + remote
+  const allNames = new Set([...localBranches, ...remoteBranches]);
+  const localSet = new Set(localBranches);
+  const remoteSet = new Set(remoteBranches);
+
+  const result: BranchInfo[] = [...allNames].sort().map((name) => {
+    const checkedOutIn = branchWorktreeMap.get(name);
+    return {
+      name,
+      isLocal: localSet.has(name),
+      isRemote: remoteSet.has(name),
+      ...(checkedOutIn ? { checkedOutIn } : {}),
+    };
+  });
+
+  return result;
+}
+
+async function renameBranch(
+  repoPath: string,
+  newName: string,
+  options: { exec?: ExecFileAsyncLike } = {},
+): Promise<{ success: true; oldName: string; newName: string } | { success: false; error: string }> {
+  const run = options.exec || execFileAsync as ExecFileAsyncLike;
+  try {
+    // Get current branch name first
+    const { stdout: currentStdout } = await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repoPath });
+    const oldName = currentStdout.trim();
+    if (!oldName) return { success: false, error: 'Could not determine current branch' };
+    if (oldName === 'HEAD') return { success: false, error: 'Cannot rename: not on a branch (detached HEAD)' };
+
+    await run('git', ['branch', '-m', '--', newName], { cwd: repoPath, timeout: 5000 });
+    return { success: true, oldName, newName };
+  } catch (err: unknown) {
+    const errObj = err as { stderr?: string; message?: string };
+    return { success: false, error: (errObj.stderr ?? errObj.message ?? 'Unknown error').trim() };
+  }
+}
+
+async function createBranch(
+  repoPath: string,
+  branchName: string,
+  options: { exec?: ExecFileAsyncLike } = {},
+): Promise<{ success: true; branch: string } | { success: false; error: string }> {
+  const run = options.exec || execFileAsync as ExecFileAsyncLike;
+  try {
+    await run('git', ['checkout', '-b', '--', branchName], { cwd: repoPath, timeout: 5000 });
+    return { success: true, branch: branchName };
+  } catch (err: unknown) {
+    const errObj = err as { stderr?: string; message?: string };
+    return { success: false, error: (errObj.stderr ?? errObj.message ?? 'Unknown error').trim() };
+  }
+}
+
+async function changePrBase(
+  repoPath: string,
+  prNumber: number,
+  baseBranch: string,
+  options: { exec?: ExecFileAsyncLike } = {},
+): Promise<{ success: true } | { success: false; error: string }> {
+  const run = options.exec || execFileAsync as ExecFileAsyncLike;
+  try {
+    await run('gh', ['pr', 'edit', String(prNumber), '--base', baseBranch], { cwd: repoPath, timeout: 10000 });
+    return { success: true };
+  } catch (err: unknown) {
+    const errObj = err as { stderr?: string; message?: string; code?: string };
+    if (errObj.code === 'ENOENT') return { success: false, error: 'gh CLI not installed' };
+    return { success: false, error: (errObj.stderr ?? errObj.message ?? 'Unknown error').trim() };
+  }
+}
+
+async function pushBranch(
+  repoPath: string,
+  branch: string,
+  deleteOldBranch?: string,
+  options: { exec?: ExecFileAsyncLike } = {},
+): Promise<{ success: true; deleteError?: string } | { success: false; error: string }> {
+  const run = options.exec || execFileAsync as ExecFileAsyncLike;
+  try {
+    await run('git', ['push', 'origin', branch], { cwd: repoPath, timeout: 30000 });
+  } catch (err: unknown) {
+    const errObj = err as { stderr?: string; message?: string };
+    return { success: false, error: (errObj.stderr ?? errObj.message ?? 'Unknown error').trim() };
+  }
+  if (deleteOldBranch) {
+    try {
+      await run('git', ['push', 'origin', '--delete', deleteOldBranch], { cwd: repoPath, timeout: 10000 });
+    } catch (err: unknown) {
+      const errObj = err as { stderr?: string; message?: string };
+      return { success: true, deleteError: (errObj.stderr ?? errObj.message ?? 'Failed to delete old branch').trim() };
+    }
+  }
+  return { success: true };
+}
+
 const ONE_DAY_MS = 86_400_000;
 
 /** A PR is stale if it's MERGED or CLOSED and was last updated more than 1 day ago (or has no valid timestamp). */
@@ -507,6 +687,7 @@ function isStalePr(pr: PrInfo): boolean {
 
 export {
   listBranches,
+  listBranchesEnriched,
   normalizeBranchNames,
   getActivityFeed,
   getCiStatus,
@@ -521,4 +702,8 @@ export {
   isStalePr,
   extractOwnerRepo,
   buildRepoMap,
+  renameBranch,
+  createBranch,
+  changePrBase,
+  pushBranch,
 };
