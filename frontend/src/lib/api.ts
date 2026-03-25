@@ -448,7 +448,7 @@ export interface BackfillResult {
   total: number;
   success: number;
   failed: number;
-  results: Array<{ path: string; ownerRepo: string; ok: boolean; error?: string }>;
+  results: Array<{ path: string; ownerRepo: string | null; ok: boolean; error?: string }>;
 }
 
 export async function fetchWebhookStatus(): Promise<WebhookStatus> {

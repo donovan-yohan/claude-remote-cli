@@ -710,6 +710,7 @@ async function main(): Promise<void> {
     await execFileAsync('tmux', ['-V']);
   });
   boolConfigEndpoints('defaultNotifications', true);
+  boolConfigEndpoints('autoProvision', false);
 
   // GET /config/automations — get automation settings
   app.get('/config/automations', requireAuth, (_req: express.Request, res: express.Response) => {

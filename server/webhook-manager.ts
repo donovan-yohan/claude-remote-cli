@@ -120,7 +120,7 @@ function startSmee(smeeUrl: string, targetPort: number): void {
 
       const client = new smeeModule.default({
         source: smeeUrl,
-        target: `http://localhost:${targetPort}/webhook`,
+        target: `http://localhost:${targetPort}/webhooks`,
         logger: {
           info: (...args: unknown[]) => console.log('[smee]', ...args),
           error: (...args: unknown[]) => console.error('[smee]', ...args),
@@ -314,10 +314,12 @@ function persistWebhookError(
 // ── Router factory ─────────────────────────────────────────────────────────────
 
 /**
- * Creates and returns an Express Router for all /webhooks routes.
+ * Creates and returns an Express Router for webhook management routes.
  *
  * Mount with:
- *   app.use('/webhooks', createWebhookManagerRouter({ configPath, broadcastEvent, requireAuth }));
+ *   app.use('/webhooks/manage', createWebhookManagerRouter({ configPath, broadcastEvent, requireAuth }));
+ *
+ * Distinct from the `/webhooks` receiver in webhooks.ts — this router handles CRUD and lifecycle.
  */
 export function createWebhookManagerRouter(deps: WebhookManagerDeps): Router {
   const { configPath, requireAuth } = deps;

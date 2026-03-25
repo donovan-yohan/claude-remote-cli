@@ -9,7 +9,7 @@ import type { Request, Response } from 'express';
 
 import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys } from './config.js';
 import { trackEvent } from './analytics.js';
-import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch } from './git.js';
+import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo } from './git.js';
 import type { Config, PullRequest, PullRequestsResponse, Workspace } from './types.js';
 import { MOUNTAIN_NAMES } from './types.js';
 
@@ -210,7 +210,6 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     if (wsSettings?.webhookId && config.github?.accessToken) {
       try {
         const { stdout } = await exec('git', ['remote', 'get-url', 'origin'], { cwd: resolved, timeout: 5000 });
-        const { extractOwnerRepo } = await import('./git.js');
         const ownerRepo = extractOwnerRepo(stdout.trim());
         if (ownerRepo) {
           await globalThis.fetch(`https://api.github.com/repos/${ownerRepo}/hooks/${wsSettings.webhookId}`, {

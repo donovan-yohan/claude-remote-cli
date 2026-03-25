@@ -1,6 +1,7 @@
 <script lang="ts">
   import DialogShell from './DialogShell.svelte';
   import SettingRow from './SettingRow.svelte';
+  import SettingsToc from './SettingsToc.svelte';
   import GitHubIntegration from './integrations/GitHubIntegration.svelte';
   import WebhookIntegration from './integrations/WebhookIntegration.svelte';
   import JiraIntegration from './integrations/JiraIntegration.svelte';
@@ -15,6 +16,7 @@
     fetchAnalyticsSize,
     clearAnalytics,
     fetchGitHubStatus,
+    fetchWebhookStatus,
   } from '../../lib/api.js';
   import { refreshAll } from '../../lib/state/sessions.svelte.js';
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
@@ -89,8 +91,15 @@
     try {
       const s = await fetchGitHubStatus();
       githubConnected = s.connected;
+      // Check if webhooks are configured for disconnect confirmation
+      if (s.connected) {
+        try {
+          const ws = await fetchWebhookStatus();
+          if (ws.configured) webhookCount = 1; // indicates webhooks exist
+        } catch { /* webhook status fetch is best-effort */ }
+      }
     } catch {
-      // ignore
+      // ignore — githubConnected stays false
     }
   }
 
@@ -239,19 +248,22 @@
       <p class="error-msg">{error}</p>
     {/if}
 
-    <!-- TOC drawer overlay -->
-    {#if tocOpen}
-      <div class="toc-backdrop" onclick={() => tocOpen = false} role="presentation"></div>
-      <nav class="toc-drawer" aria-label="Settings navigation">
-        <button class="toc-item" onclick={() => scrollToSection('section-general')}>GENERAL</button>
-        <button class="toc-item" onclick={() => scrollToSection('section-integrations')}>INTEGRATIONS</button>
-        <button class="toc-item toc-sub" onclick={() => scrollToSection('section-integrations')}>GitHub</button>
-        <button class="toc-item toc-sub" onclick={() => scrollToSection('section-integrations')}>Webhooks</button>
-        <button class="toc-item toc-sub" onclick={() => scrollToSection('section-integrations')}>Jira</button>
-        <button class="toc-item" onclick={() => scrollToSection('section-advanced')}>ADVANCED</button>
-        <button class="toc-item" onclick={() => scrollToSection('section-about')}>ABOUT</button>
-      </nav>
-    {/if}
+    <!-- TOC drawer with IntersectionObserver scroll tracking -->
+    <SettingsToc
+      open={tocOpen}
+      onclose={() => tocOpen = false}
+      {contentEl}
+      sections={[
+        { id: 'section-general', label: 'GENERAL' },
+        { id: 'section-integrations', label: 'INTEGRATIONS', children: [
+          { id: 'integration-github', label: 'GitHub' },
+          { id: 'integration-webhooks', label: 'Webhooks' },
+          { id: 'integration-jira', label: 'Jira' },
+        ]},
+        { id: 'section-advanced', label: 'ADVANCED' },
+        { id: 'section-about', label: 'ABOUT' },
+      ]}
+    />
 
     <!-- GENERAL section -->
     <section id="section-general" class="settings-section" class:dimmed={!matchesSearch('general')}>
@@ -284,14 +296,20 @@
     <!-- INTEGRATIONS section -->
     <section id="section-integrations" class="settings-section" class:dimmed={!matchesSearch('integrations')}>
       <h3 class="section-heading">INTEGRATIONS</h3>
-      <GitHubIntegration
-        onDisconnect={handleGitHubDisconnect}
-        webhookCount={webhookCount}
-      />
-      <WebhookIntegration
-        githubConnected={githubConnected}
-      />
-      <JiraIntegration />
+      <div id="integration-github">
+        <GitHubIntegration
+          onDisconnect={handleGitHubDisconnect}
+          webhookCount={webhookCount}
+        />
+      </div>
+      <div id="integration-webhooks">
+        <WebhookIntegration
+          githubConnected={githubConnected}
+        />
+      </div>
+      <div id="integration-jira">
+        <JiraIntegration />
+      </div>
     </section>
 
     <!-- ADVANCED section -->
@@ -407,61 +425,6 @@
   .hamburger-btn:hover {
     background: var(--border);
     color: var(--text);
-  }
-
-  /* TOC drawer */
-  .toc-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.4);
-    z-index: 10;
-  }
-
-  .toc-drawer {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 220px;
-    background: var(--surface);
-    border-right: 1px solid var(--border);
-    z-index: 11;
-    padding: 16px 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    animation: toc-slide-in 150ms ease forwards;
-  }
-
-  @keyframes toc-slide-in {
-    from {
-      transform: translateX(-100%);
-    }
-    to {
-      transform: translateX(0);
-    }
-  }
-
-  .toc-item {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    text-align: left;
-    padding: 8px 16px;
-    cursor: pointer;
-    transition: background 100ms ease, color 100ms ease;
-  }
-
-  .toc-item:hover {
-    background: var(--surface-hover);
-    color: var(--text);
-  }
-
-  .toc-sub {
-    padding-left: 32px;
-    font-size: var(--font-size-xs);
   }
 
   .analytics-action {

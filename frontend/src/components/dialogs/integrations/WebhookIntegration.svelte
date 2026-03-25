@@ -13,10 +13,9 @@
 
   interface Props {
     githubConnected: boolean;
-    githubToken?: string;
   }
 
-  let { githubConnected, githubToken }: Props = $props();
+  let { githubConnected }: Props = $props();
 
   let expanded = $state(false);
   let status = $state<WebhookStatus | null>(null);
@@ -110,9 +109,15 @@
     if (testResultTimer) clearTimeout(testResultTimer);
     try {
       const result = await pingWebhook();
-      testResult = result.ok ? 'success' : 'error';
+      if (result.ok) {
+        testResult = 'success';
+      } else if (result.error === 'no_webhook') {
+        testResult = 'no_webhook';
+      } else {
+        testResult = 'error';
+      }
     } catch {
-      testResult = 'no_webhook';
+      testResult = 'error';
     } finally {
       testing = false;
       testResultTimer = setTimeout(() => { testResult = null; }, 5000);
