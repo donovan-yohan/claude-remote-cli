@@ -1,5 +1,6 @@
 <script lang="ts">
   import { updateWorkspaceSettings, fetchBranches, fetchMergedWorkspaceSettings } from '../../lib/api.js';
+  import TuiButton from '../TuiButton.svelte';
   import TuiCheckbox from '../TuiCheckbox.svelte';
   import type { WorkspaceSettings, BranchInfo } from '../../lib/types.js';
 
@@ -343,21 +344,21 @@
     </div>
 
     <div class="dialog-footer">
-      <button class="btn btn-danger" onclick={handleRemove}>
+      <TuiButton variant="danger" onclick={handleRemove}>
         Remove Workspace
-      </button>
+      </TuiButton>
       <div class="footer-right">
         {#if overriddenKeys.some(k => ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'].includes(k))}
-          <button class="btn btn-ghost" onclick={handleResetSessionDefaults} disabled={saving}>
+          <TuiButton variant="ghost" onclick={handleResetSessionDefaults} disabled={saving}>
             Reset to Global
-          </button>
+          </TuiButton>
         {/if}
         {#if saveSuccess}
           <span class="save-success">Saved</span>
         {/if}
-        <button class="btn btn-primary" onclick={handleSave} disabled={saving}>
+        <TuiButton variant="primary" onclick={handleSave} disabled={saving}>
           {saving ? 'Saving\u2026' : 'Save'}
-        </button>
+        </TuiButton>
       </div>
     </div>
   </div>
@@ -617,53 +618,6 @@
   .save-success {
     font-size: var(--font-size-sm);
     color: var(--accent);
-  }
-
-  .btn {
-    padding: 7px 16px;
-    border-radius: 0;
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    border: 1px solid transparent;
-    font-weight: 500;
-    line-height: 1.4;
-  }
-
-  .btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .btn-primary {
-    background: transparent;
-    color: var(--accent);
-    border-color: var(--accent);
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-  }
-
-  .btn-danger {
-    background: transparent;
-    color: var(--status-error);
-    border-color: rgba(192, 57, 43, 0.4);
-  }
-
-  .btn-danger:hover {
-    background: rgba(192, 57, 43, 0.1);
-    border-color: var(--status-error);
-  }
-
-  .btn-ghost {
-    background: transparent;
-    color: var(--text-muted);
-    border-color: var(--border);
-  }
-
-  .btn-ghost:hover:not(:disabled) {
-    background: var(--border);
-    color: var(--text);
   }
 
   .override-badge {

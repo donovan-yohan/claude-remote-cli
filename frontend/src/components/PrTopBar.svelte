@@ -7,11 +7,11 @@
     derivePrAction,
     deriveSecondaryAction,
     getActionPrompt,
-    getStatusCssVar,
-    shouldUseDarkText,
   } from '../lib/pr-state.js';
-  import type { PrAction } from '../lib/pr-state.js';
+  import type { PrAction, StatusColor } from '../lib/pr-state.js';
   import type { PrInfo, CiStatus } from '../lib/types.js';
+  import CipherText from './CipherText.svelte';
+  import TuiButton from './TuiButton.svelte';
   import BranchSwitcher from './BranchSwitcher.svelte';
   import TargetBranchSwitcher from './TargetBranchSwitcher.svelte';
   import RenameWarningModal from './dialogs/RenameWarningModal.svelte';
@@ -89,9 +89,14 @@
   let prAction = $derived(derivePrAction(prStateInput));
   let secondaryAction = $derived(deriveSecondaryAction(prAction, prStateInput));
 
-  let actionColor = $derived(getStatusCssVar(prAction.color));
-  let actionDark = $derived(shouldUseDarkText(prAction.color));
   let showAction = $derived(prAction.type !== 'none');
+
+  function colorToVariant(color: StatusColor): 'primary' | 'ghost' | 'danger' | 'success' | 'info' {
+    if (color === 'success') return 'success';
+    if (color === 'error') return 'danger';
+    if (color === 'accent') return 'primary';
+    return 'ghost';
+  }
   let isRefreshing = $derived(prQuery.isFetching || ciQuery.isFetching);
 
   function handleRefresh() {
@@ -315,31 +320,30 @@
       </svg>
     </button>
     {#if prQuery.isLoading}
-      <span class="bar-loading">…</span>
+      <CipherText text="loading" loading={true} />
     {:else}
       {#if secondaryAction}
-        <button
-          class="action-btn action-btn--secondary"
+        <TuiButton
+          variant="ghost"
+          size="sm"
           data-track="pr-top-bar.secondary-action"
           onclick={() => handleActionClick(secondaryAction!)}
           aria-label={secondaryAction.label}
         >
           {secondaryAction.label}
-        </button>
+        </TuiButton>
       {/if}
       {#if showAction}
-        <button
-          class="action-btn"
-          style:--action-color={actionColor}
-          class:action-btn--dark-text={actionDark}
-          class:action-btn--disabled={prAction.type === 'checks-running'}
+        <TuiButton
+          variant={colorToVariant(prAction.color)}
+          size="sm"
           data-track="pr-top-bar.primary-action"
           onclick={() => handleActionClick()}
           disabled={prAction.type === 'checks-running'}
           aria-label={prAction.label}
         >
           {prAction.label}
-        </button>
+        </TuiButton>
       {/if}
     {/if}
   </div>
@@ -469,48 +473,6 @@
     to { transform: rotate(360deg); }
   }
 
-  .bar-loading {
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    padding: 0 4px;
-  }
-
-  .action-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 22px;
-    padding: 0 10px;
-    border-radius: 0;
-    border: 1px solid var(--action-color, var(--border));
-    background: transparent;
-    color: var(--action-color, var(--text-muted));
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: opacity 0.12s, filter 0.12s;
-    letter-spacing: 0.01em;
-  }
-
-  .action-btn:hover:not(:disabled) {
-    filter: brightness(1.15);
-  }
-
-  .action-btn:active:not(:disabled) {
-    filter: brightness(0.9);
-  }
-
-  .action-btn--dark-text {
-    color: var(--action-color, var(--text-muted));
-  }
-
-  .action-btn--disabled {
-    cursor: default;
-    opacity: 0.7;
-  }
-
   .bar-merged {
     background: color-mix(in srgb, var(--status-merged) 8%, var(--surface));
   }
@@ -531,13 +493,6 @@
 
   .diff-add { color: var(--status-success); }
   .diff-del { color: var(--status-error); }
-
-  .action-btn--secondary {
-    background: transparent !important;
-    border: 1px solid var(--border) !important;
-    color: var(--text-muted) !important;
-    margin-right: 6px;
-  }
 
   /* ── Rename ──────────────────────────── */
   .rename-input-wrap {

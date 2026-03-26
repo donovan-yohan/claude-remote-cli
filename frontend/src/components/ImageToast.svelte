@@ -1,5 +1,6 @@
 <script lang="ts">
   import { sendPtyData } from '../lib/ws.js';
+  import TuiButton from './TuiButton.svelte';
 
   let visible = $state(false);
   let text = $state('');
@@ -55,7 +56,7 @@
       <span class="image-toast-text">{text}</span>
       <div class="image-toast-actions">
         {#if showInsert}
-          <button class="image-toast-insert" onclick={handleInsert}>Insert</button>
+          <TuiButton variant="primary" size="sm" onclick={handleInsert}>Insert</TuiButton>
         {/if}
         <button class="image-toast-dismiss" onclick={handleDismiss} aria-label="Dismiss">
           &times;
@@ -101,20 +102,6 @@
     gap: 6px;
     align-items: center;
     flex-shrink: 0;
-  }
-
-  .image-toast-insert {
-    background: transparent;
-    color: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 0;
-    padding: 4px 10px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .image-toast-insert:active {
-    opacity: 0.8;
   }
 
   .image-toast-dismiss {

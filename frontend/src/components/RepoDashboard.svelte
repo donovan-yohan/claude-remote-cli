@@ -1,12 +1,13 @@
 <script lang="ts">
   import { createQuery } from '@tanstack/svelte-query';
   import { fetchDashboard } from '../lib/api.js';
-  import { derivePrAction, getStatusCssVar, shouldUseDarkText } from '../lib/pr-state.js';
+  import { derivePrAction } from '../lib/pr-state.js';
   import { formatRelativeTime } from '../lib/utils.js';
   import type { PullRequest, ActivityEntry, DashboardData } from '../lib/types.js';
   import DataTable from './DataTable.svelte';
   import type { Column } from './DataTable.svelte';
   import StatusDot from './StatusDot.svelte';
+  import TuiButton from './TuiButton.svelte';
   import { derivePrDotStatus } from '../lib/pr-status.js';
 
   let {
@@ -117,41 +118,40 @@
         </div>
       {:else}
         {#snippet prActionPills(pr: PullRequest, action: ReturnType<typeof prActionForRow>)}
-          {@const actionColor = getStatusCssVar(action.color)}
-          {@const darkText = shouldUseDarkText(action.color)}
           <button
             class="pr-session-btn"
             title="Open session on this branch"
             onclick={() => onOpenPrSession(pr)}
           >+</button>
           {#if pr.mergeable === 'CONFLICTING'}
-            <button
-              class="pr-action-pill pr-conflict-pill"
+            <TuiButton
+              variant="danger"
+              size="sm"
               title="Open worktree and fix merge conflicts"
               onclick={() => onFixConflicts(pr)}
             >
               Fix Conflicts
-            </button>
+            </TuiButton>
           {:else if pr.mergeable === 'MERGEABLE' && pr.state === 'OPEN'}
-            <a
-              class="pr-action-pill pr-merge-pill"
+            <TuiButton
+              variant="success"
+              size="sm"
               href={pr.url}
               target="_blank"
               rel="noopener noreferrer"
               title="Ready to merge on GitHub"
             >
               Merge
-            </a>
+            </TuiButton>
           {:else if action.type !== 'none' && action.label}
-            <button
-              class="pr-action-pill"
-              style:--pill-color={actionColor}
-              class:dark-text={darkText}
+            <TuiButton
+              variant={action.color === 'success' ? 'success' : action.color === 'error' ? 'danger' : action.color === 'accent' ? 'primary' : 'ghost'}
+              size="sm"
               title={action.label}
               onclick={() => onPrAction(pr)}
             >
               {action.label}
-            </button>
+            </TuiButton>
           {/if}
         {/snippet}
         <DataTable
@@ -263,11 +263,11 @@
 
   <!-- CTA buttons — always shown -->
   <div class="cta-row">
-    <button class="cta-btn" onclick={onNewSession}>+ Start Session</button>
+    <TuiButton variant="primary" onclick={onNewSession}>+ Start Session</TuiButton>
     {#if !data || data.isGitRepo}
-      <button class="cta-btn" onclick={onNewWorktree} disabled={creatingWorktree}>
+      <TuiButton variant="primary" onclick={onNewWorktree} disabled={creatingWorktree}>
         {creatingWorktree ? 'Creating...' : '+ New Worktree'}
-      </button>
+      </TuiButton>
     {/if}
   </div>
 </div>
@@ -425,16 +425,6 @@
     color: var(--accent);
   }
 
-  .pr-conflict-pill {
-    --pill-color: var(--status-error);
-    font-weight: 600;
-  }
-
-  .pr-merge-pill {
-    --pill-color: var(--status-success);
-    font-weight: 600;
-  }
-
   .pr-row-meta {
     display: flex;
     align-items: center;
@@ -453,34 +443,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  /* Action pill */
-  .pr-action-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    padding: 6px 12px;
-    min-height: 32px;
-    border-radius: 0;
-    border: 1px solid var(--pill-color, var(--border));
-    background: transparent;
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    color: var(--pill-color, var(--border));
-    text-decoration: none;
-    white-space: nowrap;
-    cursor: pointer;
-    transition: opacity 0.12s;
-  }
-
-  .pr-action-pill:hover {
-    opacity: 0.85;
-  }
-
-  .pr-action-pill.dark-text {
-    color: var(--pill-color, var(--border));
   }
 
   /* -- Mobile PR card -- */
@@ -568,32 +530,6 @@
     flex-shrink: 0;
   }
 
-  .cta-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 10px 18px;
-    min-height: 40px;
-    background: transparent;
-    border: 1px solid var(--accent);
-    border-radius: 0;
-    color: var(--accent);
-    font-size: var(--font-size-sm);
-    font-family: var(--font-mono);
-    cursor: pointer;
-    transition: background 0.12s, color 0.12s;
-    white-space: nowrap;
-  }
-
-  .cta-btn:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-  }
-
-  .cta-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   /* -- Skeletons (activity section only) -- */
   .skeleton {
     pointer-events: none;
@@ -608,16 +544,6 @@
   @media (max-width: 600px) {
     .repo-dashboard {
       padding: 14px;
-    }
-
-    .pr-action-pill {
-      padding: 5px 12px;
-      min-height: 32px;
-    }
-
-    .cta-btn {
-      flex: 1;
-      min-height: 44px;
     }
   }
 </style>

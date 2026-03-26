@@ -1,5 +1,6 @@
 <script lang="ts">
   import DialogShell from './DialogShell.svelte';
+  import TuiButton from '../TuiButton.svelte';
   import TuiCheckbox from '../TuiCheckbox.svelte';
   import SettingRow from './SettingRow.svelte';
   import SettingsToc from './SettingsToc.svelte';
@@ -358,9 +359,9 @@
           {#if analyticsSize !== null}
             <span class="analytics-size">{(analyticsSize / 1024 / 1024).toFixed(1)} MB</span>
           {/if}
-          <button class="btn btn-ghost btn-sm" onclick={handleClearAnalytics} disabled={clearing}>
+          <TuiButton variant="ghost" size="sm" onclick={handleClearAnalytics} disabled={clearing}>
             {clearing ? 'Clearing\u2026' : 'Clear'}
-          </button>
+          </TuiButton>
         </div>
       </SettingRow>
     </section>
@@ -371,9 +372,9 @@
 
       <SettingRow name="Version" description={currentVersion ? `v${currentVersion}` : ''}>
         {#if updateAvailable}
-          <button class="btn btn-primary btn-sm" onclick={handleUpdate} disabled={updating}>
+          <TuiButton variant="primary" size="sm" onclick={handleUpdate} disabled={updating}>
             {updating ? 'Updating\u2026' : `Update to v${latestVersion}`}
-          </button>
+          </TuiButton>
         {:else if versionChecked}
           <span class="version-ok">Up to date</span>
         {/if}

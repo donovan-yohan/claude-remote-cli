@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import CipherText from '../../CipherText.svelte';
   import StatusDot from '../../StatusDot.svelte';
+  import TuiButton from '../../TuiButton.svelte';
   import IntegrationRow from './IntegrationRow.svelte';
   import TuiCheckbox from '../../TuiCheckbox.svelte';
   import {
@@ -175,17 +176,18 @@
     {#if !githubConnected}
       <span class="status-hint">Connect GitHub first</span>
     {:else if !loading && status?.configured}
-      <button class="btn btn-ghost btn-sm" onclick={() => expanded = !expanded}>
+      <TuiButton variant="ghost" size="sm" onclick={() => expanded = !expanded}>
         Manage {expanded ? '▴' : '▾'}
-      </button>
+      </TuiButton>
     {:else if !loading}
-      <button
-        class="btn btn-primary btn-sm"
+      <TuiButton
+        variant="primary"
+        size="sm"
         onclick={(e) => { e.stopPropagation(); expanded = true; }}
         disabled={settingUp}
       >
         Setup
-      </button>
+      </TuiButton>
     {/if}
   {/snippet}
 
@@ -198,9 +200,9 @@
     {#if error}
       <p class="error-text">{error}</p>
     {/if}
-    <button class="btn btn-primary btn-sm" onclick={handleSetup} disabled={settingUp}>
+    <TuiButton variant="primary" size="sm" onclick={handleSetup} disabled={settingUp}>
       {settingUp ? 'Setting up...' : 'Setup Webhooks'}
-    </button>
+    </TuiButton>
   {:else}
     <div class="health-row">
       <StatusDot status={healthDotStatus} size={8} />
@@ -217,12 +219,12 @@
       <div class="backfill-banner">
         <p class="body-text">Create webhooks for all your existing repos?</p>
         <div class="action-row">
-          <button class="btn btn-primary btn-sm" onclick={handleBackfill} disabled={backfilling}>
+          <TuiButton variant="primary" size="sm" onclick={handleBackfill} disabled={backfilling}>
             {backfilling ? 'Setting up repos...' : 'Setup All Repos'}
-          </button>
-          <button class="btn btn-ghost btn-sm" onclick={() => showBackfillBanner = false}>
+          </TuiButton>
+          <TuiButton variant="ghost" size="sm" onclick={() => showBackfillBanner = false}>
             Skip
-          </button>
+          </TuiButton>
         </div>
       </div>
     {/if}
@@ -258,17 +260,17 @@
     </div>
     <div class="action-row">
       {#if showRemoveConfirm}
-        <button class="btn btn-ghost btn-sm" onclick={() => showRemoveConfirm = false}>Cancel</button>
-        <button class="btn btn-danger btn-sm" onclick={handleRemove} disabled={removing}>
+        <TuiButton variant="ghost" size="sm" onclick={() => showRemoveConfirm = false}>Cancel</TuiButton>
+        <TuiButton variant="danger" size="sm" onclick={handleRemove} disabled={removing}>
           {removing ? 'Removing...' : 'Remove'}
-        </button>
+        </TuiButton>
       {:else}
-        <button class="btn btn-ghost btn-sm" onclick={handleTest} disabled={testing}>
+        <TuiButton variant="ghost" size="sm" onclick={handleTest} disabled={testing}>
           {testing ? 'Testing...' : 'Test Connection'}
-        </button>
-        <button class="btn btn-danger btn-sm" onclick={() => showRemoveConfirm = true}>
+        </TuiButton>
+        <TuiButton variant="danger" size="sm" onclick={() => showRemoveConfirm = true}>
           Remove Setup
-        </button>
+        </TuiButton>
       {/if}
     </div>
     {#if testResult}

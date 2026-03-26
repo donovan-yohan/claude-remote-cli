@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getAuth, submitPin } from '../lib/state/auth.svelte.js';
+  import TuiButton from './TuiButton.svelte';
 
   const auth = getAuth();
   let pinValue = $state('');
@@ -31,7 +32,7 @@
       onkeydown={handleKeydown}
       autofocus
     />
-    <button onclick={handleSubmit}>Unlock</button>
+    <TuiButton variant="primary" onclick={handleSubmit}>Unlock</TuiButton>
     {#if auth.pinError}
       <p class="error">{auth.pinError}</p>
     {/if}
@@ -83,23 +84,6 @@
 
   input:focus {
     border-color: var(--accent);
-  }
-
-  button {
-    width: 100%;
-    padding: 14px;
-    background: transparent;
-    color: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 0;
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-
-  button:active {
-    opacity: 0.8;
   }
 
   .error {

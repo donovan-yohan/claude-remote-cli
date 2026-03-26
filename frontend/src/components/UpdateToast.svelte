@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import * as api from '../lib/api.js';
+  import TuiButton from './TuiButton.svelte';
 
   let visible = $state(false);
   let text = $state('');
@@ -58,13 +59,14 @@
       <span class="update-toast-text">{text}</span>
       {#if showActions}
         <div class="update-toast-actions">
-          <button
-            class="update-toast-btn"
+          <TuiButton
+            variant="primary"
+            size="sm"
             onclick={triggerUpdate}
             disabled={buttonDisabled}
           >
             {buttonText}
-          </button>
+          </TuiButton>
           <button class="update-toast-dismiss" onclick={dismiss} aria-label="Dismiss">
             &times;
           </button>
@@ -123,22 +125,6 @@
     display: flex;
     gap: 8px;
     flex-shrink: 0;
-  }
-
-  .update-toast-btn {
-    padding: 8px 14px;
-    border-radius: 0;
-    font-size: var(--font-size-sm);
-    border: 1px solid var(--accent);
-    background: transparent;
-    color: var(--accent);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .update-toast-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
   }
 
   .update-toast-dismiss {

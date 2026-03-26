@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { GitHubIssue, JiraIssue, AnyIssue, Workspace } from '../lib/types.js';
   import { createSession, ConflictError, fetchWorkspaces } from '../lib/api.js';
+  import TuiButton from './TuiButton.svelte';
 
   let {
     issue,
@@ -190,10 +191,10 @@
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick={onClose} disabled={loading}>Cancel</button>
-        <button class="btn btn-primary" onclick={handleStart} disabled={loading}>
+        <TuiButton variant="ghost" onclick={onClose} disabled={loading}>Cancel</TuiButton>
+        <TuiButton variant="primary" onclick={handleStart} disabled={loading}>
           {#if loading}Starting...{:else}Start Work{/if}
-        </button>
+        </TuiButton>
       </div>
     </div>
   </div>
@@ -321,40 +322,4 @@
     border-top: 1px solid var(--border);
   }
 
-  .btn {
-    padding: 7px 16px;
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    border-radius: 0;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
-    white-space: nowrap;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background: none;
-    color: var(--text-muted);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    color: var(--text);
-    border-color: var(--text-muted);
-  }
-
-  .btn-primary {
-    background: transparent;
-    color: var(--accent);
-    border-color: var(--accent);
-    font-weight: 600;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
 </style>

@@ -255,67 +255,6 @@
     flex-shrink: 0;
   }
 
-  /* ════════════════════════════════════════════════
-     Shared utility classes — available to consumers
-     via :global() or within this component
-  ════════════════════════════════════════════════ */
-
-  /* Button base */
-  :global(.dialog-shell .btn) {
-    padding: 7px 16px;
-    border-radius: 0;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    border: 1px solid var(--border);
-    transition: background 0.1s, color 0.1s;
-  }
-
-  :global(.dialog-shell .btn:disabled) {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* Primary — outline accent */
-  :global(.dialog-shell .btn-primary) {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: transparent;
-  }
-
-  :global(.dialog-shell .btn-primary:hover:not(:disabled)) {
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-  }
-
-  /* Ghost */
-  :global(.dialog-shell .btn-ghost) {
-    background: transparent;
-    color: var(--text-muted);
-    border-color: var(--border);
-  }
-
-  :global(.dialog-shell .btn-ghost:hover:not(:disabled)) {
-    background: var(--border);
-    color: var(--text);
-  }
-
-  /* Danger */
-  :global(.dialog-shell .btn-danger) {
-    color: var(--status-error);
-    border-color: var(--status-error);
-    background: transparent;
-  }
-
-  :global(.dialog-shell .btn-danger:hover:not(:disabled)) {
-    background: rgba(231, 76, 60, 0.1);
-  }
-
-  /* Small modifier */
-  :global(.dialog-shell .btn-sm) {
-    padding: 4px 10px;
-    font-size: var(--font-size-xs);
-  }
-
   :global(.dialog-shell .error-msg) {
     font-size: var(--font-size-sm);
     color: var(--status-error);

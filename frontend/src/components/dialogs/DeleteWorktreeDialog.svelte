@@ -3,6 +3,7 @@
   import { refreshAll, setLoading, clearLoading } from '../../lib/state/sessions.svelte.js';
   import type { WorktreeInfo } from '../../lib/types.js';
   import DialogShell from './DialogShell.svelte';
+  import TuiButton from '../TuiButton.svelte';
 
   let shellRef = $state<DialogShell | undefined>(undefined);
 
@@ -50,14 +51,14 @@
 >
   {#snippet footer()}
     <div class="footer-row">
-      <button class="btn btn-ghost" onclick={handleCancel} disabled={deleting}>Cancel</button>
-      <button
-        class="btn btn-danger"
+      <TuiButton variant="ghost" onclick={handleCancel} disabled={deleting}>Cancel</TuiButton>
+      <TuiButton
+        variant="danger"
         onclick={handleConfirm}
         disabled={deleting}
       >
         {deleting ? 'Deleting...' : 'Delete'}
-      </button>
+      </TuiButton>
     </div>
   {/snippet}
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import CipherText from '../../CipherText.svelte';
+  import TuiButton from '../../TuiButton.svelte';
   import IntegrationRow from './IntegrationRow.svelte';
   import { fetchGitHubStatus, initiateGitHubDevice, disconnectGitHub } from '../../../lib/api.js';
 
@@ -120,16 +121,17 @@
 <IntegrationRow name="GitHub" {statusText} connected={githubStatus?.connected ?? false} {loading} bind:expanded>
   {#snippet headerActions()}
     {#if githubStatus?.connected}
-      <button class="btn btn-ghost btn-sm" onclick={() => expanded = !expanded}>
+      <TuiButton variant="ghost" size="sm" onclick={() => expanded = !expanded}>
         Manage {expanded ? '▴' : '▾'}
-      </button>
+      </TuiButton>
     {:else if !loading}
-      <button
-        class="btn btn-primary btn-sm"
+      <TuiButton
+        variant="primary"
+        size="sm"
         onclick={(e) => { e.stopPropagation(); expanded = true; connectGitHub(); }}
       >
         Connect
-      </button>
+      </TuiButton>
     {/if}
   {/snippet}
 
@@ -137,7 +139,7 @@
     <CipherText loading={true} text="Checking connection..." />
   {:else if needsReauth}
     <p class="reauth-warning">Re-connect to enable webhook management</p>
-    <button class="btn btn-primary btn-sm" onclick={connectGitHub}>Re-connect GitHub</button>
+    <TuiButton variant="primary" size="sm" onclick={connectGitHub}>Re-connect GitHub</TuiButton>
   {:else if githubStatus?.connected}
     <p class="body-text">Connected as <strong>@{githubStatus.username ?? 'GitHub'}</strong></p>
     {#if showDisconnectConfirm}
@@ -147,23 +149,23 @@
           : 'Disconnect your GitHub account. Continue?'}
       </p>
       <div class="action-row">
-        <button class="btn btn-ghost btn-sm" onclick={() => (showDisconnectConfirm = false)}>
+        <TuiButton variant="ghost" size="sm" onclick={() => (showDisconnectConfirm = false)}>
           Cancel
-        </button>
-        <button class="btn btn-danger btn-sm" onclick={handleDisconnect} disabled={disconnecting}>
+        </TuiButton>
+        <TuiButton variant="danger" size="sm" onclick={handleDisconnect} disabled={disconnecting}>
           {disconnecting ? 'Disconnecting...' : 'Disconnect'}
-        </button>
+        </TuiButton>
       </div>
     {:else}
-      <button class="btn btn-danger btn-sm" onclick={() => (showDisconnectConfirm = true)}>
+      <TuiButton variant="danger" size="sm" onclick={() => (showDisconnectConfirm = true)}>
         Disconnect
-      </button>
+      </TuiButton>
     {/if}
   {:else if deviceCode}
     <div class="device-flow">
       <div class="code-row">
         <span class="body-text">Enter code: <strong class="user-code">{deviceCode.userCode}</strong></span>
-        <button class="btn btn-ghost btn-sm" onclick={copyCode}>Copy</button>
+        <TuiButton variant="ghost" size="sm" onclick={copyCode}>Copy</TuiButton>
       </div>
       <p class="body-text">
         at <a href={deviceCode.verificationUri} target="_blank" rel="noopener noreferrer"
@@ -174,12 +176,12 @@
     </div>
   {:else if deviceFlowError}
     <p class="error-text">{deviceFlowError}</p>
-    <button class="btn btn-primary btn-sm" onclick={connectGitHub}>Try Again</button>
+    <TuiButton variant="primary" size="sm" onclick={connectGitHub}>Try Again</TuiButton>
   {:else}
     <p class="body-text body-text--muted">
       Connect your GitHub account to enable PRs, CI status, and webhook management.
     </p>
-    <button class="btn btn-primary btn-sm" onclick={connectGitHub}>Connect GitHub</button>
+    <TuiButton variant="primary" size="sm" onclick={connectGitHub}>Connect GitHub</TuiButton>
   {/if}
 </IntegrationRow>
 

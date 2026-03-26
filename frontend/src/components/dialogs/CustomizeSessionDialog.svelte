@@ -5,6 +5,7 @@
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
   import type { AgentType, Workspace } from '../../lib/types.js';
   import DialogShell from './DialogShell.svelte';
+  import TuiButton from '../TuiButton.svelte';
   import TuiCheckbox from '../TuiCheckbox.svelte';
 
   let {
@@ -101,15 +102,15 @@
 >
   {#snippet footer()}
     <div class="footer-row">
-      <button class="btn btn-ghost" onclick={() => shellRef?.close()} disabled={creating}>Cancel</button>
-      <button
-        class="btn btn-primary"
+      <TuiButton variant="ghost" onclick={() => shellRef?.close()} disabled={creating}>Cancel</TuiButton>
+      <TuiButton
+        variant="primary"
         data-track="dialog.customize-session.create"
         onclick={handleSubmit}
         disabled={!workspacePath || creating}
       >
         {creating ? 'Creating...' : 'Start Session'}
-      </button>
+      </TuiButton>
     </div>
   {/snippet}
 

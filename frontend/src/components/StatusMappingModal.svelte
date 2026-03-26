@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fetchJiraStatuses } from '../lib/api.js';
   import type { JiraStatus } from '../lib/types.js';
+  import TuiButton from './TuiButton.svelte';
 
   let {
     provider,
@@ -105,8 +106,8 @@
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick={onClose}>Cancel</button>
-        <button class="btn btn-primary" onclick={handleSave} disabled={loading}>Save</button>
+        <TuiButton variant="ghost" onclick={onClose}>Cancel</TuiButton>
+        <TuiButton variant="primary" onclick={handleSave} disabled={loading}>Save</TuiButton>
       </div>
     </div>
   </div>
@@ -229,40 +230,4 @@
     border-top: 1px solid var(--border);
   }
 
-  .btn {
-    padding: 7px 16px;
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    border-radius: 0;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
-    white-space: nowrap;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background: none;
-    color: var(--text-muted);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    color: var(--text);
-    border-color: var(--text-muted);
-  }
-
-  .btn-primary {
-    background: transparent;
-    color: var(--accent);
-    border-color: var(--accent);
-    font-weight: 600;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
 </style>

@@ -14,6 +14,7 @@
   import { fetchOrgPrs } from '../lib/api.js';
   import { createQuery } from '@tanstack/svelte-query';
   import { dndzone } from 'svelte-dnd-action';
+  import TuiButton from './TuiButton.svelte';
   import WorkspaceItem from './WorkspaceItem.svelte';
 
   const ui = getUi();
@@ -224,9 +225,9 @@
     </div>
 
     <div class="sidebar-footer-row">
-      <button class="add-workspace-btn" data-track="sidebar.add-workspace" onclick={onAddWorkspace}>
+      <TuiButton variant="primary" data-track="sidebar.add-workspace" onclick={onAddWorkspace}>
         + Add Workspace
-      </button>
+      </TuiButton>
       <button class="settings-icon-btn" data-track="sidebar.settings" onclick={() => onOpenSettings()} aria-label="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1-1.51V15H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -357,30 +358,6 @@
     margin: 8px;
     align-items: stretch;
     flex-shrink: 0;
-  }
-
-  .add-workspace-btn {
-    flex: 1;
-    padding: 10px 12px;
-    min-height: 40px;
-    background: none;
-    border: 1px solid var(--accent);
-    border-radius: 0;
-    color: var(--accent);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    cursor: pointer;
-    touch-action: manipulation;
-    text-align: center;
-    transition: background 0.1s;
-  }
-
-  .add-workspace-btn:hover {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-  }
-
-  .add-workspace-btn:active {
-    background: var(--border);
   }
 
   .settings-icon-btn {
