@@ -2,6 +2,7 @@
   import { createQuery } from '@tanstack/svelte-query';
   import { fetchBranches, switchBranch } from '../lib/api.js';
   import type { BranchInfo } from '../lib/types.js';
+  import CipherText from './CipherText.svelte';
 
   let {
     workspacePath,
@@ -160,7 +161,7 @@
       {/if}
 
       {#if branchQuery.isLoading}
-        <div class="branch-loading">Loading...</div>
+        <div class="branch-loading"><CipherText loading={true} text="Fetching branches..." /></div>
       {:else if filteredBranches.length === 0 && !showCreateOption}
         <div class="branch-empty">No branches match</div>
       {:else}

@@ -92,13 +92,3 @@ html, body {
   border-radius: 0;
 }
 
-/* Shared skeleton loading animation */
-@keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
-}
-.skeleton-line {
-  background: var(--border);
-  border-radius: 0;
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
-}

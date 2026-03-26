@@ -84,7 +84,7 @@
         <span class="ticket-sep">·</span>
         <span class="branch-chip">
           {#if hasActiveSession}
-            <span class="dot dot-active dot-inline"></span>
+            <StatusDot status="running" size={6} />
           {/if}
           {linkedBranch.branchName}
         </span>
@@ -258,22 +258,6 @@
     color: var(--text-muted);
     opacity: 0.8;
   }
-
-  /* Active session dot in branch chip */
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    display: inline-block;
-  }
-
-  .dot-inline {
-    width: 6px;
-    height: 6px;
-  }
-
-  .dot-active { background: var(--accent); }
 
   .ticket-actions {
     display: flex;

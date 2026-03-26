@@ -4,6 +4,8 @@
   import { formatRelativeTime } from '../lib/utils.js';
   import { scrollOnHover } from '../lib/actions.js';
   import ContextMenu from './ContextMenu.svelte';
+  import CipherText from './CipherText.svelte';
+  import StatusDot from './StatusDot.svelte';
 
   type ActiveVariant = {
     kind: 'active';
@@ -61,10 +63,10 @@
     }
   });
 
-  let statusDotClass = $derived(
+  let displayState = $derived<'running' | 'idle' | 'attention' | 'disconnected'>(
     variant.kind === 'active'
-      ? 'status-dot status-dot--' + variant.status
-      : 'status-dot status-dot--inactive',
+      ? variant.status
+      : 'disconnected',
   );
 
   let isSelected = $derived(variant.kind === 'active' && variant.isSelected);
@@ -102,9 +104,9 @@
 >
   <div class="session-info">
     <div class="session-row-1">
-      <span class={statusDotClass}></span>
+      <span class="status-dot-wrap"><StatusDot status={displayState} size={8} /></span>
       <span class="session-name" use:scrollOnHover>
-        <span class="session-name-text">{displayName}</span>
+        <span class="session-name-text"><CipherText text={displayName} loading={isLoading} /></span>
       </span>
     </div>
     <div class="session-row-2">
@@ -186,28 +188,6 @@
     opacity: 0.5;
   }
 
-  li.loading::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: 0;
-    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.04) 50%, transparent 100%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s ease-in-out infinite;
-    pointer-events: none;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    li.loading::after {
-      animation: none;
-    }
-  }
-
-  @keyframes shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-
   .session-info {
     display: flex;
     flex-direction: column;
@@ -223,32 +203,11 @@
     min-width: 0;
   }
 
-  .status-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+  .status-dot-wrap {
+    display: inline-flex;
+    align-items: center;
     flex-shrink: 0;
     margin-right: 8px;
-  }
-
-  .status-dot--running { background: #4ade80; }
-  .status-dot--idle { background: #60a5fa; }
-  .status-dot--attention {
-    background: #f59e0b;
-    box-shadow: 0 0 6px 2px rgba(245, 158, 11, 0.5);
-    animation: attention-glow 2s ease-in-out infinite;
-  }
-  .status-dot--permission-prompt {
-    background: #eab308;
-    box-shadow: 0 0 6px 2px rgba(234, 179, 8, 0.5);
-    animation: attention-glow 1.5s ease-in-out infinite;
-  }
-  .status-dot--inactive { background: transparent; border: 1.5px solid var(--border); }
-
-  @keyframes attention-glow {
-    0%, 100% { box-shadow: 0 0 4px 1px rgba(245, 158, 11, 0.3); }
-    50% { box-shadow: 0 0 8px 3px rgba(245, 158, 11, 0.6); }
   }
 
   .session-name {
