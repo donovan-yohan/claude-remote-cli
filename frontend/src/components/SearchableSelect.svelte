@@ -118,9 +118,9 @@
     padding: 6px 8px;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 0;
     color: var(--text);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
     text-align: left;
     transition: border-color 0.15s;
@@ -153,9 +153,9 @@
     padding: 6px 8px;
     background: var(--bg);
     border: 1px solid var(--accent);
-    border-radius: 6px;
+    border-radius: 0;
     color: var(--text);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     outline: none;
     box-sizing: border-box;
   }
@@ -167,7 +167,7 @@
     right: 0;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 0;
     list-style: none;
     margin: 0;
     padding: 4px 0;
@@ -178,7 +178,7 @@
 
   .ss-option {
     padding: 6px 10px;
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     cursor: pointer;
     overflow: hidden;
     text-overflow: ellipsis;

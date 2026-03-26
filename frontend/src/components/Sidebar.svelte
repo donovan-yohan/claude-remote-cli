@@ -163,7 +163,7 @@
         }}
       >Relay</span>
     {/if}
-    <button class="icon-btn" aria-label="Close sidebar" onclick={closeSidebar}>✕</button>
+    <button class="icon-btn" aria-label="Close sidebar" onclick={closeSidebar}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
   </div>
 
   {#if !ui.sidebarCollapsed}
@@ -228,7 +228,7 @@
         + Add Workspace
       </button>
       <button class="settings-icon-btn" data-track="sidebar.settings" onclick={() => onOpenSettings()} aria-label="Settings">
-        ⚙
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1-1.51V15H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
     </div>
 
@@ -294,10 +294,10 @@
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1.1rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
     padding: 8px 10px;
-    border-radius: 4px;
+    border-radius: 0;
     flex-shrink: 0;
     line-height: 1;
     font-family: var(--font-mono);
@@ -322,10 +322,10 @@
     background: none;
     border: none;
     color: var(--text);
-    font-size: 1.2rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
     padding: 4px 6px;
-    border-radius: 4px;
+    border-radius: 0;
     touch-action: manipulation;
     display: none; /* shown on mobile only */
   }
@@ -390,7 +390,7 @@
     border: 1px solid var(--border);
     border-radius: 0;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
     touch-action: manipulation;
     display: flex;
@@ -433,7 +433,7 @@
 
     .icon-btn {
       display: block;
-      font-size: 1.4rem;
+      font-size: var(--font-size-lg);
       padding: 4px 8px;
     }
 

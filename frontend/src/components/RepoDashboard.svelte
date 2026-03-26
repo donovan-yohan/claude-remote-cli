@@ -108,7 +108,7 @@
   {:else}
     <!-- OPEN PULL REQUESTS section -->
     <section class="dashboard-section dashboard-section--scroll">
-      <div class="section-heading">OPEN PULL REQUESTS</div>
+      <div class="section-heading">open pull requests</div>
 
       {#if data && !data.hasGhCli}
         <div class="section-message info">
@@ -228,7 +228,7 @@
 
     <!-- RECENT ACTIVITY section -->
     <section class="dashboard-section dashboard-section--scroll">
-      <div class="section-heading">RECENT ACTIVITY</div>
+      <div class="section-heading">recent activity</div>
 
       {#if isLoading}
         <div class="scroll-container">
@@ -327,7 +327,6 @@
   .section-heading {
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
-    text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-muted);
     padding-bottom: 6px;
@@ -409,7 +408,7 @@
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 50%;
+    border-radius: 0;
     border: 1px solid var(--border);
     background: transparent;
     color: var(--text-muted);
@@ -433,7 +432,6 @@
 
   .pr-merge-pill {
     --pill-color: var(--status-success);
-    color: #1a1a1a;
     font-weight: 600;
   }
 
@@ -465,12 +463,12 @@
     flex-shrink: 0;
     padding: 6px 12px;
     min-height: 32px;
-    border-radius: 20px;
-    border: none;
-    background: var(--pill-color, var(--border));
+    border-radius: 0;
+    border: 1px solid var(--pill-color, var(--border));
+    background: transparent;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
-    color: #fff;
+    color: var(--pill-color, var(--border));
     text-decoration: none;
     white-space: nowrap;
     cursor: pointer;
@@ -482,7 +480,7 @@
   }
 
   .pr-action-pill.dark-text {
-    color: #1a1a1a;
+    color: var(--pill-color, var(--border));
   }
 
   /* -- Mobile PR card -- */
@@ -578,7 +576,7 @@
     min-height: 40px;
     background: transparent;
     border: 1px solid var(--accent);
-    border-radius: 4px;
+    border-radius: 0;
     color: var(--accent);
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);

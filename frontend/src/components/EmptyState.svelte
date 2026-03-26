@@ -74,7 +74,7 @@
     min-height: 40px;
     background: transparent;
     border: 1px solid var(--accent);
-    border-radius: 4px;
+    border-radius: 0;
     color: var(--accent);
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);

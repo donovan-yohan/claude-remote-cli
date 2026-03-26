@@ -216,7 +216,6 @@
     margin-bottom: -1px;
     transition: color 0.12s, border-color 0.12s;
     white-space: nowrap;
-    text-transform: uppercase;
     letter-spacing: 0.06em;
   }
 
@@ -241,7 +240,6 @@
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     font-weight: 700;
-    text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-muted);
   }

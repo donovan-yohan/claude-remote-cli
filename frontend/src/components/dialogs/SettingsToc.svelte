@@ -90,7 +90,7 @@
   aria-label="Settings navigation"
 >
   <div class="toc-header">
-    <span class="toc-title">CONTENTS</span>
+    <span class="toc-title">contents</span>
   </div>
 
   <div class="toc-items">

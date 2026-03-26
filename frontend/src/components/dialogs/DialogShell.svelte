@@ -81,7 +81,7 @@
         onclick={() => dialogEl?.close()}
         aria-label="Close"
         type="button"
-      >✕</button>
+      ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </header>
 
     <div class="dialog-shell__body" class:scrolled-bottom={scrolledBottom} onscroll={onBodyScroll}>
@@ -191,7 +191,7 @@
   }
 
   .dialog-shell__title {
-    font-size: 1.05rem;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     margin: 0;
     flex-shrink: 0;
@@ -207,7 +207,7 @@
     border: none;
     border-radius: 0;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     font-family: var(--font-mono);
     cursor: pointer;
     padding: 4px 6px;
@@ -314,15 +314,6 @@
   :global(.dialog-shell .btn-sm) {
     padding: 4px 10px;
     font-size: var(--font-size-xs);
-  }
-
-  /* Shared form elements */
-  :global(.dialog-shell .dialog-checkbox) {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--accent);
-    cursor: pointer;
-    flex-shrink: 0;
   }
 
   :global(.dialog-shell .error-msg) {

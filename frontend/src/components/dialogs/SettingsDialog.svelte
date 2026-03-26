@@ -1,5 +1,6 @@
 <script lang="ts">
   import DialogShell from './DialogShell.svelte';
+  import TuiCheckbox from '../TuiCheckbox.svelte';
   import SettingRow from './SettingRow.svelte';
   import SettingsToc from './SettingsToc.svelte';
   import GitHubIntegration from './integrations/GitHubIntegration.svelte';
@@ -269,7 +270,7 @@
   </div>
 {/snippet}
 
-<DialogShell bind:this={shellRef} title="SETTINGS" variant="fullscreen" header-extra={headerExtra}>
+<DialogShell bind:this={shellRef} title="settings" variant="fullscreen" header-extra={headerExtra}>
   <div class="settings-content" bind:this={contentEl}>
     {#if error}
       <p class="error-msg">{error}</p>
@@ -281,20 +282,20 @@
       onclose={() => tocOpen = false}
       {contentEl}
       sections={[
-        { id: 'section-general', label: 'GENERAL' },
-        { id: 'section-integrations', label: 'INTEGRATIONS', children: [
+        { id: 'section-general', label: 'general' },
+        { id: 'section-integrations', label: 'integrations', children: [
           { id: 'integration-github', label: 'GitHub' },
           { id: 'integration-webhooks', label: 'Webhooks' },
           { id: 'integration-jira', label: 'Jira' },
         ]},
-        { id: 'section-advanced', label: 'ADVANCED' },
-        { id: 'section-about', label: 'ABOUT' },
+        { id: 'section-advanced', label: 'advanced' },
+        { id: 'section-about', label: 'about' },
       ]}
     />
 
     <!-- GENERAL section -->
     <section id="section-general" class="settings-section" class:dimmed={!matchesSearch('general')}>
-      <h3 class="section-heading">GENERAL</h3>
+      <h3 class="section-heading">general</h3>
 
       <SettingRow name="Default Coding Agent" description="Which AI agent to use for new sessions">
         <select bind:value={config.defaultAgent} onchange={handleAgentChange}>
@@ -304,15 +305,15 @@
       </SettingRow>
 
       <SettingRow name="Continue existing session" description="Resume the last session when opening a repo">
-        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultContinue} onchange={handleContinueChange} />
+        <TuiCheckbox bind:checked={config.defaultContinue} onchange={handleContinueChange} />
       </SettingRow>
 
       <SettingRow name="YOLO mode" description="Skip permission checks for all sessions">
-        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultYolo} onchange={handleYoloChange} />
+        <TuiCheckbox bind:checked={config.defaultYolo} onchange={handleYoloChange} />
       </SettingRow>
 
       <SettingRow name="Launch in tmux" description="Wrap sessions in tmux for scroll and copy">
-        <input type="checkbox" class="dialog-checkbox" bind:checked={config.launchInTmux} onchange={handleTmuxChange} />
+        <TuiCheckbox bind:checked={config.launchInTmux} onchange={handleTmuxChange} />
       </SettingRow>
 
       <SettingRow name="Notifications" description={
@@ -320,14 +321,14 @@
         : notificationPermission === 'unsupported' ? 'Not supported in this browser'
         : 'Notify when sessions need attention'
       }>
-        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultNotifications} onchange={handleNotificationsChange}
+        <TuiCheckbox bind:checked={config.defaultNotifications} onchange={handleNotificationsChange}
           disabled={(notificationPermission === 'denied' || notificationPermission === 'unsupported') && !config.defaultNotifications} />
       </SettingRow>
     </section>
 
     <!-- INTEGRATIONS section -->
     <section id="section-integrations" class="settings-section" class:dimmed={!matchesSearch('integrations')}>
-      <h3 class="section-heading">INTEGRATIONS</h3>
+      <h3 class="section-heading">integrations</h3>
       <div id="integration-github">
         <GitHubIntegration
           onDisconnect={handleGitHubDisconnect}
@@ -346,10 +347,10 @@
 
     <!-- ADVANCED section -->
     <section id="section-advanced" class="settings-section" class:dimmed={!matchesSearch('advanced')}>
-      <h3 class="section-heading">ADVANCED</h3>
+      <h3 class="section-heading">advanced</h3>
 
       <SettingRow name="Developer Tools" description="Mobile debug panel">
-        <input type="checkbox" class="dialog-checkbox" bind:checked={devtoolsEnabled} onchange={handleDevtoolsChange} />
+        <TuiCheckbox bind:checked={devtoolsEnabled} onchange={handleDevtoolsChange} />
       </SettingRow>
 
       <SettingRow name="Analytics" description="Local usage data">
@@ -366,7 +367,7 @@
 
     <!-- ABOUT section -->
     <section id="section-about" class="settings-section" class:dimmed={!matchesSearch('about')}>
-      <h3 class="section-heading">ABOUT</h3>
+      <h3 class="section-heading">about</h3>
 
       <SettingRow name="Version" description={currentVersion ? `v${currentVersion}` : ''}>
         {#if updateAvailable}
@@ -414,7 +415,6 @@
   .section-heading {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 0.08em;
     margin: 0 0 12px;
     padding-bottom: 8px;
@@ -447,7 +447,7 @@
     border: 1px solid var(--border);
     border-radius: 0;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
     padding: 4px 8px;
     line-height: 1;

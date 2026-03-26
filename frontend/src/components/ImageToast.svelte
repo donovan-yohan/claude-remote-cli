@@ -74,7 +74,7 @@
     z-index: 1000;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0;
     padding: 8px 14px;
     color: var(--text);
     font-size: 13px;
@@ -104,10 +104,10 @@
   }
 
   .image-toast-insert {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 4px;
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 0;
     padding: 4px 10px;
     font-size: 12px;
     cursor: pointer;

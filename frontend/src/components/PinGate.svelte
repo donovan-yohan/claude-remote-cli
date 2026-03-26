@@ -59,13 +59,13 @@
   }
 
   .pin-container h1 {
-    font-size: 1.5rem;
+    font-size: var(--font-size-lg);
     color: var(--text);
   }
 
   .pin-container p {
     color: var(--text-muted);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
   }
 
   input {
@@ -73,9 +73,9 @@
     padding: 14px 16px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0;
     color: var(--text);
-    font-size: 1.2rem;
+    font-size: var(--font-size-lg);
     text-align: center;
     outline: none;
     -webkit-appearance: none;
@@ -88,11 +88,11 @@
   button {
     width: 100%;
     padding: 14px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: 1rem;
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 0;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     cursor: pointer;
     touch-action: manipulation;
@@ -104,6 +104,6 @@
 
   .error {
     color: var(--accent);
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
   }
 </style>

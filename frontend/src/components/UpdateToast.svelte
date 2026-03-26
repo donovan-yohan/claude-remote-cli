@@ -106,7 +106,7 @@
     gap: 12px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 0;
     padding: 12px 16px;
     max-width: 500px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
@@ -115,7 +115,7 @@
 
   .update-toast-text {
     flex: 1;
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     color: var(--text);
   }
 
@@ -127,11 +127,11 @@
 
   .update-toast-btn {
     padding: 8px 14px;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    border: none;
-    background: var(--accent);
-    color: #fff;
+    border-radius: 0;
+    font-size: var(--font-size-sm);
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
     cursor: pointer;
     white-space: nowrap;
   }
@@ -145,7 +145,7 @@
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1.2rem;
+    font-size: var(--font-size-lg);
     padding: 4px 6px;
     cursor: pointer;
   }

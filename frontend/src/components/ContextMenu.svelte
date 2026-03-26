@@ -133,11 +133,11 @@
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     font-weight: 700;
     cursor: pointer;
     padding: 0 6px;
-    border-radius: 4px;
+    border-radius: 0;
     touch-action: manipulation;
     flex-shrink: 0;
     line-height: 1;
@@ -166,7 +166,7 @@
     padding: 4px 0;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     z-index: 1000;
     min-width: 175px;
@@ -174,7 +174,7 @@
 
   .context-menu-item {
     padding: 9px 14px;
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     color: var(--text);
     white-space: nowrap;

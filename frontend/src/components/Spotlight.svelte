@@ -64,7 +64,7 @@
   const commands = [
     { id: 'new-worktree', label: 'New worktree', icon: '+' },
     { id: 'new-agent', label: 'New agent session', icon: '+' },
-    { id: 'settings', label: 'Settings', icon: '⚙' },
+    { id: 'settings', label: 'Settings', icon: '>' },
   ];
 
   // "Needs Attention" — PRs with changes requested or awaiting review
@@ -249,17 +249,17 @@
     const groups: ResultGroup[] = [];
     const typeOrder: Array<{ type: SpotlightResult['type']; label: string }> = q
       ? [
-          { type: 'workspace', label: 'WORKSPACES' },
-          { type: 'session', label: 'SESSIONS' },
-          { type: 'pr', label: 'PULL REQUESTS' },
-          { type: 'ticket', label: 'TICKETS' },
-          { type: 'command', label: 'COMMANDS' },
-          { type: 'setting', label: 'SETTINGS' },
+          { type: 'workspace', label: 'workspaces' },
+          { type: 'session', label: 'sessions' },
+          { type: 'pr', label: 'pull requests' },
+          { type: 'ticket', label: 'tickets' },
+          { type: 'command', label: 'commands' },
+          { type: 'setting', label: 'settings' },
         ]
       : [
-          { type: 'attention', label: 'NEEDS ATTENTION' },
-          { type: 'workspace', label: 'WORKSPACES' },
-          { type: 'command', label: 'COMMANDS' },
+          { type: 'attention', label: 'needs attention' },
+          { type: 'workspace', label: 'workspaces' },
+          { type: 'command', label: 'commands' },
         ];
 
     for (const { type, label } of typeOrder) {
@@ -370,7 +370,7 @@
       case 'pr': case 'attention': return '●';
       case 'ticket': return '◆';
       case 'command': return '>';
-      case 'setting': return '⚙';
+      case 'setting': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1-1.51V15H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
       default: return '';
     }
   }
@@ -431,7 +431,7 @@
                 {#if item.type === 'attention' || item.type === 'pr'}
                   <StatusDot status={derivePrDotStatus(item.data)} size={7} />
                 {:else}
-                  <span class="item-icon">{categoryIcon(item.type)}</span>
+                  <span class="item-icon">{@html categoryIcon(item.type)}</span>
                 {/if}
                 <span class="item-label">{item.label}</span>
                 {#if item.sublabel}
@@ -520,7 +520,6 @@
     font-family: var(--font-mono);
     font-weight: 600;
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 0.08em;
     user-select: none;
   }

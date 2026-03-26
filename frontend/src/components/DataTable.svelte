@@ -341,7 +341,7 @@
 
   .sort-indicator {
     color: var(--accent);
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
   }
 
   /* --- Scroll wrapper (positioned parent for gradient) --- */
@@ -474,7 +474,7 @@
   }
 
   .group-chevron {
-    font-size: 0.6rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     transition: transform 0.15s;
     display: inline-block;
@@ -491,16 +491,15 @@
   .group-label {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 0.06em;
   }
 
   .group-count {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     background: var(--border);
     padding: 1px 5px;
-    border-radius: 3px;
+    border-radius: 0;
     opacity: 0.8;
   }
 

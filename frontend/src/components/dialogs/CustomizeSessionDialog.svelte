@@ -5,6 +5,7 @@
   import { getConfigState, refreshConfig } from '../../lib/state/config.svelte.js';
   import type { AgentType, Workspace } from '../../lib/types.js';
   import DialogShell from './DialogShell.svelte';
+  import TuiCheckbox from '../TuiCheckbox.svelte';
 
   let {
     onSessionCreated,
@@ -132,37 +133,13 @@
     </div>
 
     <!-- Continue existing -->
-    <div class="dialog-field dialog-field--inline">
-      <input
-        id="cs-continue"
-        type="checkbox"
-        class="dialog-checkbox"
-        bind:checked={continueExisting}
-      />
-      <label for="cs-continue" class="dialog-label-inline">Continue existing session</label>
-    </div>
+    <TuiCheckbox bind:checked={continueExisting}>Continue existing session</TuiCheckbox>
 
     <!-- Yolo mode -->
-    <div class="dialog-field dialog-field--inline">
-      <input
-        id="cs-yolo"
-        type="checkbox"
-        class="dialog-checkbox"
-        bind:checked={yoloMode}
-      />
-      <label for="cs-yolo" class="dialog-label-inline">Yolo mode (skip permission checks)</label>
-    </div>
+    <TuiCheckbox bind:checked={yoloMode}>Yolo mode (skip permission checks)</TuiCheckbox>
 
     <!-- Launch in tmux -->
-    <div class="dialog-field dialog-field--inline">
-      <input
-        id="cs-tmux"
-        type="checkbox"
-        class="dialog-checkbox"
-        bind:checked={useTmux}
-      />
-      <label for="cs-tmux" class="dialog-label-inline">Launch in tmux</label>
-    </div>
+    <TuiCheckbox bind:checked={useTmux}>Launch in tmux</TuiCheckbox>
 
     <!-- Extra args -->
     <div class="dialog-field">
@@ -189,7 +166,7 @@
   .workspace-name {
     font-weight: 400;
     color: var(--text-muted);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     margin: 0 0 4px;
   }
 
@@ -212,12 +189,12 @@
   }
 
   .dialog-label {
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
   .dialog-label-inline {
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
     cursor: pointer;
   }
 
@@ -227,7 +204,7 @@
     border: 1px solid var(--border);
     border-radius: 0;
     color: var(--text);
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
     font-family: var(--font-mono);
     padding: 7px 10px;
     width: 100%;

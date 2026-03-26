@@ -2,6 +2,7 @@
   import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { fetchAutomations, updateAutomations } from '../lib/api.js';
   import type { AutomationSettings } from '../lib/types.js';
+  import TuiCheckbox from './TuiCheckbox.svelte';
 
   const queryClient = useQueryClient();
 
@@ -51,33 +52,31 @@
     </div>
   {:else}
     <div class="toggle-list">
-      <label class="toggle-row">
-        <input
-          type="checkbox"
-          class="toggle-checkbox"
+      <div class="toggle-row">
+        <TuiCheckbox
           checked={settings.autoCheckoutReviewRequests ?? false}
           onchange={toggleAutoCheckout}
           disabled={mutation.isPending}
-        />
-        <div class="toggle-info">
-          <span class="toggle-label">Auto-checkout review requests</span>
-          <span class="toggle-desc">Create a worktree when you're requested as a PR reviewer</span>
-        </div>
-      </label>
+        >
+          <div class="toggle-info">
+            <span class="toggle-label">Auto-checkout review requests</span>
+            <span class="toggle-desc">Create a worktree when you're requested as a PR reviewer</span>
+          </div>
+        </TuiCheckbox>
+      </div>
 
-      <label class="toggle-row" class:toggle-row--disabled={!settings.autoCheckoutReviewRequests}>
-        <input
-          type="checkbox"
-          class="toggle-checkbox"
+      <div class="toggle-row" class:toggle-row--disabled={!settings.autoCheckoutReviewRequests}>
+        <TuiCheckbox
           checked={settings.autoReviewOnCheckout ?? false}
           onchange={toggleAutoReview}
           disabled={!settings.autoCheckoutReviewRequests || mutation.isPending}
-        />
-        <div class="toggle-info">
-          <span class="toggle-label">Auto-review on checkout</span>
-          <span class="toggle-desc">Run your code review prompt when a review worktree is created</span>
-        </div>
-      </label>
+        >
+          <div class="toggle-info">
+            <span class="toggle-label">Auto-review on checkout</span>
+            <span class="toggle-desc">Run your code review prompt when a review worktree is created</span>
+          </div>
+        </TuiCheckbox>
+      </div>
     </div>
     {#if mutation.isError}
       <div class="panel-error">
@@ -94,7 +93,7 @@
     flex-direction: column;
     gap: 10px;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     padding: 12px;
     background: var(--bg);
     flex-shrink: 0;
@@ -110,7 +109,6 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 700;
-    text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-muted);
   }
@@ -128,7 +126,7 @@
   .retry-btn {
     background: none;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
@@ -159,13 +157,6 @@
   .toggle-row--disabled {
     opacity: 0.5;
     pointer-events: none;
-  }
-
-  .toggle-checkbox {
-    margin-top: 2px;
-    accent-color: var(--accent);
-    flex-shrink: 0;
-    cursor: pointer;
   }
 
   .toggle-info {

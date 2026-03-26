@@ -95,9 +95,18 @@
 
   function ciIcon(pr: PullRequest): { icon: string; cls: string } | null {
     if (!pr.ciStatus) return null;
-    if (pr.ciStatus === 'SUCCESS') return { icon: '✓', cls: 'ci-pass' };
-    if (pr.ciStatus === 'FAILURE' || pr.ciStatus === 'ERROR') return { icon: '✗', cls: 'ci-fail' };
-    if (pr.ciStatus === 'PENDING') return { icon: '●', cls: 'ci-pending' };
+    if (pr.ciStatus === 'SUCCESS') return {
+      icon: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2 6l2.5 2.5L10 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      cls: 'ci-pass',
+    };
+    if (pr.ciStatus === 'FAILURE' || pr.ciStatus === 'ERROR') return {
+      icon: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+      cls: 'ci-fail',
+    };
+    if (pr.ciStatus === 'PENDING') return {
+      icon: '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.6"/></svg>',
+      cls: 'ci-pending',
+    };
     return null;
   }
 
@@ -378,7 +387,7 @@
           {@const ci = ciIcon(pr)}
           <div class="cell cell--ci" style:width="32px" style:flex="none">
             {#if ci}
-              <span class="ci-icon {ci.cls}">{ci.icon}</span>
+              <span class="ci-icon {ci.cls}">{@html ci.icon}</span>
             {/if}
           </div>
           <!-- Age column -->
@@ -488,7 +497,6 @@
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     font-weight: 700;
-    text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-muted);
   }
@@ -522,7 +530,6 @@
     margin-bottom: -1px;
     transition: color 0.12s, border-color 0.12s;
     white-space: nowrap;
-    text-transform: uppercase;
     letter-spacing: 0.06em;
   }
 
@@ -537,7 +544,7 @@
 
   .tab-badge {
     font-family: var(--font-mono);
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     color: var(--accent);
     margin-left: 4px;
     opacity: 0.8;
@@ -571,7 +578,7 @@
   .retry-btn {
     background: none;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     color: var(--text-muted);
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
@@ -676,7 +683,7 @@
     display: inline-flex;
     align-items: center;
     padding: 1px 6px;
-    border-radius: 3px;
+    border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 700;
@@ -695,7 +702,7 @@
     display: inline-flex;
     align-items: center;
     padding: 1px 6px;
-    border-radius: 3px;
+    border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 600;
@@ -714,12 +721,12 @@
     flex-shrink: 0;
     padding: 5px 14px;
     min-height: 30px;
-    border-radius: 20px;
-    border: none;
-    background: var(--pill-color, var(--border));
+    border-radius: 0;
+    border: 1px solid var(--pill-color, var(--border));
+    background: transparent;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
-    color: #fff;
+    color: var(--pill-color, var(--border));
     text-decoration: none;
     white-space: nowrap;
     cursor: pointer;
@@ -731,7 +738,7 @@
   }
 
   .pr-action-pill.dark-text {
-    color: #1a1a1a;
+    color: var(--pill-color, var(--border));
   }
 
   /* -- Mobile card layout -- */
@@ -779,7 +786,7 @@
     font-family: var(--font-mono);
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     color: var(--text-muted);
     padding: 4px 8px;
     cursor: pointer;
@@ -798,7 +805,7 @@
     font-family: var(--font-mono);
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     color: var(--text-muted);
     padding: 3px 8px;
     cursor: pointer;

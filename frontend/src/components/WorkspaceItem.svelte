@@ -414,7 +414,7 @@
     justify-content: center;
     width: 16px;
     height: 16px;
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     cursor: pointer;
     flex-shrink: 0;
@@ -544,7 +544,7 @@
     align-items: center;
     gap: 6px;
     padding-left: 15px;
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     min-width: 0;
   }
@@ -599,7 +599,7 @@
     border-radius: 0;
     background: var(--border);
     color: var(--text-muted);
-    font-size: 0.55rem;
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 600;
     padding: 0 4px;
@@ -611,7 +611,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 0.6rem;
+    font-size: var(--font-size-xs);
     flex-shrink: 0;
     margin-left: auto;
   }

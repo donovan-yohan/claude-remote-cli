@@ -91,7 +91,7 @@
   }
 
   .confirm-msg {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     margin: 0;
     line-height: 1.5;
   }
@@ -101,7 +101,7 @@
   }
 
   .wt-path {
-    font-size: 0.82rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     font-family: var(--font-mono);
     margin: 0;
@@ -109,13 +109,13 @@
   }
 
   .warning-msg {
-    font-size: 0.82rem;
+    font-size: var(--font-size-sm);
     color: var(--status-error);
     margin: 0;
   }
 
   .error-msg {
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     color: var(--status-error);
     margin: 0;
     padding: 8px 10px;

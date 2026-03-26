@@ -132,7 +132,7 @@
   .rename-message code {
     background: var(--surface-hover);
     padding: 2px 5px;
-    border-radius: 3px;
+    border-radius: 0;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
   }

@@ -139,7 +139,7 @@
     cursor: pointer;
     border-radius: 0;
     margin: 2px 6px;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     touch-action: manipulation;
     transition: background 0.15s, border-color 0.15s;
@@ -303,14 +303,14 @@
   }
 
   .session-time {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     opacity: 0.6;
     flex-shrink: 0;
   }
 
   .session-branch {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -319,7 +319,7 @@
   }
 
   .pr-icon {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     flex-shrink: 0;
   }
 
@@ -330,7 +330,7 @@
   .git-diff {
     display: flex;
     gap: 4px;
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     font-family: monospace;
     flex-shrink: 0;
     margin-left: auto;

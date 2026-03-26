@@ -213,7 +213,7 @@
   .modal {
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0;
     width: 90%;
     max-width: 420px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
@@ -231,7 +231,6 @@
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     font-weight: 700;
-    text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text);
   }
@@ -267,7 +266,6 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 0.06em;
   }
 
@@ -287,7 +285,6 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 0.06em;
   }
 
@@ -297,7 +294,7 @@
     font-family: var(--font-mono);
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     color: var(--text);
     outline: none;
     transition: border-color 0.12s;
@@ -313,7 +310,7 @@
     color: var(--status-error);
     padding: 6px 8px;
     background: rgba(255, 100, 100, 0.1);
-    border-radius: 4px;
+    border-radius: 0;
   }
 
   .modal-footer {
@@ -328,7 +325,7 @@
     padding: 7px 16px;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
-    border-radius: 4px;
+    border-radius: 0;
     border: 1px solid var(--border);
     cursor: pointer;
     transition: background 0.12s, border-color 0.12s, color 0.12s;
@@ -351,8 +348,8 @@
   }
 
   .btn-primary {
-    background: var(--accent);
-    color: #000;
+    background: transparent;
+    color: var(--accent);
     border-color: var(--accent);
     font-weight: 600;
   }

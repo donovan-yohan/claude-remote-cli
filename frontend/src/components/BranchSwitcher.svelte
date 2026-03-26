@@ -223,7 +223,7 @@
     font-size: var(--font-size-sm);
     cursor: pointer;
     padding: 4px 6px;
-    border-radius: 4px;
+    border-radius: 0;
     transition: background 0.12s;
     white-space: nowrap;
     min-width: 0;
@@ -244,7 +244,7 @@
 
   .branch-icon {
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
     flex-shrink: 0;
   }
 
@@ -269,7 +269,7 @@
     max-width: 340px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     z-index: 200;
     overflow: hidden;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
@@ -284,7 +284,7 @@
     width: 100%;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 3px;
+    border-radius: 0;
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
@@ -386,7 +386,7 @@
   }
 
   .branch-worktree-name {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     opacity: 0.7;
     flex-shrink: 0;
@@ -404,7 +404,7 @@
     cursor: pointer;
     padding: 0;
     flex-shrink: 0;
-    border-radius: 3px;
+    border-radius: 0;
     transition: color 0.12s, background 0.12s;
   }
 
@@ -414,7 +414,7 @@
   }
 
   .branch-check {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     width: 10px;
     flex-shrink: 0;
     color: var(--accent);

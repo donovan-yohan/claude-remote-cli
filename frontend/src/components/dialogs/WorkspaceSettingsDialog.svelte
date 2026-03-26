@@ -1,5 +1,6 @@
 <script lang="ts">
   import { updateWorkspaceSettings, fetchBranches, fetchMergedWorkspaceSettings } from '../../lib/api.js';
+  import TuiCheckbox from '../TuiCheckbox.svelte';
   import type { WorkspaceSettings, BranchInfo } from '../../lib/types.js';
 
   interface Props {
@@ -180,10 +181,10 @@
   <div class="dialog-content">
     <div class="dialog-header">
       <h2 class="dialog-title">
-        <span class="gear-icon">&#9881;</span>
+        <span class="gear-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1-1.51H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
         {workspaceName}
       </h2>
-      <button class="close-btn" aria-label="Close settings" onclick={() => dialogEl.close()}>&#10005;</button>
+      <button class="close-btn" aria-label="Close settings" onclick={() => dialogEl.close()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
 
     <div class="dialog-body">
@@ -193,7 +194,7 @@
 
       <!-- Git Settings -->
       <section class="settings-section">
-        <h3 class="section-label">GIT SETTINGS</h3>
+        <h3 class="section-label">git settings</h3>
 
         <div class="field-group">
           <label class="field-label" for="ws-default-branch">Branch new worktrees from</label>
@@ -236,7 +237,7 @@
       <!-- Session Defaults -->
       <section class="settings-section">
         <h3 class="section-label">
-          SESSION DEFAULTS
+          session defaults
           {#if overriddenKeys.some(k => ['defaultAgent', 'defaultContinue', 'defaultYolo', 'launchInTmux'].includes(k))}
             <span class="override-badge">overridden</span>
           {/if}
@@ -251,18 +252,9 @@
         </div>
 
         <div class="checkbox-row">
-          <label class="checkbox-label">
-            <input type="checkbox" class="dialog-checkbox" bind:checked={defaultContinue} />
-            <span>Continue</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" class="dialog-checkbox" bind:checked={defaultYolo} />
-            <span>YOLO</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" class="dialog-checkbox" bind:checked={launchInTmux} />
-            <span>Tmux</span>
-          </label>
+          <TuiCheckbox bind:checked={defaultContinue}>Continue</TuiCheckbox>
+          <TuiCheckbox bind:checked={defaultYolo}>YOLO</TuiCheckbox>
+          <TuiCheckbox bind:checked={launchInTmux}>Tmux</TuiCheckbox>
         </div>
       </section>
 
@@ -270,7 +262,7 @@
 
       <!-- Prompts -->
       <section class="settings-section">
-        <h3 class="section-label">PROMPTS</h3>
+        <h3 class="section-label">prompts</h3>
 
         <div class="prompt-group">
           <button
@@ -376,7 +368,7 @@
     background: var(--surface);
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 0;
     padding: 0;
     width: min(480px, 95vw);
     max-height: 90vh;
@@ -405,7 +397,7 @@
   }
 
   .dialog-title {
-    font-size: 1.05rem;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     margin: 0;
     display: flex;
@@ -420,17 +412,17 @@
   .gear-icon {
     flex-shrink: 0;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
   }
 
   .close-btn {
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
     padding: 4px 6px;
-    border-radius: 4px;
+    border-radius: 0;
     flex-shrink: 0;
     line-height: 1;
   }
@@ -461,7 +453,6 @@
     color: var(--text-muted);
     letter-spacing: 0.08em;
     margin: 0 0 2px;
-    text-transform: uppercase;
   }
 
   .field-group {
@@ -471,7 +462,7 @@
   }
 
   .field-label {
-    font-size: 0.82rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
   }
 
@@ -481,7 +472,7 @@
     border-radius: 0;
     color: var(--text);
     font-family: var(--font-mono, monospace);
-    font-size: 0.88rem;
+    font-size: var(--font-size-sm);
     padding: 6px 9px;
     width: 100%;
     box-sizing: border-box;
@@ -498,7 +489,7 @@
     border-radius: 0;
     color: var(--text);
     font-family: var(--font-mono, monospace);
-    font-size: 0.88rem;
+    font-size: var(--font-size-sm);
     padding: 6px 9px;
     width: 100%;
     box-sizing: border-box;
@@ -537,17 +528,9 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.88rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     user-select: none;
-  }
-
-  .dialog-checkbox {
-    width: 15px;
-    height: 15px;
-    accent-color: var(--accent);
-    cursor: pointer;
-    flex-shrink: 0;
   }
 
   .divider {
@@ -566,7 +549,7 @@
     background: none;
     border: none;
     color: var(--text);
-    font-size: 0.88rem;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     padding: 4px 0;
     text-align: left;
@@ -582,7 +565,7 @@
 
   .prompt-arrow {
     color: var(--text-muted);
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     flex-shrink: 0;
     width: 10px;
   }
@@ -593,7 +576,7 @@
     border-radius: 0;
     color: var(--text);
     font-family: var(--font-mono, monospace);
-    font-size: 0.82rem;
+    font-size: var(--font-size-sm);
     padding: 8px 10px;
     width: 100%;
     box-sizing: border-box;
@@ -607,7 +590,7 @@
   }
 
   .error-msg {
-    font-size: 0.82rem;
+    font-size: var(--font-size-sm);
     color: var(--status-error);
     margin: 0;
     padding: 6px 10px;
@@ -632,14 +615,14 @@
   }
 
   .save-success {
-    font-size: 0.82rem;
+    font-size: var(--font-size-sm);
     color: var(--accent);
   }
 
   .btn {
     padding: 7px 16px;
-    border-radius: 4px;
-    font-size: 0.88rem;
+    border-radius: 0;
+    font-size: var(--font-size-sm);
     cursor: pointer;
     border: 1px solid transparent;
     font-weight: 500;
@@ -652,13 +635,13 @@
   }
 
   .btn-primary {
-    background: var(--accent);
-    color: #fff;
+    background: transparent;
+    color: var(--accent);
     border-color: var(--accent);
   }
 
   .btn-primary:hover:not(:disabled) {
-    opacity: 0.88;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
   }
 
   .btn-danger {
@@ -684,7 +667,7 @@
   }
 
   .override-badge {
-    font-size: 0.68rem;
+    font-size: var(--font-size-xs);
     font-weight: 400;
     color: var(--accent);
     letter-spacing: 0;

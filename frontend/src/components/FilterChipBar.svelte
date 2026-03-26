@@ -92,7 +92,7 @@
     opacity: 1;
   }
   .chip-count {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     opacity: 0.6;
     margin-left: 3px;
   }

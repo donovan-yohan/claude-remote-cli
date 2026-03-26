@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import TuiCheckbox from '../../TuiCheckbox.svelte';
   import {
     fetchWebhookStatus,
     setupWebhooks,
@@ -248,15 +249,7 @@
         <p class="body-text body-text--muted">Last event: {relativeTime(status.lastEventAt)}</p>
 
         <!-- Auto-provision toggle -->
-        <label class="toggle-row">
-          <input
-            class="dialog-checkbox"
-            type="checkbox"
-            checked={status.autoProvision}
-            onchange={handleAutoProvisionToggle}
-          />
-          <span class="body-text">Auto-add webhooks for new repos</span>
-        </label>
+        <TuiCheckbox checked={status.autoProvision} onchange={handleAutoProvisionToggle}>Auto-add webhooks for new repos</TuiCheckbox>
 
         {#if error}
           <p class="error-text">{error}</p>
@@ -290,7 +283,7 @@
               <ul class="results-list">
                 {#each backfillResults.results.filter(r => !r.ok) as repo (repo.path)}
                   <li class="result-item result-item--fail">
-                    <span class="result-icon">✕</span>
+                    <span class="result-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" width="12" height="12"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
                     <span class="result-label">{repo.ownerRepo}</span>
                     {#if repo.error}
                       <span class="result-error">({repo.error})</span>
@@ -331,7 +324,7 @@
         {#if testResult}
           <p class="test-result" class:test-result--success={testResult === 'success'} class:test-result--error={testResult === 'error' || testResult === 'no_webhook'}>
             {#if testResult === 'success'}
-              ✓ Event received
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" width="12" height="12"><polyline points="20 6 9 17 4 12"/></svg> Event received
             {:else if testResult === 'no_webhook'}
               No webhook to ping
             {:else}

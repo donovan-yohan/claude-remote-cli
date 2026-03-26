@@ -442,7 +442,7 @@
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 4px;
+    border-radius: 0;
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -481,10 +481,10 @@
     justify-content: center;
     height: 22px;
     padding: 0 10px;
-    border-radius: 11px;
-    border: none;
-    background: var(--action-color, var(--border));
-    color: #fff;
+    border-radius: 0;
+    border: 1px solid var(--action-color, var(--border));
+    background: transparent;
+    color: var(--action-color, var(--text-muted));
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     font-weight: 500;
@@ -503,7 +503,7 @@
   }
 
   .action-btn--dark-text {
-    color: #000;
+    color: var(--action-color, var(--text-muted));
   }
 
   .action-btn--disabled {
@@ -533,8 +533,9 @@
   .diff-del { color: var(--status-error); }
 
   .action-btn--secondary {
-    background: var(--border) !important;
-    color: var(--text) !important;
+    background: transparent !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-muted) !important;
     margin-right: 6px;
   }
 
@@ -549,7 +550,7 @@
   .rename-input {
     background: var(--bg);
     border: 1px solid var(--accent);
-    border-radius: 3px;
+    border-radius: 0;
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
@@ -578,7 +579,7 @@
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 4px;
+    border-radius: 0;
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -599,7 +600,7 @@
 
   .branch-icon {
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
     flex-shrink: 0;
   }
 
