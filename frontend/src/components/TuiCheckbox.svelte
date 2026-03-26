@@ -1,7 +1,10 @@
 <script lang="ts">
-  let { checked = $bindable(false), disabled = false, ...rest }: {
+  import type { Snippet } from 'svelte';
+
+  let { checked = $bindable(false), disabled = false, children, ...rest }: {
     checked: boolean;
     disabled?: boolean;
+    children?: Snippet;
     [key: string]: unknown;
   } = $props();
 </script>
@@ -9,7 +12,7 @@
 <label class="tui-checkbox" class:disabled>
   <input type="checkbox" bind:checked {disabled} {...rest}>
   <span class="tui-check">{checked ? '[x]' : '[ ]'}</span>
-  <slot />
+  {#if children}{@render children()}{/if}
 </label>
 
 <style>

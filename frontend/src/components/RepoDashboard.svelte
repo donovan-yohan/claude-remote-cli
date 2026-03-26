@@ -535,6 +535,16 @@
     pointer-events: none;
   }
 
+  .skeleton-line {
+    background: var(--border);
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.7; }
+  }
+
   .skeleton-activity {
     height: 12px;
     width: 75%;

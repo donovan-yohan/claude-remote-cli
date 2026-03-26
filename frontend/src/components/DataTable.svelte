@@ -503,6 +503,16 @@
     opacity: 0.8;
   }
 
+  .skeleton-line {
+    background: var(--border);
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.7; }
+  }
+
   /* --- Mobile card mode --- */
   @media (max-width: 600px) {
     .data-table-row {

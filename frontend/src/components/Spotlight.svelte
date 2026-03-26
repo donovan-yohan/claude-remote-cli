@@ -409,7 +409,7 @@
           {#each groupedResults as group}
             <div class="spotlight-category" role="presentation">
               {group.label}
-              {#if group.label === 'NEEDS ATTENTION'}
+              {#if group.label === 'needs attention'}
                 <span class="category-count">({group.items.length})</span>
               {/if}
             </div>
