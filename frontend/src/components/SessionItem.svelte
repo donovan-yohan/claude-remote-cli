@@ -137,7 +137,7 @@
     align-items: flex-start;
     padding: 8px 10px;
     cursor: pointer;
-    border-radius: 6px;
+    border-radius: 0;
     margin: 2px 6px;
     font-size: 0.8rem;
     color: var(--text-muted);
@@ -190,7 +190,7 @@
     content: '';
     position: absolute;
     inset: 0;
-    border-radius: inherit;
+    border-radius: 0;
     background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.04) 50%, transparent 100%);
     background-size: 200% 100%;
     animation: shimmer 1.5s ease-in-out infinite;
@@ -244,7 +244,7 @@
     box-shadow: 0 0 6px 2px rgba(234, 179, 8, 0.5);
     animation: attention-glow 1.5s ease-in-out infinite;
   }
-  .status-dot--inactive { background: transparent; border: 1.5px solid #6b7280; }
+  .status-dot--inactive { background: transparent; border: 1.5px solid var(--border); }
 
   @keyframes attention-glow {
     0%, 100% { box-shadow: 0 0 4px 1px rgba(245, 158, 11, 0.3); }
