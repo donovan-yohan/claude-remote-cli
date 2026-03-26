@@ -137,7 +137,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 16px;
+    padding: 16px 16px;
     border-bottom: 1px solid var(--border);
   }
 
@@ -182,7 +182,7 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--status-error);
-    padding: 6px 8px;
+    padding: 8px 8px;
     background: rgba(255, 100, 100, 0.1);
     border-radius: 0;
   }
@@ -201,7 +201,7 @@
   }
 
   .field-select {
-    padding: 8px 10px;
+    padding: 8px 12px;
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     background: var(--surface);

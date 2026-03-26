@@ -219,9 +219,9 @@
   .tab {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     height: 32px;
-    padding: 0 10px;
+    padding: 0 8px;
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
@@ -352,7 +352,7 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 7px 12px;
+    padding: 8px 12px;
     background: none;
     border: none;
     color: var(--text-muted);

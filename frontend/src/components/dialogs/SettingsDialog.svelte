@@ -429,7 +429,7 @@
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    padding: 6px 12px;
+    padding: 8px 12px;
     flex: 1;
     max-width: 200px;
     outline: none;
@@ -490,7 +490,7 @@
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    padding: 6px 10px;
+    padding: 8px 8px;
     cursor: pointer;
   }
 

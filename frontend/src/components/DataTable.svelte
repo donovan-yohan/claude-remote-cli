@@ -315,7 +315,7 @@
   .data-table-th {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
-    padding: 6px 8px;
+    padding: 8px 8px;
     transition: color 0.12s;
     user-select: none;
   }
@@ -392,7 +392,7 @@
   /* --- Skeleton --- */
   .skeleton-row {
     display: flex;
-    padding: 10px 8px;
+    padding: 8px 8px;
     border-bottom: 1px solid var(--border);
     min-height: 40px;
     align-items: center;
@@ -409,7 +409,7 @@
   .skeleton-card {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     width: 100%;
     padding: 4px 8px;
   }
@@ -419,7 +419,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 8px;
     padding: 24px 12px;
     color: var(--text-muted);
     font-size: var(--font-size-sm);
@@ -438,7 +438,7 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     cursor: pointer;
-    padding: 3px 8px;
+    padding: 4px 8px;
     transition: border-color 0.12s, color 0.12s;
   }
 
@@ -452,8 +452,8 @@
     all: unset;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
+    gap: 8px;
+    padding: 8px 8px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     cursor: pointer;
@@ -498,7 +498,7 @@
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     background: var(--border);
-    padding: 1px 5px;
+    padding: 2px 4px;
     border-radius: 0;
     opacity: 0.8;
   }

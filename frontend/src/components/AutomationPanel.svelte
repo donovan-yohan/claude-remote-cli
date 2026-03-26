@@ -91,7 +91,7 @@
   .automation-panel {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
     border: 1px solid var(--border);
     border-radius: 0;
     padding: 12px;
@@ -131,7 +131,7 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     cursor: pointer;
-    padding: 3px 8px;
+    padding: 4px 8px;
     transition: border-color 0.12s, color 0.12s;
   }
 
@@ -149,7 +149,7 @@
   .toggle-row {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: 8px;
     cursor: pointer;
     padding: 4px 0;
   }

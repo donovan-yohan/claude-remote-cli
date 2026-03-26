@@ -317,7 +317,7 @@
   .health-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
   }
 
   .toggle-row {
@@ -339,7 +339,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 8px 10px;
+    padding: 8px 12px;
     border: 1px solid var(--border);
     background: var(--surface-hover);
   }
@@ -347,7 +347,7 @@
   .backfill-results {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
 
   .results-list {
@@ -360,7 +360,7 @@
   .result-item {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
   }

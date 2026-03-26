@@ -190,7 +190,7 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 4px 8px;
     border-radius: 0;
     transition: background 0.12s;
     white-space: nowrap;
@@ -234,7 +234,7 @@
   }
 
   .target-filter-wrap {
-    padding: 6px 6px 4px;
+    padding: 8px 8px 4px;
     border-bottom: 1px solid var(--border);
   }
 
@@ -258,14 +258,14 @@
   .target-error {
     font-size: var(--font-size-xs);
     color: var(--status-error);
-    padding: 4px 10px;
+    padding: 4px 8px;
   }
 
   .target-loading,
   .target-empty {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    padding: 8px 10px;
+    padding: 8px 12px;
     font-style: italic;
   }
 

@@ -204,7 +204,7 @@
   }
 
   .tab-btn {
-    padding: 6px 14px;
+    padding: 8px 12px;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 600;
@@ -259,10 +259,10 @@
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     color: var(--text-muted);
-    padding: 6px 0;
+    padding: 8px 0;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-shrink: 0;
   }
 
@@ -278,7 +278,7 @@
   /* -- Mobile -- */
   @media (max-width: 600px) {
     .tab-btn {
-      padding: 5px 10px;
+      padding: 4px 8px;
     }
   }
 </style>

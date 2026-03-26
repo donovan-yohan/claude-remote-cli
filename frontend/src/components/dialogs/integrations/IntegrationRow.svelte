@@ -149,7 +149,7 @@
     flex-shrink: 0;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     margin-left: 6px;
   }
 

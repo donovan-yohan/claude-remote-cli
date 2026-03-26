@@ -161,7 +161,7 @@
   .footer-row {
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
+    gap: 8px;
   }
 
   .workspace-name {
@@ -174,13 +174,13 @@
   .body-fields {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 16px;
   }
 
   .dialog-field {
     display: flex;
     flex-direction: column;
-    gap: 5px;
+    gap: 4px;
   }
 
   .dialog-field--inline {
@@ -207,7 +207,7 @@
     color: var(--text);
     font-size: var(--font-size-base);
     font-family: var(--font-mono);
-    padding: 7px 10px;
+    padding: 8px 8px;
     width: 100%;
     box-sizing: border-box;
   }

@@ -56,7 +56,7 @@
   .filter-chip-bar {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     padding: 8px 0;
   }
   .chip-row {
@@ -71,7 +71,7 @@
     color: var(--text-muted);
     background: transparent;
     border: 1px solid var(--border);
-    padding: 5px 12px;
+    padding: 4px 12px;
     cursor: pointer;
     transition: border-color 0.15s, color 0.15s;
     white-space: nowrap;

@@ -38,7 +38,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 14px;
+    gap: 16px;
     max-width: 320px;
     text-align: center;
     padding: 32px 16px;

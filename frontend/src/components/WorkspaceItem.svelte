@@ -386,7 +386,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 10px;
+    padding: 8px 12px;
     cursor: pointer;
     min-height: 44px;
     transition: background 0.12s;
@@ -431,7 +431,7 @@
     color: var(--text-muted);
     background: var(--border);
     border-radius: 0;
-    padding: 1px 6px;
+    padding: 2px 8px;
     flex-shrink: 0;
   }
 
@@ -504,7 +504,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 6px 10px 6px 36px;
+    padding: 8px 8px 8px 36px;
     cursor: pointer;
     min-height: 44px;
     font-size: var(--font-size-xs);
@@ -542,8 +542,8 @@
   .session-row-secondary {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding-left: 15px;
+    gap: 8px;
+    padding-left: 16px;
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     min-width: 0;
@@ -669,7 +669,7 @@
 
   /* Add worktree row */
   .add-worktree-row {
-    padding: 4px 10px 6px 36px;
+    padding: 4px 8px 8px 36px;
   }
 
   .add-worktree-btn {

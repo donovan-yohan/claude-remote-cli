@@ -114,7 +114,7 @@
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    padding: 6px 8px;
+    padding: 8px 8px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 0;
@@ -149,7 +149,7 @@
 
   .ss-input {
     width: 100%;
-    padding: 6px 8px;
+    padding: 8px 8px;
     background: var(--bg);
     border: 1px solid var(--accent);
     border-radius: 0;

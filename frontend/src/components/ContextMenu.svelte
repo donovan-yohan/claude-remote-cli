@@ -136,7 +136,7 @@
     font-size: var(--font-size-lg);
     font-weight: 700;
     cursor: pointer;
-    padding: 0 6px;
+    padding: 0 8px;
     border-radius: 0;
     touch-action: manipulation;
     flex-shrink: 0;

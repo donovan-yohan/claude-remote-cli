@@ -210,7 +210,7 @@
     font-size: var(--font-size-lg);
     font-family: var(--font-mono);
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 4px 8px;
     line-height: 1;
     flex-shrink: 0;
     margin-left: auto;

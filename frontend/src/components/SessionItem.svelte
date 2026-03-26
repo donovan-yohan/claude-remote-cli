@@ -139,7 +139,7 @@
     position: relative;
     display: flex;
     align-items: flex-start;
-    padding: 8px 10px;
+    padding: 8px 12px;
     cursor: pointer;
     border-radius: 0;
     margin: 2px 6px;
@@ -235,7 +235,7 @@
   .session-row-2 {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     min-width: 0;
     padding-left: 16px;
   }

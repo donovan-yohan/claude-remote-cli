@@ -43,7 +43,7 @@
     position: relative;
     display: flex;
     align-items: center;
-    padding: 8px 14px 8px 20px;
+    padding: 8px 12px 8px 20px;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--text);

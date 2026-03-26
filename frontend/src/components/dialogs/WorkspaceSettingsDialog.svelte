@@ -422,7 +422,7 @@
     color: var(--text-muted);
     font-size: var(--font-size-lg);
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 4px 8px;
     border-radius: 0;
     flex-shrink: 0;
     line-height: 1;
@@ -445,7 +445,7 @@
   .settings-section {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
   }
 
   .section-label {
@@ -474,7 +474,7 @@
     color: var(--text);
     font-family: var(--font-mono, monospace);
     font-size: var(--font-size-sm);
-    padding: 6px 9px;
+    padding: 8px 8px;
     width: 100%;
     box-sizing: border-box;
     outline: none;
@@ -491,7 +491,7 @@
     color: var(--text);
     font-family: var(--font-mono, monospace);
     font-size: var(--font-size-sm);
-    padding: 6px 9px;
+    padding: 8px 8px;
     width: 100%;
     box-sizing: border-box;
     cursor: pointer;
@@ -505,7 +505,7 @@
   .inline-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
   }
 
   .inline-row .field-label {
@@ -528,7 +528,7 @@
   .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     font-size: var(--font-size-sm);
     cursor: pointer;
     user-select: none;
@@ -543,7 +543,7 @@
   .prompt-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
 
   .prompt-toggle {
@@ -556,7 +556,7 @@
     text-align: left;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     width: 100%;
   }
 
@@ -578,7 +578,7 @@
     color: var(--text);
     font-family: var(--font-mono, monospace);
     font-size: var(--font-size-sm);
-    padding: 8px 10px;
+    padding: 8px 12px;
     width: 100%;
     box-sizing: border-box;
     resize: vertical;
@@ -594,7 +594,7 @@
     font-size: var(--font-size-sm);
     color: var(--status-error);
     margin: 0;
-    padding: 6px 10px;
+    padding: 8px 8px;
     background: rgba(231, 76, 60, 0.08);
     border: 1px solid rgba(231, 76, 60, 0.25);
   }
@@ -603,7 +603,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
     padding: 12px 20px 16px;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
@@ -612,7 +612,7 @@
   .footer-right {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
   }
 
   .save-success {

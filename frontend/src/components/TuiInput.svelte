@@ -143,7 +143,7 @@
     color: var(--text);
     background: transparent;
     border: 1px solid var(--border);
-    padding: 6px 8px;
+    padding: 8px 8px;
     width: 100%;
     box-sizing: border-box;
     caret-color: transparent;

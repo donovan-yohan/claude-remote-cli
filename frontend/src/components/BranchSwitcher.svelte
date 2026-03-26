@@ -217,14 +217,14 @@
   .branch-trigger {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     background: none;
     border: none;
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 4px 8px;
     border-radius: 0;
     transition: background 0.12s;
     white-space: nowrap;
@@ -273,7 +273,7 @@
   }
 
   .branch-filter-wrap {
-    padding: 6px 6px 4px;
+    padding: 8px 8px 4px;
     border-bottom: 1px solid var(--border);
   }
 
@@ -297,22 +297,22 @@
   .branch-error {
     font-size: var(--font-size-xs);
     color: var(--status-error);
-    padding: 4px 10px;
+    padding: 4px 8px;
   }
 
   .branch-loading,
   .branch-empty {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    padding: 8px 10px;
+    padding: 8px 12px;
     font-style: italic;
   }
 
   .branch-create {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
+    gap: 8px;
+    padding: 4px 8px;
     font-size: var(--font-size-xs);
     cursor: pointer;
     color: var(--accent);

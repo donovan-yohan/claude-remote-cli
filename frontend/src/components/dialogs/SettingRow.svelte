@@ -28,7 +28,7 @@
     align-items: center;
     gap: 12px;
     min-height: 44px;
-    padding: 10px 0;
+    padding: 8px 0;
   }
 
   .setting-label {

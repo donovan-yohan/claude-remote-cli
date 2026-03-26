@@ -109,7 +109,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 12px 12px;
     border-bottom: 1px solid var(--border);
     background: var(--bg);
     transition: background 0.1s;
@@ -126,7 +126,7 @@
   .ticket-left {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
     min-width: 0;
     flex: 1;
   }
@@ -181,7 +181,7 @@
   .repo-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 2px 8px;
     border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
@@ -194,7 +194,7 @@
   .label-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 2px 8px;
     border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
@@ -210,7 +210,7 @@
   .status-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 2px 8px;
     border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
@@ -230,7 +230,7 @@
   .sprint-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 2px 8px;
     border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
@@ -266,7 +266,7 @@
   }
 
   .start-work-btn {
-    padding: 5px 12px;
+    padding: 4px 12px;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     background: none;
@@ -295,7 +295,7 @@
       flex-direction: column;
       align-items: flex-start;
       gap: 8px;
-      padding: 12px 10px;
+      padding: 12px 12px;
     }
 
     .ticket-left {

@@ -132,7 +132,7 @@
     border: none;
     color: var(--text-muted);
     font-size: var(--font-size-lg);
-    padding: 4px 6px;
+    padding: 4px 8px;
     cursor: pointer;
   }
 

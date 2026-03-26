@@ -337,7 +337,7 @@
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     color: var(--text-muted);
-    padding: 6px 0;
+    padding: 8px 0;
   }
 
   .section-message.info a {
@@ -353,7 +353,7 @@
   .pr-cell {
     display: flex;
     align-items: center;
-    padding: 6px 8px;
+    padding: 8px 8px;
     min-width: 0;
   }
 
@@ -364,7 +364,7 @@
   .pr-cell--title {
     flex-direction: column;
     align-items: flex-start;
-    gap: 3px;
+    gap: 4px;
   }
 
   .pr-cell--role,
@@ -449,8 +449,8 @@
   .mobile-pr-card {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 10px 12px;
+    gap: 8px;
+    padding: 12px 12px;
     width: 100%;
   }
 
@@ -525,7 +525,7 @@
   .cta-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     padding-top: 4px;
     flex-shrink: 0;
   }
@@ -543,7 +543,7 @@
   /* -- Mobile -- */
   @media (max-width: 600px) {
     .repo-dashboard {
-      padding: 14px;
+      padding: 16px;
     }
   }
 </style>

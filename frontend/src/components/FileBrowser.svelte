@@ -328,7 +328,7 @@
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    padding: 8px 10px;
+    padding: 8px 12px;
     outline: none;
   }
 
@@ -365,7 +365,7 @@
   .tree-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     padding-top: 4px;
     padding-bottom: 4px;
     padding-right: 12px;
@@ -448,7 +448,7 @@
     font-size: 10px;
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 15%, transparent);
-    padding: 1px 5px;
+    padding: 2px 4px;
     border-radius: 0;
     flex-shrink: 0;
     text-transform: lowercase;

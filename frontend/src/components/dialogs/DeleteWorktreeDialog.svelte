@@ -82,7 +82,7 @@
   .footer-row {
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
+    gap: 8px;
   }
 
   .body-content {
@@ -119,7 +119,7 @@
     font-size: var(--font-size-sm);
     color: var(--status-error);
     margin: 0;
-    padding: 8px 10px;
+    padding: 8px 12px;
     background: rgba(231, 76, 60, 0.1);
     border-radius: 0;
     border: 1px solid rgba(231, 76, 60, 0.3);

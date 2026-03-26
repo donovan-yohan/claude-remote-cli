@@ -76,7 +76,7 @@
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 0;
-    padding: 8px 14px;
+    padding: 8px 16px;
     color: var(--text);
     font-size: 13px;
     max-width: 90vw;
@@ -86,7 +86,7 @@
   .image-toast-content {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
   }
 
   .image-toast-text {
@@ -99,7 +99,7 @@
 
   .image-toast-actions {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
     flex-shrink: 0;
   }
@@ -110,7 +110,7 @@
     color: var(--text-muted);
     cursor: pointer;
     font-size: 16px;
-    padding: 2px 6px;
+    padding: 2px 8px;
   }
 
   .image-toast-dismiss:hover {

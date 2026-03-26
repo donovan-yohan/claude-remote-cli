@@ -71,7 +71,7 @@
   }
 
   .pin-container :global(.tui-input) {
-    padding: 14px 16px;
+    padding: 16px 16px;
     background: var(--surface);
     font-size: var(--font-size-lg);
     text-align: center;

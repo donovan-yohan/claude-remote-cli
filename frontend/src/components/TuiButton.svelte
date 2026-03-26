@@ -130,11 +130,11 @@
 
   /* Size variants */
   .tui-button--default .tui-inner {
-    padding: 6px 12px;
+    padding: 8px 12px;
   }
 
   .tui-button--sm .tui-inner {
-    padding: 3px 8px;
+    padding: 4px 8px;
   }
 
   /* Corners */

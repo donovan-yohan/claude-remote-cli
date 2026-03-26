@@ -108,7 +108,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
   }
 
   .selected-count {
@@ -119,7 +119,7 @@
 
   .footer-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
   }
 
   .body-content {

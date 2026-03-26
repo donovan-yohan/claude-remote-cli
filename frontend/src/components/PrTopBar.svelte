@@ -435,8 +435,8 @@
   .bar-right {
     display: flex;
     align-items: center;
-    padding-left: 10px;
-    gap: 6px;
+    padding-left: 8px;
+    gap: 8px;
     flex-shrink: 0;
   }
 
@@ -484,7 +484,7 @@
   .diff-stats {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     padding: 0 8px;
@@ -498,7 +498,7 @@
   .rename-input-wrap {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     padding: 2px 4px;
   }
 
@@ -509,7 +509,7 @@
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    padding: 2px 6px;
+    padding: 2px 8px;
     outline: none;
     min-width: 120px;
     max-width: 250px;

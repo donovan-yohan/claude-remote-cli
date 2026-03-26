@@ -513,7 +513,7 @@
   }
 
   .tab-btn {
-    padding: 6px 14px;
+    padding: 8px 12px;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 600;
@@ -550,10 +550,10 @@
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     color: var(--text-muted);
-    padding: 6px 0;
+    padding: 8px 0;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     flex-shrink: 0;
   }
 
@@ -578,7 +578,7 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     cursor: pointer;
-    padding: 4px 10px;
+    padding: 4px 8px;
     transition: border-color 0.12s, color 0.12s;
   }
 
@@ -677,7 +677,7 @@
   .repo-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 2px 8px;
     border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
@@ -696,7 +696,7 @@
   .ticket-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
+    padding: 2px 8px;
     border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
@@ -712,8 +712,8 @@
   .mobile-card {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 10px 8px;
+    gap: 8px;
+    padding: 8px 8px;
     width: 100%;
   }
 
@@ -769,7 +769,7 @@
     border: 1px solid var(--border);
     border-radius: 0;
     color: var(--text-muted);
-    padding: 3px 8px;
+    padding: 4px 8px;
     cursor: pointer;
     transition: border-color 0.12s, color 0.12s;
     white-space: nowrap;
@@ -782,7 +782,7 @@
 
   @media (max-width: 600px) {
     .org-dashboard {
-      padding: 14px;
+      padding: 16px;
     }
   }
 </style>

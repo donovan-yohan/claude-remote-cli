@@ -474,7 +474,7 @@
   .spotlight-input-row {
     display: flex;
     align-items: center;
-    padding: 12px 14px;
+    padding: 12px 16px;
     gap: 8px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
@@ -515,7 +515,7 @@
   }
 
   .spotlight-category {
-    padding: 8px 14px 4px;
+    padding: 8px 16px 4px;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 600;
@@ -533,7 +533,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 14px;
+    padding: 8px 16px;
     cursor: pointer;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
@@ -578,7 +578,7 @@
   }
 
   .spotlight-empty {
-    padding: 20px 14px;
+    padding: 20px 16px;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--text-muted);
@@ -589,7 +589,7 @@
   .spotlight-footer {
     display: flex;
     gap: 16px;
-    padding: 8px 14px;
+    padding: 8px 16px;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
   }

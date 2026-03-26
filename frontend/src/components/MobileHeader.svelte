@@ -55,7 +55,7 @@
     color: var(--text);
     font-size: var(--font-size-lg);
     cursor: pointer;
-    padding: 6px;
+    padding: 8px;
     min-width: 36px;
     min-height: 36px;
     display: flex;

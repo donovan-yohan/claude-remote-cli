@@ -273,7 +273,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 10px;
+    padding: 12px 12px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -299,7 +299,7 @@
     color: var(--text-muted);
     font-size: var(--font-size-lg);
     cursor: pointer;
-    padding: 8px 10px;
+    padding: 8px 12px;
     border-radius: 0;
     flex-shrink: 0;
     line-height: 1;
@@ -327,7 +327,7 @@
     color: var(--text);
     font-size: var(--font-size-lg);
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 4px 8px;
     border-radius: 0;
     touch-action: manipulation;
     display: none; /* shown on mobile only */
@@ -345,7 +345,7 @@
   }
 
   .empty-state {
-    padding: 16px 10px;
+    padding: 16px 12px;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
