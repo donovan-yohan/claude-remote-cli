@@ -6,6 +6,7 @@ Execution plans for active and completed work.
 
 | Plan | Created | Topic |
 |------|---------|-------|
+| `tui-design-system-overhaul` | 2026-03-26 | TUI-native component library: 9 new primitives, micro-interactions, alignment architecture |
 | `branch-lifecycle-fix` | 2026-03-19 | Unique branch names on worktree reuse, auto-rename on first message, display names |
 | `session-persistence-fix` | 2026-03-17 | Fix sessions lost after auto-update restart |
 | `mobile-input-redesign` | 2026-02-25 | Event-intent architecture replacing value-diffing for mobile input |
