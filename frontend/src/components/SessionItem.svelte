@@ -2,9 +2,9 @@
   import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from '../lib/types.js';
   import type { MenuItem } from './ContextMenu.svelte';
   import { formatRelativeTime } from '../lib/utils.js';
-  import { scrollOnHover } from '../lib/actions.js';
   import ContextMenu from './ContextMenu.svelte';
   import CipherText from './CipherText.svelte';
+  import MarqueeText from './MarqueeText.svelte';
   import StatusDot from './StatusDot.svelte';
 
   type ActiveVariant = {
@@ -105,8 +105,10 @@
   <div class="session-info">
     <div class="session-row-1">
       <span class="status-dot-wrap"><StatusDot status={displayState} size={8} /></span>
-      <span class="session-name" use:scrollOnHover>
-        <span class="session-name-text"><CipherText text={displayName} loading={isLoading} /></span>
+      <span class="session-name">
+        <MarqueeText>
+          <span class="session-name-text"><CipherText text={displayName} loading={isLoading} /></span>
+        </MarqueeText>
       </span>
     </div>
     <div class="session-row-2">
@@ -222,34 +224,11 @@
   .session-name-text {
     display: inline-block;
     white-space: nowrap;
-    will-change: transform;
   }
 
-  /* Fade mask only when text overflows */
-  .session-name.has-overflow {
-    mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
-  }
-
-  /* On hover: remove mask — JS handles the scroll */
-  li:hover .session-name.has-overflow {
-    mask-image: none;
-    -webkit-mask-image: none;
-  }
-
-  /* Selected state: use white mask for overflow fade */
+  /* Selected state */
   li.active-session.selected .session-name {
     color: #fff;
-  }
-
-  li.active-session.selected .session-name.has-overflow {
-    mask-image: linear-gradient(to right, white calc(100% - 32px), transparent);
-    -webkit-mask-image: linear-gradient(to right, white calc(100% - 32px), transparent);
-  }
-
-  li.active-session.selected:hover .session-name.has-overflow {
-    mask-image: none;
-    -webkit-mask-image: none;
   }
 
   /* Row 2: time + branch + PR + diff */

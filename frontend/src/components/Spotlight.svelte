@@ -3,6 +3,7 @@
   import type { Workspace, SessionSummary, PullRequest, OrgPrsResponse, GitHubIssue, GitHubIssuesResponse, JiraIssue, JiraIssuesResponse } from '../lib/types.js';
   import { derivePrDotStatus } from '../lib/pr-status.js';
   import StatusDot from './StatusDot.svelte';
+  import TuiInput from './TuiInput.svelte';
 
   let {
     open = false,
@@ -30,7 +31,7 @@
 
   let query = $state('');
   let focusedIndex = $state(0);
-  let inputEl = $state<HTMLInputElement | undefined>(undefined);
+  let inputWrapperEl = $state<HTMLDivElement | undefined>(undefined);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let debouncedQuery = $state('');
 
@@ -287,12 +288,11 @@
       query = '';
       debouncedQuery = '';
       focusedIndex = 0;
-      requestAnimationFrame(() => inputEl?.focus());
+      requestAnimationFrame(() => inputWrapperEl?.querySelector('input')?.focus());
     }
   });
 
-  function handleInput(e: Event) {
-    query = (e.target as HTMLInputElement).value;
+  function handleInput() {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debouncedQuery = query;
@@ -386,22 +386,19 @@
       aria-modal="true"
       aria-label="Command palette"
     >
-      <div class="spotlight-input-row">
+      <div class="spotlight-input-row" bind:this={inputWrapperEl}>
         <span class="spotlight-prompt">&gt;</span>
-        <input
-          bind:this={inputEl}
-          type="text"
-          class="spotlight-input"
+        <TuiInput
+          bind:value={query}
           placeholder="search workspaces, PRs, commands..."
+          oninput={handleInput}
+          onkeydown={handleKeydown}
           autocomplete="off"
           spellcheck={false}
           role="combobox"
           aria-expanded={flatItems.length > 0}
           aria-controls="spotlight-results"
           aria-activedescendant={flatItems[focusedIndex] ? `spotlight-item-${flatItems[focusedIndex]!.id}` : undefined}
-          value={query}
-          oninput={handleInput}
-          onkeydown={handleKeydown}
         />
       </div>
 
@@ -492,18 +489,21 @@
     user-select: none;
   }
 
-  .spotlight-input {
+  .spotlight-input-row :global(.tui-input-wrapper) {
     flex: 1;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-base);
-    caret-color: var(--accent);
   }
 
-  .spotlight-input::placeholder {
+  .spotlight-input-row :global(.tui-input) {
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+
+  .spotlight-input-row :global(.tui-input:focus) {
+    border: none;
+  }
+
+  .spotlight-input-row :global(.tui-input::placeholder) {
     color: var(--text-muted);
     opacity: 0.5;
   }

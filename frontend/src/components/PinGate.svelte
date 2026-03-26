@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getAuth, submitPin } from '../lib/state/auth.svelte.js';
   import TuiButton from './TuiButton.svelte';
+  import TuiInput from './TuiInput.svelte';
 
   const auth = getAuth();
   let pinValue = $state('');
@@ -23,13 +24,13 @@
   <div class="pin-container">
     <h1>Relay</h1>
     <p>Enter PIN to continue</p>
-    <input
+    <TuiInput
       type="password"
-      inputmode="numeric"
-      maxlength="20"
-      placeholder="PIN"
       bind:value={pinValue}
       onkeydown={handleKeydown}
+      placeholder="PIN"
+      inputmode="numeric"
+      maxlength="20"
       autofocus
     />
     <TuiButton variant="primary" onclick={handleSubmit}>Unlock</TuiButton>
@@ -69,21 +70,11 @@
     font-size: var(--font-size-base);
   }
 
-  input {
-    width: 100%;
+  .pin-container :global(.tui-input) {
     padding: 14px 16px;
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 0;
-    color: var(--text);
     font-size: var(--font-size-lg);
     text-align: center;
-    outline: none;
-    -webkit-appearance: none;
-  }
-
-  input:focus {
-    border-color: var(--accent);
   }
 
   .error {

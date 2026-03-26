@@ -1,4 +1,7 @@
 <script lang="ts">
+  import TuiMenuItem from './TuiMenuItem.svelte';
+  import TuiMenuPanel from './TuiMenuPanel.svelte';
+
   let {
     options,
     value = '',
@@ -68,27 +71,23 @@
       bind:value={searchText}
       onkeydown={onKeydown}
     />
-    <ul class="ss-dropdown" role="listbox">
-      <li
-        class="ss-option ss-option--reset"
-        class:ss-selected={!value}
-        onmousedown={() => select('')}
-        role="option"
-        aria-selected={!value}
-      >{placeholder}</li>
-      {#each filteredOptions as opt (opt.value)}
-        <li
-          class="ss-option"
-          class:ss-selected={opt.value === value}
-          onmousedown={() => select(opt.value)}
-          role="option"
-          aria-selected={opt.value === value}
-        >{opt.label}</li>
-      {/each}
-      {#if filteredOptions.length === 0}
-        <li class="ss-option ss-no-results">No matches</li>
-      {/if}
-    </ul>
+    <div class="ss-dropdown" role="listbox">
+      <TuiMenuPanel>
+        <TuiMenuItem onmousedown={() => select('')}>
+          <span class="ss-option--reset" class:ss-selected={!value}>{placeholder}</span>
+        </TuiMenuItem>
+        {#each filteredOptions as opt (opt.value)}
+          <TuiMenuItem onmousedown={() => select(opt.value)}>
+            <span class:ss-selected={opt.value === value}>{opt.label}</span>
+          </TuiMenuItem>
+        {/each}
+        {#if filteredOptions.length === 0}
+          <TuiMenuItem disabled>
+            <span class="ss-no-results">No matches</span>
+          </TuiMenuItem>
+        {/if}
+      </TuiMenuPanel>
+    </div>
   {:else}
     <button
       type="button"
@@ -165,33 +164,13 @@
     top: calc(100% + 2px);
     left: 0;
     right: 0;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 0;
-    list-style: none;
-    margin: 0;
-    padding: 4px 0;
     z-index: 100;
     max-height: 200px;
     overflow-y: auto;
   }
 
-  .ss-option {
-    padding: 6px 10px;
-    font-size: var(--font-size-xs);
-    cursor: pointer;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .ss-option:hover {
-    background: var(--border);
-  }
-
   .ss-option--reset {
     color: var(--text-muted);
-    border-bottom: 1px solid var(--border);
   }
 
   .ss-selected {
@@ -201,10 +180,5 @@
   .ss-no-results {
     color: var(--text-muted);
     font-style: italic;
-    cursor: default;
-  }
-
-  .ss-no-results:hover {
-    background: transparent;
   }
 </style>

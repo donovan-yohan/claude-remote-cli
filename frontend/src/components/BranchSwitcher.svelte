@@ -3,6 +3,8 @@
   import { fetchBranches, switchBranch } from '../lib/api.js';
   import type { BranchInfo } from '../lib/types.js';
   import CipherText from './CipherText.svelte';
+  import TuiMenuItem from './TuiMenuItem.svelte';
+  import TuiMenuPanel from './TuiMenuPanel.svelte';
 
   let {
     workspacePath,
@@ -137,73 +139,72 @@
 
   {#if open}
     <div class="branch-dropdown" role="listbox" tabindex="-1" aria-label="Branches" onkeydown={onKeydown}>
-      <div class="branch-filter-wrap">
-        <input
-          bind:this={filterInputEl}
-          type="text"
-          class="branch-filter"
-          placeholder="Filter branches..."
-          bind:value={filterText}
-          onkeydown={onKeydown}
-          aria-label="Filter branches"
-        />
-      </div>
-
-      {#if switchError}
-        <div class="branch-error">{switchError}</div>
-      {/if}
-
-      {#if showCreateOption && onCreateBranch}
-        <div class="branch-create" role="option" aria-selected={false} tabindex="-1" onmousedown={() => onCreateBranch?.(filterText.trim())}>
-          <span class="branch-create-icon">+</span>
-          <span>Create "<strong>{filterText.trim()}</strong>"</span>
+      <TuiMenuPanel>
+        <div class="branch-filter-wrap">
+          <input
+            bind:this={filterInputEl}
+            type="text"
+            class="branch-filter"
+            placeholder="Filter branches..."
+            bind:value={filterText}
+            onkeydown={onKeydown}
+            aria-label="Filter branches"
+          />
         </div>
-      {/if}
 
-      {#if branchQuery.isLoading}
-        <div class="branch-loading"><CipherText loading={true} text="Fetching branches..." /></div>
-      {:else if filteredBranches.length === 0 && !showCreateOption}
-        <div class="branch-empty">No branches match</div>
-      {:else}
-        <ul class="branch-list">
-          {#each filteredBranches as branch (branch.name)}
-            {@const checkedOutElsewhere = isCheckedOutElsewhere(branch)}
-            <li
-              class="branch-option"
-              class:branch-current={branch.name === currentBranch}
-              class:branch-switching={switching === branch.name}
-              class:branch-checked-out={checkedOutElsewhere}
-              role="option"
-              aria-selected={branch.name === currentBranch}
-              onmousedown={checkedOutElsewhere ? undefined : () => handleSelect(branch.name)}
-            >
-              {#if branch.name === currentBranch}
-                <span class="branch-check">&#10003;</span>
-              {:else}
-                <span class="branch-check branch-check--empty"></span>
-              {/if}
-              <span class="branch-option-name">{branch.name}</span>
-              {#if checkedOutElsewhere && branch.checkedOutIn && (onJumpToSession || onStartSession)}
-                <span class="branch-worktree-name">({branch.checkedOutIn.worktreeName})</span>
-                <button
-                  class="branch-jump-btn"
-                  title="Jump to worktree"
-                  onmousedown={(e) => handleJump(branch, e)}
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                    <path d="M4.5 2H2.5C2.22 2 2 2.22 2 2.5V9.5C2 9.78 2.22 10 2.5 10H9.5C9.78 10 10 9.78 10 9.5V7.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                    <path d="M7 2H10V5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-                  </svg>
-                </button>
-              {/if}
-              {#if switching === branch.name}
-                <span class="branch-spinner">&hellip;</span>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
+        {#if switchError}
+          <div class="branch-error">{switchError}</div>
+        {/if}
+
+        {#if showCreateOption && onCreateBranch}
+          <div class="branch-create" role="option" aria-selected={false} tabindex="-1" onmousedown={() => onCreateBranch?.(filterText.trim())}>
+            <span class="branch-create-icon">+</span>
+            <span>Create "<strong>{filterText.trim()}</strong>"</span>
+          </div>
+        {/if}
+
+        {#if branchQuery.isLoading}
+          <div class="branch-loading"><CipherText loading={true} text="Fetching branches..." /></div>
+        {:else if filteredBranches.length === 0 && !showCreateOption}
+          <div class="branch-empty">No branches match</div>
+        {:else}
+          <div class="branch-list">
+            {#each filteredBranches as branch (branch.name)}
+              {@const checkedOutElsewhere = isCheckedOutElsewhere(branch)}
+              <TuiMenuItem
+                disabled={checkedOutElsewhere || switching === branch.name}
+                onmousedown={() => handleSelect(branch.name)}
+              >
+                {#snippet icon()}
+                  {#if branch.name === currentBranch}
+                    <span class="branch-check">&#10003;</span>
+                  {:else}
+                    <span class="branch-check branch-check--empty"></span>
+                  {/if}
+                {/snippet}
+                <span class="branch-option-name" class:branch-current={branch.name === currentBranch} class:branch-checked-out={checkedOutElsewhere}>{branch.name}</span>
+                {#if checkedOutElsewhere && branch.checkedOutIn && (onJumpToSession || onStartSession)}
+                  <span class="branch-worktree-name">({branch.checkedOutIn.worktreeName})</span>
+                  <button
+                    class="branch-jump-btn"
+                    title="Jump to worktree"
+                    onmousedown={(e) => handleJump(branch, e)}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path d="M4.5 2H2.5C2.22 2 2 2.22 2 2.5V9.5C2 9.78 2.22 10 2.5 10H9.5C9.78 10 10 9.78 10 9.5V7.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                      <path d="M7 2H10V5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M10 2L5.5 6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                {/if}
+                {#if switching === branch.name}
+                  <span class="branch-spinner">&hellip;</span>
+                {/if}
+              </TuiMenuItem>
+            {/each}
+          </div>
+        {/if}
+      </TuiMenuPanel>
     </div>
   {/if}
 </div>
@@ -268,12 +269,7 @@
     left: 0;
     min-width: 220px;
     max-width: 340px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 0;
     z-index: 200;
-    overflow: hidden;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
   }
 
   .branch-filter-wrap {
@@ -334,56 +330,17 @@
   }
 
   .branch-list {
-    list-style: none;
-    margin: 0;
-    padding: 4px 0;
     max-height: 240px;
     overflow-y: auto;
-  }
-
-  .branch-option {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    font-size: var(--font-size-xs);
-    cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    color: var(--text-muted);
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .branch-option:hover {
-    background: var(--surface-hover);
-    color: var(--text);
   }
 
   .branch-current {
     color: var(--accent);
   }
 
-  .branch-current:hover {
-    color: var(--accent);
-  }
-
-  .branch-switching {
-    opacity: 0.6;
-    pointer-events: none;
-  }
-
-  .branch-checked-out .branch-option-name {
+  .branch-checked-out {
     text-decoration: line-through;
     opacity: 0.5;
-  }
-
-  .branch-checked-out {
-    cursor: default;
-  }
-
-  .branch-checked-out:hover {
-    background: transparent;
-    color: var(--text-muted);
   }
 
   .branch-worktree-name {

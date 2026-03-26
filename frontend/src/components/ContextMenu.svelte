@@ -1,4 +1,7 @@
 <script lang="ts">
+  import TuiMenuItem from './TuiMenuItem.svelte';
+  import TuiMenuPanel from './TuiMenuPanel.svelte';
+
   export interface MenuItem {
     label: string;
     action: () => void;
@@ -16,7 +19,7 @@
 
   let open = $state(false);
   let triggerEl = $state<HTMLButtonElement | null>(null);
-  let menuEl = $state<HTMLUListElement | null>(null);
+  let menuEl = $state<HTMLDivElement | null>(null);
   let anchorRect = $state<DOMRect | null>(null);
 
   function toggle(e: MouseEvent) {
@@ -65,7 +68,7 @@
     menuEl.style.left = left + 'px';
   }
 
-  function handleItemClick(item: MenuItem, e: Event) {
+  function handleItemSelect(item: MenuItem, e: MouseEvent) {
     e.stopPropagation();
     if (item.disabled) return;
     close();
@@ -105,27 +108,24 @@
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="context-menu-backdrop" onclick={handleBackdropClick}></div>
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <ul
+  <div
     class="context-menu"
     role="menu"
     bind:this={menuEl}
     onclick={(e) => e.stopPropagation()}
   >
-    {#each items as item}
-      <li
-        class="context-menu-item"
-        class:context-menu-item--danger={item.danger}
-        class:context-menu-item--disabled={item.disabled}
-        role="menuitem"
-        tabindex={item.disabled ? -1 : 0}
-        data-track="context-menu.{item.label.toLowerCase().replace(/\s+/g, '-')}"
-        onclick={(e) => handleItemClick(item, e)}
-        onkeydown={(e) => e.key === 'Enter' && handleItemClick(item, e)}
-      >
-        {item.label}
-      </li>
-    {/each}
-  </ul>
+    <TuiMenuPanel>
+      {#each items as item}
+        <TuiMenuItem
+          danger={item.danger ?? false}
+          disabled={item.disabled ?? false}
+          onmousedown={(e) => handleItemSelect(item, e)}
+        >
+          {item.label}
+        </TuiMenuItem>
+      {/each}
+    </TuiMenuPanel>
+  </div>
 {/if}
 
 <style>
@@ -161,48 +161,7 @@
 
   .context-menu {
     position: fixed;
-    list-style: none;
-    margin: 0;
-    padding: 4px 0;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 0;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     z-index: 1000;
     min-width: 175px;
-  }
-
-  .context-menu-item {
-    padding: 9px 14px;
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    color: var(--text);
-    white-space: nowrap;
-  }
-
-  .context-menu-item:hover {
-    background: var(--border);
-  }
-
-  .context-menu-item:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-  }
-
-  .context-menu-item--danger {
-    color: #e74c3c;
-  }
-
-  .context-menu-item--danger:hover {
-    background: rgba(231, 76, 60, 0.12);
-  }
-
-  .context-menu-item--disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-
-  .context-menu-item--disabled:hover {
-    background: none;
   }
 </style>
