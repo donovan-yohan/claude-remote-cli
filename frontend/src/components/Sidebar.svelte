@@ -236,6 +236,8 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-handle" onmousedown={startResize} ondblclick={resetWidth}></div>
   {/if}
+
+  <div class="scanline-overlay" aria-hidden="true"></div>
 </aside>
 
 <style>
@@ -384,6 +386,32 @@
 
   .settings-icon-btn:active {
     background: var(--border);
+  }
+
+  /* CRT scanline overlay */
+  .scanline-overlay {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    height: 200%;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 3px,
+      rgba(255, 255, 255, 0.02) 3px,
+      rgba(255, 255, 255, 0.02) 4px
+    );
+    animation: scanline-drift 8s linear infinite;
+  }
+
+  @keyframes scanline-drift {
+    from { transform: translateY(0); }
+    to { transform: translateY(-50%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scanline-overlay { animation: none; }
   }
 
   /* Mobile — full-screen overlay */
