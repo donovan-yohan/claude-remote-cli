@@ -5,12 +5,10 @@
     text,
     loading = false,
     duration = 400,
-    animate = true,
   }: {
     text: string;
     loading?: boolean;
     duration?: number;
-    animate?: boolean;
   } = $props();
 
   let prefersReducedMotion = $state(false);

@@ -5,25 +5,38 @@
     danger = false,
     disabled = false,
     onmousedown,
+    role = 'menuitem',
+    ariaSelected,
     icon,
     children,
   }: {
     danger?: boolean;
     disabled?: boolean;
     onmousedown?: (e: MouseEvent) => void;
+    role?: string;
+    ariaSelected?: boolean;
     icon?: Snippet;
     children: Snippet;
   } = $props();
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (disabled) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onmousedown?.(e as unknown as MouseEvent);
+    }
+  }
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="tui-menu-item"
   class:tui-menu-item--danger={danger}
   class:tui-menu-item--disabled={disabled}
-  role="menuitem"
+  {role}
+  aria-selected={ariaSelected}
   tabindex={disabled ? -1 : 0}
   onmousedown={disabled ? undefined : onmousedown}
+  onkeydown={handleKeydown}
 >
   <span class="fzf-cursor" aria-hidden="true">&gt;</span>
 

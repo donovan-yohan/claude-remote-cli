@@ -73,16 +73,16 @@
     />
     <div class="ss-dropdown" role="listbox">
       <TuiMenuPanel>
-        <TuiMenuItem onmousedown={() => select('')}>
+        <TuiMenuItem role="option" ariaSelected={!value} onmousedown={() => select('')}>
           <span class="ss-option--reset" class:ss-selected={!value}>{placeholder}</span>
         </TuiMenuItem>
         {#each filteredOptions as opt (opt.value)}
-          <TuiMenuItem onmousedown={() => select(opt.value)}>
+          <TuiMenuItem role="option" ariaSelected={opt.value === value} onmousedown={() => select(opt.value)}>
             <span class:ss-selected={opt.value === value}>{opt.label}</span>
           </TuiMenuItem>
         {/each}
         {#if filteredOptions.length === 0}
-          <TuiMenuItem disabled>
+          <TuiMenuItem role="option" disabled>
             <span class="ss-no-results">No matches</span>
           </TuiMenuItem>
         {/if}

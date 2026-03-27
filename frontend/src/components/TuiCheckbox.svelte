@@ -31,7 +31,16 @@
     cursor: not-allowed;
   }
   .tui-checkbox input {
-    display: none;
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .tui-checkbox:has(input:focus-visible) .tui-check {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .tui-check {
     color: var(--text-muted);

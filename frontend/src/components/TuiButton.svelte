@@ -43,7 +43,9 @@
     class:tui-button--disabled={disabled}
     class:tui-button--hovered={hovered}
     {href}
-    aria-disabled={disabled}
+    aria-disabled={disabled || undefined}
+    tabindex={disabled ? -1 : undefined}
+    onclick={disabled ? undefined : onclick}
     onmouseenter={handleMouseEnter}
     onmouseleave={handleMouseLeave}
     {...rest}

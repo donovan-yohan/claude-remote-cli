@@ -152,6 +152,8 @@
           <div class="target-list">
             {#each filteredBranches as branch (branch.name)}
               <TuiMenuItem
+                role="option"
+                ariaSelected={branch.name === currentBase}
                 disabled={switching === branch.name}
                 onmousedown={() => handleSelect(branch.name)}
               >

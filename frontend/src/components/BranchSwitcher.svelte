@@ -172,6 +172,8 @@
             {#each filteredBranches as branch (branch.name)}
               {@const checkedOutElsewhere = isCheckedOutElsewhere(branch)}
               <TuiMenuItem
+                role="option"
+                ariaSelected={branch.name === currentBranch}
                 disabled={checkedOutElsewhere || switching === branch.name}
                 onmousedown={() => handleSelect(branch.name)}
               >
