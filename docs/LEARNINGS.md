@@ -271,3 +271,13 @@ When a UI element needs different visibility on mobile vs desktop (e.g., "always
 When a pure-function state machine (e.g., `derivePrAction()`) already maps input states to actions, and the template adds explicit checks for specific states (e.g., `CONFLICTING` → "Fix Conflicts" button with a different handler), those explicit checks and the state machine's generic output must be rendered as a priority chain, not as independent blocks. Using independent `{#if}` blocks for states that should render only one pill creates duplication when multiple conditions fire — e.g., `CONFLICTING` fires both the explicit check and the generic `action.type !== 'none'` guard. Always use `{#if}/{:else if}/{:else if}` chains so the first matching condition wins. When adding a new template branch for a specific state, check whether the generic action rendering also fires for the same state.
 
 ---
+
+### L-20260326-repo-source-unification: Any endpoint that needs "all repos" must merge config.workspaces and config.rootDirs — never rely on just one
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-26
+- branch: master
+
+The server has two sources of repo paths: `config.workspaces[]` (directly added) and `config.rootDirs[]` (parent directories scanned for `.git/`). When building a list of repos to operate on (e.g., worktree discovery, branch listing), always merge both sources and deduplicate by path. The `GET /worktrees` endpoint only scanned `rootDirs`, making all worktrees in directly-added workspaces invisible. Extract a shared `getAllRepoPaths(config)` helper that merges both sources so new endpoints get it right by default.
+
+---

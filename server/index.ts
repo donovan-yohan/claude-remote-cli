@@ -637,6 +637,15 @@ async function main(): Promise<void> {
           }
         }
       }
+
+      // Also include directly-configured workspaces (may not be under any rootDir)
+      const configWorkspaces = getConfig().workspaces ?? [];
+      const scannedPaths = new Set(reposToScan.map(r => r.path));
+      for (const wp of configWorkspaces) {
+        if (scannedPaths.has(wp)) continue;
+        const root = roots.find(r => wp.startsWith(r)) || '';
+        reposToScan.push({ path: wp, name: wp.split('/').filter(Boolean).pop() || '', root });
+      }
     }
 
     for (const repo of reposToScan) {
