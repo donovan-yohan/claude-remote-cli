@@ -54,6 +54,23 @@ export async function checkAuth(): Promise<boolean> {
   return res.ok;
 }
 
+export async function checkAuthStatus(): Promise<{ hasPIN: boolean }> {
+  const res = await fetch('/auth/status');
+  return res.json() as Promise<{ hasPIN: boolean }>;
+}
+
+export async function setupPin(pin: string, confirm: string): Promise<void> {
+  const res = await fetch('/auth/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin, confirm }),
+  });
+  if (!res.ok) {
+    const message = await parseErrorBody(res, 'Failed to set PIN');
+    throw new Error(message);
+  }
+}
+
 export async function fetchSessions(): Promise<SessionSummary[]> {
   return json<SessionSummary[]>(await fetch('/sessions'));
 }
