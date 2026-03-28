@@ -72,34 +72,27 @@ git push
 
 ## What CI Does
 
-### Stable (`publish.yml`)
+Both stable and nightly publishing are handled by a single workflow (`publish.yml`), triggered by either a `v*` tag push or a push to `nightly`.
 
-Triggers on `v*` tag push. Verifies the tag is on `master`, then:
+**On `v*` tag push (stable):**
 
 1. Checks out the tagged commit
 2. Verifies tag is on `master` branch (fails otherwise)
-3. Sets up Node.js from `.nvmrc`
-4. Installs dependencies with `npm ci`
-5. Builds and runs tests
-6. Publishes with `npm publish --provenance --access public` (tag: `latest`)
+3. Builds and runs tests
+4. Publishes with `npm publish --provenance --access public` (tag: `latest`)
 
-### Nightly (`publish-nightly.yml`)
-
-Triggers on every push to `nightly`:
+**On push to `nightly`:**
 
 1. Checks out the commit
-2. Sets up Node.js from `.nvmrc`
-3. Installs dependencies with `npm ci`
-4. Stamps a prerelease version: `<base>-nightly.YYYYMMDD.<run>`
-5. Builds and runs tests
-6. Publishes with `npm publish --provenance --access public --tag nightly`
+2. Stamps a prerelease version: `<base>-nightly.YYYYMMDD.<run>`
+3. Builds and runs tests
+4. Publishes with `npm publish --provenance --access public --tag nightly`
 
 ### CI Setup (one-time)
 
 1. Create a GitHub environment called `release` in the repo (Settings > Environments)
 2. On npmjs.com, configure **trusted publishing** for `claude-remote-cli` with:
-   - Workflow filename: `publish.yml` (for stable)
-   - Workflow filename: `publish-nightly.yml` (for nightly)
+   - Workflow filename: `publish.yml`
    - Environment name: `release`
 
 ## Pre-Release Checklist (stable only)
