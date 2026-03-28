@@ -294,6 +294,7 @@
       ]}
     />
 
+    <div class="settings-sections">
     <!-- GENERAL section -->
     <section id="section-general" class="settings-section" class:dimmed={!matchesSearch('general')}>
       <h3 class="section-heading">general</h3>
@@ -384,6 +385,7 @@
         <p class="update-status">{updateStatus}</p>
       {/if}
     </section>
+    </div>
   </div>
 </DialogShell>
 
@@ -399,6 +401,29 @@
     flex-direction: column;
     gap: 32px;
     position: relative;
+  }
+
+  .settings-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    flex: 1;
+    min-width: 0;
+    padding: 16px 20px;
+  }
+
+  /* Desktop: side-by-side TOC + scrollable content */
+  @media (min-width: 601px) {
+    .settings-content {
+      flex-direction: row;
+      gap: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .settings-sections {
+      overflow-y: auto;
+    }
   }
 
   .settings-section {
@@ -417,8 +442,8 @@
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     letter-spacing: 0.08em;
-    margin: 0 0 12px;
-    padding-bottom: 8px;
+    margin: 0 -20px 12px;
+    padding: 0 20px 8px;
     border-bottom: 1px solid var(--border);
   }
 
@@ -458,6 +483,11 @@
   .hamburger-btn:hover {
     background: var(--border);
     color: var(--text);
+  }
+
+  /* Desktop: hide hamburger, TOC is always visible */
+  @media (min-width: 601px) {
+    .hamburger-btn { display: none; }
   }
 
   .analytics-action {

@@ -227,11 +227,12 @@
     padding: 16px 20px;
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
   }
 
   .dialog-shell--fullscreen .dialog-shell__body {
-    max-width: 640px;
-    margin: 0 auto;
+    padding: 0;
+    max-width: none;
     width: 100%;
     box-sizing: border-box;
   }

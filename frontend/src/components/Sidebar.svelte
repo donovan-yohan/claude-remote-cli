@@ -225,7 +225,7 @@
     </div>
 
     <div class="sidebar-footer-row">
-      <TuiButton variant="primary" data-track="sidebar.add-workspace" onclick={onAddWorkspace}>
+      <TuiButton variant="primary" data-track="sidebar.add-workspace" onclick={onAddWorkspace} style="flex: 1;">
         + Add Workspace
       </TuiButton>
       <button class="settings-icon-btn" data-track="sidebar.settings" onclick={() => onOpenSettings()} aria-label="Settings">
@@ -273,7 +273,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 12px;
+    padding: 0 12px;
+    /* Match PrTopBar (36px + 1px border) + SessionTabBar (32px + 1px border) = 70px total */
+    height: 69px; /* 70px minus own 1px border-bottom */
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -362,16 +364,14 @@
     flex-shrink: 0;
   }
 
+
   .settings-icon-btn {
     width: 40px;
     min-height: 40px;
     background: none;
     border: 1px solid var(--border);
-    border-radius: 0;
     color: var(--text-muted);
-    font-size: var(--font-size-lg);
     cursor: pointer;
-    touch-action: manipulation;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -382,10 +382,6 @@
   .settings-icon-btn:hover {
     background: var(--surface-hover);
     color: var(--text);
-  }
-
-  .settings-icon-btn:active {
-    background: var(--border);
   }
 
   /* CRT scanline overlay */
@@ -402,7 +398,7 @@
       rgba(255, 255, 255, 0.02) 3px,
       rgba(255, 255, 255, 0.02) 4px
     );
-    animation: scanline-drift 8s linear infinite;
+    animation: scanline-drift 30s linear infinite;
   }
 
   @keyframes scanline-drift {

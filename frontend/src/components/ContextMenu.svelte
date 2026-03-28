@@ -119,7 +119,7 @@
         <TuiMenuItem
           danger={item.danger ?? false}
           disabled={item.disabled ?? false}
-          onmousedown={(e) => handleItemSelect(item, e)}
+          onclick={(e) => handleItemSelect(item, e)}
         >
           {item.label}
         </TuiMenuItem>

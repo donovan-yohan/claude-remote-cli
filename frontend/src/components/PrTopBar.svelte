@@ -220,16 +220,17 @@
         />
       </div>
     {:else}
-      <BranchSwitcher
-        {workspacePath}
-        currentWorktreePath={workspacePath}
-        currentBranch={currentBranch}
-        disabled={agentRunning}
-        onSwitch={handleBranchSwitch}
-      />
+      <div class="branch-with-actions">
+        <BranchSwitcher
+          {workspacePath}
+          currentWorktreePath={workspacePath}
+          currentBranch={currentBranch}
+          disabled={agentRunning}
+          onSwitch={handleBranchSwitch}
+        />
 
-      <!-- Hover-reveal icons -->
-      <div class="hover-icons">
+        <!-- Hover-reveal icons — overlaid to the right of branch name, left of chevron -->
+        <div class="hover-icons">
         <button
           class="hover-icon"
           onclick={handleCopy}
@@ -258,6 +259,7 @@
             <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linejoin="round"/>
           </svg>
         </button>
+      </div>
       </div>
     {/if}
 
@@ -386,6 +388,7 @@
     overflow: hidden;
     padding-right: 8px;
     border-right: 1px solid var(--border);
+    align-self: stretch;
   }
 
   .target-section {
@@ -407,7 +410,6 @@
     display: flex;
     align-items: center;
     padding: 0 12px;
-    border-right: 1px solid var(--border);
     flex-shrink: 0;
     white-space: nowrap;
   }
@@ -516,16 +518,31 @@
   }
 
   /* Hover-reveal icons */
+  .branch-with-actions {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
   .hover-icons {
+    position: absolute;
+    right: 24px; /* left of the chevron */
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
     gap: 2px;
     opacity: 0;
     transition: opacity 0.15s;
+    pointer-events: none;
+    z-index: 1;
+    background: var(--bg);
+    padding-left: 4px;
   }
 
-  .bar-left:hover .hover-icons {
+  .branch-with-actions:hover .hover-icons {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .hover-icon {

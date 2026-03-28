@@ -67,9 +67,23 @@
     };
   });
 
+  // --- Scroll overflow detection ---
+  let isScrollable = $state(false);
+
   // --- Keyboard nav ---
   let focusedIndex = $state(0);
   let scrollContainerEl: HTMLDivElement | undefined = $state(undefined);
+
+  $effect(() => {
+    if (!scrollContainerEl) return;
+    const check = () => {
+      isScrollable = scrollContainerEl!.scrollHeight > scrollContainerEl!.clientHeight;
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(scrollContainerEl);
+    return () => observer.disconnect();
+  });
 
   // Reset focusedIndex when rows change (new array reference from $derived.by).
   // Uses referential identity check — $derived.by always returns a new array.
@@ -292,8 +306,10 @@
       {/if}
     </div>
 
-    <!-- Gradient fade (stays fixed at bottom of wrapper) -->
-    <div class="scroll-fade"></div>
+    <!-- Gradient fade (only when content overflows) -->
+    {#if isScrollable}
+      <div class="scroll-fade"></div>
+    {/if}
   </div>
 </div>
 

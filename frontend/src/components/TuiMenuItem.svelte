@@ -5,6 +5,7 @@
     danger = false,
     disabled = false,
     onmousedown,
+    onclick,
     role = 'menuitem',
     ariaSelected,
     icon,
@@ -13,6 +14,7 @@
     danger?: boolean;
     disabled?: boolean;
     onmousedown?: (e: MouseEvent) => void;
+    onclick?: (e: MouseEvent) => void;
     role?: string;
     ariaSelected?: boolean;
     icon?: Snippet;
@@ -36,6 +38,7 @@
   aria-selected={ariaSelected}
   tabindex={disabled ? -1 : 0}
   onmousedown={disabled ? undefined : onmousedown}
+  onclick={disabled ? undefined : onclick}
   onkeydown={handleKeydown}
 >
   <span class="fzf-cursor" aria-hidden="true">&gt;</span>

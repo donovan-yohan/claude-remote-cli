@@ -1,9 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
-  type Variant = 'primary' | 'ghost' | 'danger' | 'success' | 'info';
-  type Size = 'default' | 'sm';
-  type ButtonType = 'button' | 'submit' | 'reset';
+  export type TuiButtonVariant = 'primary' | 'ghost' | 'danger' | 'success' | 'info';
 
   let {
     variant = 'primary',
@@ -15,167 +13,111 @@
     children,
     ...rest
   }: {
-    variant?: Variant;
-    size?: Size;
+    variant?: TuiButtonVariant;
+    size?: 'default' | 'sm' | 'icon';
     disabled?: boolean;
-    type?: ButtonType;
+    type?: 'button' | 'submit' | 'reset';
     href?: string;
     onclick?: (e: MouseEvent) => void;
     children: Snippet;
     [key: string]: unknown;
   } = $props();
-
-  let hovered = $state(false);
-
-  function handleMouseEnter() {
-    if (!disabled) hovered = true;
-  }
-
-  function handleMouseLeave() {
-    hovered = false;
-  }
 </script>
 
 {#if href}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <a
-    class="tui-button tui-button--{variant} tui-button--{size}"
-    class:tui-button--disabled={disabled}
-    class:tui-button--hovered={hovered}
+    class="tui-btn tui-btn--{variant}"
+    class:tui-btn--sm={size === 'sm'}
+    class:tui-btn--icon={size === 'icon'}
+    class:tui-btn--disabled={disabled}
     {href}
     aria-disabled={disabled || undefined}
     tabindex={disabled ? -1 : undefined}
     onclick={disabled ? undefined : onclick}
-    onmouseenter={handleMouseEnter}
-    onmouseleave={handleMouseLeave}
     {...rest}
   >
-    <span class="tui-corner tui-corner--tl">{hovered ? '╔' : '┌'}</span>
-    <span class="tui-corner tui-corner--tr">{hovered ? '╗' : '┐'}</span>
-    <span class="tui-inner">{@render children()}</span>
-    <span class="tui-corner tui-corner--bl">{hovered ? '╚' : '└'}</span>
-    <span class="tui-corner tui-corner--br">{hovered ? '╝' : '┘'}</span>
+    {@render children()}
   </a>
 {:else}
   <button
-    class="tui-button tui-button--{variant} tui-button--{size}"
-    class:tui-button--disabled={disabled}
-    class:tui-button--hovered={hovered}
+    class="tui-btn tui-btn--{variant}"
+    class:tui-btn--sm={size === 'sm'}
+    class:tui-btn--icon={size === 'icon'}
+    class:tui-btn--disabled={disabled}
     {type}
     {disabled}
     {onclick}
-    onmouseenter={handleMouseEnter}
-    onmouseleave={handleMouseLeave}
     {...rest}
   >
-    <span class="tui-corner tui-corner--tl">{hovered ? '╔' : '┌'}</span>
-    <span class="tui-corner tui-corner--tr">{hovered ? '╗' : '┐'}</span>
-    <span class="tui-inner">{@render children()}</span>
-    <span class="tui-corner tui-corner--bl">{hovered ? '╚' : '└'}</span>
-    <span class="tui-corner tui-corner--br">{hovered ? '╝' : '┘'}</span>
+    {@render children()}
   </button>
 {/if}
 
 <style>
-  .tui-button {
-    position: relative;
-    display: inline-grid;
-    grid-template-areas:
-      "tl . tr"
-      ".  c  ."
-      "bl . br";
-    grid-template-columns: auto 1fr auto;
-    grid-template-rows: auto 1fr auto;
+  .tui-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
-    border: none;
-    border-top: 1px solid currentColor;
-    border-bottom: 1px solid currentColor;
+    border: 1px solid currentColor;
     cursor: pointer;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     text-decoration: none;
-    padding: 0;
-    border-radius: 0;
-    line-height: 1;
-    transition: background 120ms ease-out, border-style 120ms ease-out;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .tui-button {
-      transition: none;
-    }
-  }
-
-  /* Variants — set color; borders and text inherit via currentColor */
-  .tui-button--primary {
-    color: var(--accent);
-  }
-
-  .tui-button--ghost {
-    color: var(--text-muted);
-  }
-
-  .tui-button--danger {
-    color: var(--status-error);
-    /* Danger border is 50% opacity at rest per DESIGN.md */
-    border-top-color: color-mix(in srgb, var(--status-error) 50%, transparent);
-    border-bottom-color: color-mix(in srgb, var(--status-error) 50%, transparent);
-  }
-
-  .tui-button--success {
-    color: var(--status-success);
-  }
-
-  .tui-button--info {
-    color: var(--status-info);
-  }
-
-  /* Size variants */
-  .tui-button--default .tui-inner {
-    padding: 8px 12px;
-  }
-
-  .tui-button--sm .tui-inner {
-    padding: 4px 8px;
-  }
-
-  /* Corners */
-  .tui-corner {
-    font-size: var(--font-size-sm);
-    line-height: 1;
-    color: currentColor;
-  }
-
-  .tui-corner--tl { grid-area: tl; }
-  .tui-corner--tr { grid-area: tr; }
-  .tui-corner--bl { grid-area: bl; }
-  .tui-corner--br { grid-area: br; }
-
-  /* Inner content */
-  .tui-inner {
-    grid-area: c;
+    padding: 8px 16px;
+    line-height: 1.4;
     white-space: nowrap;
+    transition: border-style 0.1s, filter 0.1s, background 0.1s;
   }
 
-  /* Hover state */
-  .tui-button--hovered:not(.tui-button--disabled) {
+  /* Hover: double border + lighten color */
+  .tui-btn:hover:not(.tui-btn--disabled) {
+    border-width: 3px;
     border-style: double;
-    background: color-mix(in srgb, currentColor 8%, transparent);
+    padding: 6px 14px;
+    filter: brightness(1.3);
+    background: color-mix(in srgb, currentColor 6%, transparent);
   }
 
-  /* Danger: full border opacity on hover */
-  .tui-button--danger.tui-button--hovered:not(.tui-button--disabled) {
-    border-top-color: currentColor;
-    border-bottom-color: currentColor;
+  /* Variants */
+  .tui-btn--primary { color: var(--accent); }
+  .tui-btn--ghost { color: var(--text-muted); }
+  .tui-btn--danger { color: color-mix(in srgb, var(--status-error) 70%, transparent); }
+  .tui-btn--danger:hover:not(.tui-btn--disabled) { color: var(--status-error); }
+  .tui-btn--success { color: var(--status-success); }
+  .tui-btn--info { color: var(--status-info); }
+
+  /* Small — toolbar text buttons */
+  .tui-btn--sm {
+    padding: 4px 8px;
+    font-size: var(--font-size-xs);
+  }
+
+  .tui-btn--sm:hover:not(.tui-btn--disabled) {
+    padding: 2px 6px;
+  }
+
+  /* Icon — square button with border, same hover treatment */
+  .tui-btn--icon {
+    padding: 8px;
+  }
+
+  .tui-btn--icon:hover:not(.tui-btn--disabled) {
+    padding: 6px;
   }
 
   /* Disabled */
-  .tui-button--disabled {
+  .tui-btn--disabled {
     opacity: 0.4;
     cursor: not-allowed;
   }
 
-  a.tui-button--disabled {
+  a.tui-btn--disabled {
     pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tui-btn { transition: none; }
   }
 </style>
