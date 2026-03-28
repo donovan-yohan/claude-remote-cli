@@ -500,42 +500,110 @@ async function main(): Promise<void> {
     }
   });
 
+  // GET /auth/status — no auth required, tells frontend if PIN is configured
+  app.get('/auth/status', (_req, res) => {
+    const config = getConfig();
+    res.json({ hasPIN: !!config.pinHash });
+  });
+
+  // POST /auth/setup — set initial PIN (only works when no PIN is configured)
+  app.post('/auth/setup', async (req, res) => {
+    try {
+      const ip = (req.ip || req.connection.remoteAddress) as string;
+      if (auth.isRateLimited(ip)) {
+        res.status(429).json({ error: 'Too many attempts. Try again later.' });
+        return;
+      }
+
+      const { pin, confirm } = req.body as { pin?: string; confirm?: string };
+      if (!pin || !confirm) {
+        res.status(400).json({ error: 'PIN and confirmation required' });
+        return;
+      }
+      if (pin !== confirm) {
+        auth.recordFailedAttempt(ip);
+        res.status(400).json({ error: 'PINs do not match' });
+        return;
+      }
+      if (pin.length < 4) {
+        res.status(400).json({ error: 'PIN must be at least 4 characters' });
+        return;
+      }
+
+      // Single read — check + write atomically to avoid TOCTOU race
+      const freshConfig = loadConfig(CONFIG_PATH);
+      if (freshConfig.pinHash) {
+        res.status(403).json({ error: 'PIN is already configured. Use CLI to reset.' });
+        return;
+      }
+      freshConfig.pinHash = await auth.hashPin(pin);
+      saveConfig(CONFIG_PATH, freshConfig);
+
+      // Auto-login: generate token and set cookie
+      auth.clearRateLimit(ip);
+      const token = auth.generateCookieToken();
+      authenticatedTokens.add(token);
+      const ttlMs = parseTTL(freshConfig.cookieTTL);
+      setTimeout(() => authenticatedTokens.delete(token), ttlMs);
+
+      res.cookie('token', token, {
+        httpOnly: true,
+        sameSite: 'strict',
+        maxAge: ttlMs,
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[auth] Unhandled error in POST /auth/setup:', err);
+      res.status(500).json({ error: 'Failed to set PIN' });
+    }
+  });
+
   // POST /auth
   app.post('/auth', async (req, res) => {
-    const ip = (req.ip || req.connection.remoteAddress) as string;
-    if (auth.isRateLimited(ip)) {
-      res.status(429).json({ error: 'Too many attempts. Try again later.' });
-      return;
+    try {
+      const ip = (req.ip || req.connection.remoteAddress) as string;
+      if (auth.isRateLimited(ip)) {
+        res.status(429).json({ error: 'Too many attempts. Try again later.' });
+        return;
+      }
+
+      const { pin } = req.body as { pin?: string };
+      if (!pin) {
+        res.status(400).json({ error: 'PIN required' });
+        return;
+      }
+
+      const authConfig = getConfig();
+      if (!authConfig.pinHash) {
+        res.status(412).json({ error: 'No PIN configured', needsSetup: true });
+        return;
+      }
+      const valid = process.env.NO_PIN === '1' || await auth.verifyPin(pin, authConfig.pinHash);
+      if (!valid) {
+        auth.recordFailedAttempt(ip);
+        res.status(401).json({ error: 'Invalid PIN' });
+        return;
+      }
+
+      auth.clearRateLimit(ip);
+      const token = auth.generateCookieToken();
+      authenticatedTokens.add(token);
+
+      const ttlMs = parseTTL(authConfig.cookieTTL);
+      setTimeout(() => authenticatedTokens.delete(token), ttlMs);
+
+      res.cookie('token', token, {
+        httpOnly: true,
+        sameSite: 'strict',
+        maxAge: ttlMs,
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error('[auth] Unhandled error in POST /auth:', err);
+      res.status(500).json({ error: 'Internal server error' });
     }
-
-    const { pin } = req.body as { pin?: string };
-    if (!pin) {
-      res.status(400).json({ error: 'PIN required' });
-      return;
-    }
-
-    const authConfig = getConfig();
-    const valid = process.env.NO_PIN === '1' || await auth.verifyPin(pin, authConfig.pinHash as string);
-    if (!valid) {
-      auth.recordFailedAttempt(ip);
-      res.status(401).json({ error: 'Invalid PIN' });
-      return;
-    }
-
-    auth.clearRateLimit(ip);
-    const token = auth.generateCookieToken();
-    authenticatedTokens.add(token);
-
-    const ttlMs = parseTTL(authConfig.cookieTTL);
-    setTimeout(() => authenticatedTokens.delete(token), ttlMs);
-
-    res.cookie('token', token, {
-      httpOnly: true,
-      sameSite: 'strict',
-      maxAge: ttlMs,
-    });
-
-    res.json({ ok: true });
   });
 
   // GET /sessions — enrich with live branch from git (rate-limited to avoid spawning git on every poll)
@@ -639,6 +707,15 @@ async function main(): Promise<void> {
             // .git doesn't exist — not a repo
           }
         }
+      }
+
+      // Also include directly-configured workspaces (may not be under any rootDir)
+      const configWorkspaces = getConfig().workspaces ?? [];
+      const scannedPaths = new Set(reposToScan.map(r => r.path));
+      for (const wp of configWorkspaces) {
+        if (scannedPaths.has(wp)) continue;
+        const root = roots.find(r => wp.startsWith(r)) || '';
+        reposToScan.push({ path: wp, name: wp.split('/').filter(Boolean).pop() || '', root });
       }
     }
 

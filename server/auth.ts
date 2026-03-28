@@ -19,7 +19,8 @@ export async function hashPin(pin: string): Promise<string> {
   return `scrypt:${salt}:${derived.toString('hex')}`;
 }
 
-export async function verifyPin(pin: string, hash: string): Promise<boolean> {
+export async function verifyPin(pin: string, hash: string | null | undefined): Promise<boolean> {
+  if (!hash) return false;
   if (hash.startsWith('scrypt:')) {
     const [, salt, storedHashHex] = hash.split(':');
     if (!salt || !storedHashHex) return false;

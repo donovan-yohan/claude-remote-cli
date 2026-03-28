@@ -1,10 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import { loadConfig, saveConfig } from './config.js';
 import { extractOwnerRepo } from './git.js';
+import { findOrCreateWorktreeForBranch } from './watcher.js';
 import type { Config, WorkspaceSettings } from './types.js';
 
 const execFileAsync = promisify(execFile);
@@ -225,14 +224,8 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
       }
 
       const localBranch = `review-pr-${prNumber}`;
-      const worktreePath = path.join(workspacePath, '.worktrees', localBranch);
 
-      // Skip if worktree already exists (e.g., from a previous poll)
-      if (fs.existsSync(worktreePath)) {
-        continue;
-      }
-
-      // Fetch the PR's head ref into a local branch, then create worktree from it
+      // Fetch the PR's head ref into a local branch
       try {
         await exec(
           'git',
@@ -240,7 +233,7 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
           { cwd: workspacePath, timeout: GH_TIMEOUT_MS },
         );
       } catch (err) {
-        // Branch may already exist from a prior fetch — continue to worktree add
+        // Branch may already exist from a prior fetch — continue to worktree creation
         const errMsg = (err as Error).message ?? '';
         if (!errMsg.includes('already exists')) {
           console.warn(`[review-poller] Failed to fetch PR #${prNumber}:`, err);
@@ -248,14 +241,17 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
         }
       }
 
+      // Find existing worktree for this branch or create a new one
+      let result;
       try {
-        await exec(
-          'git',
-          ['worktree', 'add', worktreePath, localBranch],
-          { cwd: workspacePath, timeout: GH_TIMEOUT_MS },
-        );
+        result = await findOrCreateWorktreeForBranch(workspacePath, localBranch, exec);
       } catch (err) {
         console.warn(`[review-poller] Failed to create worktree for PR #${prNumber}:`, err);
+        continue;
+      }
+
+      // Skip session creation if worktree already existed (previous poll already handled it)
+      if (result.existing) {
         continue;
       }
 
@@ -265,7 +261,7 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
         try {
           await deps.createSession({
             workspacePath,
-            worktreePath,
+            worktreePath: result.worktreePath,
             branchName: localBranch,
             initialPrompt: settings.promptCodeReview,
           });
@@ -277,7 +273,7 @@ async function pollOnce(deps: ReviewPollerDeps): Promise<void> {
       deps.broadcastEvent('review-checkout', {
         prNumber,
         ownerRepo,
-        worktreePath,
+        worktreePath: result.worktreePath,
         branchName: localBranch,
         title: notification.subject.title,
       });

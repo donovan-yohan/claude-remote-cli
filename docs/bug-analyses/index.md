@@ -1,5 +1,6 @@
 # Bug Analyses
 
+- [2026-03-26-worktree-discovery-missing-bug-analysis.md](2026-03-26-worktree-discovery-missing-bug-analysis.md) — Inactive worktrees invisible in sidebar — GET /worktrees only scans rootDirs, not config.workspaces (2026-03-26)
 - [2026-03-25-pr-dashboard-duplicate-cta-overflow-bug-analysis.md](2026-03-25-pr-dashboard-duplicate-cta-overflow-bug-analysis.md) — Duplicate "Fix Conflicts" CTAs and action column overflow — independent {#if} blocks bypass state machine exclusivity
 - [2026-03-25-desktop-drag-broken-reorder-mode-jarring-bug-analysis.md](2026-03-25-desktop-drag-broken-reorder-mode-jarring-bug-analysis.md) — Desktop drag broken — reorder mode has no mouse entry point; reorder UI jarringly hides all sidebar content
 - [2026-03-25-push-notifications-never-prompted-bug-analysis.md](2026-03-25-push-notifications-never-prompted-bug-analysis.md) — Push notifications silently broken — `requestPermission()` exported but never called, no permission UI

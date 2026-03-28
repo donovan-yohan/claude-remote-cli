@@ -72,6 +72,69 @@ export function parseWorktreeListPorcelain(stdout: string, repoPath: string): Pa
     .map(b => ({ path: b.path, branch: b.branch }));
 }
 
+export interface FindOrCreateResult {
+  worktreePath: string;
+  branchName: string;
+  dirName: string;
+  existing: boolean;
+}
+
+/**
+ * Find an existing worktree for a branch, or create a new one.
+ * Prevents "fatal: branch is already used by worktree" errors by
+ * checking `git worktree list` before attempting `git worktree add`.
+ */
+export async function findOrCreateWorktreeForBranch(
+  repoPath: string,
+  branch: string,
+  execFn: (cmd: string, args: string[], opts: { cwd: string; timeout?: number }) => Promise<{ stdout: string; stderr: string }>,
+): Promise<FindOrCreateResult> {
+  // Check if branch is already checked out in an existing worktree
+  try {
+    const { stdout } = await execFn('git', ['worktree', 'list', '--porcelain'], { cwd: repoPath });
+    const existing = parseWorktreeListPorcelain(stdout, repoPath);
+    const match = existing.find(wt => wt.branch === branch);
+    if (match) {
+      return {
+        worktreePath: match.path,
+        branchName: match.branch,
+        dirName: match.path.split('/').pop() || '',
+        existing: true,
+      };
+    }
+  } catch {
+    // git worktree list failed — proceed with creation attempt
+  }
+
+  // Sanitize branch name for directory
+  const dirName = branch.replace(/\//g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
+  const worktreePath = path.join(repoPath, '.worktrees', dirName);
+
+  // Ensure .worktrees/ is in .gitignore (best-effort — skip if directory doesn't exist)
+  try {
+    const gitignorePath = path.join(repoPath, '.gitignore');
+    try {
+      const content = fs.readFileSync(gitignorePath, 'utf8');
+      if (!content.includes('.worktrees/')) {
+        fs.appendFileSync(gitignorePath, '\n.worktrees/\n');
+      }
+    } catch {
+      fs.writeFileSync(gitignorePath, '.worktrees/\n');
+    }
+  } catch {
+    // Directory may not exist in test environments — skip
+  }
+
+  await execFn('git', ['worktree', 'add', worktreePath, branch], { cwd: repoPath });
+
+  return {
+    worktreePath,
+    branchName: branch,
+    dirName,
+    existing: false,
+  };
+}
+
 export class WorktreeWatcher extends EventEmitter {
   private _watchers: fs.FSWatcher[];
   private _debounceTimer: ReturnType<typeof setTimeout> | null;

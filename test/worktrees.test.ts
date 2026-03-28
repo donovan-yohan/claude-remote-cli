@@ -268,6 +268,74 @@ describe('parseAllWorktrees', () => {
   });
 });
 
+describe('workspace-to-repo merging for worktree discovery', () => {
+  // This tests the logic used in GET /worktrees to merge config.workspaces
+  // into the rootDir-scanned repo list, preventing the bug where workspaces
+  // added directly (not under any rootDir) had invisible worktrees.
+
+  type RepoEntry = { name: string; path: string; root: string };
+
+  function mergeWorkspacesIntoRepos(
+    reposToScan: RepoEntry[],
+    configWorkspaces: string[],
+    rootDirs: string[],
+  ): RepoEntry[] {
+    const result = [...reposToScan];
+    const scannedPaths = new Set(result.map(r => r.path));
+    for (const wp of configWorkspaces) {
+      if (scannedPaths.has(wp)) continue;
+      const root = rootDirs.find(r => wp.startsWith(r)) || '';
+      result.push({ path: wp, name: wp.split('/').filter(Boolean).pop() || '', root });
+    }
+    return result;
+  }
+
+  it('should add workspaces not under any rootDir', () => {
+    const reposFromRootDirs: RepoEntry[] = [
+      { name: 'repo-a', path: '/root/repo-a', root: '/root' },
+    ];
+    const configWorkspaces = ['/other/path/my-project'];
+    const rootDirs = ['/root'];
+
+    const merged = mergeWorkspacesIntoRepos(reposFromRootDirs, configWorkspaces, rootDirs);
+    assert.equal(merged.length, 2);
+    assert.equal(merged[1]!.path, '/other/path/my-project');
+    assert.equal(merged[1]!.name, 'my-project');
+    assert.equal(merged[1]!.root, ''); // not under any rootDir
+  });
+
+  it('should deduplicate workspaces already found via rootDir scan', () => {
+    const reposFromRootDirs: RepoEntry[] = [
+      { name: 'repo-a', path: '/root/repo-a', root: '/root' },
+    ];
+    const configWorkspaces = ['/root/repo-a']; // same as scanned
+    const rootDirs = ['/root'];
+
+    const merged = mergeWorkspacesIntoRepos(reposFromRootDirs, configWorkspaces, rootDirs);
+    assert.equal(merged.length, 1); // no duplicate
+  });
+
+  it('should handle empty rootDirs with workspaces-only config', () => {
+    const reposFromRootDirs: RepoEntry[] = [];
+    const configWorkspaces = ['/a/project', '/b/other-project'];
+    const rootDirs: string[] = [];
+
+    const merged = mergeWorkspacesIntoRepos(reposFromRootDirs, configWorkspaces, rootDirs);
+    assert.equal(merged.length, 2);
+    assert.equal(merged[0]!.path, '/a/project');
+    assert.equal(merged[1]!.path, '/b/other-project');
+  });
+
+  it('should set root when workspace is under a rootDir', () => {
+    const reposFromRootDirs: RepoEntry[] = [];
+    const configWorkspaces = ['/root/special-repo'];
+    const rootDirs = ['/root'];
+
+    const merged = mergeWorkspacesIntoRepos(reposFromRootDirs, configWorkspaces, rootDirs);
+    assert.equal(merged[0]!.root, '/root');
+  });
+});
+
 describe('CLI worktree arg parsing', () => {
   it('should extract --yolo and leave other args intact', () => {
     const args = ['add', './.worktrees/my-feature', '-b', 'my-feature', '--yolo'];

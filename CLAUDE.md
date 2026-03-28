@@ -39,7 +39,7 @@ Always read `DESIGN.md` before making any visual or UI decisions. All font choic
 - `CLAUDECODE` env var must be stripped from PTY env to allow nesting Claude sessions
 - Scrollback buffer capped at 256KB per session; oldest chunks trimmed first (FIFO)
 - Config at `~/.config/claude-remote-cli/config.json` (global) or `./config.json` (local dev)
-- PIN reset: delete `pinHash` from config file and restart server
+- PIN reset: run `claude-remote-cli pin reset` on the host machine (interactive TTY required)
 - Requires Node.js >= 24.0.0 (use `nvm use` with `.nvmrc`)
 - All relative imports use `.js` extensions; Node builtins use `node:` prefix
 - npm package — publishing automated via GitHub Actions (see `docs/references/deployment.md`)

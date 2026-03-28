@@ -8,7 +8,8 @@ import { promisify } from 'node:util';
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 
-import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys, writeMeta } from './config.js';
+import { loadConfig, saveConfig, getWorkspaceSettings, setWorkspaceSettings, deleteWorkspaceSettingKeys, writeMeta, readMeta } from './config.js';
+import { findOrCreateWorktreeForBranch } from './watcher.js';
 import { trackEvent } from './analytics.js';
 import { listBranches, getActivityFeed, getCiStatus, getPrForBranch, isStalePr, getUnresolvedCommentCount, switchBranch, getCurrentBranch, extractOwnerRepo, renameBranch, createBranch, changePrBase, pushBranch } from './git.js';
 import type { Config, PrInfo, PullRequest, PullRequestsResponse, Workspace } from './types.js';
@@ -671,10 +672,27 @@ export function createWorkspaceRouter(deps: WorkspaceDeps): Router {
     let nextMountainIndex: number | undefined;
 
     if (existingBranch) {
-      // Checkout existing branch into a worktree — sanitize branch name for use as directory name
-      mountainName = existingBranch.replace(/\//g, '-').replace(/[^a-zA-Z0-9._-]/g, '');
-      branchName = existingBranch;
-      gitArgs = ['worktree', 'add', path.join(resolved, '.worktrees', mountainName), existingBranch];
+      // Use shared helper — finds existing checkout or creates new worktree
+      try {
+        const result = await findOrCreateWorktreeForBranch(resolved, existingBranch, exec);
+        const meta = readMeta(configPath, result.worktreePath);
+        writeMeta(configPath, {
+          worktreePath: result.worktreePath,
+          displayName: meta?.displayName || result.dirName,
+          lastActivity: new Date().toISOString(),
+          branchName: result.branchName,
+        });
+        res.json({
+          branchName: result.branchName,
+          mountainName: meta?.displayName || result.dirName,
+          worktreePath: result.worktreePath,
+          existing: result.existing,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: `Failed to create worktree: ${msg}` });
+      }
+      return;
     } else {
       // Create a new branch: <mountain>-<hex-suffix> — with retry if directory is taken
       const baseIndex = settings.nextMountainIndex ?? 0;
