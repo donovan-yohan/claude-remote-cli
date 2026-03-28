@@ -736,7 +736,7 @@
 
 {#if auth.checking}
   <!-- Loading -->
-{:else if !auth.authenticated}
+{:else if !auth.authenticated || auth.needsSetup}
   <PinGate />
 {:else}
   <QueryClientProvider client={queryClient}>

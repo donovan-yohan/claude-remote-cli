@@ -1,10 +1,13 @@
 <script lang="ts">
-  import { getAuth, submitPin } from '../lib/state/auth.svelte.js';
+  import { getAuth, submitPin, setupNewPin } from '../lib/state/auth.svelte.js';
 
   const auth = getAuth();
   let pinValue = $state('');
+  let confirmValue = $state('');
+  let localError = $state('');
 
-  async function handleSubmit() {
+  async function handleUnlock() {
+    localError = '';
     const pin = pinValue.trim();
     if (!pin) return;
     await submitPin(pin);
@@ -13,27 +16,84 @@
     }
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter') handleSubmit();
+  async function handleSetup() {
+    localError = '';
+    const pin = pinValue.trim();
+    const confirm = confirmValue.trim();
+    if (!pin || !confirm) {
+      localError = 'enter a PIN and confirm it';
+      return;
+    }
+    if (pin.length < 4) {
+      localError = 'PIN must be at least 4 characters';
+      return;
+    }
+    if (pin !== confirm) {
+      localError = 'PINs do not match';
+      confirmValue = '';
+      return;
+    }
+    await setupNewPin(pin, confirm);
+    if (auth.pinError) {
+      pinValue = '';
+      confirmValue = '';
+    }
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      if (auth.needsSetup) {
+        handleSetup();
+      } else {
+        handleUnlock();
+      }
+    }
+  }
+
+  let displayError = $derived(localError || auth.pinError);
 </script>
 
 <div class="pin-gate">
   <div class="pin-container">
     <h1>Relay</h1>
-    <p>Enter PIN to continue</p>
-    <input
-      type="password"
-      inputmode="numeric"
-      maxlength="20"
-      placeholder="PIN"
-      bind:value={pinValue}
-      onkeydown={handleKeydown}
-      autofocus
-    />
-    <button onclick={handleSubmit}>Unlock</button>
-    {#if auth.pinError}
-      <p class="error">{auth.pinError}</p>
+
+    {#if auth.needsSetup}
+      <p>set up a PIN to secure this instance</p>
+      <input
+        type="password"
+        inputmode="numeric"
+        maxlength="20"
+        placeholder="choose a PIN"
+        bind:value={pinValue}
+        onkeydown={handleKeydown}
+        autofocus
+      />
+      <input
+        type="password"
+        inputmode="numeric"
+        maxlength="20"
+        placeholder="confirm PIN"
+        bind:value={confirmValue}
+        onkeydown={handleKeydown}
+      />
+      <button onclick={handleSetup}>Set PIN</button>
+    {:else}
+      <p>enter PIN to continue</p>
+      <input
+        type="password"
+        inputmode="numeric"
+        maxlength="20"
+        placeholder="PIN"
+        bind:value={pinValue}
+        onkeydown={handleKeydown}
+        autofocus
+      />
+      <button onclick={handleUnlock}>Unlock</button>
+      <p class="hint">forgot your PIN? run <code>claude-remote-cli pin reset</code> on the host machine</p>
+    {/if}
+
+    {#if displayError}
+      <p class="error">{displayError}</p>
     {/if}
   </div>
 </div>
@@ -105,5 +165,20 @@
   .error {
     color: var(--accent);
     font-size: 0.9rem;
+  }
+
+  .hint {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    opacity: 0.6;
+    margin-top: -0.25rem;
+  }
+
+  code {
+    font-family: var(--font-mono, monospace);
+    background: var(--surface);
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 0.72rem;
   }
 </style>
