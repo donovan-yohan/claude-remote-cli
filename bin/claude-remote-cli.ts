@@ -32,6 +32,8 @@ Commands:
     add [path] [-b branch] [--yolo]   Create worktree and launch Claude
     remove <path>                      Forward to git worktree remove
     list                               Forward to git worktree list
+  pin                Manage authentication PIN
+    reset              Reset the PIN (interactive, requires TTY)
 
 Options:
   --bg               Shortcut: install and start as background service
@@ -177,6 +179,94 @@ if (command === 'worktree') {
 
   // Block until child exits via the handler above
   await new Promise(() => {});
+}
+
+if (command === 'pin') {
+  const subCommand = args[1];
+  if (subCommand !== 'reset') {
+    console.error('Usage: claude-remote-cli pin reset');
+    process.exit(1);
+  }
+
+  if (!process.stdin.isTTY) {
+    console.error('PIN reset requires an interactive terminal.');
+    process.exit(1);
+  }
+
+  const configPath = resolveConfigPath();
+  if (!fs.existsSync(configPath)) {
+    console.error('No config file found. Run claude-remote-cli first to create one.');
+    process.exit(1);
+  }
+
+  const { loadConfig: loadCfg, saveConfig: saveCfg } = await import('../server/config.js');
+  const { hashPin, verifyPin } = await import('../server/auth.js');
+
+  const config = loadCfg(configPath);
+  const readline = await import('node:readline');
+
+  function prompt(query: string, hidden = false): Promise<string> {
+    return new Promise((resolve) => {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      if (hidden) {
+        process.stdout.write(query);
+        const stdin = process.stdin;
+        const wasRaw = stdin.isRaw;
+        if (stdin.setRawMode) stdin.setRawMode(true);
+        let value = '';
+        const onData = (ch: Buffer) => {
+          const c = ch.toString('utf8');
+          if (c === '\n' || c === '\r') {
+            if (stdin.setRawMode) stdin.setRawMode(wasRaw ?? false);
+            stdin.removeListener('data', onData);
+            process.stdout.write('\n');
+            rl.close();
+            resolve(value);
+          } else if (c === '\u007f' || c === '\b') {
+            if (value.length > 0) {
+              value = value.slice(0, -1);
+              process.stdout.write('\b \b');
+            }
+          } else if (c >= ' ') {
+            value += c;
+            process.stdout.write('*');
+          }
+        };
+        stdin.on('data', onData);
+      } else {
+        rl.question(query, (answer) => { rl.close(); resolve(answer); });
+      }
+    });
+  }
+
+  // If PIN exists, optionally verify current PIN
+  if (config.pinHash) {
+    const current = await prompt('Current PIN (press Enter to skip): ', true);
+    if (current) {
+      const valid = await verifyPin(current, config.pinHash);
+      if (!valid) {
+        console.error('Current PIN is incorrect.');
+        process.exit(1);
+      }
+    }
+  }
+
+  const newPin = await prompt('New PIN: ', true);
+  if (!newPin || newPin.length < 4) {
+    console.error('PIN must be at least 4 characters.');
+    process.exit(1);
+  }
+
+  const confirmPin = await prompt('Confirm new PIN: ', true);
+  if (newPin !== confirmPin) {
+    console.error('PINs do not match.');
+    process.exit(1);
+  }
+
+  config.pinHash = await hashPin(newPin);
+  saveCfg(configPath, config);
+  console.log('PIN updated successfully. All existing sessions will need to re-authenticate.');
+  process.exit(0);
 }
 
 if (command === 'install' || command === 'uninstall' || command === 'status' || args.includes('--bg')) {
