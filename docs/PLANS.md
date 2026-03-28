@@ -23,6 +23,10 @@ Execution plans for active and completed work.
 | `session-worktree-separation` | 2026-03-23 | Separate session and worktree concerns — unified POST /sessions, collision retry, v2→v3 migration |
 | `github-device-flow` | 2026-03-24 | Replace OAuth web flow with GitHub Device Flow for zero-config auth |
 | `desktop-drag-broken-reorder-mode-jarring` | 2026-03-25 | Remove reorderMode, restore always-on desktop drag-and-drop, add mobile-only long-press gating |
+| `workspace-theme-color` | 2026-03-27 | Color picker in workspace settings, sidebar initial block theming, Claude Code session color matching |
+| `tooltip-and-keyboard-shortcuts` | 2026-03-27 | Reusable tooltip component, centralized keyboard shortcut registry, icon hover context + shortcut display |
+| `open-from-picker` | 2026-03-27 | Unified branch/PR/issue picker modal, inline workspace action icons, reusable BranchPrIssuePicker component, duplicate session handling |
+| `pin-unlock-json-parse-error` | 2026-03-27 | Fix PIN unlock error, add PIN setup via web UI, CLI `pin reset`, defensive error handling |
 
 ## Tech Debt
 
