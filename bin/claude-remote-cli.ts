@@ -239,7 +239,9 @@ if (command === 'pin') {
     });
   }
 
-  // If PIN exists, optionally verify current PIN
+  // If PIN exists, optionally verify current PIN.
+  // Skipping is intentional: local shell access is proof of ownership
+  // (the user could edit the config file directly to delete pinHash).
   if (config.pinHash) {
     const current = await prompt('Current PIN (press Enter to skip): ', true);
     if (current) {

@@ -56,7 +56,9 @@ export async function checkAuth(): Promise<boolean> {
 
 export async function checkAuthStatus(): Promise<{ hasPIN: boolean }> {
   const res = await fetch('/auth/status');
-  return res.json() as Promise<{ hasPIN: boolean }>;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json() as { hasPIN?: boolean };
+  return { hasPIN: data.hasPIN === true };
 }
 
 export async function setupPin(pin: string, confirm: string): Promise<void> {

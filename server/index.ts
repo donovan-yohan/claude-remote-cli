@@ -506,9 +506,9 @@ async function main(): Promise<void> {
   // POST /auth/setup — set initial PIN (only works when no PIN is configured)
   app.post('/auth/setup', async (req, res) => {
     try {
-      const config = getConfig();
-      if (config.pinHash) {
-        res.status(403).json({ error: 'PIN is already configured. Use CLI to reset.' });
+      const ip = (req.ip || req.connection.remoteAddress) as string;
+      if (auth.isRateLimited(ip)) {
+        res.status(429).json({ error: 'Too many attempts. Try again later.' });
         return;
       }
 
@@ -518,6 +518,7 @@ async function main(): Promise<void> {
         return;
       }
       if (pin !== confirm) {
+        auth.recordFailedAttempt(ip);
         res.status(400).json({ error: 'PINs do not match' });
         return;
       }
@@ -526,11 +527,17 @@ async function main(): Promise<void> {
         return;
       }
 
+      // Single read — check + write atomically to avoid TOCTOU race
       const freshConfig = loadConfig(CONFIG_PATH);
+      if (freshConfig.pinHash) {
+        res.status(403).json({ error: 'PIN is already configured. Use CLI to reset.' });
+        return;
+      }
       freshConfig.pinHash = await auth.hashPin(pin);
       saveConfig(CONFIG_PATH, freshConfig);
 
       // Auto-login: generate token and set cookie
+      auth.clearRateLimit(ip);
       const token = auth.generateCookieToken();
       authenticatedTokens.add(token);
       const ttlMs = parseTTL(freshConfig.cookieTTL);
@@ -544,6 +551,7 @@ async function main(): Promise<void> {
 
       res.json({ ok: true });
     } catch (err) {
+      console.error('[auth] Unhandled error in POST /auth/setup:', err);
       res.status(500).json({ error: 'Failed to set PIN' });
     }
   });
