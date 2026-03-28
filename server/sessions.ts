@@ -461,6 +461,8 @@ async function restoreFromDisk(configDir: string, workspaces?: string[]): Promis
         restored: true,
         yolo: s.yolo ?? false,
         claudeArgs: s.claudeArgs ?? [],
+        hookToken: s.hookToken,
+        hooksActive: s.hooksActive,
       };
       if (command) createParams.command = command;
       if (initialScrollback) createParams.initialScrollback = initialScrollback;

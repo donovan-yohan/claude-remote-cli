@@ -84,6 +84,8 @@ export type CreatePtyParams = {
   forceOutputParser?: boolean | undefined;
   yolo?: boolean | undefined;
   claudeArgs?: string[] | undefined;
+  hookToken?: string | undefined;
+  hooksActive?: boolean | undefined;
 };
 
 export type CreatePtyResult = SessionSummary & { pid: number | undefined };
@@ -118,6 +120,8 @@ export function createPtySession(
     forceOutputParser,
     yolo: paramYolo,
     claudeArgs: paramClaudeArgs,
+    hookToken: paramHookToken,
+    hooksActive: paramHooksActive,
   } = params;
 
   let args = rawArgs;
@@ -127,11 +131,12 @@ export function createPtySession(
   const env = cleanEnv();
 
   // Inject hooks settings when spawning a real claude agent (not custom command, not forceOutputParser)
-  let hookToken = '';
-  let hooksActive = false;
+  // For restored sessions, accept the previously-serialized token instead of generating a new one
+  let hookToken = paramHookToken ?? '';
+  let hooksActive = paramHooksActive ?? false;
   let settingsPath = '';
   const shouldInjectHooks = agent === 'claude' && !command && !forceOutputParser && port !== undefined;
-  if (shouldInjectHooks) {
+  if (shouldInjectHooks && !hookToken) {
     hookToken = crypto.randomBytes(32).toString('hex');
     try {
       settingsPath = writeHooksSettingsFile(id, port, hookToken);
@@ -140,6 +145,7 @@ export function createPtySession(
     } catch (err) {
       console.warn(`[pty-handler] Failed to generate hooks settings for session ${id}:`, err);
       hooksActive = false;
+      hookToken = '';
     }
   }
 
