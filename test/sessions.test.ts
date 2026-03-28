@@ -938,6 +938,68 @@ describe('session persistence', () => {
     assert.deepStrictEqual((restored as PtySession).claudeArgs, ['--model', 'opus', '--verbose']);
   });
 
+  it('serialize/restore preserves hookToken and hooksActive', async () => {
+    const configDir = createTmpDir();
+
+    const s = sessions.create({
+      repoName: 'test-repo',
+      workspacePath: '/tmp',
+      worktreePath: null,
+      cwd: '/tmp',
+      command: '/bin/cat',
+      args: [],
+    });
+
+    // Manually set hookToken and hooksActive (simulating a session that had hooks injected)
+    const session = sessions.get(s.id);
+    assert.ok(session);
+    (session as PtySession).hookToken = 'abc123deadbeef';
+    (session as PtySession).hooksActive = true;
+
+    serializeAll(configDir);
+
+    // Verify hookToken is in the serialized JSON
+    const pending = JSON.parse(fs.readFileSync(path.join(configDir, 'pending-sessions.json'), 'utf-8'));
+    assert.strictEqual(pending.sessions[0].hookToken, 'abc123deadbeef');
+    assert.strictEqual(pending.sessions[0].hooksActive, true);
+
+    sessions.kill(s.id);
+
+    await restoreFromDisk(configDir);
+    const restored = sessions.get(s.id);
+    assert.ok(restored);
+    assert.strictEqual((restored as PtySession).hookToken, 'abc123deadbeef');
+    assert.strictEqual((restored as PtySession).hooksActive, true);
+  });
+
+  it('serialize/restore preserves needsBranchRename and branchRenamePrompt', async () => {
+    const configDir = createTmpDir();
+
+    const s = sessions.create({
+      repoName: 'test-repo',
+      workspacePath: '/tmp',
+      worktreePath: null,
+      cwd: '/tmp',
+      command: '/bin/cat',
+      args: [],
+      needsBranchRename: true,
+      branchRenamePrompt: 'Name this feature branch:',
+    });
+
+    const session = sessions.get(s.id);
+    assert.ok(session);
+    assert.strictEqual(session.needsBranchRename, true);
+
+    serializeAll(configDir);
+    sessions.kill(s.id);
+
+    await restoreFromDisk(configDir);
+    const restored = sessions.get(s.id);
+    assert.ok(restored);
+    assert.strictEqual(restored.needsBranchRename, true);
+    assert.strictEqual((restored as PtySession).branchRenamePrompt, 'Name this feature branch:');
+  });
+
   it('restoreFromDisk handles v1/v2 pending files (v2→v3 migration)', async () => {
     const configDir = createTmpDir();
 
