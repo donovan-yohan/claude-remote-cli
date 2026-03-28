@@ -4,6 +4,9 @@
  */
 
 /**
+ * @deprecated Use the `<MarqueeText>` component instead. This action has no
+ * remaining consumers and will be removed in a future release.
+ *
  * Svelte action: scrolls overflowing text on hover.
  * Requires an inner element (first child) that will be translated.
  * Applies `.has-overflow` class to the node when text overflows.

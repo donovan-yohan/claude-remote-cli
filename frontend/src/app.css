@@ -26,6 +26,23 @@
   --sidebar-width: 240px;
   --toolbar-height: auto;
 
+  /* Alignment architecture */
+  --sidebar-padding-x: 16px;
+  --content-padding-x: 20px;
+  --row-padding-y: 10px;
+  --icon-slot-width: 24px;
+  --action-slot-width: 36px;
+  --row-min-height: 44px;
+
+  /* Spacing scale (4px grid) */
+  --space-2xs: 2px;
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
 }
 
 /* ===== Reset & Base ===== */
@@ -72,16 +89,6 @@ html, body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 4px;
+  border-radius: 0;
 }
 
-/* Shared skeleton loading animation */
-@keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
-}
-.skeleton-line {
-  background: var(--border);
-  border-radius: 3px;
-  animation: skeleton-pulse 1.4s ease-in-out infinite;
-}

@@ -1,5 +1,7 @@
 <script lang="ts">
   import DialogShell from './DialogShell.svelte';
+  import TuiButton from '../TuiButton.svelte';
+  import TuiCheckbox from '../TuiCheckbox.svelte';
   import SettingRow from './SettingRow.svelte';
   import SettingsToc from './SettingsToc.svelte';
   import GitHubIntegration from './integrations/GitHubIntegration.svelte';
@@ -269,7 +271,7 @@
   </div>
 {/snippet}
 
-<DialogShell bind:this={shellRef} title="SETTINGS" variant="fullscreen" header-extra={headerExtra}>
+<DialogShell bind:this={shellRef} title="settings" variant="fullscreen" header-extra={headerExtra}>
   <div class="settings-content" bind:this={contentEl}>
     {#if error}
       <p class="error-msg">{error}</p>
@@ -281,20 +283,21 @@
       onclose={() => tocOpen = false}
       {contentEl}
       sections={[
-        { id: 'section-general', label: 'GENERAL' },
-        { id: 'section-integrations', label: 'INTEGRATIONS', children: [
+        { id: 'section-general', label: 'general' },
+        { id: 'section-integrations', label: 'integrations', children: [
           { id: 'integration-github', label: 'GitHub' },
           { id: 'integration-webhooks', label: 'Webhooks' },
           { id: 'integration-jira', label: 'Jira' },
         ]},
-        { id: 'section-advanced', label: 'ADVANCED' },
-        { id: 'section-about', label: 'ABOUT' },
+        { id: 'section-advanced', label: 'advanced' },
+        { id: 'section-about', label: 'about' },
       ]}
     />
 
+    <div class="settings-sections">
     <!-- GENERAL section -->
     <section id="section-general" class="settings-section" class:dimmed={!matchesSearch('general')}>
-      <h3 class="section-heading">GENERAL</h3>
+      <h3 class="section-heading">general</h3>
 
       <SettingRow name="Default Coding Agent" description="Which AI agent to use for new sessions">
         <select bind:value={config.defaultAgent} onchange={handleAgentChange}>
@@ -304,15 +307,15 @@
       </SettingRow>
 
       <SettingRow name="Continue existing session" description="Resume the last session when opening a repo">
-        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultContinue} onchange={handleContinueChange} />
+        <TuiCheckbox bind:checked={config.defaultContinue} onchange={handleContinueChange} />
       </SettingRow>
 
       <SettingRow name="YOLO mode" description="Skip permission checks for all sessions">
-        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultYolo} onchange={handleYoloChange} />
+        <TuiCheckbox bind:checked={config.defaultYolo} onchange={handleYoloChange} />
       </SettingRow>
 
       <SettingRow name="Launch in tmux" description="Wrap sessions in tmux for scroll and copy">
-        <input type="checkbox" class="dialog-checkbox" bind:checked={config.launchInTmux} onchange={handleTmuxChange} />
+        <TuiCheckbox bind:checked={config.launchInTmux} onchange={handleTmuxChange} />
       </SettingRow>
 
       <SettingRow name="Notifications" description={
@@ -320,14 +323,14 @@
         : notificationPermission === 'unsupported' ? 'Not supported in this browser'
         : 'Notify when sessions need attention'
       }>
-        <input type="checkbox" class="dialog-checkbox" bind:checked={config.defaultNotifications} onchange={handleNotificationsChange}
+        <TuiCheckbox bind:checked={config.defaultNotifications} onchange={handleNotificationsChange}
           disabled={(notificationPermission === 'denied' || notificationPermission === 'unsupported') && !config.defaultNotifications} />
       </SettingRow>
     </section>
 
     <!-- INTEGRATIONS section -->
     <section id="section-integrations" class="settings-section" class:dimmed={!matchesSearch('integrations')}>
-      <h3 class="section-heading">INTEGRATIONS</h3>
+      <h3 class="section-heading">integrations</h3>
       <div id="integration-github">
         <GitHubIntegration
           onDisconnect={handleGitHubDisconnect}
@@ -346,10 +349,10 @@
 
     <!-- ADVANCED section -->
     <section id="section-advanced" class="settings-section" class:dimmed={!matchesSearch('advanced')}>
-      <h3 class="section-heading">ADVANCED</h3>
+      <h3 class="section-heading">advanced</h3>
 
       <SettingRow name="Developer Tools" description="Mobile debug panel">
-        <input type="checkbox" class="dialog-checkbox" bind:checked={devtoolsEnabled} onchange={handleDevtoolsChange} />
+        <TuiCheckbox bind:checked={devtoolsEnabled} onchange={handleDevtoolsChange} />
       </SettingRow>
 
       <SettingRow name="Analytics" description="Local usage data">
@@ -357,22 +360,22 @@
           {#if analyticsSize !== null}
             <span class="analytics-size">{(analyticsSize / 1024 / 1024).toFixed(1)} MB</span>
           {/if}
-          <button class="btn btn-ghost btn-sm" onclick={handleClearAnalytics} disabled={clearing}>
+          <TuiButton variant="ghost" size="sm" onclick={handleClearAnalytics} disabled={clearing}>
             {clearing ? 'Clearing\u2026' : 'Clear'}
-          </button>
+          </TuiButton>
         </div>
       </SettingRow>
     </section>
 
     <!-- ABOUT section -->
     <section id="section-about" class="settings-section" class:dimmed={!matchesSearch('about')}>
-      <h3 class="section-heading">ABOUT</h3>
+      <h3 class="section-heading">about</h3>
 
       <SettingRow name="Version" description={currentVersion ? `v${currentVersion}` : ''}>
         {#if updateAvailable}
-          <button class="btn btn-primary btn-sm" onclick={handleUpdate} disabled={updating}>
+          <TuiButton variant="primary" size="sm" onclick={handleUpdate} disabled={updating}>
             {updating ? 'Updating\u2026' : `Update to v${latestVersion}`}
-          </button>
+          </TuiButton>
         {:else if versionChecked}
           <span class="version-ok">Up to date</span>
         {/if}
@@ -382,6 +385,7 @@
         <p class="update-status">{updateStatus}</p>
       {/if}
     </section>
+    </div>
   </div>
 </DialogShell>
 
@@ -399,6 +403,29 @@
     position: relative;
   }
 
+  .settings-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    flex: 1;
+    min-width: 0;
+    padding: 16px 20px;
+  }
+
+  /* Desktop: side-by-side TOC + scrollable content */
+  @media (min-width: 601px) {
+    .settings-content {
+      flex-direction: row;
+      gap: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .settings-sections {
+      overflow-y: auto;
+    }
+  }
+
   .settings-section {
     transition: opacity 200ms ease, max-height 200ms ease;
   }
@@ -414,10 +441,9 @@
   .section-heading {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 0.08em;
-    margin: 0 0 12px;
-    padding-bottom: 8px;
+    margin: 0 -20px 12px;
+    padding: 0 20px 8px;
     border-bottom: 1px solid var(--border);
   }
 
@@ -428,7 +454,7 @@
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    padding: 6px 12px;
+    padding: 8px 12px;
     flex: 1;
     max-width: 200px;
     outline: none;
@@ -447,7 +473,7 @@
     border: 1px solid var(--border);
     border-radius: 0;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
     padding: 4px 8px;
     line-height: 1;
@@ -457,6 +483,11 @@
   .hamburger-btn:hover {
     background: var(--border);
     color: var(--text);
+  }
+
+  /* Desktop: hide hamburger, TOC is always visible */
+  @media (min-width: 601px) {
+    .hamburger-btn { display: none; }
   }
 
   .analytics-action {
@@ -489,7 +520,7 @@
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    padding: 6px 10px;
+    padding: 8px 8px;
     cursor: pointer;
   }
 

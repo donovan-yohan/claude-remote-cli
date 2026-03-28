@@ -1,5 +1,6 @@
 <script lang="ts">
   import { sendPtyData } from '../lib/ws.js';
+  import TuiButton from './TuiButton.svelte';
 
   let visible = $state(false);
   let text = $state('');
@@ -55,7 +56,7 @@
       <span class="image-toast-text">{text}</span>
       <div class="image-toast-actions">
         {#if showInsert}
-          <button class="image-toast-insert" onclick={handleInsert}>Insert</button>
+          <TuiButton variant="primary" size="sm" onclick={handleInsert}>Insert</TuiButton>
         {/if}
         <button class="image-toast-dismiss" onclick={handleDismiss} aria-label="Dismiss">
           &times;
@@ -74,8 +75,8 @@
     z-index: 1000;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 8px 14px;
+    border-radius: 0;
+    padding: 8px 16px;
     color: var(--text);
     font-size: 13px;
     max-width: 90vw;
@@ -85,7 +86,7 @@
   .image-toast-content {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
   }
 
   .image-toast-text {
@@ -98,23 +99,9 @@
 
   .image-toast-actions {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     align-items: center;
     flex-shrink: 0;
-  }
-
-  .image-toast-insert {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 4px;
-    padding: 4px 10px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .image-toast-insert:active {
-    opacity: 0.8;
   }
 
   .image-toast-dismiss {
@@ -123,7 +110,7 @@
     color: var(--text-muted);
     cursor: pointer;
     font-size: 16px;
-    padding: 2px 6px;
+    padding: 2px 8px;
   }
 
   .image-toast-dismiss:hover {

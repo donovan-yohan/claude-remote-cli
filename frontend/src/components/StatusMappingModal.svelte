@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fetchJiraStatuses } from '../lib/api.js';
   import type { JiraStatus } from '../lib/types.js';
+  import TuiButton from './TuiButton.svelte';
 
   let {
     provider,
@@ -105,8 +106,8 @@
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick={onClose}>Cancel</button>
-        <button class="btn btn-primary" onclick={handleSave} disabled={loading}>Save</button>
+        <TuiButton variant="ghost" onclick={onClose}>Cancel</TuiButton>
+        <TuiButton variant="primary" onclick={handleSave} disabled={loading}>Save</TuiButton>
       </div>
     </div>
   </div>
@@ -126,7 +127,7 @@
   .modal {
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 0;
     width: 90%;
     max-width: 420px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
@@ -136,7 +137,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 16px;
+    padding: 16px 16px;
     border-bottom: 1px solid var(--border);
   }
 
@@ -144,7 +145,6 @@
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     font-weight: 700;
-    text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text);
   }
@@ -182,9 +182,9 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--status-error);
-    padding: 6px 8px;
+    padding: 8px 8px;
     background: rgba(255, 100, 100, 0.1);
-    border-radius: 4px;
+    border-radius: 0;
   }
 
   .field {
@@ -197,17 +197,16 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 0.06em;
   }
 
   .field-select {
-    padding: 8px 10px;
+    padding: 8px 12px;
     font-size: var(--font-size-sm);
     font-family: var(--font-mono);
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     color: var(--text);
     outline: none;
     cursor: pointer;
@@ -231,40 +230,4 @@
     border-top: 1px solid var(--border);
   }
 
-  .btn {
-    padding: 7px 16px;
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    cursor: pointer;
-    transition: background 0.12s, border-color 0.12s, color 0.12s;
-    white-space: nowrap;
-  }
-
-  .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-secondary {
-    background: none;
-    color: var(--text-muted);
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    color: var(--text);
-    border-color: var(--text-muted);
-  }
-
-  .btn-primary {
-    background: var(--accent);
-    color: #000;
-    border-color: var(--accent);
-    font-weight: 600;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
 </style>

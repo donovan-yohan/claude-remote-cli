@@ -1,6 +1,7 @@
 <script lang="ts">
   import { addWorkspacesBulk } from '../../lib/api.js';
   import FileBrowser from '../FileBrowser.svelte';
+  import TuiButton from '../TuiButton.svelte';
   import DialogShell from './DialogShell.svelte';
 
   let {
@@ -73,9 +74,9 @@
         {/if}
       </span>
       <div class="footer-actions">
-        <button class="btn btn-ghost" onclick={close}>Cancel</button>
-        <button
-          class="btn btn-primary"
+        <TuiButton variant="ghost" onclick={close}>Cancel</TuiButton>
+        <TuiButton
+          variant="primary"
           onclick={handleSubmit}
           disabled={selectedPaths.length === 0 || submitting}
         >
@@ -84,7 +85,7 @@
           {:else}
             Add Workspace{selectedPaths.length > 1 ? 's' : ''}
           {/if}
-        </button>
+        </TuiButton>
       </div>
     </div>
   {/snippet}
@@ -107,7 +108,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 8px;
   }
 
   .selected-count {
@@ -118,7 +119,7 @@
 
   .footer-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
   }
 
   .body-content {

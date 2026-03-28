@@ -13,11 +13,16 @@ Remote web interface for interacting with Claude Code CLI sessions from any devi
 | Version bump | `npm version patch\|minor\|major` |
 | Mobile input tests | Add fixture to `test/fixtures/mobile-input/` before fixing keyboard bugs |
 
+## Design System
+
+Always read `DESIGN.md` before making any visual or UI decisions. All font choices, colors, spacing, border-radius, button styles, and aesthetic direction are defined there. Do not deviate without explicit user approval. In QA mode, flag any code that doesn't match DESIGN.md.
+
 ## Documentation Map
 
 | Category | Path | When to look here |
 |----------|------|-------------------|
 | Architecture | `docs/ARCHITECTURE.md` | Module boundaries, data flow, API routes, ADR rules |
+| Visual Design | `DESIGN.md` | TUI aesthetic, colors, buttons, icons, border-radius rules |
 | Design | `docs/DESIGN.md` | Backend patterns, auth flow, PTY management, session types |
 | Frontend | `docs/FRONTEND.md` | Svelte 5 components, state management, UI conventions |
 | Quality | `docs/QUALITY.md` | Test runner, test files, isolation patterns |

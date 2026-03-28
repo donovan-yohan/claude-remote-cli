@@ -734,7 +734,7 @@
     right: 0;
     width: 6px;
     background: var(--border);
-    border-radius: 3px;
+    border-radius: 0;
     cursor: pointer;
   }
 
@@ -768,7 +768,7 @@
     .scroll-fab {
       width: 44px;
       height: 44px;
-      border-radius: 50%;
+      border-radius: 0;
       border: 1px solid var(--border);
       background: var(--surface);
       color: var(--text);
@@ -799,7 +799,7 @@
     font-size: 12px;
     font-family: Menlo, monospace;
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: 0;
     opacity: 0;
     transition: opacity 0.2s ease;
     pointer-events: none;

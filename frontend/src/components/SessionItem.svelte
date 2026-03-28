@@ -2,8 +2,10 @@
   import type { SessionSummary, WorktreeInfo, RepoInfo, GitStatus } from '../lib/types.js';
   import type { MenuItem } from './ContextMenu.svelte';
   import { formatRelativeTime } from '../lib/utils.js';
-  import { scrollOnHover } from '../lib/actions.js';
   import ContextMenu from './ContextMenu.svelte';
+  import CipherText from './CipherText.svelte';
+  import MarqueeText from './MarqueeText.svelte';
+  import StatusDot from './StatusDot.svelte';
 
   type ActiveVariant = {
     kind: 'active';
@@ -61,10 +63,10 @@
     }
   });
 
-  let statusDotClass = $derived(
+  let displayState = $derived<'running' | 'idle' | 'attention' | 'disconnected'>(
     variant.kind === 'active'
-      ? 'status-dot status-dot--' + variant.status
-      : 'status-dot status-dot--inactive',
+      ? variant.status
+      : 'disconnected',
   );
 
   let isSelected = $derived(variant.kind === 'active' && variant.isSelected);
@@ -102,9 +104,11 @@
 >
   <div class="session-info">
     <div class="session-row-1">
-      <span class={statusDotClass}></span>
-      <span class="session-name" use:scrollOnHover>
-        <span class="session-name-text">{displayName}</span>
+      <span class="status-dot-wrap"><StatusDot status={displayState} size={8} /></span>
+      <span class="session-name">
+        <MarqueeText>
+          <span class="session-name-text"><CipherText text={displayName} loading={isLoading} /></span>
+        </MarqueeText>
       </span>
     </div>
     <div class="session-row-2">
@@ -135,11 +139,11 @@
     position: relative;
     display: flex;
     align-items: flex-start;
-    padding: 8px 10px;
+    padding: 8px 12px;
     cursor: pointer;
-    border-radius: 6px;
+    border-radius: 0;
     margin: 2px 6px;
-    font-size: 0.8rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     touch-action: manipulation;
     transition: background 0.15s, border-color 0.15s;
@@ -186,28 +190,6 @@
     opacity: 0.5;
   }
 
-  li.loading::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.04) 50%, transparent 100%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s ease-in-out infinite;
-    pointer-events: none;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    li.loading::after {
-      animation: none;
-    }
-  }
-
-  @keyframes shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-
   .session-info {
     display: flex;
     flex-direction: column;
@@ -223,32 +205,11 @@
     min-width: 0;
   }
 
-  .status-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
+  .status-dot-wrap {
+    display: inline-flex;
+    align-items: center;
     flex-shrink: 0;
     margin-right: 8px;
-  }
-
-  .status-dot--running { background: #4ade80; }
-  .status-dot--idle { background: #60a5fa; }
-  .status-dot--attention {
-    background: #f59e0b;
-    box-shadow: 0 0 6px 2px rgba(245, 158, 11, 0.5);
-    animation: attention-glow 2s ease-in-out infinite;
-  }
-  .status-dot--permission-prompt {
-    background: #eab308;
-    box-shadow: 0 0 6px 2px rgba(234, 179, 8, 0.5);
-    animation: attention-glow 1.5s ease-in-out infinite;
-  }
-  .status-dot--inactive { background: transparent; border: 1.5px solid #6b7280; }
-
-  @keyframes attention-glow {
-    0%, 100% { box-shadow: 0 0 4px 1px rgba(245, 158, 11, 0.3); }
-    50% { box-shadow: 0 0 8px 3px rgba(245, 158, 11, 0.6); }
   }
 
   .session-name {
@@ -263,54 +224,31 @@
   .session-name-text {
     display: inline-block;
     white-space: nowrap;
-    will-change: transform;
   }
 
-  /* Fade mask only when text overflows */
-  .session-name.has-overflow {
-    mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
-    -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
-  }
-
-  /* On hover: remove mask — JS handles the scroll */
-  li:hover .session-name.has-overflow {
-    mask-image: none;
-    -webkit-mask-image: none;
-  }
-
-  /* Selected state: use white mask for overflow fade */
+  /* Selected state */
   li.active-session.selected .session-name {
     color: #fff;
-  }
-
-  li.active-session.selected .session-name.has-overflow {
-    mask-image: linear-gradient(to right, white calc(100% - 32px), transparent);
-    -webkit-mask-image: linear-gradient(to right, white calc(100% - 32px), transparent);
-  }
-
-  li.active-session.selected:hover .session-name.has-overflow {
-    mask-image: none;
-    -webkit-mask-image: none;
   }
 
   /* Row 2: time + branch + PR + diff */
   .session-row-2 {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     min-width: 0;
     padding-left: 16px;
   }
 
   .session-time {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     opacity: 0.6;
     flex-shrink: 0;
   }
 
   .session-branch {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -319,7 +257,7 @@
   }
 
   .pr-icon {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     flex-shrink: 0;
   }
 
@@ -330,7 +268,7 @@
   .git-diff {
     display: flex;
     gap: 4px;
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     font-family: monospace;
     flex-shrink: 0;
     margin-left: auto;

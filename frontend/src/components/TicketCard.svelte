@@ -84,7 +84,7 @@
         <span class="ticket-sep">·</span>
         <span class="branch-chip">
           {#if hasActiveSession}
-            <span class="dot dot-active dot-inline"></span>
+            <StatusDot status="running" size={6} />
           {/if}
           {linkedBranch.branchName}
         </span>
@@ -109,7 +109,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 10px 12px;
+    padding: 12px 12px;
     border-bottom: 1px solid var(--border);
     background: var(--bg);
     transition: background 0.1s;
@@ -126,7 +126,7 @@
   .ticket-left {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
     min-width: 0;
     flex: 1;
   }
@@ -181,8 +181,8 @@
   .repo-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 3px;
+    padding: 2px 8px;
+    border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 700;
@@ -194,8 +194,8 @@
   .label-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 3px;
+    padding: 2px 8px;
+    border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 600;
@@ -210,8 +210,8 @@
   .status-badge {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 3px;
+    padding: 2px 8px;
+    border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 600;
@@ -230,8 +230,8 @@
   .sprint-chip {
     display: inline-flex;
     align-items: center;
-    padding: 1px 6px;
-    border-radius: 3px;
+    padding: 2px 8px;
+    border-radius: 0;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
@@ -259,22 +259,6 @@
     opacity: 0.8;
   }
 
-  /* Active session dot in branch chip */
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    display: inline-block;
-  }
-
-  .dot-inline {
-    width: 6px;
-    height: 6px;
-  }
-
-  .dot-active { background: var(--accent); }
-
   .ticket-actions {
     display: flex;
     align-items: center;
@@ -282,12 +266,12 @@
   }
 
   .start-work-btn {
-    padding: 5px 12px;
+    padding: 4px 12px;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     background: none;
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     color: var(--text-muted);
     cursor: not-allowed;
     opacity: 0.45;
@@ -311,7 +295,7 @@
       flex-direction: column;
       align-items: flex-start;
       gap: 8px;
-      padding: 12px 10px;
+      padding: 12px 12px;
     }
 
     .ticket-left {

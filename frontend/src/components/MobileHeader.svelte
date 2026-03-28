@@ -41,7 +41,7 @@
   }
 
   .mobile-title {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -53,15 +53,15 @@
     background: none;
     border: none;
     color: var(--text);
-    font-size: 1.2rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
-    padding: 6px;
+    padding: 8px;
     min-width: 36px;
     min-height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 6px;
+    border-radius: 0;
     touch-action: manipulation;
   }
 

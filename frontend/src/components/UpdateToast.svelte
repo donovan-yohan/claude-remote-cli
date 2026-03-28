@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import * as api from '../lib/api.js';
+  import TuiButton from './TuiButton.svelte';
 
   let visible = $state(false);
   let text = $state('');
@@ -58,13 +59,14 @@
       <span class="update-toast-text">{text}</span>
       {#if showActions}
         <div class="update-toast-actions">
-          <button
-            class="update-toast-btn"
+          <TuiButton
+            variant="primary"
+            size="sm"
             onclick={triggerUpdate}
             disabled={buttonDisabled}
           >
             {buttonText}
-          </button>
+          </TuiButton>
           <button class="update-toast-dismiss" onclick={dismiss} aria-label="Dismiss">
             &times;
           </button>
@@ -106,7 +108,7 @@
     gap: 12px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 0;
     padding: 12px 16px;
     max-width: 500px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
@@ -115,7 +117,7 @@
 
   .update-toast-text {
     flex: 1;
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     color: var(--text);
   }
 
@@ -125,28 +127,12 @@
     flex-shrink: 0;
   }
 
-  .update-toast-btn {
-    padding: 8px 14px;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    border: none;
-    background: var(--accent);
-    color: #fff;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .update-toast-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
   .update-toast-dismiss {
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1.2rem;
-    padding: 4px 6px;
+    font-size: var(--font-size-lg);
+    padding: 4px 8px;
     cursor: pointer;
   }
 

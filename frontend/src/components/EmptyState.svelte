@@ -1,4 +1,6 @@
 <script lang="ts">
+  import TuiButton from './TuiButton.svelte';
+
   let {
     icon,
     heading,
@@ -26,7 +28,7 @@
   {/if}
 
   {#if actionLabel && onAction}
-    <button class="empty-action" onclick={onAction}>{actionLabel}</button>
+    <TuiButton variant="primary" onclick={onAction}>{actionLabel}</TuiButton>
   {/if}
 </div>
 
@@ -36,7 +38,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 14px;
+    gap: 16px;
     max-width: 320px;
     text-align: center;
     padding: 32px 16px;
@@ -66,25 +68,4 @@
     line-height: 1.5;
   }
 
-  .empty-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 10px 18px;
-    min-height: 40px;
-    background: transparent;
-    border: 1px solid var(--accent);
-    border-radius: 4px;
-    color: var(--accent);
-    font-size: var(--font-size-sm);
-    font-family: var(--font-mono);
-    cursor: pointer;
-    margin-top: 4px;
-    transition: background 0.12s, color 0.12s;
-    white-space: nowrap;
-  }
-
-  .empty-action:hover {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-  }
 </style>

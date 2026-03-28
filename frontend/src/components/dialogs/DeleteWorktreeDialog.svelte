@@ -3,6 +3,7 @@
   import { refreshAll, setLoading, clearLoading } from '../../lib/state/sessions.svelte.js';
   import type { WorktreeInfo } from '../../lib/types.js';
   import DialogShell from './DialogShell.svelte';
+  import TuiButton from '../TuiButton.svelte';
 
   let shellRef = $state<DialogShell | undefined>(undefined);
 
@@ -50,14 +51,14 @@
 >
   {#snippet footer()}
     <div class="footer-row">
-      <button class="btn btn-ghost" onclick={handleCancel} disabled={deleting}>Cancel</button>
-      <button
-        class="btn btn-danger"
+      <TuiButton variant="ghost" onclick={handleCancel} disabled={deleting}>Cancel</TuiButton>
+      <TuiButton
+        variant="danger"
         onclick={handleConfirm}
         disabled={deleting}
       >
         {deleting ? 'Deleting...' : 'Delete'}
-      </button>
+      </TuiButton>
     </div>
   {/snippet}
 
@@ -81,7 +82,7 @@
   .footer-row {
     display: flex;
     justify-content: flex-end;
-    gap: 10px;
+    gap: 8px;
   }
 
   .body-content {
@@ -91,7 +92,7 @@
   }
 
   .confirm-msg {
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
     margin: 0;
     line-height: 1.5;
   }
@@ -101,7 +102,7 @@
   }
 
   .wt-path {
-    font-size: 0.82rem;
+    font-size: var(--font-size-sm);
     color: var(--text-muted);
     font-family: var(--font-mono);
     margin: 0;
@@ -109,16 +110,16 @@
   }
 
   .warning-msg {
-    font-size: 0.82rem;
+    font-size: var(--font-size-sm);
     color: var(--status-error);
     margin: 0;
   }
 
   .error-msg {
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     color: var(--status-error);
     margin: 0;
-    padding: 8px 10px;
+    padding: 8px 12px;
     background: rgba(231, 76, 60, 0.1);
     border-radius: 0;
     border: 1px solid rgba(231, 76, 60, 0.3);

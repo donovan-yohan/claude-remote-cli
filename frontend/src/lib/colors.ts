@@ -7,6 +7,10 @@ const INITIAL_COLORS = [
   '#fb923c',
   '#34d399',
   '#f87171',
+  '#fbbf24',
+  '#38bdf8',
+  '#a3e635',
+  '#818cf8',
 ];
 
 export function deriveColor(name: string): string {

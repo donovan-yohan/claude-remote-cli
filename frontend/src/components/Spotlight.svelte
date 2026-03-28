@@ -3,6 +3,7 @@
   import type { Workspace, SessionSummary, PullRequest, OrgPrsResponse, GitHubIssue, GitHubIssuesResponse, JiraIssue, JiraIssuesResponse } from '../lib/types.js';
   import { derivePrDotStatus } from '../lib/pr-status.js';
   import StatusDot from './StatusDot.svelte';
+  import TuiInput from './TuiInput.svelte';
 
   let {
     open = false,
@@ -30,7 +31,7 @@
 
   let query = $state('');
   let focusedIndex = $state(0);
-  let inputEl = $state<HTMLInputElement | undefined>(undefined);
+  let inputWrapperEl = $state<HTMLDivElement | undefined>(undefined);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let debouncedQuery = $state('');
 
@@ -64,7 +65,7 @@
   const commands = [
     { id: 'new-worktree', label: 'New worktree', icon: '+' },
     { id: 'new-agent', label: 'New agent session', icon: '+' },
-    { id: 'settings', label: 'Settings', icon: '⚙' },
+    { id: 'settings', label: 'Settings', icon: '>' },
   ];
 
   // "Needs Attention" — PRs with changes requested or awaiting review
@@ -249,17 +250,17 @@
     const groups: ResultGroup[] = [];
     const typeOrder: Array<{ type: SpotlightResult['type']; label: string }> = q
       ? [
-          { type: 'workspace', label: 'WORKSPACES' },
-          { type: 'session', label: 'SESSIONS' },
-          { type: 'pr', label: 'PULL REQUESTS' },
-          { type: 'ticket', label: 'TICKETS' },
-          { type: 'command', label: 'COMMANDS' },
-          { type: 'setting', label: 'SETTINGS' },
+          { type: 'workspace', label: 'workspaces' },
+          { type: 'session', label: 'sessions' },
+          { type: 'pr', label: 'pull requests' },
+          { type: 'ticket', label: 'tickets' },
+          { type: 'command', label: 'commands' },
+          { type: 'setting', label: 'settings' },
         ]
       : [
-          { type: 'attention', label: 'NEEDS ATTENTION' },
-          { type: 'workspace', label: 'WORKSPACES' },
-          { type: 'command', label: 'COMMANDS' },
+          { type: 'attention', label: 'needs attention' },
+          { type: 'workspace', label: 'workspaces' },
+          { type: 'command', label: 'commands' },
         ];
 
     for (const { type, label } of typeOrder) {
@@ -287,12 +288,11 @@
       query = '';
       debouncedQuery = '';
       focusedIndex = 0;
-      requestAnimationFrame(() => inputEl?.focus());
+      requestAnimationFrame(() => inputWrapperEl?.querySelector('input')?.focus());
     }
   });
 
-  function handleInput(e: Event) {
-    query = (e.target as HTMLInputElement).value;
+  function handleInput() {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debouncedQuery = query;
@@ -370,7 +370,7 @@
       case 'pr': case 'attention': return '●';
       case 'ticket': return '◆';
       case 'command': return '>';
-      case 'setting': return '⚙';
+      case 'setting': return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1-1.51V15H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
       default: return '';
     }
   }
@@ -386,22 +386,19 @@
       aria-modal="true"
       aria-label="Command palette"
     >
-      <div class="spotlight-input-row">
+      <div class="spotlight-input-row" bind:this={inputWrapperEl}>
         <span class="spotlight-prompt">&gt;</span>
-        <input
-          bind:this={inputEl}
-          type="text"
-          class="spotlight-input"
+        <TuiInput
+          bind:value={query}
           placeholder="search workspaces, PRs, commands..."
+          oninput={handleInput}
+          onkeydown={handleKeydown}
           autocomplete="off"
           spellcheck={false}
           role="combobox"
           aria-expanded={flatItems.length > 0}
           aria-controls="spotlight-results"
           aria-activedescendant={flatItems[focusedIndex] ? `spotlight-item-${flatItems[focusedIndex]!.id}` : undefined}
-          value={query}
-          oninput={handleInput}
-          onkeydown={handleKeydown}
         />
       </div>
 
@@ -412,7 +409,7 @@
           {#each groupedResults as group}
             <div class="spotlight-category" role="presentation">
               {group.label}
-              {#if group.label === 'NEEDS ATTENTION'}
+              {#if group.label === 'needs attention'}
                 <span class="category-count">({group.items.length})</span>
               {/if}
             </div>
@@ -431,7 +428,7 @@
                 {#if item.type === 'attention' || item.type === 'pr'}
                   <StatusDot status={derivePrDotStatus(item.data)} size={7} />
                 {:else}
-                  <span class="item-icon">{categoryIcon(item.type)}</span>
+                  <span class="item-icon">{@html categoryIcon(item.type)}</span>
                 {/if}
                 <span class="item-label">{item.label}</span>
                 {#if item.sublabel}
@@ -477,7 +474,7 @@
   .spotlight-input-row {
     display: flex;
     align-items: center;
-    padding: 12px 14px;
+    padding: 12px 16px;
     gap: 8px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
@@ -492,18 +489,21 @@
     user-select: none;
   }
 
-  .spotlight-input {
+  .spotlight-input-row :global(.tui-input-wrapper) {
     flex: 1;
-    background: transparent;
-    border: none;
-    outline: none;
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-base);
-    caret-color: var(--accent);
   }
 
-  .spotlight-input::placeholder {
+  .spotlight-input-row :global(.tui-input) {
+    background: transparent;
+    border: none;
+    padding: 0;
+  }
+
+  .spotlight-input-row :global(.tui-input:focus) {
+    border: none;
+  }
+
+  .spotlight-input-row :global(.tui-input::placeholder) {
     color: var(--text-muted);
     opacity: 0.5;
   }
@@ -515,12 +515,11 @@
   }
 
   .spotlight-category {
-    padding: 8px 14px 4px;
+    padding: 8px 16px 4px;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 600;
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 0.08em;
     user-select: none;
   }
@@ -534,7 +533,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 14px;
+    padding: 8px 16px;
     cursor: pointer;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
@@ -579,7 +578,7 @@
   }
 
   .spotlight-empty {
-    padding: 20px 14px;
+    padding: 20px 16px;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--text-muted);
@@ -590,7 +589,7 @@
   .spotlight-footer {
     display: flex;
     gap: 16px;
-    padding: 8px 14px;
+    padding: 8px 16px;
     border-top: 1px solid var(--border);
     flex-shrink: 0;
   }

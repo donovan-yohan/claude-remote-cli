@@ -51,8 +51,11 @@
     return tabNames.get(id) ?? id;
   }
 
+  const terminalSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>`;
+  const agentSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><rect x="3" y="3" width="18" height="18"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`;
+
   function tabIcon(session: SessionSummary): string {
-    return session.type === 'terminal' ? '🖥' : '🤖';
+    return session.type === 'terminal' ? terminalSvg : agentSvg;
   }
 
   function handleCloseClick(e: MouseEvent, id: string) {
@@ -121,7 +124,7 @@
         data-track="session-tab.select"
         onclick={() => onSelectSession(session.id)}
       >
-        <span class="tab-icon" aria-hidden="true">{tabIcon(session)}</span>
+        <span class="tab-icon" aria-hidden="true">{@html tabIcon(session)}</span>
         <span class="tab-name">{tabName(session.id)}</span>
         <!-- svelte-ignore a11y_interactive_supports_focus -->
         <span
@@ -157,7 +160,7 @@
           data-track="session-tab.new-agent"
           onclick={selectNewAgent}
         >
-          <span class="new-menu-icon">🤖</span>
+          <span class="new-menu-icon">{@html agentSvg}</span>
           New Agent
         </button>
         <button
@@ -166,7 +169,7 @@
           data-track="session-tab.new-terminal"
           onclick={selectNewTerminal}
         >
-          <span class="new-menu-icon">🖥</span>
+          <span class="new-menu-icon">{@html terminalSvg}</span>
           New Terminal
         </button>
         <div class="new-menu-divider"></div>
@@ -176,7 +179,7 @@
           data-track="session-tab.customize"
           onclick={selectCustomize}
         >
-          <span class="new-menu-icon">⚙</span>
+          <span class="new-menu-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1-1.51V15H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
           Customize...
         </button>
       </div>
@@ -216,9 +219,9 @@
   .tab {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     height: 32px;
-    padding: 0 10px;
+    padding: 0 8px;
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
@@ -252,7 +255,7 @@
   }
 
   .tab-icon {
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     line-height: 1;
     flex-shrink: 0;
   }
@@ -271,7 +274,7 @@
     cursor: pointer;
     line-height: 1;
     flex-shrink: 0;
-    border-radius: 3px;
+    border-radius: 0;
     width: 14px;
     height: 14px;
     display: inline-flex;
@@ -316,7 +319,7 @@
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
     font-family: var(--font-mono);
     transition: color 0.12s, background 0.12s;
@@ -337,7 +340,7 @@
     right: 0;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: 0;
     z-index: 200;
     min-width: 180px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
@@ -349,7 +352,7 @@
     align-items: center;
     gap: 8px;
     width: 100%;
-    padding: 7px 12px;
+    padding: 8px 12px;
     background: none;
     border: none;
     color: var(--text-muted);
@@ -369,7 +372,7 @@
   }
 
   .new-menu-icon {
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
     flex-shrink: 0;
   }
 

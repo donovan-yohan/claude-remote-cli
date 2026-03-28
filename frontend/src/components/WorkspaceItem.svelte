@@ -231,7 +231,7 @@
         class="action-btn"
         title="Settings"
         onclick={(e) => { e.stopPropagation(); onOpenSettings(workspace); }}
-      >⚙</span>
+      ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1-1.51V15H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
     </div>
   </div>
 
@@ -265,8 +265,8 @@
               {#if matchedPr}
                 <span class="sidebar-pr-status">
                   <StatusDot status={derivePrDotStatus(matchedPr)} size={5} />
-                  {#if matchedPr.ciStatus === 'SUCCESS'}<span class="ci-pass" style="font-size:9px">✓</span>
-                  {:else if matchedPr.ciStatus === 'FAILURE' || matchedPr.ciStatus === 'ERROR'}<span class="ci-fail" style="font-size:9px">✗</span>
+                  {#if matchedPr.ciStatus === 'SUCCESS'}<span class="ci-pass"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" width="9" height="9"><polyline points="20 6 9 17 4 12"/></svg></span>
+                  {:else if matchedPr.ciStatus === 'FAILURE' || matchedPr.ciStatus === 'ERROR'}<span class="ci-fail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" width="9" height="9"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span>
                   {:else if matchedPr.ciStatus === 'PENDING'}<span class="ci-pending" style="font-size:9px">●</span>
                   {/if}
                 </span>
@@ -386,7 +386,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 10px;
+    padding: 8px 12px;
     cursor: pointer;
     min-height: 44px;
     transition: background 0.12s;
@@ -414,7 +414,7 @@
     justify-content: center;
     width: 16px;
     height: 16px;
-    font-size: 0.7rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     cursor: pointer;
     flex-shrink: 0;
@@ -430,8 +430,8 @@
     font-family: var(--font-mono);
     color: var(--text-muted);
     background: var(--border);
-    border-radius: 8px;
-    padding: 1px 6px;
+    border-radius: 0;
+    padding: 2px 8px;
     flex-shrink: 0;
   }
 
@@ -441,7 +441,7 @@
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 4px;
+    border-radius: 0;
     font-size: var(--font-size-xs);
     font-weight: 700;
     color: #000;
@@ -481,7 +481,7 @@
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 3px;
+    border-radius: 0;
     font-size: var(--font-size-xs);
     color: var(--text-muted);
     cursor: pointer;
@@ -504,7 +504,7 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 6px 10px 6px 36px;
+    padding: 8px 8px 8px 36px;
     cursor: pointer;
     min-height: 44px;
     font-size: var(--font-size-xs);
@@ -542,9 +542,9 @@
   .session-row-secondary {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding-left: 15px;
-    font-size: 0.65rem;
+    gap: 8px;
+    padding-left: 16px;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     min-width: 0;
   }
@@ -596,10 +596,10 @@
     justify-content: center;
     min-width: 16px;
     height: 16px;
-    border-radius: 8px;
+    border-radius: 0;
     background: var(--border);
     color: var(--text-muted);
-    font-size: 0.55rem;
+    font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     font-weight: 600;
     padding: 0 4px;
@@ -611,7 +611,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 0.6rem;
+    font-size: var(--font-size-xs);
     flex-shrink: 0;
     margin-left: auto;
   }
@@ -642,9 +642,9 @@
     box-shadow: 0 0 5px 1px rgba(234, 179, 8, 0.45);
     animation: attention-glow 1.5s ease-in-out infinite;
   }
-  .status-dot--inactive     { background: transparent; border: 1.5px solid #555; }
+  .status-dot--inactive     { background: transparent; border: 1.5px solid var(--border); }
 
-  .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: transparent; border: 1.5px solid #555; flex-shrink: 0; }
+  .dot-inactive        { width: 7px; height: 7px; border-radius: 50%; background: transparent; border: 1.5px solid var(--border); flex-shrink: 0; }
   .session-row.inactive .session-name { color: var(--text-muted); }
   .session-row.inactive:hover .session-name { color: var(--text); }
   .session-row.loading { pointer-events: none; opacity: 0.7; }
@@ -669,7 +669,7 @@
 
   /* Add worktree row */
   .add-worktree-row {
-    padding: 4px 10px 6px 36px;
+    padding: 4px 8px 8px 36px;
   }
 
   .add-worktree-btn {

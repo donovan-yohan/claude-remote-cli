@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CipherText from '../../CipherText.svelte';
+  import TuiButton from '../../TuiButton.svelte';
+  import IntegrationRow from './IntegrationRow.svelte';
   import { fetchGitHubStatus, initiateGitHubDevice, disconnectGitHub } from '../../../lib/api.js';
 
   interface Props {
@@ -39,16 +42,13 @@
     return () => { clearDeviceFlowTimers(); };
   });
 
-  function toggleExpanded() {
-    expanded = !expanded;
-  }
-
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggleExpanded();
-    }
-  }
+  let statusText = $derived(
+    loading
+      ? 'Checking connection...'
+      : githubStatus?.connected
+        ? `Connected as @${githubStatus.username ?? 'GitHub'}`
+        : 'Not connected'
+  );
 
   let expiryTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -118,194 +118,74 @@
   }
 </script>
 
-<div class="integration-row">
-  <!-- Row header — always visible -->
-  <div
-    class="integration-header"
-    role="button"
-    tabindex="0"
-    aria-expanded={expanded}
-    onclick={toggleExpanded}
-    onkeydown={handleKeydown}
-  >
-    <span class="status-dot" class:status-dot--connected={githubStatus?.connected}></span>
-    <div class="integration-label">
-      <span class="integration-name">GitHub</span>
-      {#if loading}
-        <span class="integration-status">Loading...</span>
-      {:else if githubStatus?.connected}
-        <span class="integration-status">Connected as @{githubStatus.username ?? 'GitHub'}</span>
-      {:else}
-        <span class="integration-status integration-status--muted">Not connected</span>
-      {/if}
-    </div>
-    <div
-      class="integration-actions"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
-      role="presentation"
-    >
-      {#if githubStatus?.connected}
-        <button class="btn btn-ghost btn-sm" onclick={toggleExpanded}>
-          Manage {expanded ? '▴' : '▾'}
-        </button>
-      {:else if !loading}
-        <button
-          class="btn btn-primary btn-sm"
-          onclick={(e) => { e.stopPropagation(); expanded = true; connectGitHub(); }}
-        >
-          Connect
-        </button>
-      {/if}
-    </div>
-  </div>
+<IntegrationRow name="GitHub" {statusText} connected={githubStatus?.connected ?? false} {loading} bind:expanded>
+  {#snippet headerActions()}
+    {#if githubStatus?.connected}
+      <TuiButton variant="ghost" size="sm" onclick={() => expanded = !expanded}>
+        Manage {expanded ? '▴' : '▾'}
+      </TuiButton>
+    {:else if !loading}
+      <TuiButton
+        variant="primary"
+        size="sm"
+        onclick={(e) => { e.stopPropagation(); expanded = true; connectGitHub(); }}
+      >
+        Connect
+      </TuiButton>
+    {/if}
+  {/snippet}
 
-  <!-- Accordion content -->
-  <div class="integration-body" class:integration-body--open={expanded} aria-hidden={!expanded}>
-    <div class="integration-body-inner">
-      {#if needsReauth}
-        <p class="reauth-warning">Re-connect to enable webhook management</p>
-        <button class="btn btn-primary btn-sm" onclick={connectGitHub}>Re-connect GitHub</button>
-      {:else if githubStatus?.connected}
-        <p class="body-text">Connected as <strong>@{githubStatus.username ?? 'GitHub'}</strong></p>
-        {#if showDisconnectConfirm}
-          <p class="body-text body-text--warning">
-            {webhookCount > 0
-              ? `This will delete ${webhookCount} webhook${webhookCount === 1 ? '' : 's'} on GitHub. Continue?`
-              : 'Disconnect your GitHub account. Continue?'}
-          </p>
-          <div class="action-row">
-            <button class="btn btn-ghost btn-sm" onclick={() => (showDisconnectConfirm = false)}>
-              Cancel
-            </button>
-            <button class="btn btn-danger btn-sm" onclick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting ? 'Disconnecting...' : 'Disconnect'}
-            </button>
-          </div>
-        {:else}
-          <button class="btn btn-danger btn-sm" onclick={() => (showDisconnectConfirm = true)}>
-            Disconnect
-          </button>
-        {/if}
-      {:else if deviceCode}
-        <div class="device-flow">
-          <div class="code-row">
-            <span class="body-text">Enter code: <strong class="user-code">{deviceCode.userCode}</strong></span>
-            <button class="btn btn-ghost btn-sm" onclick={copyCode}>Copy</button>
-          </div>
-          <p class="body-text">
-            at <a href={deviceCode.verificationUri} target="_blank" rel="noopener noreferrer"
-              >{deviceCode.verificationUri}</a
-            >
-          </p>
-          <p class="body-text body-text--muted">Waiting for authorization...</p>
-        </div>
-      {:else if deviceFlowError}
-        <p class="error-text">{deviceFlowError}</p>
-        <button class="btn btn-primary btn-sm" onclick={connectGitHub}>Try Again</button>
-      {:else}
-        <p class="body-text body-text--muted">
-          Connect your GitHub account to enable PRs, CI status, and webhook management.
-        </p>
-        <button class="btn btn-primary btn-sm" onclick={connectGitHub}>Connect GitHub</button>
-      {/if}
+  {#if loading}
+    <CipherText loading={true} text="Checking connection..." />
+  {:else if needsReauth}
+    <p class="reauth-warning">Re-connect to enable webhook management</p>
+    <TuiButton variant="primary" size="sm" onclick={connectGitHub}>Re-connect GitHub</TuiButton>
+  {:else if githubStatus?.connected}
+    <p class="body-text">Connected as <strong>@{githubStatus.username ?? 'GitHub'}</strong></p>
+    {#if showDisconnectConfirm}
+      <p class="body-text body-text--warning">
+        {webhookCount > 0
+          ? `This will delete ${webhookCount} webhook${webhookCount === 1 ? '' : 's'} on GitHub. Continue?`
+          : 'Disconnect your GitHub account. Continue?'}
+      </p>
+      <div class="action-row">
+        <TuiButton variant="ghost" size="sm" onclick={() => (showDisconnectConfirm = false)}>
+          Cancel
+        </TuiButton>
+        <TuiButton variant="danger" size="sm" onclick={handleDisconnect} disabled={disconnecting}>
+          {disconnecting ? 'Disconnecting...' : 'Disconnect'}
+        </TuiButton>
+      </div>
+    {:else}
+      <TuiButton variant="danger" size="sm" onclick={() => (showDisconnectConfirm = true)}>
+        Disconnect
+      </TuiButton>
+    {/if}
+  {:else if deviceCode}
+    <div class="device-flow">
+      <div class="code-row">
+        <span class="body-text">Enter code: <strong class="user-code">{deviceCode.userCode}</strong></span>
+        <TuiButton variant="ghost" size="sm" onclick={copyCode}>Copy</TuiButton>
+      </div>
+      <p class="body-text">
+        at <a href={deviceCode.verificationUri} target="_blank" rel="noopener noreferrer"
+          >{deviceCode.verificationUri}</a
+        >
+      </p>
+      <p class="body-text body-text--muted">Waiting for authorization...</p>
     </div>
-  </div>
-</div>
+  {:else if deviceFlowError}
+    <p class="error-text">{deviceFlowError}</p>
+    <TuiButton variant="primary" size="sm" onclick={connectGitHub}>Try Again</TuiButton>
+  {:else}
+    <p class="body-text body-text--muted">
+      Connect your GitHub account to enable PRs, CI status, and webhook management.
+    </p>
+    <TuiButton variant="primary" size="sm" onclick={connectGitHub}>Connect GitHub</TuiButton>
+  {/if}
+</IntegrationRow>
 
 <style>
-  .integration-row {
-    border-bottom: 1px solid var(--border);
-  }
-
-  .integration-row:last-child {
-    border-bottom: none;
-  }
-
-  /* Header */
-  .integration-header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 0;
-    min-height: 44px;
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .integration-header:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--border);
-    flex-shrink: 0;
-  }
-
-  .status-dot--connected {
-    background: var(--status-success);
-  }
-
-  .integration-label {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .integration-name {
-    font-size: var(--font-size-base);
-    font-weight: 500;
-    color: var(--text);
-  }
-
-  .integration-status {
-    font-size: var(--font-size-sm);
-    color: var(--text);
-  }
-
-  .integration-status--muted {
-    color: var(--text-muted);
-  }
-
-  .integration-actions {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  /* Accordion body — grid trick for smooth height transition */
-  .integration-body {
-    display: grid;
-    grid-template-rows: 0fr;
-    transition: grid-template-rows 200ms ease;
-    overflow: hidden;
-  }
-
-  .integration-body--open {
-    grid-template-rows: 1fr;
-  }
-
-  .integration-body-inner {
-    overflow: hidden;
-    padding-left: 18px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-bottom: 0;
-    transition: padding-bottom 200ms ease;
-  }
-
-  .integration-body--open .integration-body-inner {
-    padding-bottom: 12px;
-  }
-
   /* Content */
   .body-text {
     font-size: var(--font-size-sm);
@@ -336,7 +216,7 @@
   .device-flow {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
 
   .code-row {

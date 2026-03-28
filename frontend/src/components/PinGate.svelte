@@ -1,5 +1,7 @@
 <script lang="ts">
   import { getAuth, submitPin, setupNewPin } from '../lib/state/auth.svelte.js';
+  import TuiButton from './TuiButton.svelte';
+  import TuiInput from './TuiInput.svelte';
 
   const auth = getAuth();
   let pinValue = $state('');
@@ -59,36 +61,36 @@
 
     {#if auth.needsSetup}
       <p>set up a PIN to secure this instance</p>
-      <input
+      <TuiInput
         type="password"
-        inputmode="numeric"
-        maxlength="20"
-        placeholder="choose a PIN"
         bind:value={pinValue}
         onkeydown={handleKeydown}
-        autofocus
-      />
-      <input
-        type="password"
+        placeholder="choose a PIN"
         inputmode="numeric"
         maxlength="20"
-        placeholder="confirm PIN"
+        autofocus
+      />
+      <TuiInput
+        type="password"
         bind:value={confirmValue}
         onkeydown={handleKeydown}
-      />
-      <button onclick={handleSetup}>Set PIN</button>
-    {:else}
-      <p>enter PIN to continue</p>
-      <input
-        type="password"
+        placeholder="confirm PIN"
         inputmode="numeric"
         maxlength="20"
-        placeholder="PIN"
+      />
+      <TuiButton variant="primary" onclick={handleSetup}>set PIN</TuiButton>
+    {:else}
+      <p>enter PIN to continue</p>
+      <TuiInput
+        type="password"
         bind:value={pinValue}
         onkeydown={handleKeydown}
+        placeholder="PIN"
+        inputmode="numeric"
+        maxlength="20"
         autofocus
       />
-      <button onclick={handleUnlock}>Unlock</button>
+      <TuiButton variant="primary" onclick={handleUnlock}>unlock</TuiButton>
       <p class="hint">forgot your PIN? run <code>claude-remote-cli pin reset</code> on the host machine</p>
     {/if}
 
@@ -119,52 +121,25 @@
   }
 
   .pin-container h1 {
-    font-size: 1.5rem;
+    font-size: var(--font-size-lg);
     color: var(--text);
   }
 
   .pin-container p {
     color: var(--text-muted);
-    font-size: 0.95rem;
+    font-size: var(--font-size-base);
   }
 
-  input {
-    width: 100%;
-    padding: 14px 16px;
+  .pin-container :global(.tui-input) {
+    padding: 16px 16px;
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    color: var(--text);
-    font-size: 1.2rem;
+    font-size: var(--font-size-lg);
     text-align: center;
-    outline: none;
-    -webkit-appearance: none;
-  }
-
-  input:focus {
-    border-color: var(--accent);
-  }
-
-  button {
-    width: 100%;
-    padding: 14px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    touch-action: manipulation;
-  }
-
-  button:active {
-    opacity: 0.8;
   }
 
   .error {
     color: var(--accent);
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
   }
 
   .hint {

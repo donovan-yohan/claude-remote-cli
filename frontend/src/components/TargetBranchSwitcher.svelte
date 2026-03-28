@@ -2,6 +2,8 @@
   import { createQuery } from '@tanstack/svelte-query';
   import { fetchBranches } from '../lib/api.js';
   import type { BranchInfo } from '../lib/types.js';
+  import TuiMenuItem from './TuiMenuItem.svelte';
+  import TuiMenuPanel from './TuiMenuPanel.svelte';
 
   let {
     workspacePath,
@@ -125,50 +127,52 @@
 
   {#if open}
     <div class="target-dropdown" role="listbox" tabindex="-1" aria-label="Target branches" onkeydown={onKeydown}>
-      <div class="target-filter-wrap">
-        <input
-          bind:this={filterInputEl}
-          type="text"
-          class="target-filter"
-          placeholder="Filter branches..."
-          bind:value={filterText}
-          onkeydown={onKeydown}
-          aria-label="Filter target branches"
-        />
-      </div>
+      <TuiMenuPanel>
+        <div class="target-filter-wrap">
+          <input
+            bind:this={filterInputEl}
+            type="text"
+            class="target-filter"
+            placeholder="Filter branches..."
+            bind:value={filterText}
+            onkeydown={onKeydown}
+            aria-label="Filter target branches"
+          />
+        </div>
 
-      {#if switchError}
-        <div class="target-error">{switchError}</div>
-      {/if}
+        {#if switchError}
+          <div class="target-error">{switchError}</div>
+        {/if}
 
-      {#if branchQuery.isLoading}
-        <div class="target-loading">Loading...</div>
-      {:else if filteredBranches.length === 0}
-        <div class="target-empty">No branches match</div>
-      {:else}
-        <ul class="target-list">
-          {#each filteredBranches as branch (branch.name)}
-            <li
-              class="target-option"
-              class:target-current={branch.name === currentBase}
-              class:target-switching={switching === branch.name}
-              role="option"
-              aria-selected={branch.name === currentBase}
-              onmousedown={() => handleSelect(branch.name)}
-            >
-              {#if branch.name === currentBase}
-                <span class="target-check">&#10003;</span>
-              {:else}
-                <span class="target-check target-check--empty"></span>
-              {/if}
-              <span class="target-option-name">{branch.name}</span>
-              {#if switching === branch.name}
-                <span class="target-spinner">&hellip;</span>
-              {/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
+        {#if branchQuery.isLoading}
+          <div class="target-loading">Loading...</div>
+        {:else if filteredBranches.length === 0}
+          <div class="target-empty">No branches match</div>
+        {:else}
+          <div class="target-list">
+            {#each filteredBranches as branch (branch.name)}
+              <TuiMenuItem
+                role="option"
+                ariaSelected={branch.name === currentBase}
+                disabled={switching === branch.name}
+                onmousedown={() => handleSelect(branch.name)}
+              >
+                {#snippet icon()}
+                  {#if branch.name === currentBase}
+                    <span class="target-check">&#10003;</span>
+                  {:else}
+                    <span class="target-check target-check--empty"></span>
+                  {/if}
+                {/snippet}
+                <span class="target-option-name" class:target-current={branch.name === currentBase}>{branch.name}</span>
+                {#if switching === branch.name}
+                  <span class="target-spinner">&hellip;</span>
+                {/if}
+              </TuiMenuItem>
+            {/each}
+          </div>
+        {/if}
+      </TuiMenuPanel>
     </div>
   {/if}
 </div>
@@ -188,8 +192,8 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     cursor: pointer;
-    padding: 4px 6px;
-    border-radius: 4px;
+    padding: 4px 8px;
+    border-radius: 0;
     transition: background 0.12s;
     white-space: nowrap;
     min-width: 0;
@@ -228,16 +232,11 @@
     left: 0;
     min-width: 220px;
     max-width: 340px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 4px;
     z-index: 200;
-    overflow: hidden;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
   }
 
   .target-filter-wrap {
-    padding: 6px 6px 4px;
+    padding: 8px 8px 4px;
     border-bottom: 1px solid var(--border);
   }
 
@@ -245,7 +244,7 @@
     width: 100%;
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 3px;
+    border-radius: 0;
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
@@ -261,58 +260,28 @@
   .target-error {
     font-size: var(--font-size-xs);
     color: var(--status-error);
-    padding: 4px 10px;
+    padding: 4px 8px;
   }
 
   .target-loading,
   .target-empty {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    padding: 8px 10px;
+    padding: 8px 12px;
     font-style: italic;
   }
 
   .target-list {
-    list-style: none;
-    margin: 0;
-    padding: 4px 0;
     max-height: 240px;
     overflow-y: auto;
-  }
-
-  .target-option {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 10px;
-    font-size: var(--font-size-xs);
-    cursor: pointer;
-    white-space: nowrap;
-    overflow: hidden;
-    color: var(--text-muted);
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .target-option:hover {
-    background: var(--surface-hover);
-    color: var(--text);
   }
 
   .target-current {
     color: var(--accent);
   }
 
-  .target-current:hover {
-    color: var(--accent);
-  }
-
-  .target-switching {
-    opacity: 0.6;
-    pointer-events: none;
-  }
-
   .target-check {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     width: 10px;
     flex-shrink: 0;
     color: var(--accent);

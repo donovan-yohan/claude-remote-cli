@@ -1,5 +1,6 @@
 <script lang="ts">
   import DialogShell from './DialogShell.svelte';
+  import TuiButton from '../TuiButton.svelte';
 
   let {
     oldName,
@@ -77,27 +78,27 @@
 <DialogShell bind:this={shellRef} title="Branch Renamed" width="420px">
   {#snippet footer()}
     <div class="rename-actions">
-      <button
-        class="btn btn-primary"
+      <TuiButton
+        variant="primary"
         onclick={handlePush}
         disabled={loading !== null}
       >
         {loading === 'push' ? 'Pushing...' : 'Push'}
-      </button>
-      <button
-        class="btn btn-ghost"
+      </TuiButton>
+      <TuiButton
+        variant="ghost"
         onclick={handleIgnore}
         disabled={loading !== null}
       >
         Ignore
-      </button>
-      <button
-        class="btn btn-ghost rename-btn--cancel"
+      </TuiButton>
+      <TuiButton
+        variant="ghost"
         onclick={handleCancel}
         disabled={loading !== null}
       >
         {loading === 'cancel' ? 'Undoing...' : 'Cancel (undo rename)'}
-      </button>
+      </TuiButton>
     </div>
   {/snippet}
 
@@ -131,8 +132,8 @@
 
   .rename-message code {
     background: var(--surface-hover);
-    padding: 2px 5px;
-    border-radius: 3px;
+    padding: 2px 4px;
+    border-radius: 0;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
   }
@@ -150,7 +151,4 @@
     flex-wrap: wrap;
   }
 
-  .rename-btn--cancel {
-    color: var(--text-muted);
-  }
 </style>

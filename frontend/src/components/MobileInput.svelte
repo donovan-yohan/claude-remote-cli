@@ -455,8 +455,8 @@
     top: 0;
     background: rgba(0, 0, 0, 0.95);
     color: #ff0;
-    border-bottom: 1px solid #ff0;
-    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+    padding: 4px 8px;
     word-break: break-all;
   }
 
@@ -472,10 +472,10 @@
   .debug-toggle {
     background: #333;
     color: #0f0;
-    border: 1px solid #0f0;
-    border-radius: 6px;
+    border: 1px solid var(--border);
+    border-radius: 0;
     font: 12px monospace;
-    padding: 6px 10px;
+    padding: 8px 8px;
     min-width: 44px;
     min-height: 44px;
     touch-action: manipulation;
@@ -492,7 +492,7 @@
     background: rgba(0, 0, 0, 0.92);
     color: #0f0;
     font: 11px/1.4 monospace;
-    padding: 6px 6px 6px 40px;
+    padding: 8px 8px 8px 40px;
     z-index: 9999;
     white-space: pre-wrap;
     word-break: break-all;

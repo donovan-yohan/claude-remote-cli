@@ -67,9 +67,23 @@
     };
   });
 
+  // --- Scroll overflow detection ---
+  let isScrollable = $state(false);
+
   // --- Keyboard nav ---
   let focusedIndex = $state(0);
   let scrollContainerEl: HTMLDivElement | undefined = $state(undefined);
+
+  $effect(() => {
+    if (!scrollContainerEl) return;
+    const check = () => {
+      isScrollable = scrollContainerEl!.scrollHeight > scrollContainerEl!.clientHeight;
+    };
+    check();
+    const observer = new ResizeObserver(check);
+    observer.observe(scrollContainerEl);
+    return () => observer.disconnect();
+  });
 
   // Reset focusedIndex when rows change (new array reference from $derived.by).
   // Uses referential identity check — $derived.by always returns a new array.
@@ -292,8 +306,10 @@
       {/if}
     </div>
 
-    <!-- Gradient fade (stays fixed at bottom of wrapper) -->
-    <div class="scroll-fade"></div>
+    <!-- Gradient fade (only when content overflows) -->
+    {#if isScrollable}
+      <div class="scroll-fade"></div>
+    {/if}
   </div>
 </div>
 
@@ -315,7 +331,7 @@
   .data-table-th {
     color: var(--text-muted);
     font-size: var(--font-size-xs);
-    padding: 6px 8px;
+    padding: 8px 8px;
     transition: color 0.12s;
     user-select: none;
   }
@@ -341,7 +357,7 @@
 
   .sort-indicator {
     color: var(--accent);
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
   }
 
   /* --- Scroll wrapper (positioned parent for gradient) --- */
@@ -392,7 +408,7 @@
   /* --- Skeleton --- */
   .skeleton-row {
     display: flex;
-    padding: 10px 8px;
+    padding: 8px 8px;
     border-bottom: 1px solid var(--border);
     min-height: 40px;
     align-items: center;
@@ -409,7 +425,7 @@
   .skeleton-card {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     width: 100%;
     padding: 4px 8px;
   }
@@ -419,7 +435,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 8px;
     padding: 24px 12px;
     color: var(--text-muted);
     font-size: var(--font-size-sm);
@@ -438,7 +454,7 @@
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     cursor: pointer;
-    padding: 3px 8px;
+    padding: 4px 8px;
     transition: border-color 0.12s, color 0.12s;
   }
 
@@ -452,8 +468,8 @@
     all: unset;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
+    gap: 8px;
+    padding: 8px 8px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     cursor: pointer;
@@ -474,7 +490,7 @@
   }
 
   .group-chevron {
-    font-size: 0.6rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     transition: transform 0.15s;
     display: inline-block;
@@ -491,17 +507,26 @@
   .group-label {
     font-size: var(--font-size-xs);
     color: var(--text-muted);
-    text-transform: uppercase;
     letter-spacing: 0.06em;
   }
 
   .group-count {
-    font-size: 0.65rem;
+    font-size: var(--font-size-xs);
     color: var(--text-muted);
     background: var(--border);
-    padding: 1px 5px;
-    border-radius: 3px;
+    padding: 2px 4px;
+    border-radius: 0;
     opacity: 0.8;
+  }
+
+  .skeleton-line {
+    background: var(--border);
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.7; }
   }
 
   /* --- Mobile card mode --- */

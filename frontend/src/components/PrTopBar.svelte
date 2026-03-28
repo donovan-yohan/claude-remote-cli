@@ -7,11 +7,11 @@
     derivePrAction,
     deriveSecondaryAction,
     getActionPrompt,
-    getStatusCssVar,
-    shouldUseDarkText,
   } from '../lib/pr-state.js';
-  import type { PrAction } from '../lib/pr-state.js';
+  import type { PrAction, StatusColor } from '../lib/pr-state.js';
   import type { PrInfo, CiStatus } from '../lib/types.js';
+  import CipherText from './CipherText.svelte';
+  import TuiButton from './TuiButton.svelte';
   import BranchSwitcher from './BranchSwitcher.svelte';
   import TargetBranchSwitcher from './TargetBranchSwitcher.svelte';
   import RenameWarningModal from './dialogs/RenameWarningModal.svelte';
@@ -89,9 +89,14 @@
   let prAction = $derived(derivePrAction(prStateInput));
   let secondaryAction = $derived(deriveSecondaryAction(prAction, prStateInput));
 
-  let actionColor = $derived(getStatusCssVar(prAction.color));
-  let actionDark = $derived(shouldUseDarkText(prAction.color));
   let showAction = $derived(prAction.type !== 'none');
+
+  function colorToVariant(color: StatusColor): 'primary' | 'ghost' | 'danger' | 'success' | 'info' {
+    if (color === 'success') return 'success';
+    if (color === 'error') return 'danger';
+    if (color === 'accent') return 'primary';
+    return 'ghost';
+  }
   let isRefreshing = $derived(prQuery.isFetching || ciQuery.isFetching);
 
   function handleRefresh() {
@@ -215,16 +220,17 @@
         />
       </div>
     {:else}
-      <BranchSwitcher
-        {workspacePath}
-        currentWorktreePath={workspacePath}
-        currentBranch={currentBranch}
-        disabled={agentRunning}
-        onSwitch={handleBranchSwitch}
-      />
+      <div class="branch-with-actions">
+        <BranchSwitcher
+          {workspacePath}
+          currentWorktreePath={workspacePath}
+          currentBranch={currentBranch}
+          disabled={agentRunning}
+          onSwitch={handleBranchSwitch}
+        />
 
-      <!-- Hover-reveal icons -->
-      <div class="hover-icons">
+        <!-- Hover-reveal icons — overlaid to the right of branch name, left of chevron -->
+        <div class="hover-icons">
         <button
           class="hover-icon"
           onclick={handleCopy}
@@ -253,6 +259,7 @@
             <path d="M11.5 1.5l3 3L5 14H2v-3L11.5 1.5z" stroke="currentColor" fill="none" stroke-width="1.5" stroke-linejoin="round"/>
           </svg>
         </button>
+      </div>
       </div>
     {/if}
 
@@ -315,31 +322,30 @@
       </svg>
     </button>
     {#if prQuery.isLoading}
-      <span class="bar-loading">…</span>
+      <CipherText text="loading" loading={true} />
     {:else}
       {#if secondaryAction}
-        <button
-          class="action-btn action-btn--secondary"
+        <TuiButton
+          variant="ghost"
+          size="sm"
           data-track="pr-top-bar.secondary-action"
           onclick={() => handleActionClick(secondaryAction!)}
           aria-label={secondaryAction.label}
         >
           {secondaryAction.label}
-        </button>
+        </TuiButton>
       {/if}
       {#if showAction}
-        <button
-          class="action-btn"
-          style:--action-color={actionColor}
-          class:action-btn--dark-text={actionDark}
-          class:action-btn--disabled={prAction.type === 'checks-running'}
+        <TuiButton
+          variant={colorToVariant(prAction.color)}
+          size="sm"
           data-track="pr-top-bar.primary-action"
           onclick={() => handleActionClick()}
           disabled={prAction.type === 'checks-running'}
           aria-label={prAction.label}
         >
           {prAction.label}
-        </button>
+        </TuiButton>
       {/if}
     {/if}
   </div>
@@ -382,6 +388,7 @@
     overflow: hidden;
     padding-right: 8px;
     border-right: 1px solid var(--border);
+    align-self: stretch;
   }
 
   .target-section {
@@ -403,7 +410,6 @@
     display: flex;
     align-items: center;
     padding: 0 12px;
-    border-right: 1px solid var(--border);
     flex-shrink: 0;
     white-space: nowrap;
   }
@@ -431,8 +437,8 @@
   .bar-right {
     display: flex;
     align-items: center;
-    padding-left: 10px;
-    gap: 6px;
+    padding-left: 8px;
+    gap: 8px;
     flex-shrink: 0;
   }
 
@@ -442,7 +448,7 @@
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 4px;
+    border-radius: 0;
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -469,48 +475,6 @@
     to { transform: rotate(360deg); }
   }
 
-  .bar-loading {
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    padding: 0 4px;
-  }
-
-  .action-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    height: 22px;
-    padding: 0 10px;
-    border-radius: 11px;
-    border: none;
-    background: var(--action-color, var(--border));
-    color: #fff;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: opacity 0.12s, filter 0.12s;
-    letter-spacing: 0.01em;
-  }
-
-  .action-btn:hover:not(:disabled) {
-    filter: brightness(1.15);
-  }
-
-  .action-btn:active:not(:disabled) {
-    filter: brightness(0.9);
-  }
-
-  .action-btn--dark-text {
-    color: #000;
-  }
-
-  .action-btn--disabled {
-    cursor: default;
-    opacity: 0.7;
-  }
-
   .bar-merged {
     background: color-mix(in srgb, var(--status-merged) 8%, var(--surface));
   }
@@ -522,7 +486,7 @@
   .diff-stats {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     padding: 0 8px;
@@ -532,44 +496,53 @@
   .diff-add { color: var(--status-success); }
   .diff-del { color: var(--status-error); }
 
-  .action-btn--secondary {
-    background: var(--border) !important;
-    color: var(--text) !important;
-    margin-right: 6px;
-  }
-
   /* ── Rename ──────────────────────────── */
   .rename-input-wrap {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px;
     padding: 2px 4px;
   }
 
   .rename-input {
     background: var(--bg);
     border: 1px solid var(--accent);
-    border-radius: 3px;
+    border-radius: 0;
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    padding: 2px 6px;
+    padding: 2px 8px;
     outline: none;
     min-width: 120px;
     max-width: 250px;
   }
 
   /* Hover-reveal icons */
+  .branch-with-actions {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
   .hover-icons {
+    position: absolute;
+    right: 24px; /* left of the chevron */
+    top: 50%;
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
     gap: 2px;
     opacity: 0;
     transition: opacity 0.15s;
+    pointer-events: none;
+    z-index: 1;
+    background: var(--bg);
+    padding-left: 4px;
   }
 
-  .bar-left:hover .hover-icons {
+  .branch-with-actions:hover .hover-icons {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .hover-icon {
@@ -578,7 +551,7 @@
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 4px;
+    border-radius: 0;
     border: none;
     background: transparent;
     color: var(--text-muted);
@@ -599,7 +572,7 @@
 
   .branch-icon {
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: var(--font-size-base);
     flex-shrink: 0;
   }
 

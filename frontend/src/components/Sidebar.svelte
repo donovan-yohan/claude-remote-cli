@@ -14,6 +14,7 @@
   import { fetchOrgPrs } from '../lib/api.js';
   import { createQuery } from '@tanstack/svelte-query';
   import { dndzone } from 'svelte-dnd-action';
+  import TuiButton from './TuiButton.svelte';
   import WorkspaceItem from './WorkspaceItem.svelte';
 
   const ui = getUi();
@@ -163,7 +164,7 @@
         }}
       >Relay</span>
     {/if}
-    <button class="icon-btn" aria-label="Close sidebar" onclick={closeSidebar}>✕</button>
+    <button class="icon-btn" aria-label="Close sidebar" onclick={closeSidebar}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
   </div>
 
   {#if !ui.sidebarCollapsed}
@@ -224,17 +225,19 @@
     </div>
 
     <div class="sidebar-footer-row">
-      <button class="add-workspace-btn" data-track="sidebar.add-workspace" onclick={onAddWorkspace}>
+      <TuiButton variant="primary" data-track="sidebar.add-workspace" onclick={onAddWorkspace} style="flex: 1;">
         + Add Workspace
-      </button>
+      </TuiButton>
       <button class="settings-icon-btn" data-track="sidebar.settings" onclick={() => onOpenSettings()} aria-label="Settings">
-        ⚙
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1-1.51V15H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
     </div>
 
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-handle" onmousedown={startResize} ondblclick={resetWidth}></div>
   {/if}
+
+  <div class="scanline-overlay" aria-hidden="true"></div>
 </aside>
 
 <style>
@@ -270,7 +273,9 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 10px;
+    padding: 0 12px;
+    /* Match PrTopBar (36px + 1px border) + SessionTabBar (32px + 1px border) = 70px total */
+    height: 69px; /* 70px minus own 1px border-bottom */
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
@@ -294,10 +299,10 @@
     background: none;
     border: none;
     color: var(--text-muted);
-    font-size: 1.1rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
-    padding: 8px 10px;
-    border-radius: 4px;
+    padding: 8px 12px;
+    border-radius: 0;
     flex-shrink: 0;
     line-height: 1;
     font-family: var(--font-mono);
@@ -322,10 +327,10 @@
     background: none;
     border: none;
     color: var(--text);
-    font-size: 1.2rem;
+    font-size: var(--font-size-lg);
     cursor: pointer;
-    padding: 4px 6px;
-    border-radius: 4px;
+    padding: 4px 8px;
+    border-radius: 0;
     touch-action: manipulation;
     display: none; /* shown on mobile only */
   }
@@ -342,7 +347,7 @@
   }
 
   .empty-state {
-    padding: 16px 10px;
+    padding: 16px 12px;
     font-size: var(--font-size-xs);
     font-family: var(--font-mono);
     color: var(--text-muted);
@@ -359,40 +364,14 @@
     flex-shrink: 0;
   }
 
-  .add-workspace-btn {
-    flex: 1;
-    padding: 10px 12px;
-    min-height: 40px;
-    background: none;
-    border: 1px solid var(--accent);
-    border-radius: 0;
-    color: var(--accent);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
-    cursor: pointer;
-    touch-action: manipulation;
-    text-align: center;
-    transition: background 0.1s;
-  }
-
-  .add-workspace-btn:hover {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-  }
-
-  .add-workspace-btn:active {
-    background: var(--border);
-  }
 
   .settings-icon-btn {
     width: 40px;
     min-height: 40px;
     background: none;
     border: 1px solid var(--border);
-    border-radius: 0;
     color: var(--text-muted);
-    font-size: 1rem;
     cursor: pointer;
-    touch-action: manipulation;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -405,8 +384,30 @@
     color: var(--text);
   }
 
-  .settings-icon-btn:active {
-    background: var(--border);
+  /* CRT scanline overlay */
+  .scanline-overlay {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    height: 200%;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 3px,
+      rgba(255, 255, 255, 0.02) 3px,
+      rgba(255, 255, 255, 0.02) 4px
+    );
+    animation: scanline-drift 30s linear infinite;
+  }
+
+  @keyframes scanline-drift {
+    from { transform: translateY(0); }
+    to { transform: translateY(-50%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scanline-overlay { animation: none; }
   }
 
   /* Mobile — full-screen overlay */
@@ -433,7 +434,7 @@
 
     .icon-btn {
       display: block;
-      font-size: 1.4rem;
+      font-size: var(--font-size-lg);
       padding: 4px 8px;
     }
 

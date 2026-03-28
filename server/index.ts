@@ -189,7 +189,10 @@ async function main(): Promise<void> {
     saveConfig(CONFIG_PATH, startupConfig);
   }
 
-  if (!startupConfig.pinHash) {
+  if (process.env.NO_PIN === '1') {
+    console.log('PIN disabled (NO_PIN=1).');
+    startupConfig.pinHash = startupConfig.pinHash || 'disabled';
+  } else if (!startupConfig.pinHash) {
     if (!process.stdin.isTTY) {
       console.error('No PIN configured. Run claude-remote-cli interactively first to set a PIN.');
       process.exit(1);
@@ -576,7 +579,7 @@ async function main(): Promise<void> {
         res.status(412).json({ error: 'No PIN configured', needsSetup: true });
         return;
       }
-      const valid = await auth.verifyPin(pin, authConfig.pinHash);
+      const valid = process.env.NO_PIN === '1' || await auth.verifyPin(pin, authConfig.pinHash);
       if (!valid) {
         auth.recordFailedAttempt(ip);
         res.status(401).json({ error: 'Invalid PIN' });
@@ -1291,7 +1294,10 @@ async function main(): Promise<void> {
   });
 
   // Clean up orphaned tmux sessions from previous runs (skip any adopted by restore)
-  try {
+  // Skip in dev mode — another server instance owns these sessions
+  if (process.env.NO_PIN === '1') {
+    console.log('Dev mode: skipping orphaned tmux session cleanup.');
+  } else try {
     const adoptedNames = activeTmuxSessionNames();
     const { stdout } = await execFileAsync('tmux', ['list-sessions', '-F', '#{session_name}']);
     const orphanedSessions = stdout.trim().split('\n').filter(name => name.startsWith('crc-') && !adoptedNames.has(name));

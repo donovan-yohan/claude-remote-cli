@@ -81,7 +81,7 @@
         onclick={() => dialogEl?.close()}
         aria-label="Close"
         type="button"
-      >✕</button>
+      ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </header>
 
     <div class="dialog-shell__body" class:scrolled-bottom={scrolledBottom} onscroll={onBodyScroll}>
@@ -191,7 +191,7 @@
   }
 
   .dialog-shell__title {
-    font-size: 1.05rem;
+    font-size: var(--font-size-lg);
     font-weight: 600;
     margin: 0;
     flex-shrink: 0;
@@ -207,10 +207,10 @@
     border: none;
     border-radius: 0;
     color: var(--text-muted);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     font-family: var(--font-mono);
     cursor: pointer;
-    padding: 4px 6px;
+    padding: 4px 8px;
     line-height: 1;
     flex-shrink: 0;
     margin-left: auto;
@@ -227,11 +227,12 @@
     padding: 16px 20px;
     overflow-y: auto;
     flex: 1;
+    min-height: 0;
   }
 
   .dialog-shell--fullscreen .dialog-shell__body {
-    max-width: 640px;
-    margin: 0 auto;
+    padding: 0;
+    max-width: none;
     width: 100%;
     box-sizing: border-box;
   }
@@ -252,76 +253,6 @@
   .dialog-shell__footer {
     padding: 12px 20px 16px;
     border-top: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  /* ════════════════════════════════════════════════
-     Shared utility classes — available to consumers
-     via :global() or within this component
-  ════════════════════════════════════════════════ */
-
-  /* Button base */
-  :global(.dialog-shell .btn) {
-    padding: 7px 16px;
-    border-radius: 0;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    border: 1px solid var(--border);
-    transition: background 0.1s, color 0.1s;
-  }
-
-  :global(.dialog-shell .btn:disabled) {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* Primary — outline accent */
-  :global(.dialog-shell .btn-primary) {
-    border-color: var(--accent);
-    color: var(--accent);
-    background: transparent;
-  }
-
-  :global(.dialog-shell .btn-primary:hover:not(:disabled)) {
-    background: color-mix(in srgb, var(--accent) 10%, transparent);
-  }
-
-  /* Ghost */
-  :global(.dialog-shell .btn-ghost) {
-    background: transparent;
-    color: var(--text-muted);
-    border-color: var(--border);
-  }
-
-  :global(.dialog-shell .btn-ghost:hover:not(:disabled)) {
-    background: var(--border);
-    color: var(--text);
-  }
-
-  /* Danger */
-  :global(.dialog-shell .btn-danger) {
-    color: var(--status-error);
-    border-color: var(--status-error);
-    background: transparent;
-  }
-
-  :global(.dialog-shell .btn-danger:hover:not(:disabled)) {
-    background: rgba(231, 76, 60, 0.1);
-  }
-
-  /* Small modifier */
-  :global(.dialog-shell .btn-sm) {
-    padding: 4px 10px;
-    font-size: var(--font-size-xs);
-  }
-
-  /* Shared form elements */
-  :global(.dialog-shell .dialog-checkbox) {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--accent);
-    cursor: pointer;
     flex-shrink: 0;
   }
 

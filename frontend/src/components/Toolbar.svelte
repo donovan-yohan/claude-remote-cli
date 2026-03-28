@@ -32,7 +32,7 @@
     { html: '&#8679;Tab', key: '\x1b[Z', label: 'Shift+Tab' },
     { html: '&#8593;', key: '\x1b[A', label: 'Up arrow', extraClass: 'tb-arrow' },
     { html: 'Esc', key: '\x1b', label: 'Escape' },
-    { html: '&#128247;', id: 'upload-image-btn', label: 'Upload image' },
+    { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" width="14" height="14"><rect x="3" y="5" width="18" height="14"/><circle cx="12" cy="13" r="3"/><path d="M9 5l1-2h4l1 2"/></svg>', id: 'upload-image-btn', label: 'Upload image' },
     { html: '^V', id: 'paste-btn', label: 'Paste from clipboard' },
     { html: '^C', key: '\x03', label: 'Ctrl+C' },
     { html: '&#8592;', key: '\x1b[D', label: 'Left arrow', extraClass: 'tb-arrow' },
@@ -191,9 +191,9 @@
   .tb-btn {
     background: var(--bg);
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: 0;
     color: var(--text);
-    font-size: 0.85rem;
+    font-size: var(--font-size-sm);
     padding: 8px 4px;
     cursor: pointer;
     touch-action: manipulation;
@@ -210,9 +210,9 @@
   }
 
   .tb-enter {
-    background: var(--accent);
+    background: transparent;
     border-color: var(--accent);
-    color: #fff;
+    color: var(--accent);
   }
 
   .tb-enter:active {

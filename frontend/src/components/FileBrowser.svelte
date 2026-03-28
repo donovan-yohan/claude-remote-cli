@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { browseFsDirectory, type BrowseEntry } from '../lib/api.js';
+  import TuiCheckbox from './TuiCheckbox.svelte';
 
   interface BrowseNode {
     name: string;
@@ -185,7 +186,7 @@
   function handleRowClick(node: BrowseNode, e: MouseEvent) {
     const target = e.target as HTMLElement;
     // If clicking the expand arrow or checkbox, those have their own handlers
-    if (target.closest('.expand-btn') || target.closest('.node-checkbox')) return;
+    if (target.closest('.expand-btn') || target.closest('.tui-checkbox')) return;
 
     // Click row body: expand if collapsed, toggle select if leaf or expanded
     if (node.hasChildren && !node.expanded) {
@@ -283,14 +284,11 @@
             <span class="expand-spacer"></span>
           {/if}
 
-          <input
-            type="checkbox"
-            class="node-checkbox"
-            data-track="file-browser.select"
+          <TuiCheckbox
             checked={node.selected}
             onchange={() => toggleSelect(node)}
             aria-label="Select {node.name}"
-            onclick={(e) => e.stopPropagation()}
+            onclick={(e: MouseEvent) => e.stopPropagation()}
           />
 
           <span class="node-name">{node.name}</span>
@@ -330,7 +328,7 @@
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    padding: 8px 10px;
+    padding: 8px 12px;
     outline: none;
   }
 
@@ -367,7 +365,7 @@
   .tree-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     padding-top: 4px;
     padding-bottom: 4px;
     padding-right: 12px;
@@ -435,15 +433,6 @@
     50% { opacity: 0.3; }
   }
 
-  .node-checkbox {
-    width: 14px;
-    height: 14px;
-    accent-color: var(--accent);
-    cursor: pointer;
-    flex-shrink: 0;
-    margin: 0;
-  }
-
   .node-name {
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
@@ -459,8 +448,8 @@
     font-size: 10px;
     color: var(--accent);
     background: color-mix(in srgb, var(--accent) 15%, transparent);
-    padding: 1px 5px;
-    border-radius: 3px;
+    padding: 2px 4px;
+    border-radius: 0;
     flex-shrink: 0;
     text-transform: lowercase;
   }
