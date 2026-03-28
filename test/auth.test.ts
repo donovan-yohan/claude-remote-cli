@@ -121,3 +121,15 @@ test('generateCookieToken returns non-empty string', () => {
   const token = generateCookieToken();
   assert.ok(typeof token === 'string' && token.length > 0);
 });
+
+test('verifyPin returns false for undefined hash', async () => {
+  _resetForTesting();
+  const result = await verifyPin('1234', undefined as unknown as string);
+  assert.strictEqual(result, false);
+});
+
+test('verifyPin returns false for null hash', async () => {
+  _resetForTesting();
+  const result = await verifyPin('1234', null as unknown as string);
+  assert.strictEqual(result, false);
+});

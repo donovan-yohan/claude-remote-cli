@@ -28,6 +28,15 @@ async function json<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function parseErrorBody(res: Response, fallback: string): Promise<string> {
+  try {
+    const data = await res.json() as { error?: string };
+    return data.error || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export async function authenticate(pin: string): Promise<void> {
   const res = await fetch('/auth', {
     method: 'POST',
@@ -35,8 +44,8 @@ export async function authenticate(pin: string): Promise<void> {
     body: JSON.stringify({ pin }),
   });
   if (!res.ok) {
-    const data = await res.json() as { error?: string };
-    throw new Error(data.error || 'Authentication failed');
+    const message = await parseErrorBody(res, 'Authentication failed');
+    throw new Error(message);
   }
 }
 
@@ -60,7 +69,7 @@ export async function fetchWorkspaces(): Promise<Workspace[]> {
 
 export async function addWorkspace(path: string): Promise<void> {
   const res = await fetch('/workspaces', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path }) });
-  if (!res.ok) { const d = await res.json() as { error?: string }; throw new Error(d.error || 'Failed to add workspace'); }
+  if (!res.ok) { throw new Error(await parseErrorBody(res, 'Failed to add workspace')); }
 }
 
 export async function removeWorkspace(path: string): Promise<void> {
@@ -151,8 +160,7 @@ export async function createWorktree(workspacePath: string, branch?: string): Pr
     body: JSON.stringify({ branch }),
   });
   if (!res.ok) {
-    const data = await res.json() as { error?: string };
-    throw new Error(data.error || 'Failed to create worktree');
+    throw new Error(await parseErrorBody(res, 'Failed to create worktree'));
   }
   return res.json() as Promise<{ branchName: string; mountainName: string; worktreePath: string }>;
 }
@@ -200,8 +208,13 @@ export async function createSession(body: {
     body: JSON.stringify(body),
   });
   if (res.status === 409) {
-    const data = await res.json() as { sessionId?: string };
-    throw new ConflictError(data.sessionId ?? '');
+    try {
+      const data = await res.json() as { sessionId?: string };
+      throw new ConflictError(data.sessionId ?? '');
+    } catch (e) {
+      if (e instanceof ConflictError) throw e;
+      throw new ConflictError('');
+    }
   }
   return json<SessionSummary>(res);
 }
@@ -225,8 +238,7 @@ export async function deleteWorktree(worktreePath: string, repoPath: string): Pr
     body: JSON.stringify({ worktreePath, repoPath }),
   });
   if (!res.ok) {
-    const data = await res.json() as { error?: string };
-    throw new Error(data.error || 'Failed to delete worktree');
+    throw new Error(await parseErrorBody(res, 'Failed to delete worktree'));
   }
 }
 
@@ -278,8 +290,7 @@ async function setConfigBool(key: string, value: boolean): Promise<void> {
     body: JSON.stringify({ [key]: value }),
   });
   if (!res.ok) {
-    const data = await res.json() as { error?: string };
-    throw new Error(data.error || `Failed to update ${key}`);
+    throw new Error(await parseErrorBody(res, `Failed to update ${key}`));
   }
 }
 
@@ -338,8 +349,7 @@ export async function updateWorkspaceSettings(workspacePath: string, settings: W
     body: JSON.stringify(settings),
   });
   if (!res.ok) {
-    const data = await res.json() as { error?: string };
-    throw new Error(data.error || 'Failed to update workspace settings');
+    throw new Error(await parseErrorBody(res, 'Failed to update workspace settings'));
   }
 }
 

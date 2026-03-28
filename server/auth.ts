@@ -20,6 +20,7 @@ export async function hashPin(pin: string): Promise<string> {
 }
 
 export async function verifyPin(pin: string, hash: string): Promise<boolean> {
+  if (!hash) return false;
   if (hash.startsWith('scrypt:')) {
     const [, salt, storedHashHex] = hash.split(':');
     if (!salt || !storedHashHex) return false;
