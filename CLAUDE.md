@@ -44,9 +44,12 @@ Always read `DESIGN.md` before making any visual or UI decisions. All font choic
 - All relative imports use `.js` extensions; Node builtins use `node:` prefix
 - npm package — publishing automated via GitHub Actions (see `docs/references/deployment.md`)
 
-## Deployment
+## Branching & Deployment
 
-`npm version <type>` → `git push && git push --tags` → CI publishes. See `docs/references/deployment.md`.
+- **`nightly`** — default branch, active development. PRs target here. Every push auto-publishes `@nightly`.
+- **`master`** — protected, stable releases only. Promoted from `nightly` via PR. Tags trigger `@latest` publish.
+- **Hotfixes** — branch off `master`, PR to `master`, merge back to `nightly`.
+- See `docs/references/deployment.md` for full workflow.
 
 ## Workflow
 

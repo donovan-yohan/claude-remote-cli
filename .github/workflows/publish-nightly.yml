@@ -1,0 +1,38 @@
+name: Publish nightly
+
+on:
+  push:
+    branches:
+      - nightly
+
+jobs:
+  publish-nightly:
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+
+      # Stamp a nightly prerelease version: base-nightly.YYYYMMDD.run
+      - name: Set nightly version
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          STAMP=$(date -u +%Y%m%d)
+          NIGHTLY="${BASE}-nightly.${STAMP}.${GITHUB_RUN_NUMBER}"
+          npm version "$NIGHTLY" --no-git-tag-version
+          echo "Publishing nightly version: $NIGHTLY"
+
+      - run: npm run build
+
+      - run: npm test
+
+      - run: npm publish --provenance --access public --tag nightly

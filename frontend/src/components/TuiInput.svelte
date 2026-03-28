@@ -39,13 +39,38 @@
   function updateCursorPosition() {
     if (!inputEl || !measureEl) return;
 
+    const computed = getComputedStyle(inputEl);
+    const paddingLeft = parseFloat(computed.paddingLeft) || 0;
+    const textAlign = computed.textAlign;
+
+    // Sync measurement span font with input's actual computed styles
+    measureEl.style.fontSize = computed.fontSize;
+    measureEl.style.fontFamily = computed.fontFamily;
+    measureEl.style.letterSpacing = computed.letterSpacing;
+
     const selStart = inputEl.selectionStart ?? 0;
+    const fullText = type === 'password'
+      ? '\u2022'.repeat((value ?? '').length)
+      : (value ?? '');
     const textBeforeCursor = type === 'password'
       ? '\u2022'.repeat(selStart)
       : (value ?? '').slice(0, selStart);
 
+    // Measure text before cursor
     measureEl.textContent = textBeforeCursor || '';
-    cursorLeft = measureEl.offsetWidth;
+    const beforeWidth = measureEl.offsetWidth;
+
+    if (textAlign === 'center') {
+      // Measure full text width to compute centering offset
+      measureEl.textContent = fullText;
+      const totalWidth = measureEl.offsetWidth;
+      const inputContentWidth = inputEl.clientWidth - paddingLeft * 2;
+      const centerOffset = (inputContentWidth - totalWidth) / 2;
+      cursorLeft = paddingLeft + centerOffset + beforeWidth;
+    } else {
+      cursorLeft = paddingLeft + beforeWidth;
+    }
+
     cursorHeight = inputEl.offsetHeight || 16;
   }
 
@@ -164,7 +189,7 @@
     color: var(--text-muted);
   }
 
-  /* Hidden measurement span — must match input font exactly */
+  /* Hidden measurement span — font synced dynamically in JS */
   .tui-measure {
     position: absolute;
     visibility: hidden;
@@ -172,8 +197,7 @@
     white-space: pre;
     font-family: var(--font-mono);
     font-size: var(--font-size-base);
-    /* Match input padding offset */
-    left: 8px;
+    left: 0;
     top: 0;
     padding: 0;
     border: none;
@@ -190,8 +214,6 @@
     opacity: 0.7;
     pointer-events: none;
     line-height: 1;
-    /* Offset by input padding */
-    margin-left: 8px;
   }
 
   .tui-cursor.blinking {
