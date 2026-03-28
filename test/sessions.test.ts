@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as sessions from '../server/sessions.js';
-import { resolveTmuxSpawn, generateTmuxSessionName, TMUX_PREFIX } from '../server/pty-handler.js';
+import { resolveTmuxSpawn, generateTmuxSessionName, getTmuxPrefix } from '../server/pty-handler.js';
 import { serializeAll, restoreFromDisk } from '../server/sessions.js';
 import type { PtySession } from '../server/types.js';
 
@@ -303,9 +303,15 @@ describe('sessions', () => {
     });
   });
 
-  it('generateTmuxSessionName has crc- prefix', () => {
-    const name = generateTmuxSessionName('my-session', 'abcdef1234567890');
-    assert.ok(name.startsWith('crc-'), `expected crc- prefix, got: ${name}`);
+  it('generateTmuxSessionName has correct prefix', () => {
+    const original = process.env.NO_PIN;
+    delete process.env.NO_PIN;
+    try {
+      const name = generateTmuxSessionName('my-session', 'abcdef1234567890');
+      assert.ok(name.startsWith('crc-'), `expected crc- prefix, got: ${name}`);
+    } finally {
+      if (original !== undefined) process.env.NO_PIN = original;
+    }
   });
 
   it('generateTmuxSessionName sanitizes special characters', () => {
@@ -332,18 +338,35 @@ describe('sessions', () => {
     assert.ok(name.endsWith(id.slice(0, 8)), `expected name to end with ${id.slice(0, 8)}, got: ${name}`);
   });
 
-  it('prod TMUX_PREFIX (crc-) does not match dev prefix (crcd-)', () => {
-    // Production prefix must not be a prefix of the dev prefix, otherwise
-    // prod orphan cleanup (startsWith('crc-')) would kill dev tmux sessions.
+  it('prod prefix (crc-) does not match dev prefix (crcd-)', () => {
     const prodPrefix = 'crc-';
     const devPrefix = 'crcd-';
     assert.ok(!devPrefix.startsWith(prodPrefix), `dev prefix '${devPrefix}' must not start with prod prefix '${prodPrefix}'`);
     assert.ok(!prodPrefix.startsWith(devPrefix), `prod prefix '${prodPrefix}' must not start with dev prefix '${devPrefix}'`);
   });
 
-  it('TMUX_PREFIX is crc- in normal mode (no NO_PIN)', () => {
-    // Tests run without NO_PIN=1, so prefix should be production
-    assert.strictEqual(TMUX_PREFIX, 'crc-');
+  it('getTmuxPrefix returns crc- when NO_PIN is not set', () => {
+    const original = process.env.NO_PIN;
+    delete process.env.NO_PIN;
+    try {
+      assert.strictEqual(getTmuxPrefix(), 'crc-');
+    } finally {
+      if (original !== undefined) process.env.NO_PIN = original;
+    }
+  });
+
+  it('getTmuxPrefix returns crcd- when NO_PIN is 1', () => {
+    const original = process.env.NO_PIN;
+    process.env.NO_PIN = '1';
+    try {
+      assert.strictEqual(getTmuxPrefix(), 'crcd-');
+    } finally {
+      if (original !== undefined) {
+        process.env.NO_PIN = original;
+      } else {
+        delete process.env.NO_PIN;
+      }
+    }
   });
 
   it('agent defaults to claude when not specified', () => {
