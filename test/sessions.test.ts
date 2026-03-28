@@ -315,21 +315,33 @@ describe('sessions', () => {
   });
 
   it('generateTmuxSessionName sanitizes special characters', () => {
-    const name = generateTmuxSessionName('feat/auth-flow', 'abcdef1234567890');
-    assert.ok(name.startsWith('crc-feat-auth-flow-'), `expected sanitized name, got: ${name}`);
+    const original = process.env.NO_PIN;
+    delete process.env.NO_PIN;
+    try {
+      const name = generateTmuxSessionName('feat/auth-flow', 'abcdef1234567890');
+      assert.ok(name.startsWith('crc-feat-auth-flow-'), `expected sanitized name, got: ${name}`);
+    } finally {
+      if (original !== undefined) process.env.NO_PIN = original;
+    }
   });
 
   it('generateTmuxSessionName limits display name to 30 chars', () => {
-    const longName = 'a-very-long-display-name-that-exceeds-thirty-characters';
-    const id = 'abcdef1234567890';
-    const name = generateTmuxSessionName(longName, id);
-    // Format is crc-<sanitized up to 30>-<8 char id>
-    // The sanitized portion should be at most 30 chars
-    const withoutPrefix = name.slice('crc-'.length);
-    const parts = withoutPrefix.split('-');
-    const idPart = parts[parts.length - 1];
-    const displayPart = withoutPrefix.slice(0, withoutPrefix.length - idPart!.length - 1);
-    assert.ok(displayPart.length <= 30, `display portion should be <= 30 chars, got: ${displayPart.length}`);
+    const original = process.env.NO_PIN;
+    delete process.env.NO_PIN;
+    try {
+      const longName = 'a-very-long-display-name-that-exceeds-thirty-characters';
+      const id = 'abcdef1234567890';
+      const name = generateTmuxSessionName(longName, id);
+      // Format is crc-<sanitized up to 30>-<8 char id>
+      // The sanitized portion should be at most 30 chars
+      const withoutPrefix = name.slice('crc-'.length);
+      const parts = withoutPrefix.split('-');
+      const idPart = parts[parts.length - 1];
+      const displayPart = withoutPrefix.slice(0, withoutPrefix.length - idPart!.length - 1);
+      assert.ok(displayPart.length <= 30, `display portion should be <= 30 chars, got: ${displayPart.length}`);
+    } finally {
+      if (original !== undefined) process.env.NO_PIN = original;
+    }
   });
 
   it('generateTmuxSessionName uses 8 chars from the provided id', () => {
