@@ -32,8 +32,8 @@ interface SerializedPtySession {
   claudeArgs?: string[];
   hookToken?: string;
   hooksActive?: boolean;
-  needsBranchRename?: boolean;
-  branchRenamePrompt?: string;
+  needsBranchRename?: boolean | undefined;
+  branchRenamePrompt?: string | undefined;
 }
 
 interface PendingSessionsFile {
@@ -46,8 +46,8 @@ const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 type CreateParams = Omit<CreatePtyParams, 'id'> & {
   id?: string;
-  needsBranchRename?: boolean;
-  branchRenamePrompt?: string;
+  needsBranchRename?: boolean | undefined;
+  branchRenamePrompt?: string | undefined;
   initialPrompt?: string | undefined;
 };
 
