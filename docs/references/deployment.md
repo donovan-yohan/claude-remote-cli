@@ -35,16 +35,20 @@ Nightly versions are stamped automatically: `3.18.1-nightly.20260328.42`
 
 ### 2. Stable Release
 
-Promote `nightly` to `master` when ready for a stable release.
+Promote `nightly` to `master` via PR for an audit trail, then tag.
 
 ```bash
-# Create a PR from nightly → master
+# 1. Create and merge a release PR
 gh pr create --base master --head nightly --title "Release v3.19.0"
+gh pr merge --merge
 
-# After PR is merged, tag the release on master
+# 2. Tag the release on master
 git checkout master && git pull
 npm version <patch|minor|major>
 git push && git push --tags     # CI publishes to npm @latest
+
+# 3. Sync the version bump back to nightly
+git checkout nightly && git merge master && git push
 ```
 
 ### 3. Hotfix (skip nightly)
@@ -52,22 +56,21 @@ git push && git push --tags     # CI publishes to npm @latest
 For critical bugfixes that need to ship immediately without going through nightly.
 
 ```bash
-# Branch off master
+# 1. Branch off master, fix, and PR
 git checkout master && git pull
 git checkout -b hotfix/fix-description
-
-# Fix, commit, push, PR directly to master
+# ... make fix, commit ...
 gh pr create --base master
+gh pr merge --merge
 
-# After merge, tag the release
+# 2. Tag the release
 git checkout master && git pull
 npm version patch
 git push && git push --tags     # CI publishes to npm @latest
 
-# Sync the fix back to nightly
+# 3. Sync the fix back to nightly
 git checkout nightly && git pull
-git merge master
-git push
+git merge master && git push
 ```
 
 ## What CI Does
