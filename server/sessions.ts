@@ -30,6 +30,8 @@ interface SerializedPtySession {
   customCommand: string | null;
   yolo?: boolean;
   claudeArgs?: string[];
+  hookToken?: string;
+  hooksActive?: boolean;
 }
 
 interface PendingSessionsFile {
@@ -321,6 +323,8 @@ function serializeAll(configDir: string): void {
       customCommand: session.customCommand,
       yolo: session.yolo,
       claudeArgs: session.claudeArgs,
+      hookToken: session.hookToken,
+      hooksActive: session.hooksActive,
     });
   }
 
