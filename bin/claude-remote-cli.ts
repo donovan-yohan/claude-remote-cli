@@ -207,7 +207,6 @@ if (command === 'pin') {
 
   function prompt(query: string, hidden = false): Promise<string> {
     return new Promise((resolve) => {
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
       if (hidden) {
         process.stdout.write(query);
         const stdin = process.stdin;
@@ -220,7 +219,6 @@ if (command === 'pin') {
             if (stdin.setRawMode) stdin.setRawMode(wasRaw ?? false);
             stdin.removeListener('data', onData);
             process.stdout.write('\n');
-            rl.close();
             resolve(value);
           } else if (c === '\u007f' || c === '\b') {
             if (value.length > 0) {
@@ -234,6 +232,7 @@ if (command === 'pin') {
         };
         stdin.on('data', onData);
       } else {
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
         rl.question(query, (answer) => { rl.close(); resolve(answer); });
       }
     });

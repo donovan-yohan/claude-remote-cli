@@ -50,7 +50,7 @@
     }
   }
 
-  let displayError = $derived(localError || auth.pinError);
+  let displayError = $derived(auth.pinError || localError);
 </script>
 
 <div class="pin-gate">

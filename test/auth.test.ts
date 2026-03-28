@@ -124,12 +124,12 @@ test('generateCookieToken returns non-empty string', () => {
 
 test('verifyPin returns false for undefined hash', async () => {
   _resetForTesting();
-  const result = await verifyPin('1234', undefined as unknown as string);
+  const result = await verifyPin('1234', undefined);
   assert.strictEqual(result, false);
 });
 
 test('verifyPin returns false for null hash', async () => {
   _resetForTesting();
-  const result = await verifyPin('1234', null as unknown as string);
+  const result = await verifyPin('1234', null);
   assert.strictEqual(result, false);
 });
