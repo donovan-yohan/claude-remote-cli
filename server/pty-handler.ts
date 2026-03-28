@@ -130,14 +130,19 @@ export function createPtySession(
 
   const env = cleanEnv();
 
-  // Inject hooks settings when spawning a real claude agent (not custom command, not forceOutputParser)
-  // For restored sessions, accept the previously-serialized token instead of generating a new one
+  // Inject hooks settings when spawning a real claude agent (not custom command, not forceOutputParser).
+  // For restored sessions whose tmux died, reuse the preserved token but re-create the settings
+  // file on disk — the new Claude process needs --settings even though the token is the same.
+  // For surviving tmux sessions (command='tmux'), shouldInjectHooks is false — the old Claude
+  // instance already has its settings file, and we just need the token for server-side validation.
   let hookToken = paramHookToken ?? '';
   let hooksActive = paramHooksActive ?? false;
   let settingsPath = '';
   const shouldInjectHooks = agent === 'claude' && !command && !forceOutputParser && port !== undefined;
-  if (shouldInjectHooks && !hookToken) {
-    hookToken = crypto.randomBytes(32).toString('hex');
+  if (shouldInjectHooks) {
+    if (!hookToken) {
+      hookToken = crypto.randomBytes(32).toString('hex');
+    }
     try {
       settingsPath = writeHooksSettingsFile(id, port, hookToken);
       args = ['--settings', settingsPath, ...args];
