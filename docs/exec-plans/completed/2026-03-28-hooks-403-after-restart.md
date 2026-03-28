@@ -1,6 +1,6 @@
 # Fix Hook 403 Errors After Restart + TMUX_PREFIX Test Regression
 
-> **Status**: Active | **Created**: 2026-03-28 | **Last Updated**: 2026-03-28
+> **Status**: Completed | **Created**: 2026-03-28 | **Completed**: 2026-03-28
 > **Bug Analysis**: `docs/bug-analyses/2026-03-28-hooks-403-after-restart-bug-analysis.md`
 > **Consulted Learnings**: L-20260322-session-creation-params, L-20260328-serialization-whitelist-audit, L-20260328-surviving-process-stale-config, L-20260328-module-level-env-eval
 > **For Claude:** Use /harness:orchestrate to execute this plan.

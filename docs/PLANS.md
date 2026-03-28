@@ -29,7 +29,6 @@ Execution plans for active and completed work.
 | `open-from-picker` | 2026-03-27 | Unified branch/PR/issue picker modal, inline workspace action icons, reusable BranchPrIssuePicker component, duplicate session handling |
 | `pin-unlock-json-parse-error` | 2026-03-27 | Fix PIN unlock error, add PIN setup via web UI, CLI `pin reset`, defensive error handling |
 | `bg-pin-setup-blocked` | 2026-03-28 | Fix --bg first-run crash loop: remove non-TTY exit, trust web-based PIN setup flow |
-| `hooks-403-after-restart` | 2026-03-28 | Fix hookToken lost during serialization causing 403 on all hooks after restart + TMUX_PREFIX env pollution |
 
 ## Tech Debt
 
@@ -41,6 +40,7 @@ See `docs/exec-plans/completed/` for historical plans (48 completed).
 
 | Plan | Completed | Topic |
 |------|-----------|-------|
+| `hooks-403-after-restart` | 2026-03-28 | Fix hookToken lost during serialization causing 403 on all hooks after restart + TMUX_PREFIX env pollution |
 | `push-notification-permission-fix` | 2026-03-25 | Fix push notifications — wire permission request, show state, chain subscription |
 | `settings-webhooks` | 2026-03-25 | Full-screen Settings modal, DialogShell + SettingRow + SettingsToc components, webhook self-service backend (webhook-manager.ts), GitHub/Webhook/Jira integration panels |
 | `relay-phase2-github-api` | 2026-03-23 | GitHub App OAuth, GraphQL API, smee.io webhooks, real-time updates, CI status, sidebar PR enrichment |
