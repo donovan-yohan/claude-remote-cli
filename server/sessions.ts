@@ -30,8 +30,8 @@ interface SerializedPtySession {
   customCommand: string | null;
   yolo?: boolean;
   claudeArgs?: string[];
-  hookToken?: string;
-  hooksActive?: boolean;
+  hookToken?: string | undefined;
+  hooksActive?: boolean | undefined;
   needsBranchRename?: boolean | undefined;
   branchRenamePrompt?: string | undefined;
 }
