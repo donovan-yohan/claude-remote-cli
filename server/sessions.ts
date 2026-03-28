@@ -32,6 +32,8 @@ interface SerializedPtySession {
   claudeArgs?: string[];
   hookToken?: string;
   hooksActive?: boolean;
+  needsBranchRename?: boolean;
+  branchRenamePrompt?: string;
 }
 
 interface PendingSessionsFile {
@@ -325,6 +327,8 @@ function serializeAll(configDir: string): void {
       claudeArgs: session.claudeArgs,
       hookToken: session.hookToken,
       hooksActive: session.hooksActive,
+      ...(session.needsBranchRename ? { needsBranchRename: true as const } : {}),
+      ...(session.branchRenamePrompt ? { branchRenamePrompt: session.branchRenamePrompt } : {}),
     });
   }
 
@@ -463,6 +467,8 @@ async function restoreFromDisk(configDir: string, workspaces?: string[]): Promis
         claudeArgs: s.claudeArgs ?? [],
         hookToken: s.hookToken,
         hooksActive: s.hooksActive,
+        ...(s.needsBranchRename ? { needsBranchRename: true as const } : {}),
+        ...(s.branchRenamePrompt ? { branchRenamePrompt: s.branchRenamePrompt } : {}),
       };
       if (command) createParams.command = command;
       if (initialScrollback) createParams.initialScrollback = initialScrollback;
