@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import * as sessions from '../server/sessions.js';
-import { resolveTmuxSpawn, generateTmuxSessionName } from '../server/pty-handler.js';
+import { resolveTmuxSpawn, generateTmuxSessionName, TMUX_PREFIX } from '../server/pty-handler.js';
 import { serializeAll, restoreFromDisk } from '../server/sessions.js';
 import type { PtySession } from '../server/types.js';
 
@@ -330,6 +330,20 @@ describe('sessions', () => {
     const id = 'abcdef1234567890';
     const name = generateTmuxSessionName('my-session', id);
     assert.ok(name.endsWith(id.slice(0, 8)), `expected name to end with ${id.slice(0, 8)}, got: ${name}`);
+  });
+
+  it('prod TMUX_PREFIX (crc-) does not match dev prefix (crcd-)', () => {
+    // Production prefix must not be a prefix of the dev prefix, otherwise
+    // prod orphan cleanup (startsWith('crc-')) would kill dev tmux sessions.
+    const prodPrefix = 'crc-';
+    const devPrefix = 'crcd-';
+    assert.ok(!devPrefix.startsWith(prodPrefix), `dev prefix '${devPrefix}' must not start with prod prefix '${prodPrefix}'`);
+    assert.ok(!prodPrefix.startsWith(devPrefix), `prod prefix '${prodPrefix}' must not start with dev prefix '${devPrefix}'`);
+  });
+
+  it('TMUX_PREFIX is crc- in normal mode (no NO_PIN)', () => {
+    // Tests run without NO_PIN=1, so prefix should be production
+    assert.strictEqual(TMUX_PREFIX, 'crc-');
   });
 
   it('agent defaults to claude when not specified', () => {

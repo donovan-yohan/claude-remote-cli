@@ -28,6 +28,7 @@ Execution plans for active and completed work.
 | `tooltip-and-keyboard-shortcuts` | 2026-03-27 | Reusable tooltip component, centralized keyboard shortcut registry, icon hover context + shortcut display |
 | `open-from-picker` | 2026-03-27 | Unified branch/PR/issue picker modal, inline workspace action icons, reusable BranchPrIssuePicker component, duplicate session handling |
 | `pin-unlock-json-parse-error` | 2026-03-27 | Fix PIN unlock error, add PIN setup via web UI, CLI `pin reset`, defensive error handling |
+| `bg-pin-setup-blocked` | 2026-03-28 | Fix --bg first-run crash loop: remove non-TTY exit, trust web-based PIN setup flow |
 
 ## Tech Debt
 

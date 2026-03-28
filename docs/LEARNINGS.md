@@ -272,6 +272,26 @@ When a pure-function state machine (e.g., `derivePrAction()`) already maps input
 
 ---
 
+### L-20260327-api-error-body-parse: Never call `.json()` on error responses without try-catch — non-JSON error bodies turn server errors into client TypeErrors
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-27
+- branch: master
+
+When parsing error response bodies from API calls, always wrap `.json()` in a try-catch with a fallback to the HTTP status code. Server error responses may be empty (unhandled exception), HTML (Express default error handler), or truncated (network issue). The pattern `if (!res.ok) { const data = await res.json(); throw new Error(data.error) }` is fragile — if `.json()` throws, the user sees a raw TypeError ("Unexpected end of JSON input") instead of the actual HTTP error. Extract a `parseErrorBody(res)` helper that tries `.json()` and falls back to `HTTP ${res.status}`. Apply uniformly to all API functions.
+
+---
+
+### L-20260327-express4-async-errors: Express 4 does NOT catch async route handler errors — unhandled throws leave responses hanging
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-27
+- branch: master
+
+Express 4's `Layer.prototype.handle_request` only has a sync try-catch around `fn(req, res, next)`. If the handler is `async` and the returned promise rejects, Express never catches it — the response hangs indefinitely. Either: (1) upgrade to Express 5 which handles async errors natively, (2) wrap all async handlers with a utility `const asyncHandler = (fn) => (req, res, next) => fn(req, res, next).catch(next)`, or (3) add try-catch inside every async handler body. Option 2 is recommended as a single-point fix. When adding new async route handlers, always ensure errors result in a JSON response — never leave the response open.
+
+---
+
 ### L-20260326-repo-source-unification: Any endpoint that needs "all repos" must merge config.workspaces and config.rootDirs — never rely on just one
 - status: active
 - category: architecture
@@ -279,5 +299,25 @@ When a pure-function state machine (e.g., `derivePrAction()`) already maps input
 - branch: master
 
 The server has two sources of repo paths: `config.workspaces[]` (directly added) and `config.rootDirs[]` (parent directories scanned for `.git/`). When building a list of repos to operate on (e.g., worktree discovery, branch listing), always merge both sources and deduplicate by path. The `GET /worktrees` endpoint only scanned `rootDirs`, making all worktrees in directly-added workspaces invisible. Extract a shared `getAllRepoPaths(config)` helper that merges both sources so new endpoints get it right by default.
+
+---
+
+### L-20260328-startup-gate-web-setup: When adding a web-based setup flow for a resource that had a CLI-only gate, relax the CLI gate to trust the web layer
+- status: active
+- category: architecture
+- source: /harness:bug 2026-03-28
+- branch: master
+
+When a server startup gate (hard exit if precondition not met) is the only way to enforce a requirement (e.g., "PIN must exist"), and a web-based setup flow is later added that provides the same guarantee at the HTTP layer, the startup gate must be updated to allow the server to start without the precondition — trusting the web UI to enforce it. Otherwise the startup gate blocks the very server that would serve the setup UI. In this project, `server/index.ts` hard-exits when no `pinHash` exists and `stdin` is not a TTY, but `POST /auth/setup` + `PinGate` UI provide PIN setup through the browser. The non-TTY exit should be removed so the server can start and serve the setup page.
+
+---
+
+### L-20260328-service-install-preconditions: Service install commands must verify all runtime preconditions before installing — the service process cannot prompt
+- status: active
+- category: patterns
+- source: /harness:bug 2026-03-28
+- branch: master
+
+When a CLI command installs a background service (launchd, systemd) that starts a separate process, the install path must verify all preconditions that the service process needs but cannot interactively satisfy. Background service processes have no TTY, no user interaction, and limited environment. If the server requires a configured PIN to start, the `--bg` / `install` command must either (a) ensure the PIN exists before installing, or (b) the server must be able to start without it and offer a non-interactive setup path. Never assume the background-started process will have the same capabilities as the interactive CLI session.
 
 ---

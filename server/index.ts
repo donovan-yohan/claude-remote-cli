@@ -14,6 +14,7 @@ import { loadConfig, saveConfig, DEFAULTS, readMeta, writeMeta, deleteMeta, ensu
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import { AGENT_CONTINUE_ARGS, AGENT_YOLO_ARGS, serializeAll, restoreFromDisk, activeTmuxSessionNames, populateMetaCache } from './sessions.js';
+import { TMUX_PREFIX } from './pty-handler.js';
 import { setupWebSocket } from './ws.js';
 import { WorktreeWatcher, BranchWatcher, RefWatcher, WORKTREE_DIRS, isValidWorktreePath, parseWorktreeListPorcelain, parseAllWorktrees } from './watcher.js';
 import { isInstalled as serviceIsInstalled } from './service.js';
@@ -193,14 +194,14 @@ async function main(): Promise<void> {
     console.log('PIN disabled (NO_PIN=1).');
     startupConfig.pinHash = startupConfig.pinHash || 'disabled';
   } else if (!startupConfig.pinHash) {
-    if (!process.stdin.isTTY) {
-      console.error('No PIN configured. Run claude-remote-cli interactively first to set a PIN.');
-      process.exit(1);
+    if (process.stdin.isTTY) {
+      const pin = await promptPin('Set up a PIN for claude-remote-cli:');
+      startupConfig.pinHash = await auth.hashPin(pin);
+      saveConfig(CONFIG_PATH, startupConfig);
+      console.log('PIN set successfully.');
+    } else {
+      console.log(`No PIN configured. Open http://localhost:${startupConfig.port} to set one.`);
     }
-    const pin = await promptPin('Set up a PIN for claude-remote-cli:');
-    startupConfig.pinHash = await auth.hashPin(pin);
-    saveConfig(CONFIG_PATH, startupConfig);
-    console.log('PIN set successfully.');
   }
 
   const authenticatedTokens = new Set<string>();
@@ -1300,7 +1301,7 @@ async function main(): Promise<void> {
   } else try {
     const adoptedNames = activeTmuxSessionNames();
     const { stdout } = await execFileAsync('tmux', ['list-sessions', '-F', '#{session_name}']);
-    const orphanedSessions = stdout.trim().split('\n').filter(name => name.startsWith('crc-') && !adoptedNames.has(name));
+    const orphanedSessions = stdout.trim().split('\n').filter(name => name.startsWith(TMUX_PREFIX) && !adoptedNames.has(name));
     for (const name of orphanedSessions) {
       execFileAsync('tmux', ['kill-session', '-t', name]).catch(() => {});
     }
@@ -1331,7 +1332,8 @@ async function main(): Promise<void> {
   process.on('SIGINT', gracefulShutdown);
 
   server.listen(startupConfig.port, startupConfig.host, () => {
-    console.log(`claude-remote-cli listening on ${startupConfig.host}:${startupConfig.port}`);
+    const addr = server.address() as import('node:net').AddressInfo;
+    console.log(`claude-remote-cli listening on ${startupConfig.host}:${addr.port}`);
   });
 }
 

@@ -1,5 +1,7 @@
 # Bug Analyses
 
+- [2026-03-28-bg-pin-setup-blocked-bug-analysis](2026-03-28-bg-pin-setup-blocked-bug-analysis.md) — --bg first-run exits with "No PIN configured" — non-TTY gate blocks server before web setup UI can load (2026-03-28)
+- [2026-03-27-pin-unlock-json-parse-error-bug-analysis](2026-03-27-pin-unlock-json-parse-error-bug-analysis.md) — PIN unlock shows cryptic "Unexpected end of JSON input" — fragile `.json()` on error responses + Express 4 async error gap (2026-03-27)
 - [2026-03-26-worktree-discovery-missing-bug-analysis.md](2026-03-26-worktree-discovery-missing-bug-analysis.md) — Inactive worktrees invisible in sidebar — GET /worktrees only scans rootDirs, not config.workspaces (2026-03-26)
 - [2026-03-25-pr-dashboard-duplicate-cta-overflow-bug-analysis.md](2026-03-25-pr-dashboard-duplicate-cta-overflow-bug-analysis.md) — Duplicate "Fix Conflicts" CTAs and action column overflow — independent {#if} blocks bypass state machine exclusivity
 - [2026-03-25-desktop-drag-broken-reorder-mode-jarring-bug-analysis.md](2026-03-25-desktop-drag-broken-reorder-mode-jarring-bug-analysis.md) — Desktop drag broken — reorder mode has no mouse entry point; reorder UI jarringly hides all sidebar content

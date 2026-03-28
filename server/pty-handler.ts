@@ -12,9 +12,11 @@ import { outputParsers } from './output-parsers/index.js';
 const IDLE_TIMEOUT_MS = 5000;
 const MAX_SCROLLBACK = 256 * 1024; // 256KB max
 
+export const TMUX_PREFIX = process.env.NO_PIN === '1' ? 'crcd-' : 'crc-';
+
 export function generateTmuxSessionName(displayName: string, id: string): string {
   const sanitized = displayName.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 30);
-  return `crc-${sanitized}-${id.slice(0, 8)}`;
+  return `${TMUX_PREFIX}${sanitized}-${id.slice(0, 8)}`;
 }
 
 export function resolveTmuxSpawn(

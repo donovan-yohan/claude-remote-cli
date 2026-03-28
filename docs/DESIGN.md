@@ -8,7 +8,9 @@ Backend patterns and conventions for claude-remote-cli. The server is a composit
 |----------|-----------|--------|
 | No dependency injection | Direct ESM imports are simpler for a small module count | ADR-001 |
 | In-memory sessions with update persistence | Sessions are ephemeral PTY processes, but serialized to disk before auto-updates and restored on restart | ADR-003, Design doc |
-| bcrypt + cookie tokens | Simple, secure auth without external dependencies | ADR-004 |
+| scrypt + cookie tokens | PIN hashed with scrypt (migrated from bcrypt), cookie-based session auth, rate limiting | ADR-004 |
+| Dual-path PIN setup | TTY: interactive CLI prompt at startup. Non-TTY (background service): server starts PIN-less, PinGate frontend gates all access until PIN set via `POST /auth/setup` | Bug fix 2026-03-28 |
+| Dev tmux isolation | Dev mode (`NO_PIN=1`) uses `crcd-` tmux prefix; production uses `crc-`. Orphan cleanup only kills sessions matching its own prefix, preventing cross-instance kills | Bug fix 2026-03-28 |
 | node:test, no Jest/Vitest | Fewer dependencies, built-in to Node.js | ADR-005 |
 | Dual distribution (global + local) | npm global for production, local clone for dev | ADR-006 |
 | TypeScript + ESM migration | Type safety, modern module system, strict mode | ADR-008 |

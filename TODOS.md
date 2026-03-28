@@ -46,6 +46,22 @@ Opening a session from a PR fails with `fatal: invalid reference` when the branc
 
 **Scope:** Add a fetch step in the worktree creation path when the ref doesn't exist locally. **Files:** `server/worktree-manager.ts` or session creation handler.
 
+### Sidenav branch name goes stale when agent switches branches
+Active sessions don't update their branch name in the sidenav when Claude checks out a different branch. The branch shown stays stuck on whatever it was when the session started.
+
+**Root cause:** The frontend has no periodic polling for session data. `refreshAll()` is only called on discrete events (WebSocket messages, user actions). The server's `GET /sessions` handler *does* refresh branch names (10s rate-limited `git rev-parse`), but nothing on the client calls it on an interval. The `ref-changed` WebSocket event only fires for upstream tracking ref changes (push/fetch), not local branch switches — and even when it fires, it only invalidates PR queries, not session data.
+
+**Fix options:**
+1. **Periodic poll:** Add a `setInterval` on the frontend that calls `refreshAll()` every ~15–30s
+2. **Filesystem watch:** Have the server watch `.git/HEAD` for each session's cwd and broadcast a `session-branch-changed` event
+3. **Hybrid:** Watch `.git/HEAD` for real-time detection, with a slow poll as fallback
+
+Option 2 is best — low overhead, instant updates, no wasted HTTP requests.
+
+**Scope:** Server: watch `.git/HEAD` per active session, broadcast branch change event. Frontend: handle the event and update session branch name. **Files:** `server/index.ts` or new watcher module, `server/ws.ts`, `frontend/src/App.svelte`, `frontend/src/lib/state/sessions.svelte.ts`.
+
+**Added:** 2026-03-28
+
 ### Missing loading state on app load / refresh
 On page load, the empty "Add workspace" state flashes before real content loads. Need a skeleton/shimmer until workspaces have loaded.
 
@@ -70,6 +86,15 @@ A PR with "review requested" status and Role=Review only shows "Merge" and "+". 
 When "Continue" is enabled as a repo default, new worktree sessions start and immediately close for Claude agent. This was supposedly fixed before but keeps recurring. Only workaround is disabling "Continue" for the repo.
 
 **Investigation:** What does `--continue` do when there's no previous session in a new worktree? Does it find a stale session from a different worktree? Does it exit with a specific code? Check PTY spawn logs and `--continue` resolution logic. **Files:** Session creation, PTY spawn, continue flag resolution.
+
+### Repo-based tmux session names and per-repo agent counters
+Tmux sessions are named `crc-<displayName>-<id>` which is opaque in `tmux ls` output. Agent counters ("Agent 1", "Agent 2") are global — counter increments across all repos. Both should be repo-aware:
+- **Tmux names:** Include the repo name so `tmux ls` shows which repo each session belongs to (e.g. `crc-myrepo-agent-1-abcdef12`)
+- **Agent counters:** Track per-repo so each repo starts at "Agent 1" instead of continuing from the global counter
+
+**Scope:** Redesign `generateTmuxSessionName` in `pty-handler.ts`, change `nextAgentName` in `sessions.ts` to accept repo context, update session creation and restore paths. **Files:** `server/pty-handler.ts`, `server/sessions.ts`, `server/index.ts` (session creation route).
+
+**Added:** 2026-03-28
 
 ## Small Features
 

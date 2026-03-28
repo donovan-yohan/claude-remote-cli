@@ -22,14 +22,24 @@ npm install -g claude-remote-cli
 ### 2. Start the server
 
 ```bash
+claude-remote-cli --bg
+```
+
+This installs a persistent background service (launchd on macOS, systemd on Linux) that starts on login and restarts on crash. See [Background Service](#background-service) for more options.
+
+Or run in the foreground:
+
+```bash
 claude-remote-cli
 ```
 
-On first launch you'll be prompted to set a PIN. This PIN protects access to your Claude sessions.
+### 3. Set your PIN
 
-Open `http://localhost:3456` in your browser and enter your PIN.
+Open `http://localhost:3456` in your browser. On first visit you'll be prompted to create a PIN that protects access to your Claude sessions.
 
-### 3. Add your project directories
+If you started the server in the foreground, you can set the PIN in the terminal instead.
+
+### 4. Add your project directories
 
 Click **Settings** in the app to add root directories — these are parent folders that contain your git repos (scanned one level deep).
 
@@ -40,16 +50,6 @@ You can also edit `~/.config/claude-remote-cli/config.json` directly:
   "rootDirs": ["/home/you/projects", "/home/you/work"]
 }
 ```
-
-### 4. Run as a background service (recommended)
-
-To keep the server running after you close your terminal and auto-start on login:
-
-```bash
-claude-remote-cli --bg
-```
-
-This installs a persistent service (launchd on macOS, systemd on Linux) that restarts on crash. See [Background Service](#background-service) for more options.
 
 ### 5. Access from your phone
 
@@ -93,6 +93,8 @@ Commands:
     add [path] [-b branch] [--yolo]   Create worktree and launch Claude
     remove <path>                      Forward to git worktree remove
     list                               Forward to git worktree list
+  pin                Manage authentication PIN
+    reset              Reset the PIN (interactive, requires TTY)
 
 Options:
   --bg               Shortcut: install and start as background service
@@ -150,11 +152,21 @@ Root directories can also be managed from the **Settings** button in the app.
 
 ### PIN Management
 
-The PIN hash is stored in config under `pinHash`. To reset:
+The PIN hash is stored in config under `pinHash`.
 
-1. Delete the `pinHash` field from your config file
-2. Restart the server
-3. You'll be prompted to set a new PIN
+**Reset via CLI** (recommended):
+
+```bash
+claude-remote-cli pin reset
+```
+
+This requires an interactive terminal. You'll be asked to verify your current PIN (if set), then enter a new one.
+
+**Reset manually:**
+
+1. Delete the `pinHash` field from `~/.config/claude-remote-cli/config.json`
+2. Restart the server (`claude-remote-cli uninstall && claude-remote-cli --bg`)
+3. Open the web UI and set a new PIN
 
 ## Features
 
