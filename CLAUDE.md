@@ -48,9 +48,9 @@ Always read `DESIGN.md` before making any visual or UI decisions. All font choic
 
 - **`nightly`** — default branch, active development. PRs target here. Every push auto-publishes `@nightly`.
 - **`master`** — protected, stable releases only. Tags trigger `@latest` publish.
-- **Stable release** — PR from `nightly` → `master`, merge, tag with `npm version`, sync back to `nightly`.
-- **Hotfixes** — branch off `master`, PR to `master`, tag, merge `master` back to `nightly`.
-- Always use PRs for audit trail — never push directly to `master`.
+- **Stable release** — bump version on `nightly`, PR to `master`, merge, `git tag` on master, push tag, sync back.
+- **Hotfixes** — branch off `master`, PR to `master`, bump+tag, merge back to `nightly`.
+- Direct pushes to `master` are blocked (no bypass) — all commits via PR, version tags via `git push origin <tag>`.
 - See `docs/references/deployment.md` for full workflow.
 
 ## Workflow
