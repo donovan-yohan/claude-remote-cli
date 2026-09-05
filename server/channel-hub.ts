@@ -1,7 +1,6 @@
 import { createLogger } from './logger.js';
 import type { ChannelMessageStore } from './channel-message-store.js';
 import {
-  channelMessageIsPrincipalProse,
   channelTurnId,
   type ChannelDeliveryReceiptV1,
   type ChannelEventV1,
@@ -793,25 +792,17 @@ export function createChannelHub(options: ChannelHubOptions): ChannelHub {
         run.state === 'rejected';
       const extras: Record<string, unknown> = {};
       if (terminal && store) {
-        const turnIds = run.targets.map((target) =>
-          channelTurnId(run.requestMessageId, target.targetId)
-        );
         let final: ChannelMessage | null = null;
         try {
-          const messages = store.listMessagesForTurns({
+          const turnIds = run.targets.map(
+            (target) =>
+              target.turnId ??
+              channelTurnId(run.requestMessageId, target.targetId)
+          );
+          final = store.getLastPrincipalProseForTurns({
             channelId: run.channelId,
             turnIds,
-            limit: 2000,
           });
-          final =
-            messages
-              .filter(
-                (m) =>
-                  m.sender.kind === 'agent' &&
-                  m.asyncRun?.runId === run.id &&
-                  channelMessageIsPrincipalProse(m)
-              )
-              .at(-1) ?? null;
         } catch {
           /* best-effort preview only */
         }

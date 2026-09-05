@@ -1573,6 +1573,11 @@ export interface ChannelMessageStore {
     turnIds: readonly string[];
     limit?: number;
   }): ChannelMessage[];
+  /** Newest complete assistant principal prose for the given turn ids. */
+  getLastPrincipalProseForTurns(input: {
+    channelId: string;
+    turnIds: readonly string[];
+  }): ChannelMessage | null;
   /** System rows parented under a durable message id (threaded replies). */
   listSystemMessagesForParent(input: {
     channelId: string;
@@ -5848,6 +5853,32 @@ export function createChannelMessageStore(
         )
         .all(channelId, ...raw, limit) as ChannelMessageRow[];
       return rows.map(rowToMessage);
+    },
+
+    getLastPrincipalProseForTurns(input) {
+      const channelId = input.channelId;
+      const raw = [...new Set(input.turnIds)].filter(
+        (id) => typeof id === 'string' && id.trim().length > 0
+      );
+      if (raw.length === 0) return null;
+      const placeholders = raw.map(() => '?').join(',');
+      const row = db
+        .prepare(
+          `SELECT m.*,
+                  ${replyCountSql('m')} AS reply_count
+           FROM channel_messages m
+           WHERE m.channel_id = ?
+             AND m.source_turn_id IN (${placeholders})
+             AND m.kind = 'message'
+             AND m.sender_kind = 'agent'
+             AND m.status = 'complete'
+             AND m.body_text != ''
+             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
+           ORDER BY m.seq DESC
+           LIMIT 1`
+        )
+        .get(channelId, ...raw) as ChannelMessageRow | undefined;
+      return row ? rowToMessage(row) : null;
     },
 
     listSystemMessagesForParent(input) {

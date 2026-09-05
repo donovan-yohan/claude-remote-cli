@@ -1601,25 +1601,17 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
   }
 
   function finalAssistantTextForRun(
-    store: Pick<ChannelMessageStore, 'listMessagesForTurns'>,
+    store: Pick<ChannelMessageStore, 'getLastPrincipalProseForTurns'>,
     run: ChannelAsyncRun
   ): { finalText: string; finalMessageSeq: number | null } {
     const turnIds = run.targets.map(
       (target) =>
         target.turnId ?? channelTurnId(run.requestMessageId, target.targetId)
     );
-    const messages = store.listMessagesForTurns({
+    const principal = store.getLastPrincipalProseForTurns({
       channelId: run.channelId,
       turnIds,
-      limit: 2000,
     });
-    const candidates = messages.filter(
-      (m) => m.sender.kind === 'agent' && channelMessageIsPrincipalProse(m)
-    );
-    const principal =
-      candidates.filter((m) => m.asyncRun?.runId === run.id).at(-1) ??
-      candidates.at(-1) ??
-      null;
     return {
       finalText: principal?.body.text ?? '',
       finalMessageSeq: principal?.seq ?? null,
