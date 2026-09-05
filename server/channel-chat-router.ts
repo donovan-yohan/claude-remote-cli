@@ -2062,6 +2062,13 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       }
       if (runTerminalState(latest.state)) {
         const final = finalAssistantTextForRun(store, latest);
+        // A run can terminalize slightly before its final assistant row is
+        // finalized to `complete`. Wait for the durable complete row, otherwise
+        // callers can observe a partial body (#1570).
+        if (final.finalMessageSeq === null) {
+          await sleepWithAbort(50, signal);
+          continue;
+        }
         res.json(
           operatorClientPublicValue(req, {
             run: {

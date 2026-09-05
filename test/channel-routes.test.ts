@@ -1976,6 +1976,67 @@ describe('channel routes — gateway capability mapping', () => {
       });
     });
 
+    it('waits for the final assistant row to reach status=complete (#1570)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { message: trigger, run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'ship it @codex',
+        targetIds: [targetId],
+      });
+      const turnId = channelTurnId(trigger.id, targetId);
+      const started = h.store.beginStream({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        source: { runtimeId: 'rt', turnId, itemId: 'item-final' },
+        text: 'partial',
+        meta: { asyncRun: { runId: run.id, targetId } },
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'completed',
+      });
+      const early = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        finalText: string;
+        finalMessageSeq: number | null;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=10`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(early.status).toBe(200);
+      expect(early.body).toMatchObject({
+        outcome: 'timeout',
+        finalText: '',
+        finalMessageSeq: null,
+      });
+
+      h.store.finalizeStream(started.id, { text: 'final', status: 'complete' });
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        finalText: string;
+        finalMessageSeq: number | null;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=200`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        run: { id: run.id, state: 'completed' },
+        outcome: 'completed',
+        finalText: 'final',
+        finalMessageSeq: started.seq,
+      });
+    });
+
     it('rejects --for when waiting by runId (#1570)', async () => {
       const h = await harness({ withAuth: true });
       const { run } = h.store.appendCompleteWithAsyncRun({
