@@ -2023,6 +2023,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
             },
             outcome: latest.state,
             finalText: final.finalText ?? '',
+            finalMessageSeq: final.finalMessageSeq ?? null,
             contract: contractSummaryForRun(latest),
           })
         );
@@ -2047,6 +2048,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
             },
         outcome: 'timeout',
         finalText: '',
+        finalMessageSeq: null,
         contract: latest ? contractSummaryForRun(latest) : null,
       })
     );
@@ -2224,6 +2226,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           },
           outcome: best.run.state,
           finalText: best.finalText,
+          finalMessageSeq: best.finalMessageSeq ?? null,
           contract: contractSummaryForRun(best.run),
         })
       );
@@ -2234,6 +2237,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         run: null,
         outcome: 'timeout',
         finalText: '',
+        finalMessageSeq: null,
         contract: null,
       })
     );

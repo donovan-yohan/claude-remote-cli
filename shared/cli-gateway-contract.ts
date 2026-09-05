@@ -3835,6 +3835,9 @@ const channelRunWaitOutputDataSchema: RelayJsonSchema = {
     },
     outcome: stringSchema,
     finalText: stringSchema,
+    finalMessageSeq: {
+      oneOf: [{ type: 'null' }, { type: 'integer', minimum: 0 }],
+    },
     contract: {
       oneOf: [
         { type: 'null' },
@@ -3849,7 +3852,7 @@ const channelRunWaitOutputDataSchema: RelayJsonSchema = {
       ],
     },
   },
-  required: ['run', 'outcome', 'finalText', 'contract'],
+  required: ['run', 'outcome', 'finalText', 'finalMessageSeq', 'contract'],
 };
 
 const channelRunHistoryOutputDataSchema: RelayJsonSchema = {

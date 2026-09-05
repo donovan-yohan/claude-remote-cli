@@ -1910,6 +1910,7 @@ describe('channel routes — gateway capability mapping', () => {
         run: { id: string; state: string };
         outcome: string;
         finalText: string;
+        finalMessageSeq: number | null;
         contract: unknown;
       }>({
         port: h.port,
@@ -1923,6 +1924,7 @@ describe('channel routes — gateway capability mapping', () => {
         run: { id: run.id },
         outcome: 'timeout',
         finalText: '',
+        finalMessageSeq: null,
       });
     });
 
@@ -1957,6 +1959,7 @@ describe('channel routes — gateway capability mapping', () => {
         run: { id: string; state: string };
         outcome: string;
         finalText: string;
+        finalMessageSeq: number | null;
         contract: unknown;
       }>({
         port: h.port,
@@ -1969,6 +1972,7 @@ describe('channel routes — gateway capability mapping', () => {
         run: { id: run.id, state: 'completed' },
         outcome: 'completed',
         finalText: 'final summary',
+        finalMessageSeq: started.seq,
       });
     });
   });
