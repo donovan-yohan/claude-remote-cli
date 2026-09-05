@@ -1952,11 +1952,27 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     );
   }
 
+  function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      if (signal.aborted) return resolve();
+      const timer = setTimeout(() => resolve(), ms);
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true }
+      );
+    });
+  }
+
   async function respondWaitByRunId(
     req: Request,
     res: Response,
     store: ChannelMessageStore,
-    input: Extract<ParsedWait, { mode: 'run' }>
+    input: Extract<ParsedWait, { mode: 'run' }>,
+    signal: AbortSignal
   ): Promise<void> {
     const run = store.getAsyncRun(input.runId);
     if (!run) {
@@ -1972,7 +1988,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     const deadline = Date.now() + input.timeoutMs;
     const serverRestartCancelGraceMs = 2000;
     let serverRestartCancelledAt: number | null = null;
-    while (Date.now() < deadline) {
+    while (Date.now() < deadline && !signal.aborted) {
       const latest = store.getAsyncRun(run.id);
       if (!latest) break;
       if (
@@ -1985,7 +2001,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           Date.now() - serverRestartCancelledAt <
           serverRestartCancelGraceMs
         ) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
+          await sleepWithAbort(50, signal);
           continue;
         }
       } else {
@@ -2005,8 +2021,9 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         });
         return;
       }
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await sleepWithAbort(50, signal);
     }
+    if (signal.aborted) return;
     const latest = store.getAsyncRun(run.id);
     res.json({
       run: latest
@@ -2030,12 +2047,14 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     req: Request,
     res: Response,
     store: ChannelMessageStore,
-    input: Extract<ParsedWait, { mode: 'channel' }>
+    input: Extract<ParsedWait, { mode: 'channel' }>,
+    signal: AbortSignal
   ): Promise<void> {
     const channelId = input.channelId;
     if (denyOutOfScopeChannel(req, res, channelId)) return;
     if (denyNonMemberChannel(req, res, deps.store, channelId)) return;
     if (!requirePersistedChannelById(res, channelId)) return;
+    if (signal.aborted) return;
 
     const deadline = Date.now() + input.timeoutMs;
     const serverRestartCancelGraceMs = 2000;
@@ -2118,7 +2137,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     let closeHandler: (() => void) | null = null;
     const sink = {
       get ready() {
-        return true;
+        return !signal.aborted;
       },
       get bufferedAmount() {
         return 0;
@@ -2154,7 +2173,15 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     });
 
     try {
-      while (!done && Date.now() < deadline) {
+      signal.addEventListener(
+        'abort',
+        () => {
+          done = true;
+          resolveDone?.();
+        },
+        { once: true }
+      );
+      while (!done && Date.now() < deadline && !signal.aborted) {
         if (best) break;
         const runs = store.listAsyncRuns(channelId, 200);
         for (const candidate of runs) {
@@ -2169,9 +2196,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         const remaining = Math.max(0, deadline - Date.now());
         await Promise.race([
           donePromise,
-          new Promise((resolve) =>
-            setTimeout(resolve, Math.min(1000, remaining))
-          ),
+          sleepWithAbort(Math.min(1000, remaining), signal),
         ]);
       }
     } finally {
@@ -2179,6 +2204,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       cleanup();
     }
 
+    if (signal.aborted) return;
     if (best) {
       res.json({
         run: {
@@ -2201,12 +2227,16 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     if (!store) return;
     const parsed = parseChannelsWait(req, res);
     if (!parsed) return;
+    const abort = new AbortController();
+    const abortOnClose = () => abort.abort();
+    res.once('close', abortOnClose);
+    req.once('aborted', abortOnClose);
     void (async () => {
       if (parsed.mode === 'run') {
-        await respondWaitByRunId(req, res, store, parsed);
+        await respondWaitByRunId(req, res, store, parsed, abort.signal);
         return;
       }
-      await respondWaitByChannel(req, res, store, parsed);
+      await respondWaitByChannel(req, res, store, parsed, abort.signal);
     })().catch((error) => mapStoreError(res, error));
   });
 
