@@ -65,6 +65,13 @@ export interface ChannelAsyncRunTarget {
   targetId: string;
   state: ChannelAsyncRunTargetState;
   reason?: string;
+  /**
+   * #1570: effective turn identity used for the run target's output correlation.
+   * Usually the deterministic `channelTurnId(requestMessageId, targetId)`, but
+   * may point at a live turn that absorbed this trigger via native safe-boundary
+   * steering.
+   */
+  turnId?: string;
   approvalState?: ChannelAsyncRunApprovalState;
   updatedAt: string;
   completedAt?: string;

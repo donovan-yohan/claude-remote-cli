@@ -75,7 +75,7 @@ import {
 //    catch-up window, and thread parent stays valid. Nothing in this file may
 //    ever issue `DELETE FROM channel_messages` for an operator action.
 
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 20;
 const ASYNC_RUN_SETTLED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const logger = createLogger('channel-message-store');
 export const CHANNEL_HISTORY_DEFAULT_LIMIT = 50;
@@ -919,6 +919,9 @@ CREATE TABLE IF NOT EXISTS channel_async_run_targets (
   state              TEXT NOT NULL CHECK (state IN ('queued','working','input-required','auth-required','completed','failed','cancelled','rejected')),
   reason             TEXT,
   approval_state     TEXT,
+  -- #1570: effective turn id for wait/history correlation even when a trigger
+  -- is absorbed by native safe-boundary steering.
+  turn_id            TEXT,
   updated_at         TEXT NOT NULL,
   completed_at       TEXT,
   PRIMARY KEY(run_id, target_id)
@@ -1064,6 +1067,7 @@ interface AsyncRunTargetRow {
   state: ChannelAsyncRunTargetState;
   reason: string | null;
   approval_state: ChannelAsyncRunApprovalState | null;
+  turn_id?: string | null;
   updated_at: string;
   completed_at: string | null;
 }
@@ -1506,6 +1510,7 @@ export interface ChannelMessageStore {
     state: ChannelAsyncRunTargetState;
     reason?: string;
     approvalState?: ChannelAsyncRunApprovalState;
+    turnId?: string;
   }): ChannelAsyncRun | null;
   /** Finalize the delivery contract on a settled run (#1569). */
   finalizeAsyncRunDeliveryContract(input: {
@@ -3599,6 +3604,22 @@ function runSchemaMigrations(db: Database.Database): void {
       db.prepare('UPDATE schema_version SET version = 19').run();
     })();
   }
+  if (current < 20) {
+    db.transaction(() => {
+      // #1570: runs absorbed by native steering still need wait/history
+      // correlation. Persist the effective turn id per run target so readers
+      // can look up output even when the trigger did not start its own turn.
+      const columns = db
+        .prepare(`PRAGMA table_info(channel_async_run_targets)`)
+        .all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === 'turn_id')) {
+        db.exec(
+          'ALTER TABLE channel_async_run_targets ADD COLUMN turn_id TEXT'
+        );
+      }
+      db.prepare('UPDATE schema_version SET version = 20').run();
+    })();
+  }
 }
 
 export function initChannelMessageStore(
@@ -4410,6 +4431,7 @@ export function createChannelMessageStore(
           ...(target.approval_state
             ? { approvalState: target.approval_state }
             : {}),
+          ...(target.turn_id ? { turnId: target.turn_id } : {}),
           updatedAt: target.updated_at,
           ...(target.completed_at ? { completedAt: target.completed_at } : {}),
         })
@@ -4500,8 +4522,8 @@ export function createChannelMessageStore(
       );
       const insertTarget = db.prepare(
         `INSERT INTO channel_async_run_targets
-           (run_id, target_id, state, reason, approval_state, updated_at, completed_at)
-         VALUES (?, ?, ?, NULL, NULL, ?, NULL)`
+           (run_id, target_id, state, reason, approval_state, turn_id, updated_at, completed_at)
+         VALUES (?, ?, ?, NULL, NULL, NULL, ?, NULL)`
       );
       for (const targetId of targetIds)
         insertTarget.run(runId, targetId, 'queued', now);
@@ -4522,6 +4544,7 @@ export function createChannelMessageStore(
       state: ChannelAsyncRunTargetState;
       reason?: string;
       approvalState?: ChannelAsyncRunApprovalState;
+      turnId?: string;
     }): ChannelAsyncRun | null => {
       const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
       if (!run) return null;
@@ -4535,7 +4558,9 @@ export function createChannelMessageStore(
       const changed = db
         .prepare(
           `UPDATE channel_async_run_targets
-            SET state = ?, reason = ?, approval_state = ?, updated_at = ?,
+            SET state = ?, reason = ?, approval_state = ?,
+                turn_id = COALESCE(?, turn_id),
+                updated_at = ?,
                 completed_at = CASE WHEN ? THEN ? ELSE NULL END
           WHERE run_id = ? AND target_id = ?
             AND (
@@ -4547,6 +4572,7 @@ export function createChannelMessageStore(
           input.state,
           input.reason ?? null,
           input.approvalState ?? null,
+          input.turnId ?? null,
           now,
           terminal ? 1 : 0,
           terminal ? now : null,

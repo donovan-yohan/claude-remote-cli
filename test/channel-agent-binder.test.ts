@@ -4132,7 +4132,7 @@ describe('channel-agent-binder — lifecycle', () => {
     }
   });
 
-  it('keeps one post → one run even when native steering is available (#1570)', async () => {
+  it('terminalizes absorbed runs when native steering accepts them (#1570)', async () => {
     const { binder, store, sessions } = makeBinder({
       build: (agentType) => new SteerableAdapter(agentType, true),
       targets: STEER_TARGETS,
@@ -4165,13 +4165,10 @@ describe('channel-agent-binder — lifecycle', () => {
       OPERATOR,
       root.id
     );
-    // Correlated runs must not be collapsed into the provider-native steer lane.
-    await new Promise((r) => setTimeout(r, 10));
-    expect(adapter.steerAttempts.length).toBe(0);
+    await waitFor(() => adapter.steerAttempts.length === 1);
+    expect(adapter.sendCalls.length).toBe(1);
 
-    adapter.completeLatest('first done');
-    await waitFor(() => adapter.sendCalls.length === 2);
-    adapter.completeLatest('second done');
+    adapter.completeLatest('done');
 
     await waitFor(() => store.getAsyncRun(first.run.id)?.state === 'completed');
     await waitFor(
@@ -4182,6 +4179,9 @@ describe('channel-agent-binder — lifecycle', () => {
     );
     expect(store.getAsyncRun(second.run.id)?.targets[0]?.state).toBe(
       'completed'
+    );
+    expect(store.getAsyncRun(second.run.id)?.targets[0]?.turnId).toBe(
+      adapter.sendCalls[0]
     );
   });
 

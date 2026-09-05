@@ -62,6 +62,7 @@ import {
   isChannelMessageDeleted,
   parseMentions,
   CHANNEL_RETRY_OF_META_KEY,
+  type ChannelAsyncRunId,
   type ChannelAsyncRunApprovalState,
   type ChannelAsyncRunTargetState,
   type ChannelDeliveryReceiptReasonCode,
@@ -581,6 +582,12 @@ export interface LiveBinding {
   steeringInFlight: boolean;
   /** Requests accepted into the active provider turn, cleared when it ends. */
   steeringAcceptedCount: number;
+  /**
+   * #1570: triggers absorbed by native safe-boundary steering still created
+   * durable async runs at post time. Track those run ids per active turn so
+   * finishTurn can terminalize them alongside the absorbing turn.
+   */
+  absorbedRunIdsByTurn: Map<string, Set<ChannelAsyncRunId>>;
   /** Last `(status, queuedCount)` pair broadcast; suppresses duplicate events. */
   emittedStatus: ChannelAgentStatus;
   emittedQueuedCount: number;
@@ -2012,6 +2019,7 @@ export function createChannelAgentBinder(
       steeringQueue: [],
       steeringInFlight: false,
       steeringAcceptedCount: 0,
+      absorbedRunIdsByTurn: new Map(),
       emittedStatus: 'idle',
       emittedQueuedCount: 0,
       emittedSteeringCount: 0,
@@ -2690,13 +2698,6 @@ export function createChannelAgentBinder(
       callbackEdgeRequest === undefined &&
       steering !== 'interrupt' &&
       binding.activeTurnId !== null &&
-      // #1570: correlated channel runs require one trigger → one turn so
-      // `channels wait/history --run` can correlate on the deterministic
-      // `channelTurnId(requestMessageId, targetId)`. Native safe-boundary
-      // steering collapses multiple triggers into one turn, which makes the
-      // later trigger's run appear cancelled/stuck while the runtime keeps
-      // working and later emits terminal output.
-      store.getAsyncRunForRequestMessage(trigger.id) === null &&
       binding.adapter?.capabilities.steer === true &&
       binding.adapter.steerMessage !== undefined
     ) {
@@ -2886,6 +2887,21 @@ export function createChannelAgentBinder(
         // because a late transport result may already have been accepted.
         if (binding.activeTurnId === activeTurnId) {
           binding.steeringAcceptedCount += 1;
+          const run = store.getAsyncRunForRequestMessage(trigger.id);
+          if (run) {
+            let absorbed = binding.absorbedRunIdsByTurn.get(activeTurnId);
+            if (!absorbed) {
+              absorbed = new Set();
+              binding.absorbedRunIdsByTurn.set(activeTurnId, absorbed);
+            }
+            absorbed.add(run.id);
+            transitionAsyncRunTargetForRun(
+              binding,
+              activeTurnId,
+              run.id,
+              'working'
+            );
+          }
         }
         advanceCursor(binding, trigger);
       })
@@ -3652,9 +3668,7 @@ export function createChannelAgentBinder(
   ): void {
     const terminalTurnId = binding.activeTurnId;
     if (terminalTurnId === null) return;
-    transitionAsyncRunTargetForTurn(
-      binding,
-      terminalTurnId,
+    const targetState: ChannelAsyncRunTargetState =
       terminalReason === 'completed' || terminalReason === 'safe-idle'
         ? 'completed'
         : // A ceiling drain is Relay cancelling the turn, not the provider
@@ -3662,8 +3676,20 @@ export function createChannelAgentBinder(
           // so no target claims a terminal state while its runtime works on.
           terminalReason === 'interrupt' || terminalReason === 'turn-ceiling'
           ? 'cancelled'
-          : 'failed'
-    );
+          : 'failed';
+    transitionAsyncRunTargetForTurn(binding, terminalTurnId, targetState);
+    const absorbed = binding.absorbedRunIdsByTurn.get(terminalTurnId);
+    if (absorbed) {
+      binding.absorbedRunIdsByTurn.delete(terminalTurnId);
+      for (const runId of absorbed) {
+        transitionAsyncRunTargetForRun(
+          binding,
+          terminalTurnId,
+          runId,
+          targetState
+        );
+      }
+    }
     // Turn terminal receipts ride the turn's REQUEST message id, not the
     // callback trigger a completion-callback turn may have been built from:
     // the receipt consumer correlates on the row the operator sent (#1442).
@@ -3964,6 +3990,44 @@ export function createChannelAgentBinder(
       runId: run.id,
       targetId: binding.profileActorId,
       state,
+      turnId,
+      ...options,
+    });
+    if (changed) {
+      hub.broadcastRunLifecycle(changed);
+      if (
+        changed.state === 'completed' &&
+        changed.deliveryContract?.expect?.length
+      ) {
+        void evaluateDeliveryContractForCompletedRun(
+          binding,
+          turnId,
+          changed
+        ).catch((err) => {
+          logger.warn(
+            'channel binder delivery-contract evaluation failed:',
+            err instanceof Error ? err.message : String(err)
+          );
+        });
+      }
+    }
+  }
+
+  function transitionAsyncRunTargetForRun(
+    binding: LiveBinding,
+    turnId: string,
+    runId: ChannelAsyncRunId,
+    state: ChannelAsyncRunTargetState,
+    options?: {
+      reason?: string;
+      approvalState?: ChannelAsyncRunApprovalState;
+    }
+  ): void {
+    const changed = store.transitionAsyncRunTarget({
+      runId,
+      targetId: binding.profileActorId,
+      state,
+      turnId,
       ...options,
     });
     if (changed) {

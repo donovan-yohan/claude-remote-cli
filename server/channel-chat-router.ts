@@ -1604,23 +1604,22 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     store: Pick<ChannelMessageStore, 'listMessagesForTurns'>,
     run: ChannelAsyncRun
   ): { finalText: string; finalMessageSeq: number | null } {
-    const turnIds = run.targets.map((target) =>
-      channelTurnId(run.requestMessageId, target.targetId)
+    const turnIds = run.targets.map(
+      (target) =>
+        target.turnId ?? channelTurnId(run.requestMessageId, target.targetId)
     );
     const messages = store.listMessagesForTurns({
       channelId: run.channelId,
       turnIds,
       limit: 2000,
     });
+    const candidates = messages.filter(
+      (m) => m.sender.kind === 'agent' && channelMessageIsPrincipalProse(m)
+    );
     const principal =
-      messages
-        .filter(
-          (m) =>
-            m.sender.kind === 'agent' &&
-            m.asyncRun?.runId === run.id &&
-            channelMessageIsPrincipalProse(m)
-        )
-        .at(-1) ?? null;
+      candidates.filter((m) => m.asyncRun?.runId === run.id).at(-1) ??
+      candidates.at(-1) ??
+      null;
     return {
       finalText: principal?.body.text ?? '',
       finalMessageSeq: principal?.seq ?? null,
