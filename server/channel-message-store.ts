@@ -3529,7 +3529,14 @@ function runSchemaMigrations(db: Database.Database): void {
           reason TEXT, approval_state TEXT, updated_at TEXT NOT NULL,
           completed_at TEXT, PRIMARY KEY(run_id, target_id)
         );
-        INSERT INTO channel_async_run_targets_v16 SELECT * FROM channel_async_run_targets;
+        -- Head-schema databases may already include newer columns (e.g. v20's
+        -- turn_id). Keep this rebuild compatible by selecting the v16 shape.
+        INSERT INTO channel_async_run_targets_v16 (
+          run_id, target_id, state, reason, approval_state, updated_at, completed_at
+        )
+        SELECT
+          run_id, target_id, state, reason, approval_state, updated_at, completed_at
+        FROM channel_async_run_targets;
         DROP TABLE channel_async_run_targets;
         ALTER TABLE channel_async_run_targets_v16 RENAME TO channel_async_run_targets;
         CREATE INDEX idx_chart_run_state
@@ -4602,7 +4609,9 @@ export function createChannelMessageStore(
         'rejected',
       ].includes(state);
       const nextReason =
-        run.reason === 'server-restarted' && !runTerminal ? null : run.reason;
+        run.reason === 'server-restarted' && state !== 'cancelled'
+          ? null
+          : run.reason;
       db.prepare(
         `UPDATE channel_async_runs SET state = ?, reason = ?, updated_at = ?,
           completed_at = CASE WHEN ? THEN ? ELSE NULL END WHERE id = ?`

@@ -137,7 +137,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(20);
     expect(
       (
         inspect
@@ -607,7 +607,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(20);
     expect(
       (
         inspect.prepare('PRAGMA table_info(channel_messages)').all() as Array<{
@@ -795,7 +795,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(20);
     expect(
       inspect
         .prepare('SELECT heal_id, candidates, healed FROM channel_heal_state')
@@ -1079,7 +1079,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(20);
     expect(
       (
         inspect
@@ -1143,7 +1143,7 @@ describe('channel-message-store async-run migration (#1391)', () => {
     const inspect = new Database(file, { readonly: true });
     cleanup.push(() => inspect.close());
     expect(inspect.prepare('SELECT version FROM schema_version').get()).toEqual(
-      { version: 19 }
+      { version: 20 }
     );
     expect(
       inspect
@@ -1981,6 +1981,19 @@ describe('channel-message-store async runs (#1391)', () => {
         { targetId: 'agent-profile:b:default', state: 'cancelled' },
       ],
     });
+
+    reopened.transitionAsyncRunTarget({
+      runId: first.run.id,
+      targetId: 'agent-profile:a:default',
+      state: 'completed',
+    });
+    const completed = reopened.transitionAsyncRunTarget({
+      runId: first.run.id,
+      targetId: 'agent-profile:b:default',
+      state: 'completed',
+    })!;
+    expect(completed.state).toBe('completed');
+    expect(completed.reason).toBeUndefined();
   });
 
   it('derives aggregate terminal state from durable per-target CAS outcomes', () => {
@@ -3864,7 +3877,7 @@ describe('channel-message-store full-text search (#1308 slice 2 item 1)', () => 
       .get() as { version: number };
     counted.close();
     expect(rows.count).toBe(1);
-    expect(version.version).toBe(19);
+    expect(version.version).toBe(20);
   });
 
   it('backfills across more than one batch without dropping or duplicating rows', () => {
@@ -5383,7 +5396,7 @@ describe('channel-message-store invite and removal (#1455 slice 2)', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(20);
     expect(upgraded.listMembers('topic:v17')).toEqual([
       expect.objectContaining({
         id: 'agent:claude',
