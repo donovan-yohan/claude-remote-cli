@@ -2009,38 +2009,42 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       }
       if (runTerminalState(latest.state)) {
         const final = finalAssistantTextForRun(store, latest);
-        res.json({
-          run: {
-            id: latest.id,
-            state: latest.state,
-            ...(latest.reason ? { reason: latest.reason } : {}),
-          },
-          outcome: latest.state,
-          finalText: final.finalText ?? '',
-          contract: contractSummaryForRun(latest),
-        });
+        res.json(
+          operatorClientPublicValue(req, {
+            run: {
+              id: latest.id,
+              state: latest.state,
+              ...(latest.reason ? { reason: latest.reason } : {}),
+            },
+            outcome: latest.state,
+            finalText: final.finalText ?? '',
+            contract: contractSummaryForRun(latest),
+          })
+        );
         return;
       }
       await sleepWithAbort(50, signal);
     }
     if (signal.aborted) return;
     const latest = store.getAsyncRun(run.id);
-    res.json({
-      run: latest
-        ? {
-            id: latest.id,
-            state: latest.state,
-            ...(latest.reason ? { reason: latest.reason } : {}),
-          }
-        : {
-            id: run.id,
-            state: run.state,
-            ...(run.reason ? { reason: run.reason } : {}),
-          },
-      outcome: 'timeout',
-      finalText: '',
-      contract: latest ? contractSummaryForRun(latest) : null,
-    });
+    res.json(
+      operatorClientPublicValue(req, {
+        run: latest
+          ? {
+              id: latest.id,
+              state: latest.state,
+              ...(latest.reason ? { reason: latest.reason } : {}),
+            }
+          : {
+              id: run.id,
+              state: run.state,
+              ...(run.reason ? { reason: run.reason } : {}),
+            },
+        outcome: 'timeout',
+        finalText: '',
+        contract: latest ? contractSummaryForRun(latest) : null,
+      })
+    );
   }
 
   async function respondWaitByChannel(
@@ -2206,19 +2210,28 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
 
     if (signal.aborted) return;
     if (best) {
-      res.json({
-        run: {
-          id: best.run.id,
-          state: best.run.state,
-          ...(best.run.reason ? { reason: best.run.reason } : {}),
-        },
-        outcome: best.run.state,
-        finalText: best.finalText,
-        contract: contractSummaryForRun(best.run),
-      });
+      res.json(
+        operatorClientPublicValue(req, {
+          run: {
+            id: best.run.id,
+            state: best.run.state,
+            ...(best.run.reason ? { reason: best.run.reason } : {}),
+          },
+          outcome: best.run.state,
+          finalText: best.finalText,
+          contract: contractSummaryForRun(best.run),
+        })
+      );
       return;
     }
-    res.json({ run: null, outcome: 'timeout', finalText: '', contract: null });
+    res.json(
+      operatorClientPublicValue(req, {
+        run: null,
+        outcome: 'timeout',
+        finalText: '',
+        contract: null,
+      })
+    );
   }
 
   router.get('/channels/wait', runWaitAuth, (req, res) => {
@@ -2534,14 +2547,16 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       return allow(kind);
     });
 
-    res.json({
-      run: {
-        id: run.id,
-        state: run.state,
-        ...(run.reason ? { reason: run.reason } : {}),
-      },
-      items,
-    });
+    res.json(
+      operatorClientPublicValue(req, {
+        run: {
+          id: run.id,
+          state: run.state,
+          ...(run.reason ? { reason: run.reason } : {}),
+        },
+        items,
+      })
+    );
   });
 
   // Typed delivery receipts (#1442): bounded server-side query surface for the
