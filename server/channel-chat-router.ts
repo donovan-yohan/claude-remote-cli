@@ -1601,9 +1601,22 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
   }
 
   function finalAssistantTextForRun(
-    store: Pick<ChannelMessageStore, 'getLastPrincipalProseForTurns'>,
+    store: Pick<
+      ChannelMessageStore,
+      'getLastPrincipalProseForTurns' | 'getLastPrincipalProseForRunId'
+    >,
     run: ChannelAsyncRun
   ): { finalText: string; finalMessageSeq: number | null } {
+    const metaPrincipal = store.getLastPrincipalProseForRunId({
+      channelId: run.channelId,
+      runId: run.id,
+    });
+    if (metaPrincipal) {
+      return {
+        finalText: metaPrincipal.body.text ?? '',
+        finalMessageSeq: metaPrincipal.seq ?? null,
+      };
+    }
     const turnIds = run.targets.map(
       (target) =>
         target.turnId ?? channelTurnId(run.requestMessageId, target.targetId)

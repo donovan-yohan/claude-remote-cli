@@ -1578,6 +1578,11 @@ export interface ChannelMessageStore {
     channelId: string;
     turnIds: readonly string[];
   }): ChannelMessage | null;
+  /** Newest complete assistant principal prose row correlated via meta.asyncRun. */
+  getLastPrincipalProseForRunId(input: {
+    channelId: string;
+    runId: ChannelAsyncRunId;
+  }): ChannelMessage | null;
   /** System rows parented under a durable message id (threaded replies). */
   listSystemMessagesForParent(input: {
     channelId: string;
@@ -5878,6 +5883,26 @@ export function createChannelMessageStore(
            LIMIT 1`
         )
         .get(channelId, ...raw) as ChannelMessageRow | undefined;
+      return row ? rowToMessage(row) : null;
+    },
+
+    getLastPrincipalProseForRunId(input) {
+      const row = db
+        .prepare(
+          `SELECT m.*,
+                  ${replyCountSql('m')} AS reply_count
+           FROM channel_messages m
+           WHERE m.channel_id = ?
+             AND m.kind = 'message'
+             AND m.sender_kind = 'agent'
+             AND m.status = 'complete'
+             AND m.body_text != ''
+             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
+             AND json_extract(m.meta_json, '$.asyncRun.runId') = ?
+           ORDER BY m.seq DESC
+           LIMIT 1`
+        )
+        .get(input.channelId, input.runId) as ChannelMessageRow | undefined;
       return row ? rowToMessage(row) : null;
     },
 

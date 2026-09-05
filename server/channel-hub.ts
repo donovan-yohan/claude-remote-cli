@@ -794,15 +794,19 @@ export function createChannelHub(options: ChannelHubOptions): ChannelHub {
       if (terminal && store) {
         let final: ChannelMessage | null = null;
         try {
-          const turnIds = run.targets.map(
-            (target) =>
-              target.turnId ??
-              channelTurnId(run.requestMessageId, target.targetId)
-          );
-          final = store.getLastPrincipalProseForTurns({
-            channelId: run.channelId,
-            turnIds,
-          });
+          final =
+            store.getLastPrincipalProseForRunId({
+              channelId: run.channelId,
+              runId: run.id,
+            }) ??
+            store.getLastPrincipalProseForTurns({
+              channelId: run.channelId,
+              turnIds: run.targets.map(
+                (target) =>
+                  target.turnId ??
+                  channelTurnId(run.requestMessageId, target.targetId)
+              ),
+            });
         } catch {
           /* best-effort preview only */
         }
