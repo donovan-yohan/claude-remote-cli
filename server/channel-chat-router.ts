@@ -2040,37 +2040,157 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     const deadline = Date.now() + input.timeoutMs;
     const serverRestartCancelGraceMs = 2000;
     const serverRestartCancelledSince = new Map<string, number>();
-    while (Date.now() < deadline) {
-      const runs = store.listAsyncRuns(channelId, 200);
-      for (const candidate of runs) {
-        if (
-          candidate.state === 'cancelled' &&
-          candidate.reason === 'server-restarted'
-        ) {
-          const since =
-            serverRestartCancelledSince.get(candidate.id) ?? Date.now();
-          serverRestartCancelledSince.set(candidate.id, since);
-          if (Date.now() - since < serverRestartCancelGraceMs) continue;
-        } else {
-          serverRestartCancelledSince.delete(candidate.id);
-        }
-        if (!matchesWaitFor(candidate.state, input.for)) continue;
-        const final = finalAssistantTextForRun(store, candidate);
-        if (final.finalMessageSeq === null) continue;
-        if (final.finalMessageSeq <= input.afterSeq) continue;
-        res.json({
-          run: {
-            id: candidate.id,
+    const inspected = new Map<
+      string,
+      { state: ChannelAsyncRun['state']; finalMessageSeq: number | null }
+    >();
+
+    // TS control-flow analysis does not reliably narrow this closure-mutated
+    // candidate across the subscription + poll loop; keep the surface typed at
+    // the response boundary.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let best: any = null;
+
+    async function considerCandidate(
+      candidate: ChannelAsyncRun
+    ): Promise<void> {
+      if (
+        candidate.state === 'cancelled' &&
+        candidate.reason === 'server-restarted'
+      ) {
+        const since =
+          serverRestartCancelledSince.get(candidate.id) ?? Date.now();
+        serverRestartCancelledSince.set(candidate.id, since);
+        if (Date.now() - since < serverRestartCancelGraceMs) return;
+      } else {
+        serverRestartCancelledSince.delete(candidate.id);
+      }
+      if (!matchesWaitFor(candidate.state, input.for)) {
+        const prev = inspected.get(candidate.id);
+        if (!prev || prev.state !== candidate.state) {
+          inspected.set(candidate.id, {
             state: candidate.state,
-            ...(candidate.reason ? { reason: candidate.reason } : {}),
-          },
-          outcome: candidate.state,
-          finalText: final.finalText ?? '',
-          contract: contractSummaryForRun(candidate),
-        });
+            finalMessageSeq: null,
+          });
+        }
         return;
       }
-      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const prev = inspected.get(candidate.id);
+      if (
+        prev &&
+        prev.state === candidate.state &&
+        prev.finalMessageSeq !== null
+      ) {
+        // Negative cache for this terminal state: we already computed its final seq.
+        if (prev.finalMessageSeq <= input.afterSeq) return;
+        if (
+          best &&
+          (prev.finalMessageSeq > best.finalMessageSeq ||
+            prev.finalMessageSeq === best.finalMessageSeq)
+        ) {
+          return;
+        }
+      }
+
+      const final = finalAssistantTextForRun(store, candidate);
+      inspected.set(candidate.id, {
+        state: candidate.state,
+        finalMessageSeq: final.finalMessageSeq,
+      });
+      if (final.finalMessageSeq === null) return;
+      if (final.finalMessageSeq <= input.afterSeq) return;
+      if (!best || final.finalMessageSeq < best.finalMessageSeq) {
+        best = {
+          run: candidate,
+          finalText: final.finalText ?? '',
+          finalMessageSeq: final.finalMessageSeq,
+        };
+      }
+    }
+
+    let done = false;
+    let resolveDone: (() => void) | null = null;
+    const donePromise = new Promise<void>((resolve) => {
+      resolveDone = resolve;
+    });
+
+    let closeHandler: (() => void) | null = null;
+    const sink = {
+      get ready() {
+        return true;
+      },
+      get bufferedAmount() {
+        return 0;
+      },
+      send(event: import('../shared/channel-chat-protocol.js').ChannelEventV1) {
+        if (done) return false;
+        if (event.type === 'channel-snapshot-v1' && Array.isArray(event.runs)) {
+          void Promise.all(event.runs.map((r) => considerCandidate(r))).then(
+            () => {
+              if (!done && best) resolveDone?.();
+            }
+          );
+        } else if (event.type === 'channel-run-lifecycle-v1') {
+          void considerCandidate(event.run).then(() => {
+            if (!done && best) resolveDone?.();
+          });
+        }
+        return true;
+      },
+      close(
+        _reason: import('./channel-hub.js').ChannelSubscriptionCloseReason
+      ) {
+        closeHandler?.();
+      },
+      onClose(handler: () => void) {
+        closeHandler = handler;
+      },
+    } satisfies import('./channel-hub.js').ChannelEventSink;
+
+    const cleanup = deps.hub.subscribe(sink, {
+      channelId,
+      afterSeq: input.afterSeq,
+    });
+
+    try {
+      while (!done && Date.now() < deadline) {
+        if (best) break;
+        const runs = store.listAsyncRuns(channelId, 200);
+        for (const candidate of runs) {
+          if (best && best.finalMessageSeq <= input.afterSeq) break;
+          // Only re-inspect when state differs from the cached observation.
+          const prev = inspected.get(candidate.id);
+          if (prev && prev.state === candidate.state) continue;
+          await considerCandidate(candidate);
+          if (best) break;
+        }
+        if (best) break;
+        const remaining = Math.max(0, deadline - Date.now());
+        await Promise.race([
+          donePromise,
+          new Promise((resolve) =>
+            setTimeout(resolve, Math.min(1000, remaining))
+          ),
+        ]);
+      }
+    } finally {
+      done = true;
+      cleanup();
+    }
+
+    if (best) {
+      res.json({
+        run: {
+          id: best.run.id,
+          state: best.run.state,
+          ...(best.run.reason ? { reason: best.run.reason } : {}),
+        },
+        outcome: best.run.state,
+        finalText: best.finalText,
+        contract: contractSummaryForRun(best.run),
+      });
+      return;
     }
     res.json({ run: null, outcome: 'timeout', finalText: '', contract: null });
   }
