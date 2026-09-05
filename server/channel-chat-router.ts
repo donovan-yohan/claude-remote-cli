@@ -74,6 +74,7 @@ import {
   channelTurnId,
   isChannelPostSteering,
   parseMentions,
+  type ChannelAsyncRunId,
   type ChannelAsyncRun,
   type ChannelBodyFormat,
   type ChannelMention,
@@ -2020,6 +2021,35 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     });
   }
 
+  function terminalStateCarriesPrincipalProse(
+    state: ChannelAsyncRun['state']
+  ): boolean {
+    return state === 'completed' || state === 'completed_unmet';
+  }
+
+  async function finalAssistantTextForTerminalRun(
+    store: ChannelMessageStore,
+    runId: ChannelAsyncRunId,
+    run: ChannelAsyncRun,
+    deadline: number,
+    graceMs: number,
+    signal: AbortSignal
+  ): Promise<{ finalText: string | null; finalMessageSeq: number | null }> {
+    let final = finalAssistantTextForRun(store, run);
+    if (final.finalMessageSeq !== null) return final;
+    if (!terminalStateCarriesPrincipalProse(run.state)) return final;
+    const graceDeadline = Math.min(deadline, Date.now() + graceMs);
+    while (Date.now() < graceDeadline && !signal.aborted) {
+      await sleepWithAbort(50, signal);
+      const refreshed = store.getAsyncRun(runId);
+      if (!refreshed) break;
+      if (!runTerminalState(refreshed.state)) continue;
+      final = finalAssistantTextForRun(store, refreshed);
+      if (final.finalMessageSeq !== null) break;
+    }
+    return final;
+  }
+
   async function respondWaitByRunId(
     req: Request,
     res: Response,
@@ -2040,6 +2070,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
 
     const deadline = Date.now() + input.timeoutMs;
     const serverRestartCancelGraceMs = 2000;
+    const terminalFinalizationGraceMs = 2000;
     let serverRestartCancelledAt: number | null = null;
     while (Date.now() < deadline && !signal.aborted) {
       const latest = store.getAsyncRun(run.id);
@@ -2061,14 +2092,14 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         serverRestartCancelledAt = null;
       }
       if (runTerminalState(latest.state)) {
-        const final = finalAssistantTextForRun(store, latest);
-        // A run can terminalize slightly before its final assistant row is
-        // finalized to `complete`. Wait for the durable complete row, otherwise
-        // callers can observe a partial body (#1570).
-        if (final.finalMessageSeq === null) {
-          await sleepWithAbort(50, signal);
-          continue;
-        }
+        const final = await finalAssistantTextForTerminalRun(
+          store,
+          run.id,
+          latest,
+          deadline,
+          terminalFinalizationGraceMs,
+          signal
+        );
         res.json(
           operatorClientPublicValue(req, {
             run: {

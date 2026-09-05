@@ -2091,7 +2091,7 @@ describe('channel routes — gateway capability mapping', () => {
       });
     });
 
-    it('waits for the final assistant row to reach status=complete (#1570)', async () => {
+    it('waits briefly for the final assistant row to reach status=complete (#1570)', async () => {
       const h = await harness({ withAuth: true });
       const targetId = builtInAgentProfileId('codex');
       const { message: trigger, run } = h.store.appendCompleteWithAsyncRun({
@@ -2113,7 +2113,8 @@ describe('channel routes — gateway capability mapping', () => {
         targetId,
         state: 'completed',
       });
-      const early = await req<{
+
+      const pending = req<{
         run: { id: string; state: string };
         outcome: string;
         finalText: string;
@@ -2121,17 +2122,45 @@ describe('channel routes — gateway capability mapping', () => {
       }>({
         port: h.port,
         method: 'GET',
-        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=10`,
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=3000`,
         headers: { Authorization: 'Bearer test' },
       });
-      expect(early.status).toBe(200);
-      expect(early.body).toMatchObject({
-        outcome: 'timeout',
-        finalText: '',
-        finalMessageSeq: null,
+
+      await new Promise<void>((resolve) => {
+        setTimeout(() => {
+          h.store.finalizeStream(started.id, {
+            text: 'final',
+            status: 'complete',
+          });
+          resolve();
+        }, 25);
       });
 
-      h.store.finalizeStream(started.id, { text: 'final', status: 'complete' });
+      const res = await pending;
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        run: { id: run.id, state: 'completed' },
+        outcome: 'completed',
+        finalText: 'final',
+        finalMessageSeq: started.seq,
+      });
+    });
+
+    it('returns terminal rejected outcome even when no prose exists (#1570)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'hello @codex',
+        targetIds: [targetId],
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'rejected',
+        reason: 'no-eligible-target',
+      });
       const res = await req<{
         run: { id: string; state: string };
         outcome: string;
@@ -2140,15 +2169,118 @@ describe('channel routes — gateway capability mapping', () => {
       }>({
         port: h.port,
         method: 'GET',
-        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=200`,
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=3000`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        run: { id: run.id, state: 'rejected' },
+        outcome: 'rejected',
+        finalText: '',
+        finalMessageSeq: null,
+      });
+    });
+
+    it('returns terminal cancelled outcome even when no prose exists (#1570)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'hello @codex',
+        targetIds: [targetId],
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'cancelled',
+      });
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        finalText: string;
+        finalMessageSeq: number | null;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=3000`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        run: { id: run.id, state: 'cancelled' },
+        outcome: 'cancelled',
+        finalText: '',
+        finalMessageSeq: null,
+      });
+    });
+
+    it('returns terminal failed outcome even when no prose exists (#1570)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'hello @codex',
+        targetIds: [targetId],
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'failed',
+        reason: 'simulated-failure',
+      });
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        finalText: string;
+        finalMessageSeq: number | null;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=3000`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        run: { id: run.id, state: 'failed' },
+        outcome: 'failed',
+        finalText: '',
+        finalMessageSeq: null,
+      });
+    });
+
+    it('returns completed outcome even when reply is empty (#1570)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'hello @codex',
+        targetIds: [targetId],
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'completed',
+      });
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        finalText: string;
+        finalMessageSeq: number | null;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=3000`,
         headers: { Authorization: 'Bearer test' },
       });
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         run: { id: run.id, state: 'completed' },
         outcome: 'completed',
-        finalText: 'final',
-        finalMessageSeq: started.seq,
+        finalText: '',
+        finalMessageSeq: null,
       });
     });
 
