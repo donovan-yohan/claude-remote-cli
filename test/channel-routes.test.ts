@@ -1975,6 +1975,24 @@ describe('channel routes — gateway capability mapping', () => {
         finalMessageSeq: started.seq,
       });
     });
+
+    it('rejects --for when waiting by runId (#1570)', async () => {
+      const h = await harness({ withAuth: true });
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'hello @codex',
+        targetIds: [builtInAgentProfileId('codex')],
+      });
+      const res = await req<{ error: { code: string } }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=completed&timeoutMs=5`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: { code: 'INVALID_ARGUMENT' } });
+    });
   });
 
   describe('channels.run.history route', () => {

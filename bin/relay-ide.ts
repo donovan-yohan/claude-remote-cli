@@ -7292,6 +7292,12 @@ async function runGatewayChannelsWait(channelArgs: string[]): Promise<void> {
       field: 'run',
     });
   }
+  if (runId && forRaw !== 'any') {
+    gatewayInvalid('channels.run.wait', '--for cannot be combined with --run', {
+      field: 'for',
+      value: forRaw,
+    });
+  }
   if (forRaw !== 'any' && forRaw !== 'completed' && forRaw !== 'failed') {
     gatewayInvalid(
       'channels.run.wait',

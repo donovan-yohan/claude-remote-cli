@@ -1899,6 +1899,16 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       return null;
     }
     if (runId) {
+      if (forRaw !== 'any') {
+        sendGatewayError(
+          res,
+          'INVALID_ARGUMENT',
+          '--for cannot be combined with runId',
+          false,
+          { field: 'for', value: forRaw }
+        );
+        return null;
+      }
       if (!runId.startsWith('chrun:')) {
         sendGatewayError(
           res,
@@ -1912,7 +1922,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       return {
         mode: 'run',
         runId: runId as ChannelAsyncRun['id'],
-        for: forRaw,
+        for: 'any',
         timeoutMs,
       };
     }
