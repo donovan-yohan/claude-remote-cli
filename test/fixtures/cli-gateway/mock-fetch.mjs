@@ -15,6 +15,7 @@ globalThis.fetch = async (url, init = {}) => {
       url: String(url),
       method: init.method,
       headers: init.headers,
+      hasDispatcher: Boolean(init.dispatcher),
       body,
     })
   );

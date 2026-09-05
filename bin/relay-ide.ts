@@ -7,6 +7,7 @@ import { Buffer } from 'node:buffer';
 import { StringDecoder } from 'node:string_decoder';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { Agent } from 'undici';
 import {
   deleteStoredActorCredential,
   expiresWithinMargin,
@@ -137,6 +138,11 @@ import {
 import { WebSocket, type RawData } from 'ws';
 
 const execFileAsync = promisify(execFile);
+const LONG_POLL_DISPATCHER = new Agent({
+  // undici defaults (300s) are too low for `channels wait` (<= 1h).
+  headersTimeout: 3_700_000,
+  bodyTimeout: 3_700_000,
+});
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const logger = createLogger('cli');
@@ -2135,6 +2141,11 @@ async function gatewayHttpJson(input: {
   body?: unknown;
   capabilities?: readonly string[];
   confirmationToken?: string;
+  /**
+   * Transport ceiling for this HTTP request. Used by long-poll style commands
+   * (e.g. `channels.run.wait`) to avoid undici's default 300s header timeout.
+   */
+  timeoutMs?: number;
 }): Promise<unknown> {
   const actorToken = await gatewayActorToken(input.commandName);
   if (actorToken && !CLI_GATEWAY_ACTOR_TOKEN_COMMANDS.has(input.commandName)) {
@@ -2179,13 +2190,22 @@ async function gatewayHttpJson(input: {
   }
 
   let res: Response;
+  const controller = input.timeoutMs ? new AbortController() : null;
+  const timeout =
+    controller && input.timeoutMs
+      ? setTimeout(() => controller.abort(), input.timeoutMs)
+      : null;
+  timeout?.unref?.();
   try {
     res = await fetch(`http://127.0.0.1:${port}${input.pathName}`, {
       method: input.method ?? 'GET',
       headers,
       ...(input.body !== undefined ? { body: JSON.stringify(input.body) } : {}),
+      ...(controller ? { signal: controller.signal } : {}),
+      ...(input.timeoutMs ? { dispatcher: LONG_POLL_DISPATCHER } : {}),
     });
   } catch (error) {
+    if (timeout) clearTimeout(timeout);
     const message = error instanceof Error ? error.message : String(error);
     printGatewayEnvelope(
       gatewayError(input.commandName, {
@@ -2196,6 +2216,7 @@ async function gatewayHttpJson(input: {
       1
     );
   }
+  if (timeout) clearTimeout(timeout);
 
   const text = await res.text();
   let body: unknown;
@@ -7293,10 +7314,13 @@ async function runGatewayChannelsWait(channelArgs: string[]): Promise<void> {
     }
     query.set('timeoutMs', timeoutMs);
   }
+  const serverTimeoutMs = timeoutMs !== undefined ? Number(timeoutMs) : 300_000;
+  const transportTimeoutMs = Math.min(serverTimeoutMs + 30_000, 3_700_000);
   const result = await gatewayHttpJson({
     commandName: 'channels.run.wait',
     pathName: `/channels/wait?${query}`,
     capabilities: ['context:read'],
+    timeoutMs: transportTimeoutMs,
   });
   const data = result as Record<string, unknown>;
   const outcome = typeof data['outcome'] === 'string' ? data['outcome'] : '';

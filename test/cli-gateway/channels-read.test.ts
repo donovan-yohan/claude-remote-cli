@@ -247,6 +247,21 @@ describe('channel read CLI gateway runtime wiring', () => {
     }
   );
 
+  it('keeps channels.run.wait transport open past undici 300s default (#1570)', async () => {
+    const { envelope, request } = await runCli([
+      'v1',
+      'channels',
+      'wait',
+      '--run',
+      'chrun:test',
+      '--timeout-ms',
+      '400000',
+      '--json',
+    ]);
+    expect(envelope).toMatchObject({ ok: true, command: 'channels.run.wait' });
+    expect(request).toMatchObject({ hasDispatcher: true });
+  });
+
   it.each([
     [['list', '--undeclared', '--json'], 'channels.list'],
     [['get', '--json'], 'channels.get'],
