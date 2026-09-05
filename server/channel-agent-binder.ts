@@ -537,6 +537,8 @@ export interface LiveBinding {
   requestMessageIdByTurn: Map<string, ChannelMessage['id']>;
   /** Bounded exact-turn ancestry retained across a successor; never used by turn-0. */
   exactTurnTombstones: Map<string, ExactTurnTombstone>;
+  /** Turn ids whose late patches must be ignored after a forced drain. */
+  suppressedTurnIds: Map<string, number>;
   /** Routing cwd this binding already reported as diverged from its runtime (#1534). */
   routingCwdDivergenceReported: string | null;
   /** Last terminal prose row by turn, available before the terminal patch lands. */
@@ -1759,6 +1761,17 @@ export function createChannelAgentBinder(
     );
   }
 
+  function isSuppressedTurnPatch(
+    binding: LiveBinding,
+    patch: AgentPatchV2
+  ): boolean {
+    const turnId = patchTurnId(patch);
+    if (turnId === undefined) return false;
+    if (binding.suppressedTurnIds.has(turnId)) return true;
+    const parent = parentKeyForTurn(binding, turnId);
+    return parent ? binding.suppressedTurnIds.has(parent) : false;
+  }
+
   /**
    * Track the active turn's open tool calls (#1548).
    *
@@ -1951,6 +1964,7 @@ export function createChannelAgentBinder(
     const turnId = binding.activeTurnId;
     if (turnId === null) return;
     const adapter = binding.adapter;
+    suppressTurnPatches(binding, turnId);
     postSystemRow(binding.channelId, text, {
       parentMessageId: parentForTurn(binding, turnId),
     });
@@ -1961,6 +1975,19 @@ export function createChannelAgentBinder(
       });
     }
     if (binding.activeTurnId === turnId) finishTurn(binding, reason);
+  }
+
+  function suppressTurnPatches(binding: LiveBinding, turnId: string): void {
+    binding.suppressedTurnIds.set(turnId, Date.now());
+    // Bound memory: a forced drain is rare, but a wedged provider can spam
+    // patches forever — never let the suppression set grow without limit.
+    if (binding.suppressedTurnIds.size <= 64) return;
+    const oldest = [...binding.suppressedTurnIds.entries()].sort(
+      (a, b) => a[1] - b[1]
+    );
+    for (const [id] of oldest.slice(0, binding.suppressedTurnIds.size - 64)) {
+      binding.suppressedTurnIds.delete(id);
+    }
   }
 
   /** Short operator-facing duration for a drain row ("5 min", "1 h", "800 ms"). */
@@ -2004,6 +2031,7 @@ export function createChannelAgentBinder(
       parentMessageIdByTurn: new Map(),
       requestMessageIdByTurn: new Map(),
       exactTurnTombstones: new Map(),
+      suppressedTurnIds: new Map(),
       routingCwdDivergenceReported: null,
       finalMessageByTurn: new Map(),
       continuationByTurn: new Map(),
@@ -3771,6 +3799,7 @@ export function createChannelAgentBinder(
   }
 
   function handleBindingPatch(binding: LiveBinding, patch: AgentPatchV2): void {
+    if (isSuppressedTurnPatch(binding, patch)) return;
     // Liveness before interpretation (#1541): a patch that belongs to the
     // active turn proves that turn is still producing, whatever it turns out
     // to mean below.

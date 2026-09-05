@@ -6752,6 +6752,17 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     ) as HeartbeatAdapter;
     await waitFor(() => adapter.sendCalls.length === 1);
     await waitFor(
+      () =>
+        rows(store).some(
+          (m) =>
+            m.sender.kind === 'agent' &&
+            m.sender.providerId === 'mock' &&
+            m.kind === 'message' &&
+            !m.agentDetail
+        ),
+      4000
+    );
+    await waitFor(
       () => systemRows(store).some((m) => m.body.text.includes('turn limit')),
       4000
     );
@@ -6762,6 +6773,17 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     expect(ceiling.state).toBe('expired_watchdog');
     // Relay cancelled this turn; the provider did not fail it.
     expect(store.getAsyncRun(run.id)?.targets[0]?.state).toBe('cancelled');
+    const resolveText = () =>
+      rows(store).find(
+        (m) =>
+          m.sender.kind === 'agent' &&
+          m.sender.providerId === 'mock' &&
+          m.kind === 'message' &&
+          !m.agentDetail
+      )!.body.text;
+    const frozen = resolveText();
+    await new Promise((r) => setTimeout(r, 40));
+    expect(resolveText()).toBe(frozen);
     adapter.complete(); // stop the heartbeat
   });
 
