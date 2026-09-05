@@ -1993,6 +1993,35 @@ describe('channel routes — gateway capability mapping', () => {
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ error: { code: 'INVALID_ARGUMENT' } });
     });
+
+    it('rejects invalid timeoutMs query values (#1570)', async () => {
+      const h = await harness({ withAuth: true });
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'hello @codex',
+        targetIds: [builtInAgentProfileId('codex')],
+      });
+      const bad = await req<{ error: { code: string } }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=abc`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(bad.status).toBe(400);
+      expect(bad.body).toMatchObject({ error: { code: 'INVALID_ARGUMENT' } });
+
+      const negative = await req<{ error: { code: string } }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=-1`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(negative.status).toBe(400);
+      expect(negative.body).toMatchObject({
+        error: { code: 'INVALID_ARGUMENT' },
+      });
+    });
   });
 
   describe('channels.run.history route', () => {

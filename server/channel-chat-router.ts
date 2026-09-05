@@ -1860,12 +1860,32 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       typeof req.query['channelId'] === 'string'
         ? req.query['channelId']
         : undefined;
-    const afterSeq = parseSeqQuery(req.query['afterSeq']);
-    const timeoutMsRaw = parseSeqQuery(req.query['timeoutMs']);
+    const timeoutMsValue =
+      typeof req.query['timeoutMs'] === 'string'
+        ? req.query['timeoutMs']
+        : undefined;
     const timeoutMs =
-      typeof timeoutMsRaw === 'number' && Number.isSafeInteger(timeoutMsRaw)
-        ? timeoutMsRaw
-        : 300_000;
+      timeoutMsValue === undefined
+        ? 300_000
+        : (() => {
+            const parsed = Number(timeoutMsValue);
+            if (
+              !Number.isSafeInteger(parsed) ||
+              parsed < 1 ||
+              parsed > 3_600_000
+            ) {
+              sendGatewayError(
+                res,
+                'INVALID_ARGUMENT',
+                'timeoutMs must be between 1 and 3600000',
+                false,
+                { field: 'timeoutMs', value: timeoutMsValue }
+              );
+              return null;
+            }
+            return parsed;
+          })();
+    if (timeoutMs === null) return null;
     const forRaw =
       typeof req.query['for'] === 'string' ? req.query['for'] : 'any';
     if (forRaw !== 'any' && forRaw !== 'completed' && forRaw !== 'failed') {
@@ -1888,7 +1908,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       );
       return null;
     }
-    if (runId && (channelId || afterSeq !== undefined)) {
+    if (runId && (channelId || req.query['afterSeq'] !== undefined)) {
       sendGatewayError(
         res,
         'INVALID_ARGUMENT',
@@ -1938,13 +1958,31 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       );
       return null;
     }
-    if (afterSeq === undefined) {
+    const afterSeqValue =
+      typeof req.query['afterSeq'] === 'string'
+        ? req.query['afterSeq']
+        : undefined;
+    if (afterSeqValue === undefined) {
       sendGatewayError(
         res,
         'INVALID_ARGUMENT',
         'afterSeq is required when channelId is provided',
         false,
         { field: 'afterSeq' }
+      );
+      return null;
+    }
+    const afterSeq = Number(afterSeqValue);
+    if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) {
+      sendGatewayError(
+        res,
+        'INVALID_ARGUMENT',
+        'afterSeq must be >= 0',
+        false,
+        {
+          field: 'afterSeq',
+          value: afterSeqValue,
+        }
       );
       return null;
     }
