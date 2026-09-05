@@ -1222,8 +1222,8 @@ describe('channel-message-store seq allocation', () => {
   });
 });
 
-describe('channel-message-store restart continuity (#1570 item 6)', () => {
-  it('resumes `channels subscribe --after-seq <durable seq>` with no replay and no seq-namespace reset', () => {
+describe('channel-message-store durable seq continuity across reopen (#1570)', () => {
+  it('preserves the durable seq namespace and supports afterSeq catch-up', () => {
     const file = dbPath();
     const before = createChannelMessageStore(file);
     for (let i = 1; i <= 3; i++) {
