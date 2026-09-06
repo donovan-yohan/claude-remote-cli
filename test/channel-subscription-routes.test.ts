@@ -162,6 +162,95 @@ describe('channel subscription route', () => {
     expect(subscribed).toBe(false);
   });
 
+  it('accepts only filters and preserves durable cursor progression through projected rows', async () => {
+    const port = await listen({
+      channelIds: ['topic:a'],
+      subscribe: (sink) => {
+        sink.send({
+          type: 'channel-message-created-v1',
+          channelId: 'topic:a',
+          timestamp: '2026-08-12T00:00:00.000Z',
+          message: {
+            schemaVersion: 1,
+            id: 'chm:filtered',
+            channelId: 'topic:a',
+            seq: 1,
+            kind: 'message',
+            status: 'complete',
+            sender: { kind: 'agent', id: 'agent:one' },
+            body: { text: 'agent prose', format: 'markdown' },
+            threadId: null,
+            parentMessageId: null,
+            createdAt: '2026-08-12T00:00:00.000Z',
+            updatedAt: '2026-08-12T00:00:00.000Z',
+          } as ChannelMessage,
+        });
+        sink.send({
+          type: 'channel-run-lifecycle-v1',
+          channelId: 'topic:a',
+          timestamp: '2026-08-12T00:00:01.000Z',
+          run: {
+            id: 'chrun:terminal',
+            state: 'completed',
+            channelId: 'topic:a',
+            threadId: null,
+            requestMessageId: 'chm:request',
+            requesterId: 'human:one',
+            targets: [],
+            createdAt: '2026-08-12T00:00:00.000Z',
+            updatedAt: '2026-08-12T00:00:01.000Z',
+          },
+        });
+        sink.close({ code: 'transport-closed' });
+      },
+    });
+    const response = await fetch(
+      `http://127.0.0.1:${port}/channels/topic%3Aa/subscribe?afterSeq=0&only=run-terminal,system`,
+      { headers: { 'x-relay-cli-gateway': 'v1' } }
+    );
+    expect(response.status).toBe(200);
+    const frames = (await response.text())
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(frames).toHaveLength(3);
+    expect(frames[0]).toMatchObject({ frame: 'open' });
+    expect(frames[1]).toMatchObject({
+      frame: 'event',
+      payload: {
+        type: 'channel-run-lifecycle-v1',
+        run: { id: 'chrun:terminal' },
+      },
+    });
+    expect(
+      frames.some(
+        (frame) =>
+          frame.frame === 'event' &&
+          frame.payload?.type === 'channel-message-created-v1'
+      )
+    ).toBe(false);
+    expect(frames[1].durableSeq).toBe(1);
+    expect(frames[2]).toMatchObject({ frame: 'closed' });
+    expect(frames.map((frame) => frame.durableSeq)).toEqual([0, 1, 1]);
+  });
+
+  it('rejects invalid only query filter values before subscribing', async () => {
+    let subscribed = false;
+    const port = await listen({
+      channelIds: ['topic:a'],
+      subscribe: () => {
+        subscribed = true;
+      },
+    });
+    const response = await fetch(
+      `http://127.0.0.1:${port}/channels/topic%3Aa/subscribe?afterSeq=0&only=bogus`,
+      { headers: { 'x-relay-cli-gateway': 'v1' } }
+    );
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/INVALID_ARGUMENT/);
+    expect(subscribed).toBe(false);
+  });
+
   it('projects semantic replies without changing the durable cursor domain', async () => {
     const port = await listen({
       channelIds: ['topic:a'],

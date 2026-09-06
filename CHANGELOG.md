@@ -36,6 +36,7 @@ workflow.
 #### Fixed
 
 - ACP adapters now fail closed on connect when the authenticate step fails, and refuse to report connected if `session/new` returns no `sessionId` (#1554). For resume lanes (`session/load` / `session/resume`), a session id-less success response is accepted and the requested resume id is treated as the provider session id (per the captured Cursor `session/load` wire).
+- `relay-ide v1 channels subscribe --only` now accepts validated `run-terminal,system|run|message` filters again over both HTTP and CLI paths instead of failing as an invalid argument. (#1582)
 
 ### Scoped CLI actor credentials across hub restart
 

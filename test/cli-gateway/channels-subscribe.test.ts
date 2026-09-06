@@ -228,6 +228,50 @@ describe('channels.subscribe CLI gateway command', () => {
     }
   });
 
+  it('encodes only filter comma lists in the subscribe query', async () => {
+    let request: http.IncomingMessage | undefined;
+    const server = http.createServer((req, res) => {
+      request = req;
+      res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+      res.end(
+        `${JSON.stringify({ schemaVersion: 1, frame: 'closed', channelId: 'topic:test', sequence: 0, occurredAt: '2026-08-11T00:00:02.000Z', durableSeq: 0, reason: 'normal', retryable: false })}\n`
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
+    const address = server.address();
+    if (!address || typeof address === 'string')
+      throw new Error('missing port');
+    try {
+      await runCli(
+        [
+          'v1',
+          'channels',
+          'subscribe',
+          '--channel-id',
+          'topic:test',
+          '--after-seq',
+          '0',
+          '--only',
+          'run-terminal,system',
+          '--json',
+        ],
+        {
+          ...process.env,
+          RELAY_IDE_PORT: String(address.port),
+          RELAY_IDE_ACTOR_TOKEN: 'relay-sac-v1.test.[REDACTED]',
+          RELAY_IDE_BROWSER_TOKEN: '',
+        }
+      );
+      expect(request?.url).toBe(
+        '/channels/topic%3Atest/subscribe?afterSeq=0&only=run-terminal%2Csystem'
+      );
+    } finally {
+      server.close();
+    }
+  });
+
   it('omits false-only predicates so they retain the unfiltered subscription contract', async () => {
     let request: http.IncomingMessage | undefined;
     const server = http.createServer((req, res) => {

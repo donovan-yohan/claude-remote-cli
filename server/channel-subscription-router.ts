@@ -103,6 +103,7 @@ const SUBSCRIPTION_QUERY_KEYS = new Set([
   'runId',
   'terminalOnly',
   'principalOnly',
+  'only',
 ]);
 
 /** Decode the authenticated boundary once; duplicate/unknown keys fail closed. */
@@ -113,7 +114,7 @@ function querySubscriptionFilter(
   for (const [key, value] of Object.entries(req.query)) {
     if (!SUBSCRIPTION_QUERY_KEYS.has(key) || Array.isArray(value))
       return 'invalid';
-    if (key === 'afterSeq') continue;
+    if (key === 'afterSeq' || key === 'only') continue;
     if (typeof value !== 'string') return 'invalid';
     if (key === 'terminalOnly' || key === 'principalOnly') {
       if (value === 'true') raw[key] = true;
