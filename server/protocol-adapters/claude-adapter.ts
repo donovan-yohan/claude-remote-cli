@@ -46,6 +46,7 @@ import type {
   AgentSlashCommandV2,
   AgentUsageV2,
 } from '../../shared/agent-chat-protocol-v2.js';
+import type { ProviderFailureCode } from '../../shared/agent-chat-protocol-v2.js';
 import { emptyAgentSessionV2 } from '../../shared/agent-chat-protocol-v2.js';
 import { createLogger } from '../logger.js';
 import {
@@ -59,6 +60,26 @@ import {
 } from '../process-tree.js';
 
 const logger = createLogger('claude-adapter');
+
+function classifyClaudeProviderFailure(
+  message: string
+): { failureCode: ProviderFailureCode; providerMessage: string } | null {
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('cli not found on path') ||
+    (lower.includes('spawn') && lower.includes('enoent')) ||
+    lower.includes('not found on path')
+  ) {
+    return { failureCode: 'binary_missing', providerMessage: message };
+  }
+  if (lower.includes('run `claude login`') || lower.includes('login')) {
+    return { failureCode: 'auth_required', providerMessage: message };
+  }
+  if (lower.includes('quota') || lower.includes('rate limit')) {
+    return { failureCode: 'quota_exhausted', providerMessage: message };
+  }
+  return null;
+}
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -1393,12 +1414,15 @@ export class ClaudeProtocolAdapter
         : `code ${evt.code ?? 'unknown'}`;
       const tail = stderrTail ? `\n${stderrTail}` : '';
       const message = `Claude subprocess exited (${exit}) before completing the turn.${tail}`;
+      const failure = classifyClaudeProviderFailure(message);
       this.emitPatch({
         type: 'agent-error-v2',
         sessionId: this.sessionId,
         timestamp: nowIso(),
         turnId,
         message,
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
       this.completeActiveTurn('failed', undefined, message);
       // This was an unexpected transport death, not a recoverable turn
@@ -1433,6 +1457,7 @@ export class ClaudeProtocolAdapter
     const message = enoent
       ? 'claude CLI not found on PATH — install Claude Code and run `claude login`.'
       : `Failed to spawn claude: ${err.message}`;
+    const failure = classifyClaudeProviderFailure(message);
 
     if (this.activeTurnId !== null && !this.completedActiveTurn) {
       const turnId = this.activeTurnId;
@@ -1442,6 +1467,8 @@ export class ClaudeProtocolAdapter
         timestamp: nowIso(),
         turnId,
         message,
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
       this.completeActiveTurn('failed', undefined, message);
       this.drainQueue();
@@ -1451,6 +1478,8 @@ export class ClaudeProtocolAdapter
         sessionId: this.sessionId,
         timestamp: nowIso(),
         message,
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
     }
   }

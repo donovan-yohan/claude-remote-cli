@@ -1395,7 +1395,12 @@ export type ChannelDeliveryReceiptReasonCode =
   | 'agent_busy'
   | 'profile_missing'
   | 'provider_unavailable'
-  | 'mention_chain_paused';
+  | 'mention_chain_paused'
+  /** #1571: classified provider failures refuse posts fast. */
+  | 'provider_quota_exhausted'
+  | 'provider_auth_required'
+  | 'provider_binary_missing'
+  | 'provider_unknown_failure';
 
 /**
  * A typed, CONTENT-FREE delivery receipt (#1442).
@@ -1473,6 +1478,10 @@ const CHANNEL_DELIVERY_RECEIPT_REASON_CODES = new Set<string>([
   'profile_missing',
   'provider_unavailable',
   'mention_chain_paused',
+  'provider_quota_exhausted',
+  'provider_auth_required',
+  'provider_binary_missing',
+  'provider_unknown_failure',
 ]);
 
 export function isChannelDeliveryReceipt(

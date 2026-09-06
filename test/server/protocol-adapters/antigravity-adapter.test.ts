@@ -752,6 +752,33 @@ describe('AntigravityProtocolAdapter', () => {
     expect(spawns[1]!.args).toContain('--conversation');
   });
 
+  it('classifies quota errors as quota_exhausted on agent-error-v2 (#1571)', async () => {
+    const { adapter, spawns, patches } = harness();
+    await connect(adapter, spawns);
+
+    const child = spawns[0]!.child;
+    await adapter.sendMessage({ turnId: 't1', content: 'quota' });
+
+    child.serverWrite({
+      event: 'result',
+      result: {
+        conversation_id: 'a53994f2-9dbe-4977-8bed-96343b8f7a47',
+        status: 'ERROR',
+        response: '',
+        error: 'Individual quota reached. Please upgrade your subscription.',
+        num_turns: 1,
+      },
+    });
+
+    const errorPatch = patches.find(
+      (p) => p.type === 'agent-error-v2'
+    ) as Extract<AgentPatchV2, { type: 'agent-error-v2' }>;
+    expect(errorPatch).toBeTruthy();
+    expect(errorPatch).toMatchObject({
+      failureCode: 'quota_exhausted',
+    });
+  });
+
   // Test 13
   it('interrupt sends SIGINT and completes the turn as interrupted, then respawns with --conversation', async () => {
     const { adapter, spawns, patches } = harness();

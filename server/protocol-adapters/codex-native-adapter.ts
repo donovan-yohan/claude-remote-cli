@@ -51,12 +51,69 @@ import { createLogger } from '../logger.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { relayControlCatalogForProvider } from '../../shared/agent-command-catalog.js';
+import type { ProviderFailureCode } from '../../shared/agent-chat-protocol-v2.js';
 import {
   captureOwnedProcessTree,
   reapOwnedProcessTree,
 } from '../process-tree.js';
 
 const logger = createLogger('codex-native-adapter');
+
+function parseRetryAfterIsoFromUsageLimit(
+  message: string,
+  nowMs: number
+): string | undefined {
+  const match = /try again at\s+(\d{1,2}):(\d{2})\s*(AM|PM)\b/i.exec(message);
+  if (!match) return;
+  const hourRaw = parseInt(match[1] ?? '', 10);
+  const minute = parseInt(match[2] ?? '', 10);
+  const suffix = (match[3] ?? '').toUpperCase();
+  if (!Number.isFinite(hourRaw) || !Number.isFinite(minute)) return;
+  if (minute < 0 || minute > 59) return;
+  if (hourRaw < 1 || hourRaw > 12) return;
+  const hour =
+    suffix === 'PM'
+      ? hourRaw === 12
+        ? 12
+        : hourRaw + 12
+      : hourRaw === 12
+        ? 0
+        : hourRaw;
+  const base = new Date(nowMs);
+  const candidate = new Date(base);
+  candidate.setHours(hour, minute, 0, 0);
+  if (candidate.getTime() <= nowMs) {
+    candidate.setDate(candidate.getDate() + 1);
+  }
+  return candidate.toISOString();
+}
+
+function classifyCodexProviderFailure(
+  message: string,
+  nowMs: number
+): {
+  failureCode: ProviderFailureCode;
+  retryAfter?: string;
+  providerMessage: string;
+} | null {
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("you've hit your usage limit") ||
+    lower.includes('hit your usage limit') ||
+    (lower.includes('usage limit') && lower.includes('try again'))
+  ) {
+    const retryAfter = parseRetryAfterIsoFromUsageLimit(message, nowMs);
+    return {
+      failureCode: 'quota_exhausted',
+      ...(retryAfter ? { retryAfter } : {}),
+      providerMessage: message,
+    };
+  }
+  if (lower.includes('authentication required') || lower.includes('log in')) {
+    return { failureCode: 'auth_required', providerMessage: message };
+  }
+  return null;
+}
 
 type CodexTurnInput =
   | { type: 'text'; text: string }
@@ -1002,12 +1059,16 @@ export class CodexNativeProtocolAdapter extends BaseProtocolAdapterV2 {
     } catch (err) {
       logger.warn('Codex turn/start failed:', err);
       const message = err instanceof Error ? err.message : String(err);
+      const failure = classifyCodexProviderFailure(message, Date.now());
       this.emitPatch({
         type: 'agent-error-v2',
         sessionId: this.sessionId,
         timestamp: nowIso(),
         turnId: input.turnId,
         message,
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
       this.completeActiveTurn('failed', undefined, message);
       this.drainQueue();
@@ -1232,12 +1293,16 @@ export class CodexNativeProtocolAdapter extends BaseProtocolAdapterV2 {
       if (this._status === 'connected') {
         const turnId = this.activeTurnId;
         if (turnId !== null && !this.completedActiveTurn) {
+          const failure = classifyCodexProviderFailure(err.message, Date.now());
           this.emitPatch({
             type: 'agent-error-v2',
             sessionId: this.sessionId,
             timestamp: nowIso(),
             turnId,
             message: err.message,
+            ...(failure ? { failureCode: failure.failureCode } : {}),
+            ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
+            ...(failure ? { providerMessage: failure.providerMessage } : {}),
           });
           this.completeActiveTurn('failed', undefined, err.message);
         }

@@ -289,7 +289,12 @@ export function emitProviderExtensionPatch(
 export function emitErrorPatch(
   sink: AdapterPatchSink,
   message: string,
-  turnId?: string | null
+  turnId?: string | null,
+  meta?: {
+    failureCode?: import('../../shared/agent-chat-protocol-v2.js').ProviderFailureCode;
+    retryAfter?: string;
+    providerMessage?: string;
+  }
 ): void {
   sink.emitPatch({
     type: 'agent-error-v2',
@@ -297,6 +302,9 @@ export function emitErrorPatch(
     timestamp: nowIso(),
     message,
     ...(turnId ? { turnId } : {}),
+    ...(meta?.failureCode ? { failureCode: meta.failureCode } : {}),
+    ...(meta?.retryAfter ? { retryAfter: meta.retryAfter } : {}),
+    ...(meta?.providerMessage ? { providerMessage: meta.providerMessage } : {}),
   });
 }
 
@@ -447,7 +455,11 @@ export async function readSseStream(
         const dataLine = line.slice(5).trim();
         eventData = eventData ? `${eventData}\n${dataLine}` : dataLine;
       } else if (line.trim() === '' && eventData) {
-        onRecord(eventName ? { event: eventName, data: eventData } : { data: eventData });
+        onRecord(
+          eventName
+            ? { event: eventName, data: eventData }
+            : { data: eventData }
+        );
         eventName = undefined;
         eventData = '';
       }
@@ -592,7 +604,6 @@ export function createTurnQueue<T>(options: TurnQueueOptions<T>): TurnQueue<T> {
 
   return queue;
 }
-
 
 // ── Spawned-process registry ─────────────────────────────────────────────────
 

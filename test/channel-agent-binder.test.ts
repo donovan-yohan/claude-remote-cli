@@ -1519,13 +1519,21 @@ class ScriptedAdapter extends BaseProtocolAdapterV2 {
     });
   }
 
-  emitError(message = 'scripted error'): void {
+  emitError(
+    message = 'scripted error',
+    meta?: {
+      failureCode?: import('../shared/agent-chat-protocol-v2.js').ProviderFailureCode;
+      retryAfter?: string;
+    }
+  ): void {
     this.emitPatch({
       type: 'agent-error-v2',
       sessionId: this.sid,
       timestamp: 't',
       ...(this.lastTurnId ? { turnId: this.lastTurnId } : {}),
       message,
+      ...(meta?.failureCode ? { failureCode: meta.failureCode } : {}),
+      ...(meta?.retryAfter ? { retryAfter: meta.retryAfter } : {}),
     });
   }
 
@@ -9926,6 +9934,53 @@ describe('channel-agent-binder — delivery receipts (#1442)', () => {
     );
     expect(offline).toHaveLength(1);
     expect(offline[0]!.reasonCode).toBe('runtime_unavailable');
+  });
+
+  it('refuses posts while a classified quota failure is active (#1571)', async () => {
+    const { binder, store, hub, sessions } = makeBinder({
+      build: (agentType) => new ScriptedAdapter(agentType, { mode: 'stall' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+    });
+    const trigger = post(store, binder, '@mock go', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = sessions.adapterFor(
+      sessions.firstSessionId()
+    ) as ScriptedAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    adapter.emitError("You've hit your usage limit.", {
+      failureCode: 'quota_exhausted',
+      retryAfter: '2999-01-01T00:00:00.000Z',
+    });
+
+    await waitFor(() =>
+      systemRows(store).some((row) => row.body.text.includes('quota_exhausted'))
+    );
+
+    const roster = await binder.rosterForChannel(CH);
+    expect(
+      roster.find((row) => row.id === builtInAgentProfileId('mock'))
+    ).toMatchObject({
+      available: false,
+      providerFailureCode: 'quota_exhausted',
+      providerFailureRetryAfter: '2999-01-01T00:00:00.000Z',
+    });
+
+    const refused = post(store, binder, '@mock again', ['mock']);
+    await waitFor(() =>
+      collectReceipts(hub, CH).some(
+        (r) =>
+          r.messageId === refused.id &&
+          r.state === 'refused_policy' &&
+          r.reasonCode === 'provider_quota_exhausted'
+      )
+    );
+
+    // The first trigger's receipts are still present (sanity).
+    expect(
+      collectReceipts(hub, CH).some((r) => r.messageId === trigger.id)
+    ).toBe(true);
   });
 });
 

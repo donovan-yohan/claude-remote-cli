@@ -40,6 +40,7 @@ import type {
   AgentSessionLiveStateV2,
   AgentUsageV2,
 } from '../../shared/agent-chat-protocol-v2.js';
+import type { ProviderFailureCode } from '../../shared/agent-chat-protocol-v2.js';
 import { emptyAgentSessionV2 } from '../../shared/agent-chat-protocol-v2.js';
 import {
   AcpClient,
@@ -50,6 +51,33 @@ import {
 } from '../acp-client.js';
 
 const logger = createLogger('acp-adapter');
+
+function classifyAcpProviderFailure(
+  message: string
+): { failureCode: ProviderFailureCode; providerMessage: string } | null {
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('authentication required') ||
+    lower.includes('unauthorized') ||
+    lower.includes('not authorized') ||
+    lower.includes('not logged in') ||
+    lower.includes('login')
+  ) {
+    return { failureCode: 'auth_required', providerMessage: message };
+  }
+  if (
+    lower.includes('enoent') ||
+    lower.includes('not found on path') ||
+    lower.includes('command not found') ||
+    (lower.includes('spawn') && lower.includes('not found'))
+  ) {
+    return { failureCode: 'binary_missing', providerMessage: message };
+  }
+  if (lower.includes('quota') || lower.includes('rate limit')) {
+    return { failureCode: 'quota_exhausted', providerMessage: message };
+  }
+  return null;
+}
 
 /** The ACP major version this adapter speaks. */
 export const ACP_PROTOCOL_VERSION = 1;
@@ -392,6 +420,15 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
         );
       this.providerSessionId = providerSessionId;
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failure = classifyAcpProviderFailure(message);
+      // Emit a best-effort classified error patch even when connect fails: this
+      // is the only way the binder can surface auth/binary failures on the
+      // roster without grepping provider stderr (#1571).
+      emitErrorPatch(this.patchSink, message, null, {
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
+      });
       this._status = 'disconnected';
       this.client = null;
       this.clientGeneration += 1;
@@ -1490,7 +1527,11 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
   }
 
   private emitError(message: string): void {
-    emitErrorPatch(this.patchSink, message, this.activeTurnId);
+    const failure = classifyAcpProviderFailure(message);
+    emitErrorPatch(this.patchSink, message, this.activeTurnId, {
+      ...(failure ? { failureCode: failure.failureCode } : {}),
+      ...(failure ? { providerMessage: failure.providerMessage } : {}),
+    });
   }
 
   protected emitProviderExtension(

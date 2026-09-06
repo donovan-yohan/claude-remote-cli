@@ -137,6 +137,12 @@ export function mapChatEventToAgentPatchV2(event: ChatEvent): AgentPatchV2[] {
           sessionId: event.sessionId,
           timestamp: event.timestamp,
           message: event.message,
+          ...(event.kind === 'rate-limit'
+            ? {
+                failureCode: 'quota_exhausted' as const,
+                providerMessage: event.message,
+              }
+            : {}),
         },
       ];
 

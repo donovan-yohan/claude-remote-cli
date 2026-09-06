@@ -3779,6 +3779,42 @@ describe('CodexNativeProtocolAdapter — relay-control dispatch', () => {
 
     await adapter.disconnect();
   });
+
+  it('classifies usage-limit errors as quota_exhausted with retryAfter (#1571)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-06T10:00:00.000Z'));
+    const factory = makeStubFactory();
+    const adapter = new CodexNativeProtocolAdapter(factory);
+    const patches = collectPatches(adapter);
+    factory.lastClient.serverResponses.set('thread/start', {
+      thread: { id: 'thread-1' },
+    });
+    factory.lastClient.serverResponses.set('skills/list', { skills: [] });
+    factory.lastClient.serverResponses.set('model/list', []);
+    await adapter.connect(config);
+
+    factory.lastClient.serverResponses.set(
+      'turn/start',
+      new Error(
+        "You've hit your usage limit for GPT-5.3-Codex-Spark. Switch to another model now, or try again at 10:53 AM."
+      )
+    );
+
+    await adapter.sendMessage({ turnId: 'turn-limit', content: 'go' });
+
+    expect(patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'agent-error-v2',
+          failureCode: 'quota_exhausted',
+          retryAfter: '2026-09-06T10:53:00.000Z',
+        }),
+      ])
+    );
+
+    await adapter.disconnect();
+    vi.useRealTimers();
+  });
 });
 
 // ── Spawn hygiene (claudeArgs-leak class) ─────────────────────────────────────
@@ -3847,7 +3883,9 @@ describe('CodexNativeProtocolAdapter — spawn hygiene', () => {
     expect(opts.spawn).toBe(injectedSpawn);
     // The stray claudeArgs/model keys never become client options.
     expect(opts).not.toHaveProperty('claudeArgs');
-    expect((opts as unknown as Record<string, unknown>)['model']).toBeUndefined();
+    expect(
+      (opts as unknown as Record<string, unknown>)['model']
+    ).toBeUndefined();
 
     await adapter.disconnect();
   });

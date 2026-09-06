@@ -56,7 +56,10 @@ import type {
   ChannelReadStateUpdateRequest,
   ChannelReadStateUpdateResponse,
 } from '../../../shared/channel-chat-protocol.js';
-import type { AgentSlashCommandV2 } from '../../../shared/agent-chat-protocol-v2.js';
+import type {
+  AgentSlashCommandV2,
+  ProviderFailureCode,
+} from '../../../shared/agent-chat-protocol-v2.js';
 import type {
   WorkflowRunProjection,
   WorkflowRunState,
@@ -2214,6 +2217,10 @@ export interface RosterEntry {
   /** False when the framework cannot currently be routed to (see `reason`). */
   available: boolean;
   reason: string | null;
+  /** #1571: structured provider failure classification when unavailable. */
+  providerFailureCode?: ProviderFailureCode;
+  providerFailureRetryAfter?: string;
+  providerFailureSince?: string;
   /** Present for a bound runtime when its collaboration role is known. */
   role?: AgentRole;
   /** Present when a live runtime is bound to this agent in the channel. */

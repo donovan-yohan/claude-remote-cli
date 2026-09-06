@@ -32,6 +32,7 @@ import type {
   AgentSessionLiveStateV2,
   AgentUsageV2,
 } from '../../shared/agent-chat-protocol-v2.js';
+import type { ProviderFailureCode } from '../../shared/agent-chat-protocol-v2.js';
 import { emptyAgentSessionV2 } from '../../shared/agent-chat-protocol-v2.js';
 import {
   AntigravityStreamClient,
@@ -42,6 +43,29 @@ import {
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('antigravity-adapter');
+
+function classifyAntigravityProviderFailure(
+  message: string
+): { failureCode: ProviderFailureCode; providerMessage: string } | null {
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('individual quota reached') ||
+    (lower.includes('quota') && lower.includes('upgrade'))
+  ) {
+    return { failureCode: 'quota_exhausted', providerMessage: message };
+  }
+  if (lower.includes('authentication required') || lower.includes('log in')) {
+    return { failureCode: 'auth_required', providerMessage: message };
+  }
+  if (
+    lower.includes('not found on path') ||
+    lower.includes('cli not found') ||
+    lower.includes('enoent')
+  ) {
+    return { failureCode: 'binary_missing', providerMessage: message };
+  }
+  return null;
+}
 
 const COMMAND_TOOLS = new Set(['run_command']);
 const FILE_TOOLS = new Set([
@@ -753,12 +777,15 @@ export class AntigravityProtocolAdapter
     this._status = 'disconnected';
     if (this.activeTurnId !== null) {
       const turnId = this.activeTurnId;
+      const failure = classifyAntigravityProviderFailure(message);
       this.emitPatch({
         type: 'agent-error-v2',
         sessionId: this.sessionId,
         timestamp: nowIso(),
         turnId,
         message,
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
       this.completeTurn('failed', message);
     }
@@ -1508,7 +1535,11 @@ export class AntigravityProtocolAdapter
   }
 
   private emitError(message: string): void {
-    emitErrorPatch(this.patchSink, message, this.activeTurnId);
+    const failure = classifyAntigravityProviderFailure(message);
+    emitErrorPatch(this.patchSink, message, this.activeTurnId, {
+      ...(failure ? { failureCode: failure.failureCode } : {}),
+      ...(failure ? { providerMessage: failure.providerMessage } : {}),
+    });
   }
 
   private emitProviderExtension(
