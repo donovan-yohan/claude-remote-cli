@@ -75,7 +75,7 @@ import {
 //    catch-up window, and thread parent stays valid. Nothing in this file may
 //    ever issue `DELETE FROM channel_messages` for an operator action.
 
-const SCHEMA_VERSION = 20;
+const SCHEMA_VERSION = 21;
 const ASYNC_RUN_SETTLED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const logger = createLogger('channel-message-store');
 export const CHANNEL_HISTORY_DEFAULT_LIMIT = 50;
@@ -787,6 +787,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_chm_source_dedupe
   WHERE source_runtime_id IS NOT NULL
     AND source_turn_id IS NOT NULL
     AND source_item_id IS NOT NULL;
+-- #1570 item 5: accelerate meta.asyncRun.runId lookups for wait correlation.
+CREATE INDEX IF NOT EXISTS idx_chm_async_run_id
+  ON channel_messages(json_extract(meta_json, '$.asyncRun.runId'))
+  WHERE meta_json IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chm_client_dedupe
   ON channel_messages(channel_id, sender_id, client_message_id)
   WHERE client_message_id IS NOT NULL;
@@ -3635,6 +3639,15 @@ function runSchemaMigrations(db: Database.Database): void {
         );
       }
       db.prepare('UPDATE schema_version SET version = 20').run();
+    })();
+  }
+  if (current < 21) {
+    db.transaction(() => {
+      // #1570 item 5: accelerate meta.asyncRun.runId lookups for wait correlation.
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_chm_async_run_id ON channel_messages(json_extract(meta_json, '$.asyncRun.runId')) WHERE meta_json IS NOT NULL"
+      );
+      db.prepare('UPDATE schema_version SET version = 21').run();
     })();
   }
 }

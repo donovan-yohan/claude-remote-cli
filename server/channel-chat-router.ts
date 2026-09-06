@@ -2208,6 +2208,19 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           return;
         }
       }
+      if (
+        prev &&
+        prev.state === candidate.state &&
+        prev.finalMessageSeq === null &&
+        runTerminalState(candidate.state) &&
+        candidate.state !== 'completed' &&
+        candidate.state !== 'completed_unmet'
+      ) {
+        // Negative cache for prose-less terminal states: once we've observed
+        // "no principal prose" for this (run,state), do not rescan on every
+        // tick (#1570 item 5).
+        return;
+      }
 
       const final = finalAssistantTextForRun(store, candidate);
       inspected.set(candidate.id, {
