@@ -65,6 +65,13 @@ export interface ChannelAsyncRunTarget {
   targetId: string;
   state: ChannelAsyncRunTargetState;
   reason?: string;
+  /**
+   * #1570: effective turn identity used for the run target's output correlation.
+   * Usually the deterministic `channelTurnId(requestMessageId, targetId)`, but
+   * may point at a live turn that absorbed this trigger via native safe-boundary
+   * steering.
+   */
+  turnId?: string;
   approvalState?: ChannelAsyncRunApprovalState;
   updatedAt: string;
   completedAt?: string;
@@ -1327,6 +1334,25 @@ export interface ChannelResyncRequiredEventV1 extends ChannelEventBaseV1 {
 export interface ChannelRunLifecycleEventV1 extends ChannelEventBaseV1 {
   type: 'channel-run-lifecycle-v1';
   run: ChannelAsyncRun;
+  /**
+   * #1570: terminal-frame helpers for orchestrators. Present only when `run`
+   * is terminal and Relay can resolve a durable final principal prose row.
+   */
+  finalMessageSeq?: number;
+  /** UTF-8 preview of the final assistant text, max 2 KiB. */
+  finalTextPreview?: string;
+  /**
+   * Delivery contract result summary when present (#1569). This mirrors
+   * `run.deliveryContract.result` plus optional `followupPostedAt` and is
+   * included so orchestrators can wake without fetching the full run record.
+   */
+  contract?: {
+    met: boolean;
+    unmet: string[];
+    unknown?: Array<{ spec: string; reason: string }>;
+    evaluatedAt: string;
+    followupPostedAt?: string;
+  };
 }
 
 /**

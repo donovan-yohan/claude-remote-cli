@@ -137,7 +137,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(21);
     expect(
       (
         inspect
@@ -607,7 +607,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(21);
     expect(
       (
         inspect.prepare('PRAGMA table_info(channel_messages)').all() as Array<{
@@ -795,7 +795,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(21);
     expect(
       inspect
         .prepare('SELECT heal_id, candidates, healed FROM channel_heal_state')
@@ -1079,7 +1079,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(21);
     expect(
       (
         inspect
@@ -1143,7 +1143,7 @@ describe('channel-message-store async-run migration (#1391)', () => {
     const inspect = new Database(file, { readonly: true });
     cleanup.push(() => inspect.close());
     expect(inspect.prepare('SELECT version FROM schema_version').get()).toEqual(
-      { version: 19 }
+      { version: 21 }
     );
     expect(
       inspect
@@ -1219,6 +1219,44 @@ describe('channel-message-store seq allocation', () => {
         )
         .run('chm:dup')
     ).toThrow(/UNIQUE/);
+  });
+});
+
+describe('channel-message-store durable seq continuity across reopen (#1570)', () => {
+  it('preserves the durable seq namespace and supports afterSeq catch-up', () => {
+    const file = dbPath();
+    const before = createChannelMessageStore(file);
+    for (let i = 1; i <= 3; i++) {
+      before.appendComplete({
+        channelId: 'topic:restart',
+        sender: HUMAN,
+        text: `before${i}`,
+      });
+    }
+    // The durable head a live `channels subscribe` client has already consumed.
+    const durableSeq = before.latestSeq('topic:restart');
+    expect(durableSeq).toBe(3);
+    // Hub restart: close the store handle and reopen on the same db file.
+    before.close();
+
+    const after = store(file);
+    // No seq-namespace reset: the durable head is unchanged after reopen.
+    expect(after.latestSeq('topic:restart')).toBe(3);
+    // The next durable row continues the SAME namespace, not 0..1.
+    const resumed = after.appendComplete({
+      channelId: 'topic:restart',
+      sender: HUMAN,
+      text: 'after-restart',
+    });
+    expect(resumed.seq).toBe(4);
+    // A resume from the pre-restart durable seq re-sends ONLY the new row —
+    // no replay of rows the live subscription already delivered.
+    const catchUp = after.history('topic:restart', {
+      afterSeq: durableSeq,
+      limit: 10,
+    });
+    expect(catchUp.map((m) => m.seq)).toEqual([4]);
+    expect(catchUp.map((m) => m.body?.text)).toEqual(['after-restart']);
   });
 });
 
@@ -1943,6 +1981,19 @@ describe('channel-message-store async runs (#1391)', () => {
         { targetId: 'agent-profile:b:default', state: 'cancelled' },
       ],
     });
+
+    reopened.transitionAsyncRunTarget({
+      runId: first.run.id,
+      targetId: 'agent-profile:a:default',
+      state: 'completed',
+    });
+    const completed = reopened.transitionAsyncRunTarget({
+      runId: first.run.id,
+      targetId: 'agent-profile:b:default',
+      state: 'completed',
+    })!;
+    expect(completed.state).toBe('completed');
+    expect(completed.reason).toBeUndefined();
   });
 
   it('derives aggregate terminal state from durable per-target CAS outcomes', () => {
@@ -2040,6 +2091,69 @@ describe('channel-message-store async runs (#1391)', () => {
       completedAt: expect.any(String),
       targets: [],
     });
+  });
+
+  it('principal-prose helpers trim and ignore parts rows (#1570)', () => {
+    const s = store();
+    const targetId = 'agent-profile:a:default';
+    const { message: trigger, run } = s.appendCompleteWithAsyncRun({
+      channelId: 'topic:async',
+      sender: HUMAN,
+      text: '@a go',
+      targetIds: [targetId],
+    });
+    const turnId = `turn-${trigger.id}`;
+    const sender = { kind: 'agent' as const, id: targetId, providerId: 'mock' };
+
+    const whitespace = s.beginStream({
+      channelId: 'topic:async',
+      sender,
+      source: { runtimeId: 'rt', turnId, itemId: 'w1' },
+      text: '   ',
+      meta: { asyncRun: { runId: run.id, targetId } },
+    });
+    s.finalizeStream(whitespace.id, { text: '   ', status: 'complete' });
+
+    const withPart = s.beginStream({
+      channelId: 'topic:async',
+      sender,
+      source: { runtimeId: 'rt', turnId, itemId: 'p1' },
+      text: 'caption',
+      parts: [
+        {
+          type: 'image',
+          id: 'cha:img1',
+          mime: 'image/png',
+          w: 1,
+          h: 1,
+          bytes: 1,
+        },
+      ],
+      meta: { asyncRun: { runId: run.id, targetId } },
+    });
+    s.finalizeStream(withPart.id, { text: 'caption', status: 'complete' });
+
+    const prose = s.beginStream({
+      channelId: 'topic:async',
+      sender,
+      source: { runtimeId: 'rt', turnId, itemId: 'm1' },
+      text: 'real prose',
+      meta: { asyncRun: { runId: run.id, targetId } },
+    });
+    s.finalizeStream(prose.id, { text: 'real prose', status: 'complete' });
+
+    expect(
+      s.getLastPrincipalProseForRunId({
+        channelId: 'topic:async',
+        runId: run.id,
+      })?.body.text
+    ).toBe('real prose');
+    expect(
+      s.getLastPrincipalProseForTurns({
+        channelId: 'topic:async',
+        turnIds: [turnId],
+      })?.body.text
+    ).toBe('real prose');
   });
 });
 
@@ -3826,7 +3940,7 @@ describe('channel-message-store full-text search (#1308 slice 2 item 1)', () => 
       .get() as { version: number };
     counted.close();
     expect(rows.count).toBe(1);
-    expect(version.version).toBe(19);
+    expect(version.version).toBe(21);
   });
 
   it('backfills across more than one batch without dropping or duplicating rows', () => {
@@ -5345,7 +5459,7 @@ describe('channel-message-store invite and removal (#1455 slice 2)', () => {
           version: number;
         }
       ).version
-    ).toBe(19);
+    ).toBe(21);
     expect(upgraded.listMembers('topic:v17')).toEqual([
       expect.objectContaining({
         id: 'agent:claude',

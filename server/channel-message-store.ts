@@ -75,7 +75,7 @@ import {
 //    catch-up window, and thread parent stays valid. Nothing in this file may
 //    ever issue `DELETE FROM channel_messages` for an operator action.
 
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 21;
 const ASYNC_RUN_SETTLED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const logger = createLogger('channel-message-store');
 export const CHANNEL_HISTORY_DEFAULT_LIMIT = 50;
@@ -777,11 +777,20 @@ CREATE INDEX IF NOT EXISTS idx_chm_channel_seq
   ON channel_messages(channel_id, seq);
 CREATE INDEX IF NOT EXISTS idx_chm_thread
   ON channel_messages(thread_id, seq) WHERE thread_id IS NOT NULL;
+-- Run/turn introspection (#1570): efficient lookup of all rows emitted for one
+-- deterministic turn id, used by channels history --run and channels wait.
+CREATE INDEX IF NOT EXISTS idx_chm_source_turn
+  ON channel_messages(channel_id, source_turn_id, seq)
+  WHERE source_turn_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chm_source_dedupe
   ON channel_messages(source_runtime_id, source_turn_id, source_item_id)
   WHERE source_runtime_id IS NOT NULL
     AND source_turn_id IS NOT NULL
     AND source_item_id IS NOT NULL;
+-- #1570 item 5: accelerate meta.asyncRun.runId lookups for wait correlation.
+CREATE INDEX IF NOT EXISTS idx_chm_async_run_id
+  ON channel_messages(json_extract(meta_json, '$.asyncRun.runId'))
+  WHERE meta_json IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chm_client_dedupe
   ON channel_messages(channel_id, sender_id, client_message_id)
   WHERE client_message_id IS NOT NULL;
@@ -914,6 +923,9 @@ CREATE TABLE IF NOT EXISTS channel_async_run_targets (
   state              TEXT NOT NULL CHECK (state IN ('queued','working','input-required','auth-required','completed','failed','cancelled','rejected')),
   reason             TEXT,
   approval_state     TEXT,
+  -- #1570: effective turn id for wait/history correlation even when a trigger
+  -- is absorbed by native safe-boundary steering.
+  turn_id            TEXT,
   updated_at         TEXT NOT NULL,
   completed_at       TEXT,
   PRIMARY KEY(run_id, target_id)
@@ -1059,6 +1071,7 @@ interface AsyncRunTargetRow {
   state: ChannelAsyncRunTargetState;
   reason: string | null;
   approval_state: ChannelAsyncRunApprovalState | null;
+  turn_id?: string | null;
   updated_at: string;
   completed_at: string | null;
 }
@@ -1501,6 +1514,7 @@ export interface ChannelMessageStore {
     state: ChannelAsyncRunTargetState;
     reason?: string;
     approvalState?: ChannelAsyncRunApprovalState;
+    turnId?: string;
   }): ChannelAsyncRun | null;
   /** Finalize the delivery contract on a settled run (#1569). */
   finalizeAsyncRunDeliveryContract(input: {
@@ -1557,6 +1571,28 @@ export interface ChannelMessageStore {
     clientMessageId: string
   ): ChannelMessage | null;
   history(channelId: string, filter?: ChannelHistoryFilter): ChannelMessage[];
+  /** All durable rows emitted for one or more deterministic turn ids. */
+  listMessagesForTurns(input: {
+    channelId: string;
+    turnIds: readonly string[];
+    limit?: number;
+  }): ChannelMessage[];
+  /** Newest complete assistant principal prose for the given turn ids. */
+  getLastPrincipalProseForTurns(input: {
+    channelId: string;
+    turnIds: readonly string[];
+  }): ChannelMessage | null;
+  /** Newest complete assistant principal prose row correlated via meta.asyncRun. */
+  getLastPrincipalProseForRunId(input: {
+    channelId: string;
+    runId: ChannelAsyncRunId;
+  }): ChannelMessage | null;
+  /** System rows parented under a durable message id (threaded replies). */
+  listSystemMessagesForParent(input: {
+    channelId: string;
+    parentMessageId: string;
+    limit?: number;
+  }): ChannelMessage[];
   /**
    * Exact mention-delivery summary plus newest bounded prose rows. Filtering,
    * counting, and LIMIT all happen in SQLite; callers must not page JS history.
@@ -3497,7 +3533,14 @@ function runSchemaMigrations(db: Database.Database): void {
           reason TEXT, approval_state TEXT, updated_at TEXT NOT NULL,
           completed_at TEXT, PRIMARY KEY(run_id, target_id)
         );
-        INSERT INTO channel_async_run_targets_v16 SELECT * FROM channel_async_run_targets;
+        -- Head-schema databases may already include newer columns (e.g. v20's
+        -- turn_id). Keep this rebuild compatible by selecting the v16 shape.
+        INSERT INTO channel_async_run_targets_v16 (
+          run_id, target_id, state, reason, approval_state, updated_at, completed_at
+        )
+        SELECT
+          run_id, target_id, state, reason, approval_state, updated_at, completed_at
+        FROM channel_async_run_targets;
         DROP TABLE channel_async_run_targets;
         ALTER TABLE channel_async_run_targets_v16 RENAME TO channel_async_run_targets;
         CREATE INDEX idx_chart_run_state
@@ -3580,6 +3623,31 @@ function runSchemaMigrations(db: Database.Database): void {
           ON channel_async_runs(channel_id, created_at, id);
       `);
       db.prepare('UPDATE schema_version SET version = 19').run();
+    })();
+  }
+  if (current < 20) {
+    db.transaction(() => {
+      // #1570: runs absorbed by native steering still need wait/history
+      // correlation. Persist the effective turn id per run target so readers
+      // can look up output even when the trigger did not start its own turn.
+      const columns = db
+        .prepare(`PRAGMA table_info(channel_async_run_targets)`)
+        .all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === 'turn_id')) {
+        db.exec(
+          'ALTER TABLE channel_async_run_targets ADD COLUMN turn_id TEXT'
+        );
+      }
+      db.prepare('UPDATE schema_version SET version = 20').run();
+    })();
+  }
+  if (current < 21) {
+    db.transaction(() => {
+      // #1570 item 5: accelerate meta.asyncRun.runId lookups for wait correlation.
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_chm_async_run_id ON channel_messages(json_extract(meta_json, '$.asyncRun.runId')) WHERE meta_json IS NOT NULL"
+      );
+      db.prepare('UPDATE schema_version SET version = 21').run();
     })();
   }
 }
@@ -3805,6 +3873,16 @@ export function createChannelMessageStore(
        FROM channel_messages m
       WHERE m.channel_id = @channelId AND m.sender_id = @senderId
         AND m.client_message_id = @clientMessageId`
+  );
+  const selectSystemByParent = db.prepare(
+    `SELECT m.*,
+            ${replyCountSql('m')} AS reply_count
+       FROM channel_messages m
+      WHERE m.channel_id = @channelId
+        AND m.kind = 'system'
+        AND m.parent_message_id = @parentMessageId
+      ORDER BY m.seq ASC
+      LIMIT @limit`
   );
   const mentionContextStatements = {
     channel: {
@@ -4383,6 +4461,7 @@ export function createChannelMessageStore(
           ...(target.approval_state
             ? { approvalState: target.approval_state }
             : {}),
+          ...(target.turn_id ? { turnId: target.turn_id } : {}),
           updatedAt: target.updated_at,
           ...(target.completed_at ? { completedAt: target.completed_at } : {}),
         })
@@ -4473,8 +4552,8 @@ export function createChannelMessageStore(
       );
       const insertTarget = db.prepare(
         `INSERT INTO channel_async_run_targets
-           (run_id, target_id, state, reason, approval_state, updated_at, completed_at)
-         VALUES (?, ?, ?, NULL, NULL, ?, NULL)`
+           (run_id, target_id, state, reason, approval_state, turn_id, updated_at, completed_at)
+         VALUES (?, ?, ?, NULL, NULL, NULL, ?, NULL)`
       );
       for (const targetId of targetIds)
         insertTarget.run(runId, targetId, 'queued', now);
@@ -4495,6 +4574,7 @@ export function createChannelMessageStore(
       state: ChannelAsyncRunTargetState;
       reason?: string;
       approvalState?: ChannelAsyncRunApprovalState;
+      turnId?: string;
     }): ChannelAsyncRun | null => {
       const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
       if (!run) return null;
@@ -4508,15 +4588,21 @@ export function createChannelMessageStore(
       const changed = db
         .prepare(
           `UPDATE channel_async_run_targets
-            SET state = ?, reason = ?, approval_state = ?, updated_at = ?,
+            SET state = ?, reason = ?, approval_state = ?,
+                turn_id = COALESCE(?, turn_id),
+                updated_at = ?,
                 completed_at = CASE WHEN ? THEN ? ELSE NULL END
           WHERE run_id = ? AND target_id = ?
-            AND state NOT IN ('completed','failed','cancelled','rejected')`
+            AND (
+              state NOT IN ('completed','failed','cancelled','rejected')
+              OR (state = 'cancelled' AND reason IN ('server-restarted','watchdog','turn-ceiling'))
+            )`
         )
         .run(
           input.state,
           input.reason ?? null,
           input.approvalState ?? null,
+          input.turnId ?? null,
           now,
           terminal ? 1 : 0,
           terminal ? now : null,
@@ -4535,10 +4621,21 @@ export function createChannelMessageStore(
         'cancelled',
         'rejected',
       ].includes(state);
+      const nextReason =
+        run.reason === 'server-restarted' && state !== 'cancelled'
+          ? null
+          : run.reason;
       db.prepare(
-        `UPDATE channel_async_runs SET state = ?, updated_at = ?,
+        `UPDATE channel_async_runs SET state = ?, reason = ?, updated_at = ?,
           completed_at = CASE WHEN ? THEN ? ELSE NULL END WHERE id = ?`
-      ).run(state, now, runTerminal ? 1 : 0, runTerminal ? now : null, run.id);
+      ).run(
+        state,
+        nextReason ?? null,
+        now,
+        runTerminal ? 1 : 0,
+        runTerminal ? now : null,
+        run.id
+      );
       return asyncRunFromRow(selectAsyncRun.get(run.id) as AsyncRunRow);
     }
   );
@@ -5761,6 +5858,86 @@ export function createChannelMessageStore(
         )
         .all(params) as ChannelMessageRow[];
       return rows.reverse().map(rowToMessage);
+    },
+
+    listMessagesForTurns(input) {
+      const channelId = input.channelId;
+      const raw = [...new Set(input.turnIds)].filter(
+        (id) => typeof id === 'string' && id.trim().length > 0
+      );
+      if (raw.length === 0) return [];
+      const limit = cleanLimit(input.limit ?? 2000, 2000);
+      const placeholders = raw.map(() => '?').join(',');
+      const rows = db
+        .prepare(
+          `SELECT m.*,
+                  ${replyCountSql('m')} AS reply_count
+           FROM channel_messages m
+           WHERE m.channel_id = ?
+             AND m.source_turn_id IN (${placeholders})
+           ORDER BY m.seq ASC
+           LIMIT ?`
+        )
+        .all(channelId, ...raw, limit) as ChannelMessageRow[];
+      return rows.map(rowToMessage);
+    },
+
+    getLastPrincipalProseForTurns(input) {
+      const channelId = input.channelId;
+      const raw = [...new Set(input.turnIds)].filter(
+        (id) => typeof id === 'string' && id.trim().length > 0
+      );
+      if (raw.length === 0) return null;
+      const placeholders = raw.map(() => '?').join(',');
+      const row = db
+        .prepare(
+          `SELECT m.*,
+                  ${replyCountSql('m')} AS reply_count
+           FROM channel_messages m
+           WHERE m.channel_id = ?
+             AND m.source_turn_id IN (${placeholders})
+             AND m.kind = 'message'
+             AND m.sender_kind = 'agent'
+             AND m.status = 'complete'
+             AND TRIM(m.body_text) != ''
+             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
+             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)
+           ORDER BY m.seq DESC
+           LIMIT 1`
+        )
+        .get(channelId, ...raw) as ChannelMessageRow | undefined;
+      return row ? rowToMessage(row) : null;
+    },
+
+    getLastPrincipalProseForRunId(input) {
+      const row = db
+        .prepare(
+          `SELECT m.*,
+                  ${replyCountSql('m')} AS reply_count
+           FROM channel_messages m
+           WHERE m.channel_id = ?
+             AND m.kind = 'message'
+             AND m.sender_kind = 'agent'
+             AND m.status = 'complete'
+             AND TRIM(m.body_text) != ''
+             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
+             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)
+             AND json_extract(m.meta_json, '$.asyncRun.runId') = ?
+           ORDER BY m.seq DESC
+           LIMIT 1`
+        )
+        .get(input.channelId, input.runId) as ChannelMessageRow | undefined;
+      return row ? rowToMessage(row) : null;
+    },
+
+    listSystemMessagesForParent(input) {
+      return (
+        (selectSystemByParent.all({
+          channelId: input.channelId,
+          parentMessageId: input.parentMessageId,
+          limit: cleanLimit(input.limit ?? 200),
+        }) as ChannelMessageRow[]) ?? []
+      ).map(rowToMessage);
     },
 
     mentionContext(input) {

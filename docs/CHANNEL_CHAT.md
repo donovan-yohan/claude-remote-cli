@@ -273,6 +273,12 @@ The hub coalesces text deltas and applies socket watermarks. A lagging client
 can reconnect from its last durable sequence instead of requiring an
 unbounded in-memory queue.
 
+The durable sequence is DB-backed (`MAX(seq)` per channel in the chat store),
+so it is a cold-resume fact, not an in-memory counter: after a hub restart a
+client that resumes with `--after-seq <the durable seq it already consumed>`
+gets no replay of committed rows and no sequence-namespace reset — the next
+committed row continues the same per-channel namespace.
+
 External agents use the separate actor-authenticated NDJSON adapter:
 
 ```sh
@@ -305,6 +311,10 @@ before any projected message/run rows are omitted. This preserves the
 register-before-replay handoff, replay gap behavior, and backpressure bounds;
 control frames and liveness heartbeats remain visible even when no row matches.
 
+For orchestrators that only need a wake signal, `channels.subscribe` also
+supports an `--only` projection (`run-terminal`, `system`, `run`, `message`) to
+drop unrelated event kinds server-side without changing resume semantics.
+
 ### Correlated asynchronous runs
 
 An accepted external `channels.post` that can route work creates one opaque,
@@ -319,6 +329,13 @@ not by parsing provider runtime, turn, or item identifiers.
 identity check, never a selector that can move a run between threads. Snapshots
 include the most recent run projections within explicit count and byte budgets;
 the lifecycle stream remains authoritative for subsequent changes.
+
+When a run reaches a terminal state, the `channel-run-lifecycle-v1` event may
+include orchestrator helpers: `finalMessageSeq`, a UTF-8 `finalTextPreview`
+truncated to 2 KiB, and a delivery `contract` summary (when present).
+
+For the stable CLI surfaces built on this protocol, see `relay-ide v1 channels wait`
+(final-response lane) and `relay-ide v1 channels history --run ...` (inspect lane).
 
 A run has immutable channel, canonical root-or-thread, requester, and request
 message scope. Its targets move independently through `queued`, `working`,
@@ -682,13 +699,20 @@ Channel controls include:
 ### Mid-turn steering
 
 Posting to a channel whose bound profile is already mid-turn never opens a
-second concurrent turn and never drops the message. The post joins that
-binding's FIFO queue, and the queue drains on turn completion.
+second concurrent turn and never drops the message. The binder either delivers
+the message into the live turn using provider-native safe-boundary steering (if
+the adapter supports it) or queues the message to drain as the next turn.
 
-- **Queue (default).** Human posts that arrived while the agent was busy drain
-  into ONE next turn. The newest of them is the trigger; the rest arrive as
-  context rows of the same packet, because the packet is rebuilt from the
-  durable message log. Three impatient messages cost one turn, not three.
+- **Native safe-boundary steering (when supported).** A human post can be sent
+  directly into the active provider turn without interrupting its current tool
+  call. The provider decides when it is safe to accept the steer (tool-safe
+  boundary). The turn still completes once, but multiple triggers may be
+  absorbed by that one live turn.
+- **Queue (fallback/default).** When safe-boundary steering is unavailable, or
+  when the trigger is ineligible, human posts that arrived while the agent was
+  busy drain into ONE next turn. The newest of them is the trigger; the rest
+  arrive as context rows of the same packet, because the packet is rebuilt from
+  the durable message log. Three impatient messages cost one turn, not three.
 - **What never coalesces.** Coalescing folds older posts into a newer one's
   packet, so it only applies where that fold is lossless. A run stops at a post
   from another thread scope, an agent-authored post, a post whose sequence

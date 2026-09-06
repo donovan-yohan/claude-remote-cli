@@ -2001,7 +2001,8 @@ class SteerableAdapter extends BaseProtocolAdapterV2 {
     private readonly supportsSafeBoundarySteer = false,
     private readonly rejectsSafeBoundarySteer = false,
     private readonly failsSafeBoundarySteer = false,
-    private readonly hangsSafeBoundarySteer = false
+    private readonly hangsSafeBoundarySteer = false,
+    private readonly steerDelayMs = 0
   ) {
     super();
     this.capabilities = {
@@ -2080,6 +2081,9 @@ class SteerableAdapter extends BaseProtocolAdapterV2 {
     }
     if (this.hangsSafeBoundarySteer) {
       return new Promise<void>(() => {});
+    }
+    if (this.steerDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.steerDelayMs));
     }
     this.steerInputs.push(input);
   }
@@ -4130,6 +4134,108 @@ describe('channel-agent-binder — lifecycle', () => {
       expect(reply.parentMessageId).toBe(rootOne.id);
       expect(reply.asyncRun).toBeUndefined();
     }
+  });
+
+  it('terminalizes absorbed runs when native steering accepts them (#1570)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (agentType) => new SteerableAdapter(agentType, true),
+      targets: STEER_TARGETS,
+      knownProviderIds: ['steer'],
+    });
+    const root = store.appendComplete({
+      channelId: CH,
+      sender: OPERATOR,
+      text: 'root',
+    });
+    const first = postWithAsyncRun(
+      store,
+      binder,
+      '@steer first',
+      ['steer'],
+      OPERATOR,
+      root.id
+    );
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = sessions.adapterFor(
+      sessions.firstSessionId()
+    ) as SteerableAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    const second = postWithAsyncRun(
+      store,
+      binder,
+      '@steer second',
+      ['steer'],
+      OPERATOR,
+      root.id
+    );
+    await waitFor(() => adapter.steerAttempts.length === 1);
+    expect(adapter.sendCalls.length).toBe(1);
+
+    adapter.completeLatest('done');
+
+    await waitFor(() => store.getAsyncRun(first.run.id)?.state === 'completed');
+    await waitFor(
+      () => store.getAsyncRun(second.run.id)?.state === 'completed'
+    );
+    expect(store.getAsyncRun(first.run.id)?.targets[0]?.state).toBe(
+      'completed'
+    );
+    expect(store.getAsyncRun(second.run.id)?.targets[0]?.state).toBe(
+      'completed'
+    );
+    expect(store.getAsyncRun(second.run.id)?.targets[0]?.turnId).toBe(
+      adapter.sendCalls[0]
+    );
+  });
+
+  it('terminalizes an absorbed run even when steer resolves after the turn ends (#1570)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (agentType) =>
+        new SteerableAdapter(agentType, true, false, false, false, 50),
+      targets: STEER_TARGETS,
+      knownProviderIds: ['steer'],
+    });
+    const root = store.appendComplete({
+      channelId: CH,
+      sender: OPERATOR,
+      text: 'root',
+    });
+    const first = postWithAsyncRun(
+      store,
+      binder,
+      '@steer first',
+      ['steer'],
+      OPERATOR,
+      root.id
+    );
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = sessions.adapterFor(
+      sessions.firstSessionId()
+    ) as SteerableAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    const second = postWithAsyncRun(
+      store,
+      binder,
+      '@steer second',
+      ['steer'],
+      OPERATOR,
+      root.id
+    );
+    await waitFor(() => adapter.steerAttempts.length === 1);
+
+    // End the turn before the steer promise resolves.
+    adapter.completeLatest('done');
+    await waitFor(() => store.getAsyncRun(first.run.id)?.state === 'completed');
+
+    await waitFor(
+      () => store.getAsyncRun(second.run.id)?.state === 'completed',
+      4000
+    );
+    expect(store.getAsyncRun(second.run.id)?.targets[0]?.turnId).toBe(
+      adapter.sendCalls[0]
+    );
   });
 
   it('retains a bounded exact-turn tombstone across a bare-idle successor', async () => {
@@ -6699,6 +6805,17 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     ) as HeartbeatAdapter;
     await waitFor(() => adapter.sendCalls.length === 1);
     await waitFor(
+      () =>
+        rows(store).some(
+          (m) =>
+            m.sender.kind === 'agent' &&
+            m.sender.providerId === 'mock' &&
+            m.kind === 'message' &&
+            !m.agentDetail
+        ),
+      4000
+    );
+    await waitFor(
       () => systemRows(store).some((m) => m.body.text.includes('turn limit')),
       4000
     );
@@ -6709,7 +6826,34 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     expect(ceiling.state).toBe('expired_watchdog');
     // Relay cancelled this turn; the provider did not fail it.
     expect(store.getAsyncRun(run.id)?.targets[0]?.state).toBe('cancelled');
-    adapter.complete(); // stop the heartbeat
+    const resolveText = () =>
+      rows(store).find(
+        (m) =>
+          m.sender.kind === 'agent' &&
+          m.sender.providerId === 'mock' &&
+          m.kind === 'message' &&
+          !m.agentDetail
+      )!.body.text;
+    const frozen = resolveText();
+    await new Promise((r) => setTimeout(r, 40));
+    expect(resolveText()).toBe(frozen);
+    adapter.complete('late reply'); // stop the heartbeat, emit terminal prose after drain
+    await waitFor(
+      () =>
+        rows(store).some(
+          (m) =>
+            m.sender.kind === 'agent' &&
+            m.sender.providerId === 'mock' &&
+            m.kind === 'message' &&
+            !m.agentDetail &&
+            m.body.text.includes('late reply')
+        ),
+      4000
+    );
+    await waitFor(
+      () => store.getAsyncRun(run.id)?.targets[0]?.state === 'completed',
+      4000
+    );
   });
 
   it('never drains a turn sitting inside an OPEN tool call (#1548)', async () => {

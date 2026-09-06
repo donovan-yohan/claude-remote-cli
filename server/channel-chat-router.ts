@@ -70,8 +70,12 @@ import {
   CHANNEL_READ_STATE_EVENT,
   CHANNEL_SEARCH_MAX_RESULTS,
   CHANNEL_SEARCH_QUERY_MAX_CHARS,
+  channelMessageIsPrincipalProse,
+  channelTurnId,
   isChannelPostSteering,
   parseMentions,
+  type ChannelAsyncRunId,
+  type ChannelAsyncRun,
   type ChannelBodyFormat,
   type ChannelMention,
   type ChannelPostSteering,
@@ -1487,6 +1491,9 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
   const listAuth = deps.requireReadActorAuth?.('channels.list') ?? auth;
   const getAuth = deps.requireReadActorAuth?.('channels.get') ?? auth;
   const runGetAuth = deps.requireReadActorAuth?.('channels.run.get') ?? auth;
+  const runWaitAuth = deps.requireReadActorAuth?.('channels.run.wait') ?? auth;
+  const runHistoryAuth =
+    deps.requireReadActorAuth?.('channels.run.history') ?? auth;
   const historyAuth = deps.requireReadActorAuth?.('channels.history') ?? auth;
   // Typed delivery receipts (#1442): an observation read over the hub's
   // in-memory receipt ring, so it gets its OWN gateway verb rather than riding
@@ -1553,6 +1560,76 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       return null;
     }
     return topic;
+  }
+
+  function requirePersistedChannelById(
+    res: Response,
+    channelId: string
+  ): WorkspaceTopic | null {
+    const topicStore = topicStoreOr503(res, deps.topicStore);
+    if (!topicStore) return null;
+    const topic = topicStore.get(channelId);
+    if (!topic || topic.source !== 'persisted') {
+      sendGatewayError(res, 'NOT_FOUND', 'channel not found', false, {
+        channelId,
+      });
+      return null;
+    }
+    return topic;
+  }
+
+  function runTerminalState(state: ChannelAsyncRun['state']): boolean {
+    return (
+      state === 'completed' ||
+      state === 'completed_unmet' ||
+      state === 'failed' ||
+      state === 'cancelled' ||
+      state === 'rejected'
+    );
+  }
+
+  function contractSummaryForRun(
+    run: ChannelAsyncRun
+  ): Record<string, unknown> | null {
+    const contract = run.deliveryContract;
+    if (!contract?.result) return null;
+    return {
+      ...contract.result,
+      ...(contract.followupPostedAt
+        ? { followupPostedAt: contract.followupPostedAt }
+        : {}),
+    };
+  }
+
+  function finalAssistantTextForRun(
+    store: Pick<
+      ChannelMessageStore,
+      'getLastPrincipalProseForTurns' | 'getLastPrincipalProseForRunId'
+    >,
+    run: ChannelAsyncRun
+  ): { finalText: string; finalMessageSeq: number | null } {
+    const metaPrincipal = store.getLastPrincipalProseForRunId({
+      channelId: run.channelId,
+      runId: run.id,
+    });
+    if (metaPrincipal) {
+      return {
+        finalText: metaPrincipal.body.text ?? '',
+        finalMessageSeq: metaPrincipal.seq ?? null,
+      };
+    }
+    const turnIds = run.targets.map(
+      (target) =>
+        target.turnId ?? channelTurnId(run.requestMessageId, target.targetId)
+    );
+    const principal = store.getLastPrincipalProseForTurns({
+      channelId: run.channelId,
+      turnIds,
+    });
+    return {
+      finalText: principal?.body.text ?? '',
+      finalMessageSeq: principal?.seq ?? null,
+    };
   }
 
   router.get('/channels', listAuth, (req, res) => {
@@ -1753,6 +1830,535 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       }
       mapStoreError(res, error);
     }
+  });
+
+  // #1570: orchestrator wake signal — block until a run reaches a terminal
+  // state and return its outcome + final assistant text.
+  //
+  // MUST stay above `/channels/:id` for the same registration-order reason as
+  // `/channels/search`: `wait` is a literal segment, and `topic:`-prefixed ids
+  // do not prevent Express from shadowing it.
+  type ChannelRunWaitFor = 'any' | 'completed' | 'failed';
+  type ParsedWait =
+    | {
+        mode: 'run';
+        runId: ChannelAsyncRun['id'];
+        for: ChannelRunWaitFor;
+        timeoutMs: number;
+      }
+    | {
+        mode: 'channel';
+        channelId: string;
+        afterSeq: number;
+        for: ChannelRunWaitFor;
+        timeoutMs: number;
+      };
+
+  function parseChannelsWait(req: Request, res: Response): ParsedWait | null {
+    const runId =
+      typeof req.query['runId'] === 'string' ? req.query['runId'] : undefined;
+    const channelId =
+      typeof req.query['channelId'] === 'string'
+        ? req.query['channelId']
+        : undefined;
+    const timeoutMsValue =
+      typeof req.query['timeoutMs'] === 'string'
+        ? req.query['timeoutMs']
+        : undefined;
+    const timeoutMs =
+      timeoutMsValue === undefined
+        ? 300_000
+        : (() => {
+            const parsed = Number(timeoutMsValue);
+            if (
+              !Number.isSafeInteger(parsed) ||
+              parsed < 1 ||
+              parsed > 3_600_000
+            ) {
+              sendGatewayError(
+                res,
+                'INVALID_ARGUMENT',
+                'timeoutMs must be between 1 and 3600000',
+                false,
+                { field: 'timeoutMs', value: timeoutMsValue }
+              );
+              return null;
+            }
+            return parsed;
+          })();
+    if (timeoutMs === null) return null;
+    const forRaw =
+      typeof req.query['for'] === 'string' ? req.query['for'] : 'any';
+    if (forRaw !== 'any' && forRaw !== 'completed' && forRaw !== 'failed') {
+      sendGatewayError(
+        res,
+        'INVALID_ARGUMENT',
+        '--for must be completed, failed, or any',
+        false,
+        { field: 'for', value: forRaw }
+      );
+      return null;
+    }
+    if (timeoutMs < 1 || timeoutMs > 3_600_000) {
+      sendGatewayError(
+        res,
+        'INVALID_ARGUMENT',
+        'timeoutMs must be between 1 and 3600000',
+        false,
+        { field: 'timeoutMs', value: timeoutMs }
+      );
+      return null;
+    }
+    if (runId && (channelId || req.query['afterSeq'] !== undefined)) {
+      sendGatewayError(
+        res,
+        'INVALID_ARGUMENT',
+        'runId cannot be combined with channelId/afterSeq',
+        false,
+        { field: 'runId' }
+      );
+      return null;
+    }
+    if (runId) {
+      if (forRaw !== 'any') {
+        sendGatewayError(
+          res,
+          'INVALID_ARGUMENT',
+          '--for cannot be combined with runId',
+          false,
+          { field: 'for', value: forRaw }
+        );
+        return null;
+      }
+      if (!runId.startsWith('chrun:')) {
+        sendGatewayError(
+          res,
+          'INVALID_ARGUMENT',
+          'runId must be a Relay run id',
+          false,
+          { field: 'runId' }
+        );
+        return null;
+      }
+      return {
+        mode: 'run',
+        runId: runId as ChannelAsyncRun['id'],
+        for: 'any',
+        timeoutMs,
+      };
+    }
+    if (!channelId) {
+      sendGatewayError(
+        res,
+        'INVALID_ARGUMENT',
+        'runId or channelId is required',
+        false,
+        {
+          field: 'runId',
+        }
+      );
+      return null;
+    }
+    const afterSeqValue =
+      typeof req.query['afterSeq'] === 'string'
+        ? req.query['afterSeq']
+        : undefined;
+    if (afterSeqValue === undefined) {
+      sendGatewayError(
+        res,
+        'INVALID_ARGUMENT',
+        'afterSeq is required when channelId is provided',
+        false,
+        { field: 'afterSeq' }
+      );
+      return null;
+    }
+    const afterSeq = Number(afterSeqValue);
+    if (!Number.isSafeInteger(afterSeq) || afterSeq < 0) {
+      sendGatewayError(
+        res,
+        'INVALID_ARGUMENT',
+        'afterSeq must be >= 0',
+        false,
+        {
+          field: 'afterSeq',
+          value: afterSeqValue,
+        }
+      );
+      return null;
+    }
+    return { mode: 'channel', channelId, afterSeq, for: forRaw, timeoutMs };
+  }
+
+  function matchesWaitFor(
+    state: ChannelAsyncRun['state'],
+    waitFor: ChannelRunWaitFor
+  ): boolean {
+    if (!runTerminalState(state)) return false;
+    if (waitFor === 'any') return true;
+    if (waitFor === 'completed') return state === 'completed';
+    // failed: includes completed_unmet (#1569 contract failure is a terminal failure)
+    return (
+      state === 'failed' ||
+      state === 'cancelled' ||
+      state === 'rejected' ||
+      state === 'completed_unmet'
+    );
+  }
+
+  function sleepWithAbort(ms: number, signal: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      if (signal.aborted) return resolve();
+      const timer = setTimeout(() => resolve(), ms);
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true }
+      );
+    });
+  }
+
+  function terminalStateCarriesPrincipalProse(
+    state: ChannelAsyncRun['state']
+  ): boolean {
+    return state === 'completed' || state === 'completed_unmet';
+  }
+
+  async function finalAssistantTextForTerminalRun(
+    store: ChannelMessageStore,
+    runId: ChannelAsyncRunId,
+    run: ChannelAsyncRun,
+    deadline: number,
+    graceMs: number,
+    signal: AbortSignal
+  ): Promise<{ finalText: string | null; finalMessageSeq: number | null }> {
+    let final = finalAssistantTextForRun(store, run);
+    if (final.finalMessageSeq !== null) return final;
+    if (!terminalStateCarriesPrincipalProse(run.state)) return final;
+    const graceDeadline = Math.min(deadline, Date.now() + graceMs);
+    while (Date.now() < graceDeadline && !signal.aborted) {
+      await sleepWithAbort(50, signal);
+      const refreshed = store.getAsyncRun(runId);
+      if (!refreshed) break;
+      if (!runTerminalState(refreshed.state)) continue;
+      final = finalAssistantTextForRun(store, refreshed);
+      if (final.finalMessageSeq !== null) break;
+    }
+    return final;
+  }
+
+  async function respondWaitByRunId(
+    req: Request,
+    res: Response,
+    store: ChannelMessageStore,
+    input: Extract<ParsedWait, { mode: 'run' }>,
+    signal: AbortSignal
+  ): Promise<void> {
+    const run = store.getAsyncRun(input.runId);
+    if (!run) {
+      sendGatewayError(res, 'NOT_FOUND', 'run not found', false, {
+        runId: input.runId,
+      });
+      return;
+    }
+    if (denyOutOfScopeChannel(req, res, run.channelId)) return;
+    if (denyNonMemberChannel(req, res, deps.store, run.channelId)) return;
+    if (!requirePersistedChannelById(res, run.channelId)) return;
+
+    const deadline = Date.now() + input.timeoutMs;
+    const serverRestartCancelGraceMs = 2000;
+    const terminalFinalizationGraceMs = 2000;
+    let serverRestartCancelledAt: number | null = null;
+    while (Date.now() < deadline && !signal.aborted) {
+      const latest = store.getAsyncRun(run.id);
+      if (!latest) break;
+      if (
+        latest.state === 'cancelled' &&
+        latest.reason === 'server-restarted'
+      ) {
+        if (serverRestartCancelledAt === null)
+          serverRestartCancelledAt = Date.now();
+        if (
+          Date.now() - serverRestartCancelledAt <
+          serverRestartCancelGraceMs
+        ) {
+          await sleepWithAbort(50, signal);
+          continue;
+        }
+      } else {
+        serverRestartCancelledAt = null;
+      }
+      if (runTerminalState(latest.state)) {
+        const final = await finalAssistantTextForTerminalRun(
+          store,
+          run.id,
+          latest,
+          deadline,
+          terminalFinalizationGraceMs,
+          signal
+        );
+        res.json(
+          operatorClientPublicValue(req, {
+            run: {
+              id: latest.id,
+              state: latest.state,
+              ...(latest.reason ? { reason: latest.reason } : {}),
+            },
+            outcome: latest.state,
+            finalText: final.finalText ?? '',
+            finalMessageSeq: final.finalMessageSeq ?? null,
+            contract: contractSummaryForRun(latest),
+          })
+        );
+        return;
+      }
+      await sleepWithAbort(50, signal);
+    }
+    if (signal.aborted) return;
+    const latest = store.getAsyncRun(run.id);
+    res.json(
+      operatorClientPublicValue(req, {
+        run: latest
+          ? {
+              id: latest.id,
+              state: latest.state,
+              ...(latest.reason ? { reason: latest.reason } : {}),
+            }
+          : {
+              id: run.id,
+              state: run.state,
+              ...(run.reason ? { reason: run.reason } : {}),
+            },
+        outcome: 'timeout',
+        finalText: '',
+        finalMessageSeq: null,
+        contract: latest ? contractSummaryForRun(latest) : null,
+      })
+    );
+  }
+
+  async function respondWaitByChannel(
+    req: Request,
+    res: Response,
+    store: ChannelMessageStore,
+    input: Extract<ParsedWait, { mode: 'channel' }>,
+    signal: AbortSignal
+  ): Promise<void> {
+    const channelId = input.channelId;
+    if (denyOutOfScopeChannel(req, res, channelId)) return;
+    if (denyNonMemberChannel(req, res, deps.store, channelId)) return;
+    if (!requirePersistedChannelById(res, channelId)) return;
+    if (signal.aborted) return;
+
+    const deadline = Date.now() + input.timeoutMs;
+    const serverRestartCancelGraceMs = 2000;
+    const serverRestartCancelledSince = new Map<string, number>();
+    const inspected = new Map<
+      string,
+      { state: ChannelAsyncRun['state']; finalMessageSeq: number | null }
+    >();
+
+    // TS control-flow analysis does not reliably narrow this closure-mutated
+    // candidate across the subscription + poll loop; keep the surface typed at
+    // the response boundary.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let best: any = null;
+
+    async function considerCandidate(
+      candidate: ChannelAsyncRun
+    ): Promise<void> {
+      if (
+        candidate.state === 'cancelled' &&
+        candidate.reason === 'server-restarted'
+      ) {
+        const since =
+          serverRestartCancelledSince.get(candidate.id) ?? Date.now();
+        serverRestartCancelledSince.set(candidate.id, since);
+        if (Date.now() - since < serverRestartCancelGraceMs) return;
+      } else {
+        serverRestartCancelledSince.delete(candidate.id);
+      }
+      if (!matchesWaitFor(candidate.state, input.for)) {
+        const prev = inspected.get(candidate.id);
+        if (!prev || prev.state !== candidate.state) {
+          inspected.set(candidate.id, {
+            state: candidate.state,
+            finalMessageSeq: null,
+          });
+        }
+        return;
+      }
+
+      const prev = inspected.get(candidate.id);
+      if (
+        prev &&
+        prev.state === candidate.state &&
+        prev.finalMessageSeq !== null
+      ) {
+        // Negative cache for this terminal state: we already computed its final seq.
+        if (prev.finalMessageSeq <= input.afterSeq) return;
+        if (
+          best &&
+          (prev.finalMessageSeq > best.finalMessageSeq ||
+            prev.finalMessageSeq === best.finalMessageSeq)
+        ) {
+          return;
+        }
+      }
+      if (
+        prev &&
+        prev.state === candidate.state &&
+        prev.finalMessageSeq === null &&
+        runTerminalState(candidate.state) &&
+        candidate.state !== 'completed' &&
+        candidate.state !== 'completed_unmet'
+      ) {
+        // Negative cache for prose-less terminal states: once we've observed
+        // "no principal prose" for this (run,state), do not rescan on every
+        // tick (#1570 item 5).
+        return;
+      }
+
+      const final = finalAssistantTextForRun(store, candidate);
+      inspected.set(candidate.id, {
+        state: candidate.state,
+        finalMessageSeq: final.finalMessageSeq,
+      });
+      if (final.finalMessageSeq === null) return;
+      if (final.finalMessageSeq <= input.afterSeq) return;
+      if (!best || final.finalMessageSeq < best.finalMessageSeq) {
+        best = {
+          run: candidate,
+          finalText: final.finalText ?? '',
+          finalMessageSeq: final.finalMessageSeq,
+        };
+      }
+    }
+
+    let done = false;
+    let resolveDone: (() => void) | null = null;
+    const donePromise = new Promise<void>((resolve) => {
+      resolveDone = resolve;
+    });
+
+    let closeHandler: (() => void) | null = null;
+    const sink = {
+      get ready() {
+        return !signal.aborted;
+      },
+      get bufferedAmount() {
+        return 0;
+      },
+      send(event: import('../shared/channel-chat-protocol.js').ChannelEventV1) {
+        if (done) return false;
+        if (event.type === 'channel-snapshot-v1' && Array.isArray(event.runs)) {
+          void Promise.all(event.runs.map((r) => considerCandidate(r))).then(
+            () => {
+              if (!done && best) resolveDone?.();
+            }
+          );
+        } else if (event.type === 'channel-run-lifecycle-v1') {
+          void considerCandidate(event.run).then(() => {
+            if (!done && best) resolveDone?.();
+          });
+        }
+        return true;
+      },
+      close(
+        _reason: import('./channel-hub.js').ChannelSubscriptionCloseReason
+      ) {
+        closeHandler?.();
+      },
+      onClose(handler: () => void) {
+        closeHandler = handler;
+      },
+    } satisfies import('./channel-hub.js').ChannelEventSink;
+
+    const cleanup = deps.hub.subscribe(sink, {
+      channelId,
+      afterSeq: input.afterSeq,
+    });
+
+    try {
+      signal.addEventListener(
+        'abort',
+        () => {
+          done = true;
+          resolveDone?.();
+        },
+        { once: true }
+      );
+      while (!done && Date.now() < deadline && !signal.aborted) {
+        if (best) break;
+        const runs = store.listAsyncRuns(channelId, 200);
+        for (const candidate of runs) {
+          if (best && best.finalMessageSeq <= input.afterSeq) break;
+          // Only re-inspect when state differs from the cached observation.
+          const prev = inspected.get(candidate.id);
+          if (prev && prev.state === candidate.state) continue;
+          await considerCandidate(candidate);
+          if (best) break;
+        }
+        if (best) break;
+        const remaining = Math.max(0, deadline - Date.now());
+        await Promise.race([
+          donePromise,
+          sleepWithAbort(Math.min(1000, remaining), signal),
+        ]);
+      }
+    } finally {
+      done = true;
+      cleanup();
+    }
+
+    if (signal.aborted) return;
+    if (best) {
+      res.json(
+        operatorClientPublicValue(req, {
+          run: {
+            id: best.run.id,
+            state: best.run.state,
+            ...(best.run.reason ? { reason: best.run.reason } : {}),
+          },
+          outcome: best.run.state,
+          finalText: best.finalText,
+          finalMessageSeq: best.finalMessageSeq ?? null,
+          contract: contractSummaryForRun(best.run),
+        })
+      );
+      return;
+    }
+    res.json(
+      operatorClientPublicValue(req, {
+        run: null,
+        outcome: 'timeout',
+        finalText: '',
+        finalMessageSeq: null,
+        contract: null,
+      })
+    );
+  }
+
+  router.get('/channels/wait', runWaitAuth, (req, res) => {
+    if (denyMissingCapability(req, res, [CONTEXT_READ])) return;
+    const store = storeOr503(res, deps.store);
+    if (!store) return;
+    const parsed = parseChannelsWait(req, res);
+    if (!parsed) return;
+    const abort = new AbortController();
+    const abortOnClose = () => abort.abort();
+    res.once('close', abortOnClose);
+    req.once('aborted', abortOnClose);
+    void (async () => {
+      if (parsed.mode === 'run') {
+        await respondWaitByRunId(req, res, store, parsed, abort.signal);
+        return;
+      }
+      await respondWaitByChannel(req, res, store, parsed, abort.signal);
+    })().catch((error) => mapStoreError(res, error));
   });
 
   // #1308 slice 3 item 1: the operator's durable last-read marks.
@@ -1957,6 +2563,109 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       return;
     }
     res.json({ run });
+  });
+
+  // #1570: inspect lane — ordered items (text + detail cards) emitted for one
+  // correlated run, with optional coarse kind filters.
+  router.get('/channels/runs/:runId/history', runHistoryAuth, (req, res) => {
+    if (denyMissingCapability(req, res, [CONTEXT_READ])) return;
+    const store = storeOr503(res, deps.store);
+    if (!store) return;
+    const runId = req.params['runId'] ?? '';
+    if (!runId.startsWith('chrun:')) {
+      sendGatewayError(
+        res,
+        'INVALID_ARGUMENT',
+        'runId must be a Relay run id',
+        false,
+        {
+          field: 'runId',
+        }
+      );
+      return;
+    }
+    const run = store.getAsyncRun(runId as ChannelAsyncRun['id']);
+    if (!run) {
+      sendGatewayError(res, 'NOT_FOUND', 'run not found', false, { runId });
+      return;
+    }
+    if (denyOutOfScopeChannel(req, res, run.channelId)) return;
+    if (denyNonMemberChannel(req, res, deps.store, run.channelId)) return;
+    if (!requirePersistedChannelById(res, run.channelId)) return;
+
+    const kindsRaw =
+      typeof req.query['kinds'] === 'string' ? req.query['kinds'] : '';
+    const kinds = new Set(
+      kindsRaw
+        .split(',')
+        .map((k) => k.trim())
+        .filter(Boolean)
+    );
+    const allowAll = kinds.size === 0;
+    const allow = (k: string) => allowAll || kinds.has(k);
+
+    const turnIds = run.targets.map(
+      (target) =>
+        target.turnId ?? channelTurnId(run.requestMessageId, target.targetId)
+    );
+    const turnMessages = store.listMessagesForTurns({
+      channelId: run.channelId,
+      turnIds,
+      limit: 2000,
+    });
+    const request = store.getMessage(run.requestMessageId);
+    const system = store.listSystemMessagesForParent({
+      channelId: run.channelId,
+      parentMessageId: run.requestMessageId,
+      limit: 200,
+    });
+
+    const byId = new Map<string, ChannelMessage>();
+    for (const msg of [request, ...system, ...turnMessages]) {
+      if (!msg) continue;
+      byId.set(msg.id, msg);
+    }
+    const ordered = [...byId.values()].sort((a, b) => a.seq - b.seq);
+
+    const classify = (
+      message: ChannelMessage
+    ): 'text' | 'thought' | 'tool' | 'system' | null => {
+      if (message.id === run.requestMessageId) return 'system';
+      if (message.kind === 'system') return 'system';
+      const cardKind = message.agentDetail?.card?.kind;
+      if (cardKind === 'thought') return 'thought';
+      if (
+        cardKind === 'tool_call' ||
+        cardKind === 'output' ||
+        cardKind === 'diff'
+      )
+        return 'tool';
+      if (
+        message.sender.kind === 'agent' &&
+        message.asyncRun?.runId === run.id &&
+        channelMessageIsPrincipalProse(message)
+      ) {
+        return 'text';
+      }
+      return null;
+    };
+
+    const items = ordered.filter((message) => {
+      const kind = classify(message);
+      if (!kind) return false;
+      return allow(kind);
+    });
+
+    res.json(
+      operatorClientPublicValue(req, {
+        run: {
+          id: run.id,
+          state: run.state,
+          ...(run.reason ? { reason: run.reason } : {}),
+        },
+        items,
+      })
+    );
   });
 
   // Typed delivery receipts (#1442): bounded server-side query surface for the

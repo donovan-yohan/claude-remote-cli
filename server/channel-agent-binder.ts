@@ -62,6 +62,7 @@ import {
   isChannelMessageDeleted,
   parseMentions,
   CHANNEL_RETRY_OF_META_KEY,
+  type ChannelAsyncRunId,
   type ChannelAsyncRunApprovalState,
   type ChannelAsyncRunTargetState,
   type ChannelDeliveryReceiptReasonCode,
@@ -536,6 +537,10 @@ export interface LiveBinding {
   requestMessageIdByTurn: Map<string, ChannelMessage['id']>;
   /** Bounded exact-turn ancestry retained across a successor; never used by turn-0. */
   exactTurnTombstones: Map<string, ExactTurnTombstone>;
+  /** Turn ids whose late patches must be ignored after a forced drain. */
+  suppressedTurnIds: Map<string, number>;
+  /** Turns force-drained by Relay; later provider completion is "late output". */
+  drainedTurnIds: Set<string>;
   /** Routing cwd this binding already reported as diverged from its runtime (#1534). */
   routingCwdDivergenceReported: string | null;
   /** Last terminal prose row by turn, available before the terminal patch lands. */
@@ -581,6 +586,12 @@ export interface LiveBinding {
   steeringInFlight: boolean;
   /** Requests accepted into the active provider turn, cleared when it ends. */
   steeringAcceptedCount: number;
+  /**
+   * #1570: triggers absorbed by native safe-boundary steering still created
+   * durable async runs at post time. Track those run ids per active turn so
+   * finishTurn can terminalize them alongside the absorbing turn.
+   */
+  absorbedRunIdsByTurn: Map<string, Set<ChannelAsyncRunId>>;
   /** Last `(status, queuedCount)` pair broadcast; suppresses duplicate events. */
   emittedStatus: ChannelAgentStatus;
   emittedQueuedCount: number;
@@ -1752,6 +1763,17 @@ export function createChannelAgentBinder(
     );
   }
 
+  function isSuppressedTurnPatch(
+    binding: LiveBinding,
+    patch: AgentPatchV2
+  ): boolean {
+    const turnId = patchTurnId(patch);
+    if (turnId === undefined) return false;
+    if (binding.suppressedTurnIds.has(turnId)) return true;
+    const parent = parentKeyForTurn(binding, turnId);
+    return parent ? binding.suppressedTurnIds.has(parent) : false;
+  }
+
   /**
    * Track the active turn's open tool calls (#1548).
    *
@@ -1944,6 +1966,8 @@ export function createChannelAgentBinder(
     const turnId = binding.activeTurnId;
     if (turnId === null) return;
     const adapter = binding.adapter;
+    binding.drainedTurnIds.add(turnId);
+    suppressTurnPatches(binding, turnId);
     postSystemRow(binding.channelId, text, {
       parentMessageId: parentForTurn(binding, turnId),
     });
@@ -1954,6 +1978,19 @@ export function createChannelAgentBinder(
       });
     }
     if (binding.activeTurnId === turnId) finishTurn(binding, reason);
+  }
+
+  function suppressTurnPatches(binding: LiveBinding, turnId: string): void {
+    binding.suppressedTurnIds.set(turnId, Date.now());
+    // Bound memory: a forced drain is rare, but a wedged provider can spam
+    // patches forever — never let the suppression set grow without limit.
+    if (binding.suppressedTurnIds.size <= 64) return;
+    const oldest = [...binding.suppressedTurnIds.entries()].sort(
+      (a, b) => a[1] - b[1]
+    );
+    for (const [id] of oldest.slice(0, binding.suppressedTurnIds.size - 64)) {
+      binding.suppressedTurnIds.delete(id);
+    }
   }
 
   /** Short operator-facing duration for a drain row ("5 min", "1 h", "800 ms"). */
@@ -1997,6 +2034,8 @@ export function createChannelAgentBinder(
       parentMessageIdByTurn: new Map(),
       requestMessageIdByTurn: new Map(),
       exactTurnTombstones: new Map(),
+      suppressedTurnIds: new Map(),
+      drainedTurnIds: new Set(),
       routingCwdDivergenceReported: null,
       finalMessageByTurn: new Map(),
       continuationByTurn: new Map(),
@@ -2012,6 +2051,7 @@ export function createChannelAgentBinder(
       steeringQueue: [],
       steeringInFlight: false,
       steeringAcceptedCount: 0,
+      absorbedRunIdsByTurn: new Map(),
       emittedStatus: 'idle',
       emittedQueuedCount: 0,
       emittedSteeringCount: 0,
@@ -2117,6 +2157,7 @@ export function createChannelAgentBinder(
         ? { initialAgentAttribution: runtime.agentAttribution }
         : {}),
       parentMessageIdForTurn: (turnId) => parentForTurn(binding, turnId),
+      isLateOutputTurn: (turnId) => binding.drainedTurnIds.has(turnId),
       asyncRunReferenceForTurn: (turnId) => {
         // Mirror the exact/fallback ancestry rules for the public run ref. A
         // late Hermes `turn-0` can only borrow a retained generation when it is
@@ -2877,8 +2918,49 @@ export function createChannelAgentBinder(
         // A terminal patch can win the provider-RPC race. Do not resurrect a
         // cleared steering indicator after finishTurn; replay would be unsafe
         // because a late transport result may already have been accepted.
+        const absorbedRun = store.getAsyncRunForRequestMessage(trigger.id);
         if (binding.activeTurnId === activeTurnId) {
           binding.steeringAcceptedCount += 1;
+          if (absorbedRun) {
+            let absorbed = binding.absorbedRunIdsByTurn.get(activeTurnId);
+            if (!absorbed) {
+              absorbed = new Set();
+              binding.absorbedRunIdsByTurn.set(activeTurnId, absorbed);
+            }
+            absorbed.add(absorbedRun.id);
+            transitionAsyncRunTargetForRun(
+              binding,
+              activeTurnId,
+              absorbedRun.id,
+              'working'
+            );
+          }
+        } else if (absorbedRun) {
+          // Steer acceptance can resolve after the live turn already ended.
+          // Attach + terminalize the absorbed run against the turn that
+          // accepted it so wait/history do not time out (#1570 item 7).
+          const absorbingTriggerId =
+            binding.requestMessageIdByTurn.get(activeTurnId);
+          const absorbingRun = absorbingTriggerId
+            ? store.getAsyncRunForRequestMessage(absorbingTriggerId)
+            : null;
+          const targetState = absorbingRun?.targets.find(
+            (t) => t.targetId === binding.profileActorId
+          )?.state;
+          const terminalStates = new Set<ChannelAsyncRunTargetState>([
+            'completed',
+            'failed',
+            'cancelled',
+            'rejected',
+          ]);
+          transitionAsyncRunTargetForRun(
+            binding,
+            activeTurnId,
+            absorbedRun.id,
+            targetState && terminalStates.has(targetState)
+              ? targetState
+              : 'working'
+          );
         }
         advanceCursor(binding, trigger);
       })
@@ -3645,9 +3727,7 @@ export function createChannelAgentBinder(
   ): void {
     const terminalTurnId = binding.activeTurnId;
     if (terminalTurnId === null) return;
-    transitionAsyncRunTargetForTurn(
-      binding,
-      terminalTurnId,
+    const targetState: ChannelAsyncRunTargetState =
       terminalReason === 'completed' || terminalReason === 'safe-idle'
         ? 'completed'
         : // A ceiling drain is Relay cancelling the turn, not the provider
@@ -3655,8 +3735,24 @@ export function createChannelAgentBinder(
           // so no target claims a terminal state while its runtime works on.
           terminalReason === 'interrupt' || terminalReason === 'turn-ceiling'
           ? 'cancelled'
-          : 'failed'
-    );
+          : 'failed';
+    transitionAsyncRunTargetForTurn(binding, terminalTurnId, targetState, {
+      ...(terminalReason === 'watchdog' || terminalReason === 'turn-ceiling'
+        ? { reason: terminalReason }
+        : {}),
+    });
+    const absorbed = binding.absorbedRunIdsByTurn.get(terminalTurnId);
+    if (absorbed) {
+      binding.absorbedRunIdsByTurn.delete(terminalTurnId);
+      for (const runId of absorbed) {
+        transitionAsyncRunTargetForRun(
+          binding,
+          terminalTurnId,
+          runId,
+          targetState
+        );
+      }
+    }
     // Turn terminal receipts ride the turn's REQUEST message id, not the
     // callback trigger a completion-callback turn may have been built from:
     // the receipt consumer correlates on the row the operator sent (#1442).
@@ -3737,7 +3833,33 @@ export function createChannelAgentBinder(
     if (binding.waitingOn === null) setStatus(binding, 'streaming');
   }
 
+  function handleSuppressedBindingPatch(
+    binding: LiveBinding,
+    patch: AgentPatchV2
+  ): boolean {
+    if (!isSuppressedTurnPatch(binding, patch)) return false;
+    if (patch.type !== 'agent-turn-completed-v2') return true;
+
+    const state: ChannelAsyncRunTargetState =
+      patch.status === 'completed'
+        ? 'completed'
+        : patch.status === 'failed'
+          ? 'failed'
+          : 'cancelled';
+    transitionAsyncRunTargetForTurn(binding, patch.turnId, state);
+    const absorbed = binding.absorbedRunIdsByTurn.get(patch.turnId);
+    if (absorbed) {
+      binding.absorbedRunIdsByTurn.delete(patch.turnId);
+      for (const runId of absorbed) {
+        transitionAsyncRunTargetForRun(binding, patch.turnId, runId, state);
+      }
+    }
+    binding.drainedTurnIds.delete(patch.turnId);
+    return true;
+  }
+
   function handleBindingPatch(binding: LiveBinding, patch: AgentPatchV2): void {
+    if (handleSuppressedBindingPatch(binding, patch)) return;
     // Liveness before interpretation (#1541): a patch that belongs to the
     // active turn proves that turn is still producing, whatever it turns out
     // to mean below.
@@ -3957,6 +4079,44 @@ export function createChannelAgentBinder(
       runId: run.id,
       targetId: binding.profileActorId,
       state,
+      turnId,
+      ...options,
+    });
+    if (changed) {
+      hub.broadcastRunLifecycle(changed);
+      if (
+        changed.state === 'completed' &&
+        changed.deliveryContract?.expect?.length
+      ) {
+        void evaluateDeliveryContractForCompletedRun(
+          binding,
+          turnId,
+          changed
+        ).catch((err) => {
+          logger.warn(
+            'channel binder delivery-contract evaluation failed:',
+            err instanceof Error ? err.message : String(err)
+          );
+        });
+      }
+    }
+  }
+
+  function transitionAsyncRunTargetForRun(
+    binding: LiveBinding,
+    turnId: string,
+    runId: ChannelAsyncRunId,
+    state: ChannelAsyncRunTargetState,
+    options?: {
+      reason?: string;
+      approvalState?: ChannelAsyncRunApprovalState;
+    }
+  ): void {
+    const changed = store.transitionAsyncRunTarget({
+      runId,
+      targetId: binding.profileActorId,
+      state,
+      turnId,
       ...options,
     });
     if (changed) {

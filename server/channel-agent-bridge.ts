@@ -303,6 +303,11 @@ export interface BindSessionToChannelInput {
     turnId: string
   ) => ChannelAsyncRunReference | undefined;
   /**
+   * True when Relay has force-drained this turn and any later provider prose
+   * must be persisted as a NEW row (never mutating the drained row).
+   */
+  isLateOutputTurn?: (turnId: string) => boolean;
+  /**
    * Invoked in `finalize()` after `completeStreamBroadcast` for `status ===
    * 'complete'` rows ONLY (#1167 §8). Bridge-authored replies bypass
    * `postToChannel`, so `onMessagePosted` never fires for them — this is the sole
@@ -351,6 +356,7 @@ export function bindSessionToChannel(
   let currentAttribution = input.initialAgentAttribution
     ? { ...input.initialAgentAttribution }
     : undefined;
+  let lateOutputCounter = 0;
   let closed = false;
 
   function itemSourceKey(
@@ -1181,6 +1187,50 @@ export function bindSessionToChannel(
     }
   }
 
+  function persistLateAssistantOutput(
+    patch: Extract<AgentPatchV2, { type: 'agent-item-updated-v2' }>
+  ): boolean {
+    if (!input.isLateOutputTurn?.(patch.turnId)) return false;
+    if (patch.item.type !== 'assistantMessage') return false;
+    if (patch.item.status !== 'completed') return false;
+    if (typeof patch.item.text !== 'string') return false;
+    if (patch.item.text.trim().length === 0) return false;
+
+    // Late prose after a force-drain: persist as a standalone durable row.
+    // It must not mutate the drained row, and it must not fan out new mention
+    // routing from a turn Relay already cancelled (#1570).
+    try {
+      const canonicalItemId = canonicalAssistantItemId(patch.item);
+      lateOutputCounter += 1;
+      const lateItemId = `${canonicalItemId}#late-${lateOutputCounter}`;
+      const parentMessageId = input.parentMessageIdForTurn?.(patch.turnId);
+      const agentAttribution = attributionForTurn(patch.turnId);
+      const asyncRun = input.asyncRunReferenceForTurn?.(patch.turnId);
+      const started = store.beginStream({
+        channelId,
+        sender,
+        source: {
+          runtimeId: patch.sessionId,
+          turnId: patch.turnId,
+          itemId: lateItemId,
+        },
+        text: patch.item.text,
+        ...(agentAttribution ? { agentAttribution } : {}),
+        ...(asyncRun ? { meta: { asyncRun } } : {}),
+        ...(parentMessageId ? { parentMessageId } : {}),
+      });
+      if (started.status === 'streaming') hub.beginStreamBroadcast(started);
+      const message = store.finalizeStream(started.id, {
+        text: patch.item.text,
+        status: 'complete',
+      });
+      if (message) hub.completeStreamBroadcast(message);
+    } catch (err) {
+      logger.warn('channel bridge late-output row failed:', err);
+    }
+    return true;
+  }
+
   function handlePatch(patch: AgentPatchV2): void {
     switch (patch.type) {
       case 'agent-session-snapshot-v2': {
@@ -1264,45 +1314,7 @@ export function bindSessionToChannel(
         break;
       }
       case 'agent-item-updated-v2': {
-        if (handleDetailItem(patch)) break;
-        if (patch.item.type !== 'assistantMessage') break;
-        const canonicalItemId = canonicalAssistantItemId(patch.item);
-        const streamKey = bridgeStreamKey(patch.turnId, canonicalItemId);
-        assistantItemAliases.set(patch.item.id, {
-          turnId: patch.turnId,
-          streamKey,
-          canonicalItemId,
-        });
-        let stream: BridgeStream | null | undefined = streams.get(streamKey);
-        if (!stream) {
-          // A completed assistantMessage that never opened a stream — no
-          // `started`, no text delta — is a non-streamed reply delivered as a
-          // single message-complete (e.g. a hermes v0.18.2 message output-item,
-          // #1181). Materialize the row directly so the reply is not silently
-          // dropped; openStream seeds it with the final text and finalize closes
-          // it in the same tick.
-          if (!patch.item.text) {
-            forgetAliasesForStream(streamKey);
-            reportRetention();
-            break;
-          }
-          stream = openStream(
-            patch.turnId,
-            canonicalItemId,
-            patch.sessionId,
-            patch.item.text
-          );
-        }
-        if (!stream) break;
-        const finalText = patch.item.text || stream.text;
-        if (patch.item.status === 'completed') {
-          stream.state = 'terminal-observed';
-          finalize(stream, 'complete', finalText);
-        } else if (patch.item.status === 'failed') {
-          finalize(stream, 'failed', finalText);
-        } else if (patch.item.status === 'cancelled') {
-          finalize(stream, 'interrupted', finalText);
-        }
+        handleItemUpdated(patch);
         break;
       }
       case 'agent-turn-completed-v2': {
@@ -1336,6 +1348,51 @@ export function bindSessionToChannel(
       default:
         // Session snapshots and non-card control items are not mirrored.
         break;
+    }
+  }
+
+  function handleItemUpdated(
+    patch: Extract<AgentPatchV2, { type: 'agent-item-updated-v2' }>
+  ): void {
+    if (handleDetailItem(patch)) return;
+    if (persistLateAssistantOutput(patch)) return;
+    if (patch.item.type !== 'assistantMessage') return;
+    const canonicalItemId = canonicalAssistantItemId(patch.item);
+    const streamKey = bridgeStreamKey(patch.turnId, canonicalItemId);
+    assistantItemAliases.set(patch.item.id, {
+      turnId: patch.turnId,
+      streamKey,
+      canonicalItemId,
+    });
+    let stream: BridgeStream | null | undefined = streams.get(streamKey);
+    if (!stream) {
+      // A completed assistantMessage that never opened a stream — no `started`,
+      // no text delta — is a non-streamed reply delivered as a single
+      // message-complete (e.g. a hermes v0.18.2 message output-item, #1181).
+      // Materialize the row directly so the reply is not silently dropped;
+      // openStream seeds it with the final text and finalize closes it in the
+      // same tick.
+      if (!patch.item.text) {
+        forgetAliasesForStream(streamKey);
+        reportRetention();
+        return;
+      }
+      stream = openStream(
+        patch.turnId,
+        canonicalItemId,
+        patch.sessionId,
+        patch.item.text
+      );
+    }
+    if (!stream) return;
+    const finalText = patch.item.text || stream.text;
+    if (patch.item.status === 'completed') {
+      stream.state = 'terminal-observed';
+      finalize(stream, 'complete', finalText);
+    } else if (patch.item.status === 'failed') {
+      finalize(stream, 'failed', finalText);
+    } else if (patch.item.status === 'cancelled') {
+      finalize(stream, 'interrupted', finalText);
     }
   }
 
