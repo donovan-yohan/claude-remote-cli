@@ -7115,9 +7115,14 @@ async function runGatewayChannelsMembership(
 async function runGatewayChannelsPost(channelArgs: string[]): Promise<void> {
   const deliveryExpect: string[] = [];
   const filteredArgs: string[] = [];
+  let failOnRefused = false;
   for (let i = 0; i < channelArgs.length; i += 1) {
     const arg = channelArgs[i];
     if (arg === undefined) continue;
+    if (arg === '--fail-on-refused') {
+      failOnRefused = true;
+      continue;
+    }
     if (arg === '--expect') {
       const value = channelArgs[i + 1];
       if (value === undefined) {
@@ -7217,7 +7222,28 @@ async function runGatewayChannelsPost(channelArgs: string[]): Promise<void> {
     body,
     capabilities: ['context:write'],
   });
-  printGatewayEnvelope(gatewayOk('channels.post', result), 0);
+  const data = result as Record<string, unknown>;
+  const run =
+    typeof data['run'] === 'object' && data['run'] !== null
+      ? (data['run'] as Record<string, unknown>)
+      : null;
+  const targets = run ? run['targets'] : null;
+  const refusedByProviderFailure =
+    failOnRefused &&
+    Array.isArray(targets) &&
+    targets.some((target) => {
+      if (typeof target !== 'object' || target === null) return false;
+      const record = target as Record<string, unknown>;
+      if (record['state'] !== 'refused') return false;
+      const reason = record['reason'];
+      return (
+        typeof reason === 'string' && reason.startsWith('provider-failure:')
+      );
+    });
+  printGatewayEnvelope(
+    gatewayOk('channels.post', result),
+    refusedByProviderFailure ? 2 : 0
+  );
 }
 
 async function runGatewayChannelsList(channelArgs: string[]): Promise<void> {

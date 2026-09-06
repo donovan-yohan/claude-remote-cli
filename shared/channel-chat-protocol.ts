@@ -57,7 +57,9 @@ export type ChannelAsyncRunState =
 /** Targets are admitted locally before delivery; they are never independently submitted. */
 export type ChannelAsyncRunTargetState =
   | Exclude<ChannelAsyncRunState, 'submitted'>
-  | 'queued';
+  | 'queued'
+  /** Target refused admission (e.g. provider failure), reason carries detail (#1571/#1560). */
+  | 'refused';
 export type ChannelAsyncRunApprovalState = 'requested' | 'resolved' | 'expired';
 
 /** Public, provider-neutral target projection. `targetId` is a Relay profile actor id. */
@@ -1751,6 +1753,7 @@ const ASYNC_RUN_TARGET_STATES = new Set<ChannelAsyncRunTargetState>([
   'failed',
   'cancelled',
   'rejected',
+  'refused',
 ]);
 
 function isInFlightArray(value: unknown): value is ChannelInFlightRef[] {

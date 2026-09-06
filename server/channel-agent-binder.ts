@@ -4708,13 +4708,16 @@ export function createChannelAgentBinder(
         }
       };
       try {
-        const rejectAsyncTarget = (reason: string) => {
+        const rejectAsyncTarget = (
+          state: ChannelAsyncRunTargetState,
+          reason: string
+        ) => {
           const run = store.getAsyncRunForRequestMessage(trigger.id);
           if (!run) return;
           const changed = store.transitionAsyncRunTarget({
             runId: run.id,
             targetId: profile.id,
-            state: 'rejected',
+            state,
             reason,
           });
           if (changed) hub.broadcastRunLifecycle(changed);
@@ -4724,7 +4727,7 @@ export function createChannelAgentBinder(
         if (closed) return; // close() raced the availability probe
         if (!target) {
           releaseDeferredParent();
-          rejectAsyncTarget('target-unavailable');
+          rejectAsyncTarget('rejected', 'target-unavailable');
           // Not a known framework. In a multi-party channel an unroutable
           // @name stays silent (§1). In a DM there is nobody ELSE to answer the
           // HUMAN, so silence reads as the product being broken — say so.
@@ -4756,7 +4759,7 @@ export function createChannelAgentBinder(
           const failure = activeProviderFailure(profile, target);
           if (failure) {
             releaseDeferredParent();
-            rejectAsyncTarget(`provider-failure:${failure.code}`);
+            rejectAsyncTarget('refused', `provider-failure:${failure.code}`);
             const senderDisplayName =
               profile.displayName || target.displayName || framework;
             postUnavailableRow(
@@ -4776,7 +4779,7 @@ export function createChannelAgentBinder(
         }
         if (!availability.available) {
           releaseDeferredParent();
-          rejectAsyncTarget('target-unavailable');
+          rejectAsyncTarget('rejected', 'target-unavailable');
           const senderDisplayName =
             profile.displayName || target.displayName || framework;
           postUnavailableRow(
@@ -4828,6 +4831,7 @@ export function createChannelAgentBinder(
           if (err instanceof ChannelBindingError) {
             releaseDeferredParent();
             rejectAsyncTarget(
+              'rejected',
               err.unavailable ? 'target-unavailable' : 'target-binding-failed'
             );
             if (err.unavailable) {
@@ -4876,7 +4880,7 @@ export function createChannelAgentBinder(
             releaseDeferredParent();
           }
         }
-        if (!admitted) rejectAsyncTarget('target-not-admitted');
+        if (!admitted) rejectAsyncTarget('rejected', 'target-not-admitted');
       } catch (err) {
         if (closed || err instanceof BinderClosedError) return;
         releaseDeferredParent();

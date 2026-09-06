@@ -80,7 +80,16 @@ globalThis.fetch = async (url, init = {}) => {
                     requestMessageId: 'chm:test',
                     requesterId: 'actor:test',
                     state: 'submitted',
-                    targets: [],
+                    targets: process.env.RELAY_TEST_CHANNELS_POST_REFUSED
+                      ? [
+                          {
+                            targetId: 'agent-profile:codex:default',
+                            state: 'refused',
+                            reason: 'provider-failure:quota_exhausted',
+                            updatedAt: '2026-08-12T00:00:00.000Z',
+                          },
+                        ]
+                      : [],
                     createdAt: '2026-08-12T00:00:00.000Z',
                     updatedAt: '2026-08-12T00:00:00.000Z',
                   },
