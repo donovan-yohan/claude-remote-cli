@@ -539,6 +539,8 @@ export interface LiveBinding {
   exactTurnTombstones: Map<string, ExactTurnTombstone>;
   /** Turn ids whose late patches must be ignored after a forced drain. */
   suppressedTurnIds: Map<string, number>;
+  /** Turns force-drained by Relay; later provider completion is "late output". */
+  drainedTurnIds: Set<string>;
   /** Routing cwd this binding already reported as diverged from its runtime (#1534). */
   routingCwdDivergenceReported: string | null;
   /** Last terminal prose row by turn, available before the terminal patch lands. */
@@ -1964,6 +1966,7 @@ export function createChannelAgentBinder(
     const turnId = binding.activeTurnId;
     if (turnId === null) return;
     const adapter = binding.adapter;
+    binding.drainedTurnIds.add(turnId);
     suppressTurnPatches(binding, turnId);
     postSystemRow(binding.channelId, text, {
       parentMessageId: parentForTurn(binding, turnId),
@@ -2032,6 +2035,7 @@ export function createChannelAgentBinder(
       requestMessageIdByTurn: new Map(),
       exactTurnTombstones: new Map(),
       suppressedTurnIds: new Map(),
+      drainedTurnIds: new Set(),
       routingCwdDivergenceReported: null,
       finalMessageByTurn: new Map(),
       continuationByTurn: new Map(),
@@ -2153,6 +2157,7 @@ export function createChannelAgentBinder(
         ? { initialAgentAttribution: runtime.agentAttribution }
         : {}),
       parentMessageIdForTurn: (turnId) => parentForTurn(binding, turnId),
+      isLateOutputTurn: (turnId) => binding.drainedTurnIds.has(turnId),
       asyncRunReferenceForTurn: (turnId) => {
         // Mirror the exact/fallback ancestry rules for the public run ref. A
         // late Hermes `turn-0` can only borrow a retained generation when it is
@@ -3705,7 +3710,11 @@ export function createChannelAgentBinder(
           terminalReason === 'interrupt' || terminalReason === 'turn-ceiling'
           ? 'cancelled'
           : 'failed';
-    transitionAsyncRunTargetForTurn(binding, terminalTurnId, targetState);
+    transitionAsyncRunTargetForTurn(binding, terminalTurnId, targetState, {
+      ...(terminalReason === 'watchdog' || terminalReason === 'turn-ceiling'
+        ? { reason: terminalReason }
+        : {}),
+    });
     const absorbed = binding.absorbedRunIdsByTurn.get(terminalTurnId);
     if (absorbed) {
       binding.absorbedRunIdsByTurn.delete(terminalTurnId);
@@ -3798,8 +3807,33 @@ export function createChannelAgentBinder(
     if (binding.waitingOn === null) setStatus(binding, 'streaming');
   }
 
+  function handleSuppressedBindingPatch(
+    binding: LiveBinding,
+    patch: AgentPatchV2
+  ): boolean {
+    if (!isSuppressedTurnPatch(binding, patch)) return false;
+    if (patch.type !== 'agent-turn-completed-v2') return true;
+
+    const state: ChannelAsyncRunTargetState =
+      patch.status === 'completed'
+        ? 'completed'
+        : patch.status === 'failed'
+          ? 'failed'
+          : 'cancelled';
+    transitionAsyncRunTargetForTurn(binding, patch.turnId, state);
+    const absorbed = binding.absorbedRunIdsByTurn.get(patch.turnId);
+    if (absorbed) {
+      binding.absorbedRunIdsByTurn.delete(patch.turnId);
+      for (const runId of absorbed) {
+        transitionAsyncRunTargetForRun(binding, patch.turnId, runId, state);
+      }
+    }
+    binding.drainedTurnIds.delete(patch.turnId);
+    return true;
+  }
+
   function handleBindingPatch(binding: LiveBinding, patch: AgentPatchV2): void {
-    if (isSuppressedTurnPatch(binding, patch)) return;
+    if (handleSuppressedBindingPatch(binding, patch)) return;
     // Liveness before interpretation (#1541): a patch that belongs to the
     // active turn proves that turn is still producing, whatever it turns out
     // to mean below.

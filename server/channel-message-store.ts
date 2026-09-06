@@ -4582,7 +4582,7 @@ export function createChannelMessageStore(
           WHERE run_id = ? AND target_id = ?
             AND (
               state NOT IN ('completed','failed','cancelled','rejected')
-              OR (state = 'cancelled' AND reason = 'server-restarted')
+              OR (state = 'cancelled' AND reason IN ('server-restarted','watchdog','turn-ceiling'))
             )`
         )
         .run(

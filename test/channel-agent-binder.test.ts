@@ -6784,7 +6784,23 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     const frozen = resolveText();
     await new Promise((r) => setTimeout(r, 40));
     expect(resolveText()).toBe(frozen);
-    adapter.complete(); // stop the heartbeat
+    adapter.complete('late reply'); // stop the heartbeat, emit terminal prose after drain
+    await waitFor(
+      () =>
+        rows(store).some(
+          (m) =>
+            m.sender.kind === 'agent' &&
+            m.sender.providerId === 'mock' &&
+            m.kind === 'message' &&
+            !m.agentDetail &&
+            m.body.text.includes('late reply')
+        ),
+      4000
+    );
+    await waitFor(
+      () => store.getAsyncRun(run.id)?.targets[0]?.state === 'completed',
+      4000
+    );
   });
 
   it('never drains a turn sitting inside an OPEN tool call (#1548)', async () => {
