@@ -305,6 +305,33 @@ The adapter maps:
 
 The `cursor-agent` executable is also available as a normal terminal launch, but that surface stays a generic PTY.
 
+## Provider failure classification (#1571)
+
+Channel adapters are expected to classify terminal provider failures into a
+small stable vocabulary (`ProviderFailureCode`) so the binder can refuse new
+mentions quickly and surface actionable remediation in the roster, receipts,
+and attention events.
+
+Adapters emit an `agent-error-v2` patch with:
+
+- `failureCode`: one of `quota_exhausted`, `auth_required`, `binary_missing`, `unknown`
+- `retryAfter` (optional): ISO timestamp for when a quota retry is expected to succeed
+- `providerMessage` (optional): bounded provider-authored message distinct from the adapter’s generic `message`
+
+Mapping guidance:
+
+- **quota_exhausted**: provider usage/quota/limit reached. Prefer setting
+  `retryAfter` when the provider supplies an explicit time window.
+- **auth_required**: missing credentials / not logged in. Examples include
+  `Authentication required` and `Not logged in` on ACP transports (Cursor/DSH).
+- **binary_missing**: spawn/ENOENT or “not found on PATH” errors when the
+  provider’s CLI binary is missing.
+- **unknown**: a terminal error that does not match the above categories.
+
+The binder records the latest classified failure per profile actor id and
+marks the roster entry unavailable until recovery (successful turn) or until
+`retryAfter` passes for quota failures.
+
 ### Live Pi and Prime RPC smoke
 
 Run the opt-in, model-backed protocol probe with an explicit provider:

@@ -243,6 +243,31 @@ membership. A delegated credential that names no channels stays refused
 (`CHANNEL_OUT_OF_SCOPE` / `CHANNEL_SCOPE_REQUIRED`), and a profile credential
 that _does_ name channels is narrowed normally.
 
+### Provider failures in channels (#1571)
+
+Channel runtimes classify terminal provider failures (quota exhaustion, missing
+credentials, missing binaries, and unknown) and surface them through three
+operator-facing lanes:
+
+- **Roster**: `channels.roster` marks the profile `available:false` and records
+  `providerFailureCode`, `providerFailureSince`, and optional
+  `providerFailureRetryAfter`.
+- **Run admission**: `channels.post` may refuse an addressed target during
+  admission. The returned `run.targets[]` entry terminalizes as
+  `state:"refused"` with a structured `reason` (for provider failures,
+  `provider-failure:<code>`). Other targets in the same post still run.
+- **Receipts / attention**: typed delivery receipts carry `state:"refused_policy"`
+  with a `reasonCode` like `provider_quota_exhausted`, and the hub publishes an
+  `attention` event (`provider-failure.classified`) for alerting.
+
+Failures clear automatically on a successful turn, and quota failures respect
+`retryAfter` by becoming routable again once the timestamp passes. Operators can
+explicitly clear a recorded provider failure with:
+
+```sh
+relay-ide v1 agent-profiles reset --profile-id <agent-profile-id> --json
+```
+
 Planting one on the agent's own host is
 `scripts/install-profile-credential.ts`: pipe `credential mint --json` into it
 and it upserts `RELAY_IDE_ACTOR_TOKEN` into that agent's per-profile environment

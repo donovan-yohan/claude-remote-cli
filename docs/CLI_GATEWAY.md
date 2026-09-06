@@ -102,8 +102,9 @@ relay-ide v1 settings get --json
 relay-ide v1 settings update --input-json '{"key":"updateChannel","value":"nightly","confirmRiskyWrite":true}' --json
 relay-ide v1 webhooks status --json
 relay-ide v1 webhooks ping --json
-relay-ide v1 channels post --channel-id <id> --text <text> [--format <text|markdown>] [--expect <spec>] [--thread-id <id|null>] [--parent-message-id <id>] [--client-message-id <id>] --json
+relay-ide v1 channels post --channel-id <id> --text <text> [--format <text|markdown>] [--expect <spec>] [--fail-on-refused] [--thread-id <id|null>] [--parent-message-id <id>] [--client-message-id <id>] --json
 relay-ide v1 channels post --input-json '{"channelId":"<id>","text":"<text>"}' --json
+relay-ide v1 agent-profiles reset --profile-id <agent-profile-id> --json
 ```
 
 This contract is for external brain-as-peer adapters (#430). It is intentionally separate from the internal `/hub/node-link` WebSocket protocol. Adapter packages must generate native tool/function definitions from `relay-ide v1 schema --json` or the committed source manifest in `shared/cli-gateway-contract.ts`; do not hand-code Hermes/Claude/Codex-specific schemas. `inbox list --target-session-id` expects the scoped session key form (`local:<session-id>` for local sessions or `<nodeId>:<session-id>` for routed sessions); passing a raw session id (without the node prefix) returns an empty list.
@@ -207,6 +208,13 @@ target and the aggregate state. These are the public request/reply contract for
 multiple outstanding posts on one subscription. Provider runtime, turn, and
 item identifiers are optional diagnostics only and must never be parsed for
 correlation.
+
+When a target is refused during admission (such as a classified provider failure
+#1571), the corresponding `run.targets[]` entry terminalizes as
+`state: "refused"` with a `reason` string (for provider failures,
+`provider-failure:<code>`). `--fail-on-refused` is a CLI-only convenience: it
+still prints the JSON envelope, but exits non-zero (code 2) when it observes a
+provider-failure refusal in the returned run targets.
 
 `relay-ide v1 channels run get --channel-id <id> --run-id <id>
 [--thread-id <root-or-thread-id>] --json` reads one opaque run with
