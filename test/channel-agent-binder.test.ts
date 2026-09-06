@@ -43,6 +43,10 @@ import {
 import { createChannelHub, type ChannelHub } from '../server/channel-hub.js';
 import { PACKET_MAX_ROWS } from '../server/channel-context-packet.js';
 import type { ChannelAttachmentStore } from '../server/channel-attachments.js';
+import type {
+  CliGatewayEventBus,
+  CliGatewayMetadataEvent,
+} from '../server/cli-gateway-event-bus.js';
 import {
   CHANNEL_BINDING_YOLO_DEFAULT,
   ChannelAgentBusyError,
@@ -2722,6 +2726,7 @@ function makeBinder(cfg: {
   mentionTargets?: () => Promise<MentionTarget[]>;
   knownProviderIds: string[];
   topicStore?: WorkspaceTopicStore | null;
+  events?: Pick<CliGatewayEventBus, 'publish'>;
   watchdogMs?: number;
   turnCeilingMs?: number;
   presenceSweepMs?: number;
@@ -2758,6 +2763,7 @@ function makeBinder(cfg: {
     ...(cfg.attachmentStore ? { attachmentStore: cfg.attachmentStore } : {}),
     hub,
     topicStore: cfg.topicStore ?? null,
+    ...(cfg.events ? { events: cfg.events } : {}),
     ...(cfg.agentProfileStore !== undefined
       ? { agentProfileStore: cfg.agentProfileStore }
       : {}),
@@ -9981,6 +9987,112 @@ describe('channel-agent-binder — delivery receipts (#1442)', () => {
     expect(
       collectReceipts(hub, CH).some((r) => r.messageId === trigger.id)
     ).toBe(true);
+  });
+
+  it('closes the loop: classified failure -> roster unavailable -> refused -> attention -> recovery (#1571)', async () => {
+    let nowMs = new Date('2026-09-06T08:00:00.000Z').getTime();
+    const attention: Array<Record<string, unknown>> = [];
+    const { binder, store, hub, sessions } = makeBinder({
+      build: (agentType) => new ScriptedAdapter(agentType, { mode: 'stall' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      now: () => nowMs,
+      events: {
+        publish: (input) => {
+          const occurredAt =
+            typeof input.occurredAt === 'string'
+              ? input.occurredAt
+              : new Date(nowMs).toISOString();
+          const event: CliGatewayMetadataEvent = {
+            cursor: 'cursor:test',
+            topic: input.topic,
+            type: input.type,
+            occurredAt,
+            payload: input.payload,
+            redaction: input.redaction ?? {
+              rawPayloadIncluded: false,
+              rawTranscriptIncluded: false,
+              artifactBodyIncluded: false,
+            },
+            ...(input.workContextId
+              ? { workContextId: input.workContextId }
+              : {}),
+            ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+            ...(input.globalSessionId
+              ? { globalSessionId: input.globalSessionId }
+              : {}),
+            ...(input.repoPath ? { repoPath: input.repoPath } : {}),
+            ...(input.nodeId ? { nodeId: input.nodeId } : {}),
+            ...(input.actor ? { actor: input.actor } : {}),
+          };
+          attention.push(event as unknown as Record<string, unknown>);
+          return event;
+        },
+      },
+    });
+
+    // Phase 1: a successful turn clears the recorded failure.
+    post(store, binder, '@mock go', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = sessions.adapterFor(
+      sessions.firstSessionId()
+    ) as ScriptedAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+    adapter.emitError('transient provider error', { failureCode: 'unknown' });
+    adapter.emitTerminal('completed');
+    await waitFor(() =>
+      systemRows(store).some((row) => row.body.text.includes('recovered'))
+    );
+    const afterSuccess = await binder.rosterForChannel(CH);
+    expect(
+      afterSuccess.find((row) => row.id === builtInAgentProfileId('mock'))
+    ).toMatchObject({ available: true });
+
+    // Phase 2: a quota failure refuses until retryAfter, then admits again.
+    post(store, binder, '@mock again', ['mock']);
+    await waitFor(() => adapter.sendCalls.length === 2);
+    const retryAfter = new Date(nowMs + 5_000).toISOString();
+    adapter.emitError("You've hit your usage limit.", {
+      failureCode: 'quota_exhausted',
+      retryAfter,
+    });
+    await waitFor(() =>
+      attention.some((evt) =>
+        JSON.stringify(evt).includes('provider-failure.classified')
+      )
+    );
+    await waitFor(() =>
+      systemRows(store).some((row) => row.body.text.includes('quota_exhausted'))
+    );
+    expect(
+      (await binder.rosterForChannel(CH)).find(
+        (row) => row.id === builtInAgentProfileId('mock')
+      )
+    ).toMatchObject({
+      available: false,
+      providerFailureCode: 'quota_exhausted',
+      providerFailureRetryAfter: retryAfter,
+    });
+
+    const refused = post(store, binder, '@mock refused', ['mock']);
+    await waitFor(() =>
+      collectReceipts(hub, CH).some(
+        (r) =>
+          r.messageId === refused.id &&
+          r.state === 'refused_policy' &&
+          r.reasonCode === 'provider_quota_exhausted'
+      )
+    );
+
+    nowMs += 6_000;
+    const recovered = await binder.rosterForChannel(CH);
+    expect(
+      recovered.find((row) => row.id === builtInAgentProfileId('mock'))
+    ).toMatchObject({ available: true });
+
+    post(store, binder, '@mock ok', ['mock']);
+    await waitFor(() => adapter.sendCalls.length === 3);
+    adapter.emitTerminal('completed');
   });
 });
 
