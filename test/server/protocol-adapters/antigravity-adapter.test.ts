@@ -129,6 +129,26 @@ describe('AntigravityProtocolAdapter', () => {
     });
   });
 
+  it('classifies init result errors as quota_exhausted (#1571)', async () => {
+    const { adapter, spawns, patches } = harness();
+    const pending = adapter.connect(config);
+    const child = spawns[spawns.length - 1]!.child;
+    child.serverWrite({
+      event: 'result',
+      result: { error: 'Individual quota reached' },
+    });
+    await expect(pending).rejects.toThrow('Individual quota reached');
+    // Patch delivery is async relative to the connect rejection.
+    await Promise.resolve();
+    expect(
+      patches.some(
+        (p) =>
+          p.type === 'agent-error-v2' &&
+          (p as any).failureCode === 'quota_exhausted'
+      )
+    ).toBe(true);
+  });
+
   // Test 2
   it('appends --dangerously-skip-permissions only for permissionMode always-proceed', async () => {
     const { adapter: a1, spawns: s1 } = harness();

@@ -255,6 +255,10 @@ export class AntigravityProtocolAdapter
       });
       this.registry.register(this);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Connect-time failures still need to emit an error patch so the binder
+      // can classify provider failures and surface them in the roster (#1571).
+      this.emitError(message);
       this._status = 'disconnected';
       await this.teardownClient().catch(() => undefined);
       throw error;
