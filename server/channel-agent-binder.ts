@@ -2918,23 +2918,49 @@ export function createChannelAgentBinder(
         // A terminal patch can win the provider-RPC race. Do not resurrect a
         // cleared steering indicator after finishTurn; replay would be unsafe
         // because a late transport result may already have been accepted.
+        const absorbedRun = store.getAsyncRunForRequestMessage(trigger.id);
         if (binding.activeTurnId === activeTurnId) {
           binding.steeringAcceptedCount += 1;
-          const run = store.getAsyncRunForRequestMessage(trigger.id);
-          if (run) {
+          if (absorbedRun) {
             let absorbed = binding.absorbedRunIdsByTurn.get(activeTurnId);
             if (!absorbed) {
               absorbed = new Set();
               binding.absorbedRunIdsByTurn.set(activeTurnId, absorbed);
             }
-            absorbed.add(run.id);
+            absorbed.add(absorbedRun.id);
             transitionAsyncRunTargetForRun(
               binding,
               activeTurnId,
-              run.id,
+              absorbedRun.id,
               'working'
             );
           }
+        } else if (absorbedRun) {
+          // Steer acceptance can resolve after the live turn already ended.
+          // Attach + terminalize the absorbed run against the turn that
+          // accepted it so wait/history do not time out (#1570 item 7).
+          const absorbingTriggerId =
+            binding.requestMessageIdByTurn.get(activeTurnId);
+          const absorbingRun = absorbingTriggerId
+            ? store.getAsyncRunForRequestMessage(absorbingTriggerId)
+            : null;
+          const targetState = absorbingRun?.targets.find(
+            (t) => t.targetId === binding.profileActorId
+          )?.state;
+          const terminalStates = new Set<ChannelAsyncRunTargetState>([
+            'completed',
+            'failed',
+            'cancelled',
+            'rejected',
+          ]);
+          transitionAsyncRunTargetForRun(
+            binding,
+            activeTurnId,
+            absorbedRun.id,
+            targetState && terminalStates.has(targetState)
+              ? targetState
+              : 'working'
+          );
         }
         advanceCursor(binding, trigger);
       })

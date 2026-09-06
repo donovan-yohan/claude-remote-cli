@@ -2001,7 +2001,8 @@ class SteerableAdapter extends BaseProtocolAdapterV2 {
     private readonly supportsSafeBoundarySteer = false,
     private readonly rejectsSafeBoundarySteer = false,
     private readonly failsSafeBoundarySteer = false,
-    private readonly hangsSafeBoundarySteer = false
+    private readonly hangsSafeBoundarySteer = false,
+    private readonly steerDelayMs = 0
   ) {
     super();
     this.capabilities = {
@@ -2080,6 +2081,9 @@ class SteerableAdapter extends BaseProtocolAdapterV2 {
     }
     if (this.hangsSafeBoundarySteer) {
       return new Promise<void>(() => {});
+    }
+    if (this.steerDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.steerDelayMs));
     }
     this.steerInputs.push(input);
   }
@@ -4179,6 +4183,55 @@ describe('channel-agent-binder — lifecycle', () => {
     );
     expect(store.getAsyncRun(second.run.id)?.targets[0]?.state).toBe(
       'completed'
+    );
+    expect(store.getAsyncRun(second.run.id)?.targets[0]?.turnId).toBe(
+      adapter.sendCalls[0]
+    );
+  });
+
+  it('terminalizes an absorbed run even when steer resolves after the turn ends (#1570)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (agentType) =>
+        new SteerableAdapter(agentType, true, false, false, false, 50),
+      targets: STEER_TARGETS,
+      knownProviderIds: ['steer'],
+    });
+    const root = store.appendComplete({
+      channelId: CH,
+      sender: OPERATOR,
+      text: 'root',
+    });
+    const first = postWithAsyncRun(
+      store,
+      binder,
+      '@steer first',
+      ['steer'],
+      OPERATOR,
+      root.id
+    );
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = sessions.adapterFor(
+      sessions.firstSessionId()
+    ) as SteerableAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    const second = postWithAsyncRun(
+      store,
+      binder,
+      '@steer second',
+      ['steer'],
+      OPERATOR,
+      root.id
+    );
+    await waitFor(() => adapter.steerAttempts.length === 1);
+
+    // End the turn before the steer promise resolves.
+    adapter.completeLatest('done');
+    await waitFor(() => store.getAsyncRun(first.run.id)?.state === 'completed');
+
+    await waitFor(
+      () => store.getAsyncRun(second.run.id)?.state === 'completed',
+      4000
     );
     expect(store.getAsyncRun(second.run.id)?.targets[0]?.turnId).toBe(
       adapter.sendCalls[0]
