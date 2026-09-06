@@ -2389,6 +2389,50 @@ describe('channel routes — gateway capability mapping', () => {
       expect(toolOnly.body.items.length).toBe(1);
       expect(toolOnly.body.items[0]?.agentDetail).toBeTruthy();
     });
+
+    it('correlates steering-absorbed runs via target.turnId when present (#1570)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: '@codex do thing',
+        targetIds: [targetId],
+      });
+
+      const absorbedTurnId = 'turn-absorbed';
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'working',
+        turnId: absorbedTurnId,
+      });
+
+      const detail = h.store.beginStream({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        source: { runtimeId: 'rt', turnId: absorbedTurnId, itemId: 'tool-1' },
+        agentDetail: {
+          itemId: 'tool-1',
+          card: {
+            kind: 'tool_call',
+            title: 'Shell',
+            status: 'completed',
+            content: 'echo ok',
+          },
+        },
+      });
+      h.store.finalizeStream(detail.id, { text: '', status: 'complete' });
+
+      const res = await req<{ items: unknown[] }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/runs/${encodeURIComponent(run.id)}/history?kinds=tool`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.items.length).toBe(1);
+    });
   });
 
   // #1410: search opened to in-scope actors under its OWN verb. The actor lane

@@ -2591,8 +2591,9 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     const allowAll = kinds.size === 0;
     const allow = (k: string) => allowAll || kinds.has(k);
 
-    const turnIds = run.targets.map((target) =>
-      channelTurnId(run.requestMessageId, target.targetId)
+    const turnIds = run.targets.map(
+      (target) =>
+        target.turnId ?? channelTurnId(run.requestMessageId, target.targetId)
     );
     const turnMessages = store.listMessagesForTurns({
       channelId: run.channelId,
