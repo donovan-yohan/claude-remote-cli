@@ -5899,8 +5899,9 @@ export function createChannelMessageStore(
              AND m.kind = 'message'
              AND m.sender_kind = 'agent'
              AND m.status = 'complete'
-             AND m.body_text != ''
+             AND TRIM(m.body_text) != ''
              AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
+             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)
            ORDER BY m.seq DESC
            LIMIT 1`
         )
@@ -5918,8 +5919,9 @@ export function createChannelMessageStore(
              AND m.kind = 'message'
              AND m.sender_kind = 'agent'
              AND m.status = 'complete'
-             AND m.body_text != ''
+             AND TRIM(m.body_text) != ''
              AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
+             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)
              AND json_extract(m.meta_json, '$.asyncRun.runId') = ?
            ORDER BY m.seq DESC
            LIMIT 1`

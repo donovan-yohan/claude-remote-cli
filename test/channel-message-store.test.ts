@@ -2092,6 +2092,69 @@ describe('channel-message-store async runs (#1391)', () => {
       targets: [],
     });
   });
+
+  it('principal-prose helpers trim and ignore parts rows (#1570)', () => {
+    const s = store();
+    const targetId = 'agent-profile:a:default';
+    const { message: trigger, run } = s.appendCompleteWithAsyncRun({
+      channelId: 'topic:async',
+      sender: HUMAN,
+      text: '@a go',
+      targetIds: [targetId],
+    });
+    const turnId = `turn-${trigger.id}`;
+    const sender = { kind: 'agent' as const, id: targetId, providerId: 'mock' };
+
+    const whitespace = s.beginStream({
+      channelId: 'topic:async',
+      sender,
+      source: { runtimeId: 'rt', turnId, itemId: 'w1' },
+      text: '   ',
+      meta: { asyncRun: { runId: run.id, targetId } },
+    });
+    s.finalizeStream(whitespace.id, { text: '   ', status: 'complete' });
+
+    const withPart = s.beginStream({
+      channelId: 'topic:async',
+      sender,
+      source: { runtimeId: 'rt', turnId, itemId: 'p1' },
+      text: 'caption',
+      parts: [
+        {
+          type: 'image',
+          id: 'cha:img1',
+          mime: 'image/png',
+          w: 1,
+          h: 1,
+          bytes: 1,
+        },
+      ],
+      meta: { asyncRun: { runId: run.id, targetId } },
+    });
+    s.finalizeStream(withPart.id, { text: 'caption', status: 'complete' });
+
+    const prose = s.beginStream({
+      channelId: 'topic:async',
+      sender,
+      source: { runtimeId: 'rt', turnId, itemId: 'm1' },
+      text: 'real prose',
+      meta: { asyncRun: { runId: run.id, targetId } },
+    });
+    s.finalizeStream(prose.id, { text: 'real prose', status: 'complete' });
+
+    expect(
+      s.getLastPrincipalProseForRunId({
+        channelId: 'topic:async',
+        runId: run.id,
+      })?.body.text
+    ).toBe('real prose');
+    expect(
+      s.getLastPrincipalProseForTurns({
+        channelId: 'topic:async',
+        turnIds: [turnId],
+      })?.body.text
+    ).toBe('real prose');
+  });
 });
 
 describe('channel-message-store posts, threads, idempotency', () => {
