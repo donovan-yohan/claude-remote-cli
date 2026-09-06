@@ -128,7 +128,7 @@ beforeAll(() => {
 }, 120_000);
 
 describe('agent-profiles CLI gateway verbs', () => {
-  it('declares the four stable verbs with their CLI projections', () => {
+  it('declares the stable verbs with their CLI projections', () => {
     expect(commandSpec('agent-profiles.list').cli).toEqual([
       'relay-ide',
       'v1',
@@ -139,6 +139,7 @@ describe('agent-profiles CLI gateway verbs', () => {
     expect(commandSpec('agent-profiles.get').cli).toContain('--id');
     expect(commandSpec('agent-profiles.create').cli).toContain('--provider');
     expect(commandSpec('agent-profiles.update').cli).toContain('--id');
+    expect(commandSpec('agent-profiles.reset').cli).toContain('--profile-id');
   });
 
   it('lists profiles on the actor lane', async () => {
@@ -177,6 +178,29 @@ describe('agent-profiles CLI gateway verbs', () => {
       method: 'GET',
       url: 'http://127.0.0.1:4571/agent-profiles/agent-profile%3Ahermes%3A0001',
     });
+  });
+
+  it('resets one profile by id on the actor lane', async () => {
+    const { envelope, request } = await runCli([
+      'v1',
+      'agent-profiles',
+      'reset',
+      '--profile-id',
+      'agent-profile:hermes:0001',
+      '--json',
+    ]);
+
+    expect(envelope).toMatchObject({
+      ok: true,
+      command: 'agent-profiles.reset',
+    });
+    expect(request).toMatchObject({
+      method: 'POST',
+      url: 'http://127.0.0.1:4571/agent-profiles/agent-profile%3Ahermes%3A0001/reset',
+    });
+    const headers = (request as { headers: Record<string, string> }).headers;
+    expect(headers['x-relay-cli-command']).toBe('agent-profiles.reset');
+    expect(headers['x-relay-capabilities']).toBe('context:write');
   });
 
   it('creates a hermes-bound profile with the key read from an env var', async () => {

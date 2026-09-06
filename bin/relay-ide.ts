@@ -1873,6 +1873,7 @@ const CLI_GATEWAY_ACTOR_TOKEN_COMMANDS = new Set<RelayCliGatewayCommand>([
   'agent-profiles.get',
   'agent-profiles.create',
   'agent-profiles.update',
+  'agent-profiles.reset',
   // #1455 slice 3: minting a profile's durable credential is exactly the
   // web-UI-free setup step, so it must run on the host-local trust token too.
   'agent-profiles.credential.mint',
@@ -6513,6 +6514,31 @@ async function runGatewayAgentProfilesUpdate(
   printGatewayEnvelope(gatewayOk('agent-profiles.update', result), 0);
 }
 
+async function runGatewayAgentProfilesReset(
+  profileArgs: string[]
+): Promise<never> {
+  const parsed = parseAgentProfileCliFlags(
+    'agent-profiles.reset',
+    profileArgs,
+    ['--profile-id'],
+    []
+  );
+  const id = (parsed.values.get('--profile-id') ?? '').trim();
+  if (!id) {
+    gatewayInvalid('agent-profiles.reset', '--profile-id is required', {
+      field: 'id',
+    });
+  }
+  const result = await gatewayHttpJson({
+    commandName: 'agent-profiles.reset',
+    pathName: `/agent-profiles/${encodeURIComponent(id)}/reset`,
+    method: 'POST',
+    body: {},
+    capabilities: ['context:write'],
+  });
+  printGatewayEnvelope(gatewayOk('agent-profiles.reset', result), 0);
+}
+
 /**
  * #1455 slice 3: `relay-ide v1 agent-profiles credential mint|revoke|status`.
  *
@@ -6646,6 +6672,8 @@ async function runGatewayAgentProfiles(gatewayArgs: string[]): Promise<never> {
       return runGatewayAgentProfilesCreate(profileArgs);
     case 'update':
       return runGatewayAgentProfilesUpdate(profileArgs);
+    case 'reset':
+      return runGatewayAgentProfilesReset(profileArgs);
     case 'credential':
       return runGatewayAgentProfilesCredential(profileArgs);
     default:

@@ -3252,6 +3252,7 @@ async function main(): Promise<void> {
     createAgentProfileRouter({
       store: agentProfileStore,
       credentials: agentProfileCredentials,
+      binder: channelAgentBinder,
       listConfiguredFrameworks: () =>
         listConfiguredFrameworks(getConfig().frameworks),
       requireAuth,

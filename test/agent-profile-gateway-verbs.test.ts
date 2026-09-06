@@ -136,11 +136,12 @@ afterEach(async () => {
 const SECRET = 'hermes-gateway-key-1473';
 
 describe('agent-profiles gateway verbs', () => {
-  it('declares the four verbs on the actor lane with read/write capabilities', () => {
+  it('declares the verbs on the actor lane with read/write capabilities', () => {
     expect(CLI_GATEWAY_ACTOR_READ_COMMANDS).toContain('agent-profiles.list');
     expect(CLI_GATEWAY_ACTOR_READ_COMMANDS).toContain('agent-profiles.get');
     expect(CLI_GATEWAY_ACTOR_WRITE_COMMANDS).toContain('agent-profiles.create');
     expect(CLI_GATEWAY_ACTOR_WRITE_COMMANDS).toContain('agent-profiles.update');
+    expect(CLI_GATEWAY_ACTOR_WRITE_COMMANDS).toContain('agent-profiles.reset');
     for (const command of [
       'agent-profiles.list',
       'agent-profiles.get',
@@ -157,6 +158,7 @@ describe('agent-profiles gateway verbs', () => {
     for (const command of [
       'agent-profiles.create',
       'agent-profiles.update',
+      'agent-profiles.reset',
     ] as const) {
       expect(cliGatewayActorCommandCapabilities(command)).toEqual([
         'context:write',
@@ -175,10 +177,13 @@ describe('agent-profiles gateway verbs', () => {
       'agent-profiles.get',
       'agent-profiles.create',
       'agent-profiles.update',
+      'agent-profiles.reset',
     ] as const) {
       const serialized = JSON.stringify(commandSpec(command).outputSchema);
       expect(serialized).not.toContain('hermesApiKey"');
-      expect(serialized).toContain('hermesApiKeySet');
+      if (command !== 'agent-profiles.reset') {
+        expect(serialized).toContain('hermesApiKeySet');
+      }
     }
   });
 

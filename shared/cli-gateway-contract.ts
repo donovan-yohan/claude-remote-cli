@@ -125,6 +125,7 @@ export type RelayCliGatewayCommand =
   | 'agent-profiles.get'
   | 'agent-profiles.create'
   | 'agent-profiles.update'
+  | 'agent-profiles.reset'
   | 'agent-profiles.credential.mint'
   | 'agent-profiles.credential.revoke'
   | 'agent-profiles.credential.status'
@@ -634,6 +635,11 @@ const agentProfileSchema: RelayJsonSchema = {
     respondToAllowlist: { type: 'array', items: stringSchema },
     isDefault: booleanSchema,
     isBuiltIn: booleanSchema,
+    // #1571 runtime availability projection (not persisted on the profile row).
+    available: booleanSchema,
+    reason: nullableStringSchema,
+    since: stringSchema,
+    retryAfter: stringSchema,
   },
   required: ['id', 'providerId', 'displayName', 'isDefault', 'isBuiltIn'],
 };
@@ -695,6 +701,22 @@ const agentProfilesUpdateInputSchema: RelayJsonSchema = {
   additionalProperties: false,
   properties: { id: stringSchema, ...agentProfileWriteProperties },
   required: ['id'],
+};
+
+const agentProfilesResetInputSchema: RelayJsonSchema = {
+  title: 'AgentProfilesResetInput',
+  type: 'object',
+  additionalProperties: false,
+  properties: { id: stringSchema },
+  required: ['id'],
+};
+
+const agentProfilesResetOutputDataSchema: RelayJsonSchema = {
+  title: 'AgentProfilesResetData',
+  type: 'object',
+  additionalProperties: false,
+  properties: { cleared: booleanSchema },
+  required: ['cleared'],
 };
 
 const agentProfilesListOutputDataSchema: RelayJsonSchema = {
@@ -8297,6 +8319,36 @@ const commandSpecs: readonly RelayCliGatewayCommandSpec[] = [
       'INVALID_ARGUMENT',
       'NOT_FOUND',
       'SESSION_CONFLICT',
+      'SERVER_UNAVAILABLE',
+    ],
+  },
+  {
+    name: 'agent-profiles.reset',
+    cli: [
+      'relay-ide',
+      'v1',
+      'agent-profiles',
+      'reset',
+      '--profile-id',
+      '<id>',
+      '--json',
+    ],
+    summary:
+      'Clear an agent profile’s recorded provider-failure state so routing may resume. Host-local operator authority only.',
+    stable: true,
+    transport: 'hub-http',
+    requiresAuth: true,
+    capabilityHints: ['context:write'],
+    inputSchema: agentProfilesResetInputSchema,
+    outputSchema: okOutput(
+      'AgentProfilesResetOutput',
+      agentProfilesResetOutputDataSchema
+    ),
+    errorCodes: [
+      'UNAUTHORIZED',
+      'FORBIDDEN',
+      'INVALID_ARGUMENT',
+      'NOT_FOUND',
       'SERVER_UNAVAILABLE',
     ],
   },

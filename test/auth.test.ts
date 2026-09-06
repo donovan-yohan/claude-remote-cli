@@ -318,6 +318,7 @@ const expectedInventoryCoverage = [
       'GET /agent-profiles/:id',
       'POST /agent-profiles',
       'PATCH /agent-profiles/:id',
+      'POST /agent-profiles/:id/reset',
     ],
   },
   {
@@ -481,6 +482,10 @@ test('auth route lane inventory keeps credential classes distinct', () => {
     'browser-session',
   ]);
   expect(routeToLanes.get('PATCH /agent-profiles/:id')).toEqual([
+    'scoped-actor-credential',
+    'browser-session',
+  ]);
+  expect(routeToLanes.get('POST /agent-profiles/:id/reset')).toEqual([
     'scoped-actor-credential',
     'browser-session',
   ]);

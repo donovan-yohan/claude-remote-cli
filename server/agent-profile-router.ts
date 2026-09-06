@@ -15,6 +15,7 @@ import {
   isLocalHubCliActorCredential,
   type CliGatewayActorCommand,
 } from './cli-gateway-actor-auth.js';
+import type { ChannelAgentBinder } from './channel-agent-binder.js';
 import {
   AgentProfileStoreError,
   type AgentProfileCreateInput,
@@ -42,6 +43,8 @@ export interface AgentProfileRouterDeps {
   store: AgentProfileStore | null;
   /** The live framework catalog, already resolved from the current config. */
   listConfiguredFrameworks: () => readonly SeedFramework[];
+  /** Optional channel binder (null when channel store failed to init). */
+  binder?: ChannelAgentBinder | null;
   requireAuth?: RequestHandler;
   /**
    * #1473: CLI-gateway lane for the four `agent-profiles.*` verbs. Omitted in
@@ -489,7 +492,7 @@ export function createAgentProfileRouter(deps: AgentProfileRouterDeps): Router {
   router.get(
     '/agent-profiles',
     gatewayAuth('agent-profiles.list'),
-    (_req, res) => {
+    async (_req, res) => {
       const store = storeOr503(res, deps.store);
       if (!store) return;
       if (
@@ -500,7 +503,31 @@ export function createAgentProfileRouter(deps: AgentProfileRouterDeps): Router {
         )
       )
         return;
-      res.json({ profiles: store.list() });
+      const profiles = store.list();
+      const binder = deps.binder ?? null;
+      if (!binder) {
+        res.json({ profiles });
+        return;
+      }
+      const statuses = await Promise.all(
+        profiles.map((profile) =>
+          binder.agentProfileStatus(profile.id).catch(() => null)
+        )
+      );
+      res.json({
+        profiles: profiles.map((profile, idx) => {
+          const status = statuses[idx];
+          return status
+            ? {
+                ...profile,
+                available: status.available,
+                reason: status.reason,
+                ...(status.since ? { since: status.since } : {}),
+                ...(status.retryAfter ? { retryAfter: status.retryAfter } : {}),
+              }
+            : profile;
+        }),
+      });
     }
   );
 
@@ -525,6 +552,37 @@ export function createAgentProfileRouter(deps: AgentProfileRouterDeps): Router {
         );
       }
       res.json({ profile });
+    }
+  );
+
+  router.post(
+    '/agent-profiles/:id/reset',
+    gatewayAuth('agent-profiles.reset'),
+    async (req, res) => {
+      if (denyDelegatedActorWrite(req, res)) return;
+      const store = storeOr503(res, deps.store);
+      if (!store) return;
+      const binder = deps.binder ?? null;
+      if (!binder) {
+        return void sendError(
+          res,
+          503,
+          'SERVER_UNAVAILABLE',
+          'channel binder is unavailable'
+        );
+      }
+      const profileId = req.params['id'] ?? '';
+      const profile = store.get(profileId);
+      if (!profile) {
+        return void sendError(
+          res,
+          404,
+          'AGENT_PROFILE_NOT_FOUND',
+          'agent profile not found'
+        );
+      }
+      const result = await binder.resetAgentProfileProviderFailure(profile.id);
+      res.json({ cleared: result.cleared });
     }
   );
 

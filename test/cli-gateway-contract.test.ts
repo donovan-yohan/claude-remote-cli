@@ -285,6 +285,7 @@ describe('CLI gateway contract', () => {
       'agent-profiles.get',
       'agent-profiles.create',
       'agent-profiles.update',
+      'agent-profiles.reset',
       'agent-profiles.credential.mint',
       'agent-profiles.credential.revoke',
       'agent-profiles.credential.status',

@@ -106,6 +106,18 @@ export interface AgentProfile {
   isDefault: boolean;
   /** Seeded, non-user-authored profile. */
   isBuiltIn: boolean;
+
+  /**
+   * Optional runtime availability projection (#1571).
+   * Present on `agent-profiles.list` responses, not persisted in the profile store.
+   */
+  available?: boolean;
+  /** Optional human-readable availability reason (#1571). */
+  reason?: string | null;
+  /** Optional ISO timestamp of when unavailability started (#1571). */
+  since?: string;
+  /** Optional ISO timestamp when retry is expected to succeed (#1571). */
+  retryAfter?: string;
 }
 
 /**

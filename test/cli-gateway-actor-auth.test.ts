@@ -945,6 +945,7 @@ test('classifies explicitly scoped CLI gateway actor write routes into the actor
     'channels.remove-member',
     'agent-profiles.create',
     'agent-profiles.update',
+    'agent-profiles.reset',
     'agent-profiles.credential.mint',
     'agent-profiles.credential.revoke',
   ]);

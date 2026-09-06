@@ -442,6 +442,20 @@ export interface ChannelAgentBinder {
   ): Promise<void>;
   rosterForChannel(channelId: string): Promise<ChannelAgentRosterEntry[]>;
   /**
+   * #1571: operator-facing profile availability projection used by
+   * `agent-profiles.list`. Includes provider-failure metadata when present.
+   */
+  agentProfileStatus(profileActorId: string): Promise<{
+    available: boolean;
+    reason: string | null;
+    since?: string;
+    retryAfter?: string;
+  }>;
+  /** #1571: operator reset of a profile’s provider-failure state. */
+  resetAgentProfileProviderFailure(profileActorId: string): Promise<{
+    cleared: boolean;
+  }>;
+  /**
    * Synchronous by design: callers check this and archive in one JS turn, so a
    * new binder operation cannot interleave between the invariant and mutation.
    */
@@ -4006,6 +4020,10 @@ export function createChannelAgentBinder(
     binding: LiveBinding,
     patch: Extract<AgentPatchV2, { type: 'agent-turn-completed-v2' }>
   ): void {
+    const priorProviderFailure =
+      providerFailureByProfileActorId.get(binding.profileActorId) ?? null;
+    const parentMessageId =
+      binding.parentMessageIdByTurn.get(patch.turnId) ?? undefined;
     // The bridge listener runs first, so any terminally-opened row has already
     // resolved its parent. Prune before finishTurn pumps a queued turn, so a
     // Hermes fallback cannot become ambiguous with its successor.
@@ -4023,6 +4041,13 @@ export function createChannelAgentBinder(
       // #1571: any successful turn clears the last recorded provider failure
       // classification for this profile, so the roster recovers.
       providerFailureByProfileActorId.delete(binding.profileActorId);
+      if (priorProviderFailure) {
+        postSystemRow(
+          binding.channelId,
+          `@${binding.displayName} recovered from provider failure (${priorProviderFailure.code}).`,
+          { parentMessageId }
+        );
+      }
     }
     if (
       patch.turnId === binding.activeTurnId ||
@@ -4077,6 +4102,19 @@ export function createChannelAgentBinder(
         postSystemRow(
           binding.channelId,
           `@${binding.displayName} errored${suffix}: ${patch.message}`,
+          {
+            parentMessageId:
+              activeTurnId === null
+                ? undefined
+                : parentForTurn(binding, activeTurnId),
+          }
+        );
+      }
+      if (failureCode && (binding.sawStream || targetsIdleBinding)) {
+        const retry = patch.retryAfter ? ` until ${patch.retryAfter}` : '';
+        postSystemRow(
+          binding.channelId,
+          `@${binding.displayName} unavailable (${failureCode})${retry}: ${patch.providerMessage ?? patch.message}`,
           {
             parentMessageId:
               activeTurnId === null
@@ -6123,6 +6161,55 @@ export function createChannelAgentBinder(
     return { active: reasons.size > 0, reasons: Array.from(reasons) };
   }
 
+  async function agentProfileStatus(profileActorId: string): Promise<{
+    available: boolean;
+    reason: string | null;
+    since?: string;
+    retryAfter?: string;
+  }> {
+    const profile = profileForActorId(profileActorId);
+    if (!profile) {
+      return { available: false, reason: 'agent profile not found' };
+    }
+    const target = await resolveTarget(profile.providerId);
+    const failure = activeProviderFailure(profile, target);
+    if (failure) {
+      return {
+        available: false,
+        reason: failure.providerMessage ?? failure.code,
+        since: failure.since,
+        ...(failure.retryAfter ? { retryAfter: failure.retryAfter } : {}),
+      };
+    }
+    const availability = availabilityForProfile(profile, target);
+    return { available: availability.available, reason: availability.reason };
+  }
+
+  async function resetAgentProfileProviderFailure(
+    profileActorId: string
+  ): Promise<{ cleared: boolean }> {
+    const existing = providerFailureByProfileActorId.get(profileActorId);
+    if (!existing) return { cleared: false };
+    providerFailureByProfileActorId.delete(profileActorId);
+
+    const profile = profileForActorId(profileActorId);
+    const displayName = profile?.displayName?.trim()
+      ? profile.displayName
+      : profileActorId;
+    const channels = new Set<string>();
+    for (const binding of live.values()) {
+      if (binding.profileActorId === profileActorId)
+        channels.add(binding.channelId);
+    }
+    for (const channelId of channels) {
+      postSystemRow(
+        channelId,
+        `@${displayName} provider failure reset (was ${existing.code}).`
+      );
+    }
+    return { cleared: true };
+  }
+
   return {
     handleMessagePosted,
     ensureBinding,
@@ -6133,6 +6220,8 @@ export function createChannelAgentBinder(
     retryMessage,
     respondToApproval,
     rosterForChannel,
+    agentProfileStatus,
+    resetAgentProfileProviderFailure,
     archiveActivityForChannel,
     executeCommand,
     restartScope,
