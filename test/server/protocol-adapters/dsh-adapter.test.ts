@@ -196,6 +196,21 @@ describe('DshProtocolAdapter', () => {
     await adapter.disconnect();
   });
 
+  it('classifies transport auth failures as auth_required', async () => {
+    const { adapter, client, patches } = harness();
+    await adapter.connect(config);
+    client.emit('error', new Error('Authentication required'));
+    await Promise.resolve();
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        type: 'agent-error-v2',
+        failureCode: 'auth_required',
+        providerMessage: 'Authentication required',
+      })
+    );
+    await adapter.disconnect();
+  });
+
   it('translates a yolo permission mode and lets a profile override it', async () => {
     const yolo = harness();
     await yolo.adapter.connect({

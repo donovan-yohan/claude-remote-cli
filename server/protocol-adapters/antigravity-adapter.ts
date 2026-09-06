@@ -54,15 +54,15 @@ function classifyAntigravityProviderFailure(
   ) {
     return { failureCode: 'quota_exhausted', providerMessage: message };
   }
-  if (lower.includes('authentication required') || lower.includes('log in')) {
-    return { failureCode: 'auth_required', providerMessage: message };
-  }
   if (
     lower.includes('not found on path') ||
     lower.includes('cli not found') ||
     lower.includes('enoent')
   ) {
     return { failureCode: 'binary_missing', providerMessage: message };
+  }
+  if (lower.includes('authentication required') || lower.includes('log in')) {
+    return { failureCode: 'auth_required', providerMessage: message };
   }
   return null;
 }
@@ -747,6 +747,11 @@ export class AntigravityProtocolAdapter
         const message = enoent
           ? 'agy CLI not found on PATH — install Antigravity CLI and log in.'
           : `Failed to spawn agy: ${err.message}`;
+        const failure = classifyAntigravityProviderFailure(message);
+        emitErrorPatch(this.patchSink, message, null, {
+          ...(failure ? { failureCode: failure.failureCode } : {}),
+          ...(failure ? { providerMessage: failure.providerMessage } : {}),
+        });
         reject(new Error(message));
       };
 

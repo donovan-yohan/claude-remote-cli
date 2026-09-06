@@ -125,7 +125,9 @@ describe('ClaudeProtocolAdapter (stream-json subprocess)', () => {
     // `executeControlCommand` is an optional `ProtocolAdapterV2` member the
     // Claude adapter deliberately does not implement; read it through the
     // interface so the assertion still checks the real contract.
-    expect((adapter as ProtocolAdapterV2).executeControlCommand).toBeUndefined();
+    expect(
+      (adapter as ProtocolAdapterV2).executeControlCommand
+    ).toBeUndefined();
     expect(patches).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -1399,6 +1401,11 @@ describe('ClaudeProtocolAdapter (stream-json subprocess)', () => {
       )
     );
     const err = patches.find((p) => p.type === 'agent-error-v2');
+    expect(
+      err?.type === 'agent-error-v2' &&
+        err.message &&
+        err.failureCode === 'binary_missing'
+    ).toBe(true);
     expect(err?.type === 'agent-error-v2' && err.message).toMatch(
       /claude login/
     );

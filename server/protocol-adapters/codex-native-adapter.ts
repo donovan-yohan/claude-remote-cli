@@ -98,6 +98,14 @@ function classifyCodexProviderFailure(
 } | null {
   const lower = message.toLowerCase();
   if (
+    /(?:^|\s)enoent(?:\s|$|:)/.test(lower) ||
+    lower.includes('not found on path') ||
+    (lower.includes('spawn') && lower.includes('not found')) ||
+    lower.includes('command not found')
+  ) {
+    return { failureCode: 'binary_missing', providerMessage: message };
+  }
+  if (
     lower.includes("you've hit your usage limit") ||
     lower.includes('hit your usage limit') ||
     (lower.includes('usage limit') && lower.includes('try again'))
@@ -777,55 +785,78 @@ export class CodexNativeProtocolAdapter extends BaseProtocolAdapterV2 {
     this.commandCatalog = RELAY_CODEX_COMMANDS.filter(
       (command) => !CODEX_MODEL_CONTROL_KEYS.has(command.collisionKey ?? '')
     );
-    const client = this.createClient(config);
-    this.client = client;
-    this.exitedProcessRootPid = null;
+    try {
+      const client = this.createClient(config);
+      this.client = client;
+      this.exitedProcessRootPid = null;
 
-    this.wireClientEvents(client);
+      this.wireClientEvents(client);
 
-    await client.start();
+      await client.start();
 
-    const threadResult = config.resumeSessionId
-      ? await client.call<{ thread: { id: string } }>('thread/resume', {
-          threadId: config.resumeSessionId,
-          excludeTurns: false,
-          // Replayed, not re-derived: the resumed thread keeps the same profile
-          // prompt and collaboration contract the original thread/start sent.
-          ...this.threadInstructionParams(config),
-        })
-      : await client.call<{ thread: { id: string } }>('thread/start', {
-          cwd: config.cwd,
-          experimentalRawEvents: false,
-          persistExtendedHistory: false,
-          ...this.threadInstructionParams(config),
-          ...(config.model || this.pendingModelOverride
-            ? { model: this.pendingModelOverride ?? config.model }
-            : {}),
-          ...(this.initialServiceTier(config) !== undefined
-            ? { serviceTier: this.initialServiceTier(config) }
-            : {}),
-        });
+      const threadResult = config.resumeSessionId
+        ? await client.call<{ thread: { id: string } }>('thread/resume', {
+            threadId: config.resumeSessionId,
+            excludeTurns: false,
+            // Replayed, not re-derived: the resumed thread keeps the same profile
+            // prompt and collaboration contract the original thread/start sent.
+            ...this.threadInstructionParams(config),
+          })
+        : await client.call<{ thread: { id: string } }>('thread/start', {
+            cwd: config.cwd,
+            experimentalRawEvents: false,
+            persistExtendedHistory: false,
+            ...this.threadInstructionParams(config),
+            ...(config.model || this.pendingModelOverride
+              ? { model: this.pendingModelOverride ?? config.model }
+              : {}),
+            ...(this.initialServiceTier(config) !== undefined
+              ? { serviceTier: this.initialServiceTier(config) }
+              : {}),
+          });
 
-    // `thread/resume` normally echoes the durable id. Retain the requested id
-    // defensively if an app-server version omits it, rather than replacing the
-    // binding's only recovery handle with an empty session identity.
-    this.providerSessionId =
-      threadResult.thread.id || config.resumeSessionId || null;
-    this._status = 'connected';
+      // `thread/resume` normally echoes the durable id. Retain the requested id
+      // defensively if an app-server version omits it, rather than replacing the
+      // binding's only recovery handle with an empty session identity.
+      this.providerSessionId =
+        threadResult.thread.id || config.resumeSessionId || null;
+      this._status = 'connected';
 
-    this.emitSnapshot();
-    this.emitLiveState({
-      status: 'idle',
-      activeTurnId: null,
-      waitingOn: null,
-      activeRequestIds: [],
-      proposedPlanItemId: null,
-      queueLength: 0,
-      fastModeAvailable: false,
-      error: null,
-    });
+      this.emitSnapshot();
+      this.emitLiveState({
+        status: 'idle',
+        activeTurnId: null,
+        waitingOn: null,
+        activeRequestIds: [],
+        proposedPlanItemId: null,
+        queueLength: 0,
+        fastModeAvailable: false,
+        error: null,
+      });
 
-    this.refreshSlashCommands(config.cwd, client, catalogGeneration);
+      this.refreshSlashCommands(config.cwd, client, catalogGeneration);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const classified = classifyCodexProviderFailure(message, Date.now());
+      this.emitPatch({
+        type: 'agent-error-v2',
+        sessionId: this.sessionId,
+        timestamp: nowIso(),
+        message,
+        ...(classified?.failureCode
+          ? { failureCode: classified.failureCode }
+          : {}),
+        ...(classified?.retryAfter
+          ? { retryAfter: classified.retryAfter }
+          : {}),
+        ...(classified?.providerMessage
+          ? { providerMessage: classified.providerMessage }
+          : {}),
+      });
+      this._status = 'disconnected';
+      await this.teardownState();
+      throw err;
+    }
   }
 
   async resumeSession(threadId: string): Promise<void> {

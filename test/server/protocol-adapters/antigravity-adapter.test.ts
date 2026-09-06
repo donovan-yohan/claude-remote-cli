@@ -106,6 +106,29 @@ describe('AntigravityProtocolAdapter', () => {
     }
   });
 
+  it('classifies ENOENT spawn failures as binary_missing', async () => {
+    const spawnFn = vi.fn(() => {
+      const err = Object.assign(new Error('spawn ENOENT'), {
+        code: 'ENOENT',
+      }) as NodeJS.ErrnoException;
+      throw err;
+    });
+    const adapter = new AntigravityProtocolAdapter(
+      spawnFn as any,
+      new AdapterProcessRegistry(1_000_000)
+    );
+    const patches: AgentPatchV2[] = [];
+    adapter.onPatch((p) => patches.push(p));
+    await expect(adapter.connect(config)).rejects.toThrow('agy CLI not found');
+    await Promise.resolve();
+    await Promise.resolve();
+    const err = patches.find((p) => p.type === 'agent-error-v2');
+    expect(err).toMatchObject({
+      type: 'agent-error-v2',
+      failureCode: 'binary_missing',
+    });
+  });
+
   // Test 2
   it('appends --dangerously-skip-permissions only for permissionMode always-proceed', async () => {
     const { adapter: a1, spawns: s1 } = harness();

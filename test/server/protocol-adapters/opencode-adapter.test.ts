@@ -188,6 +188,24 @@ describe('OpenCode streaming capability is backed by real deltas', () => {
     const patches = mapChatEventToAgentPatchV2(delta!);
     expect(patches.map((patch) => patch.type)).toContain('agent-item-delta-v2');
   });
+
+  it('maps chat:error rate-limit to quota_exhausted failureCode', () => {
+    const patches = mapChatEventToAgentPatchV2({
+      type: 'chat:error',
+      kind: 'rate-limit',
+      message: "You've hit your usage limit for GPT-5.3-Codex-Spark ...",
+      retryable: true,
+      sessionId: 'session-1',
+      timestamp: new Date('2026-09-06T08:13:00.000Z').toISOString(),
+      source: 'opencode',
+    });
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        type: 'agent-error-v2',
+        failureCode: 'quota_exhausted',
+      })
+    );
+  });
 });
 
 /**

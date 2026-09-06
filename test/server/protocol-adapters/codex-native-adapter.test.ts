@@ -281,6 +281,28 @@ describe('CodexNativeProtocolAdapter — connect', () => {
     await adapter.disconnect();
   });
 
+  it('classifies ENOENT spawn failures as binary_missing', async () => {
+    const factory = makeStubFactory();
+    const adapter = new CodexNativeProtocolAdapter(factory);
+    const patches = collectPatches(adapter);
+
+    factory.lastClient.start = vi.fn(async () => {
+      const err = Object.assign(new Error('spawn codex ENOENT'), {
+        code: 'ENOENT',
+      }) as NodeJS.ErrnoException;
+      throw err;
+    });
+
+    await expect(adapter.connect(config)).rejects.toThrow('ENOENT');
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        type: 'agent-error-v2',
+        failureCode: 'binary_missing',
+        providerMessage: 'spawn codex ENOENT',
+      })
+    );
+  });
+
   it('passes profile process env to the app-server subprocess', async () => {
     const factory = makeStubFactory();
     const adapter = new CodexNativeProtocolAdapter(factory);
