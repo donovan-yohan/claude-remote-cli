@@ -72,11 +72,10 @@ function classifyClaudeProviderFailure(
   ) {
     return { failureCode: 'binary_missing', providerMessage: message };
   }
-  if (lower.includes('run `claude login`') || lower.includes('login')) {
+  // Anchor on Claude's explicit instruction rather than generic "login"
+  // substrings (which can appear in unrelated provider output).
+  if (lower.includes('run `claude login`')) {
     return { failureCode: 'auth_required', providerMessage: message };
-  }
-  if (lower.includes('quota') || lower.includes('rate limit')) {
-    return { failureCode: 'quota_exhausted', providerMessage: message };
   }
   return null;
 }

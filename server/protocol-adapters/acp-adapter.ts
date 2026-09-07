@@ -58,10 +58,7 @@ function classifyAcpProviderFailure(
   const lower = message.toLowerCase();
   if (
     lower.includes('authentication required') ||
-    lower.includes('unauthorized') ||
-    lower.includes('not authorized') ||
-    lower.includes('not logged in') ||
-    lower.includes('login')
+    lower.includes('not logged in')
   ) {
     return { failureCode: 'auth_required', providerMessage: message };
   }
@@ -72,9 +69,6 @@ function classifyAcpProviderFailure(
     (lower.includes('spawn') && lower.includes('not found'))
   ) {
     return { failureCode: 'binary_missing', providerMessage: message };
-  }
-  if (lower.includes('quota') || lower.includes('rate limit')) {
-    return { failureCode: 'quota_exhausted', providerMessage: message };
   }
   return null;
 }

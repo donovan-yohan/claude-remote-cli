@@ -48,10 +48,8 @@ function classifyAntigravityProviderFailure(
   message: string
 ): { failureCode: ProviderFailureCode; providerMessage: string } | null {
   const lower = message.toLowerCase();
-  if (
-    lower.includes('individual quota reached') ||
-    (lower.includes('quota') && lower.includes('upgrade'))
-  ) {
+  // Anchor on the known quota phrase from #1571.
+  if (lower.includes('individual quota reached')) {
     return { failureCode: 'quota_exhausted', providerMessage: message };
   }
   if (
@@ -61,7 +59,7 @@ function classifyAntigravityProviderFailure(
   ) {
     return { failureCode: 'binary_missing', providerMessage: message };
   }
-  if (lower.includes('authentication required') || lower.includes('log in')) {
+  if (lower.includes('authentication required')) {
     return { failureCode: 'auth_required', providerMessage: message };
   }
   return null;
