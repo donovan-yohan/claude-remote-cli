@@ -10076,7 +10076,7 @@ describe('channel-agent-binder — delivery receipts (#1442)', () => {
       },
     });
 
-    // Phase 1: a successful turn clears the recorded failure.
+    // Phase 1: unknown failures surface but never block roster availability.
     post(store, binder, '@mock go', ['mock']);
     await waitFor(() => sessions.spawns() === 1);
     const adapter = sessions.adapterFor(
@@ -10084,14 +10084,15 @@ describe('channel-agent-binder — delivery receipts (#1442)', () => {
     ) as ScriptedAdapter;
     await waitFor(() => adapter.sendCalls.length === 1);
     adapter.emitError('transient provider error', { failureCode: 'unknown' });
-    adapter.emitTerminal('completed');
     await waitFor(() =>
-      systemRows(store).some((row) => row.body.text.includes('recovered'))
+      systemRows(store).some((row) => row.body.text.includes('unknown'))
     );
-    const afterSuccess = await binder.rosterForChannel(CH);
     expect(
-      afterSuccess.find((row) => row.id === builtInAgentProfileId('mock'))
+      (await binder.rosterForChannel(CH)).find(
+        (row) => row.id === builtInAgentProfileId('mock')
+      )
     ).toMatchObject({ available: true });
+    adapter.emitTerminal('completed');
 
     // Phase 2: a quota failure refuses until retryAfter, then admits again.
     post(store, binder, '@mock again', ['mock']);

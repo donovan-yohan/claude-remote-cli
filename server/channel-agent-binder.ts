@@ -4018,12 +4018,14 @@ export function createChannelAgentBinder(
   ): ProviderFailureCode | null {
     if (!patch.failureCode) return null;
     const since = new Date(now()).toISOString();
-    providerFailureByProfileActorId.set(binding.profileActorId, {
-      code: patch.failureCode,
-      since,
-      ...(patch.retryAfter ? { retryAfter: patch.retryAfter } : {}),
-      providerMessage: patch.providerMessage ?? patch.message,
-    });
+    if (patch.failureCode !== 'unknown') {
+      providerFailureByProfileActorId.set(binding.profileActorId, {
+        code: patch.failureCode,
+        since,
+        ...(patch.retryAfter ? { retryAfter: patch.retryAfter } : {}),
+        providerMessage: patch.providerMessage ?? patch.message,
+      });
+    }
     logger.warn('channel provider failure classified', {
       channelId: binding.channelId,
       profileActorId: binding.profileActorId,
