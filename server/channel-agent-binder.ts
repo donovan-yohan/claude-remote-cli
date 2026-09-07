@@ -4774,6 +4774,44 @@ export function createChannelAgentBinder(
         ...(parentMessageId ? { parentMessageId } : {}),
         runId: run.id,
       });
+      if (!childRunId) {
+        // #1585: if we failed to create the follow-up row/run, do not silently
+        // terminate the chain by stamping followupPostedAt. Treat this as an
+        // abandonment terminus and record it durably.
+        postSystemRow(
+          binding.channelId,
+          `Delivery contract follow-up could not be posted; abandoning: ${evaluation.unmet.join(
+            ', '
+          )}`,
+          { parentMessageId }
+        );
+        const updated = store.finalizeAsyncRunDeliveryContract({
+          runId: run.id,
+          result: {
+            met: evaluation.met,
+            unmet: evaluation.unmet,
+            unknown: evaluation.unknown,
+            evaluatedAt,
+          },
+          abandonedAt: new Date(now()).toISOString(),
+        });
+        if (updated) hub.broadcastRunLifecycle(updated);
+        deps.events?.publish({
+          topic: 'attention',
+          type: 'delivery-contract.abandoned',
+          ...(runtime?.repoPath ? { repoPath: runtime.repoPath } : {}),
+          payload: {
+            channelId: binding.channelId,
+            runId: run.id,
+            targetProfileId: binding.profileActorId,
+            unmet: evaluation.unmet,
+            followupDepth: depth,
+            maxFollowups: deliveryContractMaxFollowups,
+          },
+        });
+        return;
+      }
+
       const followupPostedAt = new Date(now()).toISOString();
       const withFollowup = store.finalizeAsyncRunDeliveryContract({
         runId: run.id,
@@ -4784,7 +4822,7 @@ export function createChannelAgentBinder(
           evaluatedAt,
         },
         followupPostedAt,
-        ...(childRunId ? { childRunId } : {}),
+        childRunId,
       });
       if (withFollowup) hub.broadcastRunLifecycle(withFollowup);
     } catch (err) {

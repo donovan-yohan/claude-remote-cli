@@ -5920,6 +5920,69 @@ describe('channel-agent-binder — lifecycle', () => {
     expect(child?.deliveryContract?.parentRunId).toBe(parent.id);
   });
 
+  it('does not stamp followupPostedAt when the follow-up post fails (#1585)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    const { binder, store } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractMaxFollowups: 3,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const original = store.appendCompleteWithAsyncRun.bind(store);
+    store.appendCompleteWithAsyncRun = (input) => {
+      if (input.kind === 'system') {
+        throw new Error('follow-up insert failed');
+      }
+      return original(input);
+    };
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['pr:feat/x'] },
+      meta: { deliveryContract: { expect: ['pr:feat/x'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() => {
+      const run = store.getAsyncRun(posted.run.id);
+      return (
+        Boolean(run?.deliveryContract?.result) &&
+        Boolean(run?.deliveryContract?.abandonedAt)
+      );
+    });
+    const run = store.getAsyncRun(posted.run.id)!;
+    expect(run.state).toBe('completed_unmet');
+    expect(run.deliveryContract?.followupPostedAt).toBeFalsy();
+    expect(run.deliveryContract?.abandonedAt).toBeTruthy();
+    expect(
+      systemRows(store).some((m) =>
+        m.body.text.includes(
+          'Delivery contract follow-up could not be posted; abandoning'
+        )
+      )
+    ).toBe(true);
+  });
+
   it('terminalizes a follow-up run when paused at follow-up routing time (#1585)', async () => {
     const profiles = createAgentProfileStore(':memory:');
     cleanup.push(() => profiles.close());
