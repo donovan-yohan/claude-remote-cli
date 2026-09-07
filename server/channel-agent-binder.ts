@@ -4804,7 +4804,7 @@ export function createChannelAgentBinder(
             emitReceipt({
               trigger,
               targetProfileId: profile.id,
-              state: 'refused_policy',
+              state: 'refused_provider',
               reasonCode: providerFailureReceiptReason(failure.code),
             });
             return;

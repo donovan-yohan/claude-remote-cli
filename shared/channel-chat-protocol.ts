@@ -1372,6 +1372,8 @@ export const CHANNEL_DELIVERY_RECEIPT_STATES = [
   'held_busy',
   'dropped_queue_full',
   'refused_policy',
+  /** #1571: provider failure refusal (distinct from #1560 policy refusal). */
+  'refused_provider',
   'unreachable_offline',
   'expired_watchdog',
   'failed_runtime',

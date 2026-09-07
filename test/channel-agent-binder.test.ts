@@ -9978,7 +9978,7 @@ describe('channel-agent-binder — delivery receipts (#1442)', () => {
       collectReceipts(hub, CH).some(
         (r) =>
           r.messageId === refused.id &&
-          r.state === 'refused_policy' &&
+          r.state === 'refused_provider' &&
           r.reasonCode === 'provider_quota_exhausted'
       )
     );
@@ -10018,7 +10018,7 @@ describe('channel-agent-binder — delivery receipts (#1442)', () => {
       collectReceipts(hub, CH).some(
         (r) =>
           r.messageId === refused.id &&
-          r.state === 'refused_policy' &&
+          r.state === 'refused_provider' &&
           r.reasonCode === 'provider_quota_exhausted'
       )
     );
@@ -10125,7 +10125,7 @@ describe('channel-agent-binder — delivery receipts (#1442)', () => {
       collectReceipts(hub, CH).some(
         (r) =>
           r.messageId === refused.id &&
-          r.state === 'refused_policy' &&
+          r.state === 'refused_provider' &&
           r.reasonCode === 'provider_quota_exhausted'
       )
     );

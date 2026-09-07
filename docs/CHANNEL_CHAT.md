@@ -257,8 +257,9 @@ operator-facing lanes:
   admission. The returned `run.targets[]` entry terminalizes as
   `state:"refused"` with a structured `reason` (for provider failures,
   `provider-failure:<code>`). Other targets in the same post still run.
-- **Receipts / attention**: typed delivery receipts carry `state:"refused_policy"`
-  with a `reasonCode` like `provider_quota_exhausted`, and the hub publishes an
+- **Receipts / attention**: typed delivery receipts carry
+  `state:"refused_provider"` with a `reasonCode` like `provider_quota_exhausted`,
+  and the hub publishes an
   `attention` event (`provider-failure.classified`) for alerting.
 
 Failures clear automatically on a successful turn, and quota failures respect
