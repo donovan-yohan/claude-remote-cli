@@ -328,9 +328,10 @@ Mapping guidance:
   provider’s CLI binary is missing.
 - **unknown**: a terminal error that does not match the above categories.
 
-The binder records the latest classified failure per profile actor id and
-marks the roster entry unavailable until recovery (successful turn) or until
-`retryAfter` passes for quota failures.
+The binder records the latest classified failure per profile actor id (in
+process memory today) and marks the roster entry unavailable until recovery
+(successful turn), until the default cooldown elapses, or until `retryAfter`
+passes for quota failures. A hub restart clears this in-memory state.
 
 ### Live Pi and Prime RPC smoke
 

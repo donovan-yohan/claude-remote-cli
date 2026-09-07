@@ -268,6 +268,9 @@ explicitly clear a recorded provider failure with:
 relay-ide v1 agent-profiles reset --profile-id <agent-profile-id> --json
 ```
 
+Provider failure state is **process-local** today: it is cleared by a hub
+restart (it is not persisted durably).
+
 Planting one on the agent's own host is
 `scripts/install-profile-credential.ts`: pipe `credential mint --json` into it
 and it upserts `RELAY_IDE_ACTOR_TOKEN` into that agent's per-profile environment
