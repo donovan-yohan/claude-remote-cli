@@ -391,6 +391,8 @@ When a routed run completes, the binder evaluates the contract. If any spec is u
 
 Each follow-up is implemented as a binder-authored system row that routes a new mention to the same profile **and creates a new `ChannelAsyncRun`**. The follow-up run inherits the parent run’s `deliveryContract` and carries `deliveryContract.followupDepth` (0 for the original post) plus `deliveryContract.parentRunId` for chaining. Each run records whether it posted a follow-up via `deliveryContract.followupPostedAt`.
 
+Follow-up chaining is bounded by `RELAY_IDE_CHANNEL_CONTRACT_MAX_FOLLOWUPS` (default `3`). The value must be a non-negative integer; `0` disables follow-up chaining entirely.
+
 Idempotent retries are keyed by `(channelId, server-derived sender,
 clientMessageId)`: a replay returns the original request message and run and
 does not route another target. A reconnecting client resumes from `durableSeq`

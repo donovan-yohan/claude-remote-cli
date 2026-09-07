@@ -4620,6 +4620,9 @@ export function createChannelAgentBinder(
         return;
       }
 
+      // #1585: allow operator to disable follow-up chaining entirely.
+      if (deliveryContractMaxFollowups === 0) return;
+
       const depth = contract?.followupDepth ?? 0;
       if (depth >= deliveryContractMaxFollowups) {
         postSystemRow(
