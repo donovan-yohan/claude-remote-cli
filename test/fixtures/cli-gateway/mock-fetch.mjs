@@ -77,44 +77,61 @@ globalThis.fetch = async (url, init = {}) => {
           : String(url).includes('/channels/runs/') &&
               String(url).includes('/history')
             ? { run: { id: 'chrun:test', state: 'completed' }, items: [] }
-            : String(url).includes('/channels/')
-              ? {
-                  message: { id: 'chm:test' },
-                  run: {
-                    id: 'chrun:test',
-                    channelId: 'topic:test',
-                    threadId: null,
-                    requestMessageId: 'chm:test',
-                    requesterId: 'actor:test',
-                    state: 'submitted',
-                    targets: process.env.RELAY_TEST_CHANNELS_POST_REFUSED
-                      ? [
-                          {
-                            targetId: 'agent-profile:codex:default',
-                            state: 'refused',
-                            reason: 'provider-failure:quota_exhausted',
-                            updatedAt: '2026-08-12T00:00:00.000Z',
-                          },
-                        ]
-                      : [
-                          {
-                            targetId: 'agent-profile:codex:default',
-                            state: 'queued',
-                            updatedAt: '2026-08-12T00:00:00.000Z',
-                          },
-                        ],
-                    createdAt: '2026-08-12T00:00:00.000Z',
-                    updatedAt: '2026-08-12T00:00:00.000Z',
-                  },
-                }
-              : {
-                  id: 'worker-session',
-                  type: 'terminal',
-                  mode: 'pty',
-                  agent: 'terminal',
-                  cwd: '/repo',
-                  status: 'active',
-                };
+            : String(url).includes('/runs/') &&
+                String(url).includes('/channels/')
+              ? process.env.RELAY_TEST_CHANNELS_POST_REFUSED
+                ? {
+                    run: {
+                      id: 'chrun:test',
+                      channelId: 'topic:test',
+                      threadId: null,
+                      requestMessageId: 'chm:test',
+                      requesterId: 'actor:test',
+                      state: 'rejected',
+                      targets: [
+                        {
+                          targetId: 'agent-profile:codex:default',
+                          state: 'refused',
+                          reason: 'provider-failure:quota_exhausted',
+                          updatedAt: '2026-08-12T00:00:00.000Z',
+                          completedAt: '2026-08-12T00:00:00.000Z',
+                        },
+                      ],
+                      createdAt: '2026-08-12T00:00:00.000Z',
+                      updatedAt: '2026-08-12T00:00:00.000Z',
+                      completedAt: '2026-08-12T00:00:00.000Z',
+                    },
+                  }
+                : { run: { id: 'chrun:test', state: 'completed' } }
+              : String(url).includes('/channels/')
+                ? {
+                    message: { id: 'chm:test' },
+                    run: {
+                      id: 'chrun:test',
+                      channelId: 'topic:test',
+                      threadId: null,
+                      requestMessageId: 'chm:test',
+                      requesterId: 'actor:test',
+                      state: 'submitted',
+                      targets: [
+                        {
+                          targetId: 'agent-profile:codex:default',
+                          state: 'queued',
+                          updatedAt: '2026-08-12T00:00:00.000Z',
+                        },
+                      ],
+                      createdAt: '2026-08-12T00:00:00.000Z',
+                      updatedAt: '2026-08-12T00:00:00.000Z',
+                    },
+                  }
+                : {
+                    id: 'worker-session',
+                    type: 'terminal',
+                    mode: 'pty',
+                    agent: 'terminal',
+                    cwd: '/repo',
+                    status: 'active',
+                  };
   return new Response(JSON.stringify(data), {
     status: 200,
     headers: { 'content-type': 'application/json' },
