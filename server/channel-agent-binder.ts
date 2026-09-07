@@ -1,8 +1,6 @@
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import fs from 'node:fs';
-import path from 'node:path';
 
 import { createLogger } from './logger.js';
 import { resolveExecutablePath } from './frameworks.js';
@@ -246,6 +244,8 @@ const UNAVAILABLE_ROW_TTL_MS = 5 * 60 * 1000;
  * Env knob: RELAY_PROVIDER_FAILURE_COOLDOWN_MS
  */
 const DEFAULT_PROVIDER_FAILURE_COOLDOWN_MS = 30 * 60 * 1000;
+const WATCHDOG_TERMINAL_REASON = 'watchdog' as const;
+const TURN_CEILING_TERMINAL_REASON = 'turn-ceiling' as const;
 /**
  * Keep exact provider turn ids briefly after a bare-idle successor starts.
  * These tombstones are deliberately never candidates for anonymous `turn-0`.
@@ -1626,26 +1626,6 @@ export function createChannelAgentBinder(
     return { available: true, reason: null };
   }
 
-  function providerCredentialPresent(providerId: string): boolean {
-    let descriptor: ReturnType<typeof providerDescriptor> | undefined;
-    try {
-      descriptor = providerDescriptor(providerId);
-    } catch {
-      return false;
-    }
-    if (!descriptor) return false;
-    const home = os.homedir();
-    for (const segments of descriptor.authCredentialPaths) {
-      const candidate = path.join(home, ...segments);
-      try {
-        if (fs.existsSync(candidate)) return true;
-      } catch {
-        /* best-effort */
-      }
-    }
-    return false;
-  }
-
   function providerFailureReceiptReason(
     code: ProviderFailureCode
   ): ChannelDeliveryReceiptReasonCode {
@@ -1710,9 +1690,20 @@ export function createChannelAgentBinder(
     }
 
     if (failure.code === 'auth_required') {
-      // Best-effort: some providers declare credential-file heuristics, and a
-      // freshly completed login re-creates them.
-      if (providerCredentialPresent(profile.providerId)) {
+      const retryAt =
+        failure.retryAfter && failure.retryAfter.trim().length > 0
+          ? Date.parse(failure.retryAfter)
+          : Number.NaN;
+      const sinceAt = Date.parse(failure.since);
+      if (Number.isFinite(retryAt)) {
+        if (now() >= retryAt) {
+          providerFailureByProfileActorId.delete(profile.id);
+          return null;
+        }
+      } else if (
+        !Number.isFinite(sinceAt) ||
+        now() >= sinceAt + providerFailureCooldownMs
+      ) {
         providerFailureByProfileActorId.delete(profile.id);
         return null;
       }
@@ -2084,7 +2075,7 @@ export function createChannelAgentBinder(
       });
       drainBoundedTurn(
         binding,
-        'turn-ceiling',
+        TURN_CEILING_TERMINAL_REASON,
         `@${binding.displayName} reached the ${describeMs(turnCeilingMs)} turn limit and was interrupted.`
       );
     }, turnCeilingMs);
@@ -2117,7 +2108,7 @@ export function createChannelAgentBinder(
     binding: LiveBinding,
     reason: Extract<
       ChannelCompletionCallbackTerminalReason,
-      'watchdog' | 'turn-ceiling'
+      typeof WATCHDOG_TERMINAL_REASON | typeof TURN_CEILING_TERMINAL_REASON
     >,
     text: string
   ): void {
@@ -3891,11 +3882,13 @@ export function createChannelAgentBinder(
         : // A ceiling drain is Relay cancelling the turn, not the provider
           // failing it (#1541) — and by here the runtime has been interrupted,
           // so no target claims a terminal state while its runtime works on.
-          terminalReason === 'interrupt' || terminalReason === 'turn-ceiling'
+          terminalReason === 'interrupt' ||
+            terminalReason === TURN_CEILING_TERMINAL_REASON
           ? 'cancelled'
           : 'failed';
     transitionAsyncRunTargetForTurn(binding, terminalTurnId, targetState, {
-      ...(terminalReason === 'watchdog' || terminalReason === 'turn-ceiling'
+      ...(terminalReason === WATCHDOG_TERMINAL_REASON ||
+      terminalReason === TURN_CEILING_TERMINAL_REASON
         ? { reason: terminalReason }
         : {}),
     });
@@ -3918,7 +3911,10 @@ export function createChannelAgentBinder(
       binding.requestMessageIdByTurn.get(terminalTurnId) ??
       binding.parentMessageIdByTurn.get(terminalTurnId);
     if (requestMessageId && store.getMessage(requestMessageId)) {
-      if (terminalReason === 'watchdog' || terminalReason === 'turn-ceiling') {
+      if (
+        terminalReason === WATCHDOG_TERMINAL_REASON ||
+        terminalReason === TURN_CEILING_TERMINAL_REASON
+      ) {
         // Both bounds are Relay-side timer expiries, so they share the receipt
         // STATE; the reason code says which bound ended the turn (#1541).
         emitReceipt({
@@ -3926,7 +3922,7 @@ export function createChannelAgentBinder(
           targetProfileId: binding.profileActorId,
           state: 'expired_watchdog',
           reasonCode:
-            terminalReason === 'watchdog'
+            terminalReason === WATCHDOG_TERMINAL_REASON
               ? 'watchdog_force_drain'
               : 'turn_ceiling',
         });
