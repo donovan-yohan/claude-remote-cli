@@ -369,7 +369,7 @@ export async function getPrForBranchResult(
         'view',
         branch,
         '--json',
-        'number,title,url,state,headRefName,baseRefName,reviewDecision,isDraft,additions,deletions,mergeable,updatedAt',
+        'number,title,url,state,headRefName,headRefOid,baseRefName,reviewDecision,isDraft,additions,deletions,mergeable,updatedAt',
       ],
       { cwd: repoPath, timeout: 5000 }
     );
@@ -396,6 +396,7 @@ export async function getPrForBranchResult(
       url: string;
       state: string;
       headRefName: string;
+      headRefOid?: string;
       baseRefName: string;
       isDraft: boolean;
       reviewDecision: string | null;
@@ -413,6 +414,7 @@ export async function getPrForBranchResult(
         url: data.url,
         state: data.state as PrInfo['state'],
         headRefName: data.headRefName,
+        ...(data.headRefOid ? { headSha: data.headRefOid } : {}),
         baseRefName: data.baseRefName,
         isDraft: data.isDraft,
         reviewDecision: data.reviewDecision ?? null,
@@ -489,7 +491,7 @@ async function fetchBatchPrsForRepo(
       '--limit',
       '100',
       '--json',
-      'number,title,url,state,headRefName,baseRefName,reviewDecision,isDraft,additions,deletions,mergeable,updatedAt',
+      'number,title,url,state,headRefName,headRefOid,baseRefName,reviewDecision,isDraft,additions,deletions,mergeable,updatedAt',
     ],
     { cwd: repoPath, timeout: 10000 }
   );
@@ -502,6 +504,7 @@ async function fetchBatchPrsForRepo(
     url: string;
     state: string;
     headRefName: string;
+    headRefOid?: string;
     baseRefName: string;
     isDraft: boolean;
     reviewDecision: string | null;
@@ -518,6 +521,7 @@ async function fetchBatchPrsForRepo(
       url: data.url,
       state: data.state as PrInfo['state'],
       headRefName: data.headRefName,
+      ...(data.headRefOid ? { headSha: data.headRefOid } : {}),
       baseRefName: data.baseRefName,
       isDraft: data.isDraft,
       reviewDecision: data.reviewDecision ?? null,

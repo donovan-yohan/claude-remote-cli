@@ -95,6 +95,19 @@ export interface ChannelAsyncRun {
   deliveryContract?: {
     expect: string[];
     /**
+     * #1578: repo-state baseline captured when the post was accepted (best-effort).
+     *
+     * `null` means capture failed and delta evaluation falls back to legacy
+     * absolute semantics (documented in #1578).
+     */
+    baseline?: {
+      headSha: string;
+      upstreamSha: string | null;
+      prNumber: number | null;
+      prHeadSha: string | null;
+      capturedAt: string;
+    } | null;
+    /**
      * #1585: follow-up chain depth for delivery-contract followups.
      * 0 for the original post; follow-up turns increment by 1.
      */
