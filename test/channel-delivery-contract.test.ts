@@ -279,6 +279,72 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
     expect(result).toEqual({ met: true, unmet: [], unknown: [] });
   });
 
+  it('treats push as unmet when the upstream ref did not move past baseline (#1578)', async () => {
+    const baselineUpstream = 'a'.repeat(40);
+    const currentUpstream = baselineUpstream;
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamSha: baselineUpstream,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/y' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          upstreamSha: async () => ({ kind: 'ok', value: currentUpstream }),
+          commitsBetween: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result.met).toBe(false);
+    expect(result.unmet).toEqual(['push']);
+    expect(result.unknown).toEqual([]);
+  });
+
+  it('falls back to legacy semantics when baseline is null (#1578)', async () => {
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['commit'],
+        cwd: '/tmp/repo',
+        baseline: null,
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/y' }),
+          // Legacy semantics: aheadCount=0 => unmet.
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          // Even if a probe could claim HEAD moved, baseline=null must ignore it.
+          headSha: async () => ({ kind: 'ok', value: 'b'.repeat(40) }),
+          commitsBetween: async () => ({ kind: 'ok', value: 1 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result.met).toBe(false);
+    expect(result.unmet).toEqual(['commit']);
+    expect(result.unknown).toEqual([]);
+  });
+
   it('treats a text expectation as unmet when the final prose is not closing (#1585)', async () => {
     const result = await evaluateDeliveryContract(
       {

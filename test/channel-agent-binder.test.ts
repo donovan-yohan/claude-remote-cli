@@ -6113,7 +6113,16 @@ describe('channel-agent-binder — lifecycle', () => {
       text: '@mock please ship',
       mentions,
       targetIds: [builtInAgentProfileId('mock')],
-      deliveryContract: { expect: ['pr:feat/x'] },
+      deliveryContract: {
+        expect: ['pr:feat/x'],
+        baseline: {
+          headSha: 'a'.repeat(40),
+          upstreamSha: 'b'.repeat(40),
+          prNumber: 123,
+          prHeadSha: 'c'.repeat(40),
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+      },
       meta: { deliveryContract: { expect: ['pr:feat/x'] } },
     });
     hub.broadcastCreated(result.message, result.message.mentions ?? []);
@@ -6134,6 +6143,9 @@ describe('channel-agent-binder — lifecycle', () => {
     );
     expect(child?.deliveryContract?.followupDepth).toBe(1);
     expect(child?.deliveryContract?.parentRunId).toBe(parent.id);
+    expect(child?.deliveryContract?.baseline).toEqual(
+      parent.deliveryContract?.baseline
+    );
   });
 
   it('posts a restart-abandonment system row and attention event for cancelled contract runs (#1585)', async () => {
