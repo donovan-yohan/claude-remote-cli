@@ -6125,7 +6125,7 @@ export function createChannelMessageStore(
             WHERE channel_id = ?
               AND source_turn_id = ?
               AND kind = 'message'
-              AND status = 'complete'
+              AND status IN ('complete','failed','interrupted')
               AND meta_json IS NOT NULL
               AND json_extract(meta_json, '$.agentDetail') IS NOT NULL
             ORDER BY seq DESC
