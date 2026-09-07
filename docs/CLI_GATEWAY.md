@@ -223,6 +223,11 @@ may additionally carry `followupDepth` (0 for the original post),
 run id when a follow-up was created), and `abandonedAt` (timestamp when Relay
 stopped chaining follow-ups).
 
+Delivery contracts also persist a best-effort `baseline` for repo-backed probes
+(#1578). On contract failure, Relay may attach a one-line `deltaSummary` to help
+explain what did _not_ change since that baseline (for example, `head unchanged
+since baseline 1a2b3c4`).
+
 `relay-ide v1 channels run get --channel-id <id> --run-id <id>
 [--thread-id <root-or-thread-id>] --json` reads one opaque run with
 `context:read`. The actor must be scoped to the exact channel; when supplied,

@@ -100,9 +100,9 @@ workflow.
 
 ### Channels
 
-#### Added
+#### Fixed
 
-- Channel turns can now declare a delivery contract (`channels post --expect pr[:branch] | commit | push | file:<path> | text:<regex>`). On completion, Relay evaluates the contract and marks the run `completed_unmet` when any item is missing, posts a system row naming the unmet items, emits an `attention` event, and automatically chains follow-ups (bounded by `RELAY_IDE_CHANNEL_CONTRACT_MAX_FOLLOWUPS`, default 3) until the contract is met or abandoned. `commit`, `push`, and `pr` are evaluated as deltas from a post-time baseline so a commit-then-push turn still satisfies `commit` and an existing PR does not satisfy `pr` unless it advanced (#1569, #1585, #1578).
+- Delivery contracts now evaluate `commit`, `push`, and `pr` as deltas from a post-time baseline, so a commit-then-push turn still satisfies `commit` and an existing PR does not satisfy `pr` unless it advanced (#1569, #1585, #1578).
 - An agent turn is no longer interrupted while it sits inside one long, silent
   command. `npm run check`, a full test run, or any tool call that takes minutes
   and prints nothing looks identical to a wedged agent to a watchdog that only
