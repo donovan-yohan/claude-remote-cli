@@ -4672,7 +4672,7 @@ export function createChannelAgentBinder(
           )}`,
           { parentMessageId }
         );
-        store.finalizeAsyncRunDeliveryContract({
+        const abandoned = store.finalizeAsyncRunDeliveryContract({
           runId: run.id,
           result: {
             met: evaluation.met,
@@ -4682,6 +4682,7 @@ export function createChannelAgentBinder(
           },
           abandonedAt: new Date(now()).toISOString(),
         });
+        if (abandoned) hub.broadcastRunLifecycle(abandoned);
         deps.events?.publish({
           topic: 'attention',
           type: 'delivery-contract.abandoned',

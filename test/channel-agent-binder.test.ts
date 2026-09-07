@@ -69,6 +69,7 @@ import {
   channelTurnId,
   parseMentions,
   CHANNEL_RETRY_OF_META_KEY,
+  type ChannelEventV1,
   type ChannelAsyncRunId,
   type ChannelDeliveryReceiptV1,
   type ChannelAttachmentId,
@@ -4851,6 +4852,74 @@ describe('channel-agent-binder — lifecycle', () => {
     expect(
       sys.some((t) => t.includes('Contract still unmet after 2 follow-ups'))
     ).toBe(true);
+  });
+
+  it('broadcasts abandonedAt in the terminal run lifecycle frame (#1585)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    const { binder, store, hub } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractMaxFollowups: 1,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const events: ChannelEventV1[] = [];
+    const unsubscribe = hub.subscribe(
+      {
+        ready: true,
+        send: (event) => {
+          events.push(event);
+          return true;
+        },
+        close: () => {},
+        onClose: () => {},
+      },
+      { channelId: CH, afterSeq: 0 }
+    );
+    cleanup.push(() => unsubscribe());
+
+    const mentions = parseMentions('@mock please ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: {
+        expect: ['pr:feat/x'],
+        followupDepth: 1,
+        parentRunId: 'chrun:parent',
+      },
+      meta: { deliveryContract: { expect: ['pr:feat/x'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() =>
+      events.some((e) => {
+        if (e.type !== 'channel-run-lifecycle-v1') return false;
+        const run = (e as unknown as { run?: any }).run;
+        return (
+          run?.id === posted.run.id &&
+          run?.state === 'completed_unmet' &&
+          typeof run?.deliveryContract?.abandonedAt === 'string' &&
+          run.deliveryContract.abandonedAt.length > 0
+        );
+      })
+    );
   });
 
   it('treats text expectations as unmet when a tool card follows the final prose (#1585)', async () => {
