@@ -217,6 +217,10 @@ still prints the JSON envelope, but then waits for the correlated run to settle
 (via the same `channels wait` surface) before deciding whether to exit non-zero
 (code 2) for a provider-failure refusal.
 
+Delivery-contract follow-ups (#1585) produce their own runs; `run.deliveryContract`
+may additionally carry `followupDepth` (0 for the original post) and
+`parentRunId` (the immediate prior run id in the chain).
+
 `relay-ide v1 channels run get --channel-id <id> --run-id <id>
 [--thread-id <root-or-thread-id>] --json` reads one opaque run with
 `context:read`. The actor must be scoped to the exact channel; when supplied,
