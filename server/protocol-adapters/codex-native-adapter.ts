@@ -878,21 +878,21 @@ export class CodexNativeProtocolAdapter extends BaseProtocolAdapterV2 {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const classified = classifyCodexProviderFailure(message, Date.now());
-      this.emitPatch({
-        type: 'agent-error-v2',
-        sessionId: this.sessionId,
-        timestamp: nowIso(),
-        message,
-        ...(classified?.failureCode
-          ? { failureCode: classified.failureCode }
-          : {}),
-        ...(classified?.retryAfter
-          ? { retryAfter: classified.retryAfter }
-          : {}),
-        ...(classified?.providerMessage
-          ? { providerMessage: classified.providerMessage }
-          : {}),
-      });
+      if (classified?.failureCode) {
+        this.emitPatch({
+          type: 'agent-error-v2',
+          sessionId: this.sessionId,
+          timestamp: nowIso(),
+          message,
+          failureCode: classified.failureCode,
+          ...(classified?.retryAfter
+            ? { retryAfter: classified.retryAfter }
+            : {}),
+          ...(classified?.providerMessage
+            ? { providerMessage: classified.providerMessage }
+            : {}),
+        });
+      }
       this._status = 'disconnected';
       await this.teardownState();
       throw err;
