@@ -920,7 +920,7 @@ CREATE INDEX IF NOT EXISTS idx_char_channel_created
 CREATE TABLE IF NOT EXISTS channel_async_run_targets (
   run_id             TEXT NOT NULL,
   target_id          TEXT NOT NULL,
-  state              TEXT NOT NULL CHECK (state IN ('queued','working','input-required','auth-required','completed','failed','cancelled','rejected')),
+  state              TEXT NOT NULL CHECK (state IN ('queued','working','input-required','auth-required','completed','failed','cancelled','rejected','refused')),
   reason             TEXT,
   approval_state     TEXT,
   -- #1570: effective turn id for wait/history correlation even when a trigger

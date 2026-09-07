@@ -2077,6 +2077,33 @@ describe('channel-message-store async runs (#1391)', () => {
     ).toEqual(failed);
   });
 
+  it('allows refused admission targets on a fresh database schema (#1571)', () => {
+    const s = store();
+    const { run } = s.appendCompleteWithAsyncRun({
+      channelId: 'topic:async',
+      sender: HUMAN,
+      text: '@a investigate',
+      targetIds: ['agent-profile:a:default'],
+    });
+
+    const refused = s.transitionAsyncRunTarget({
+      runId: run.id,
+      targetId: 'agent-profile:a:default',
+      state: 'refused',
+      reason: 'provider-failure:quota_exhausted',
+    })!;
+    expect(refused.state).toBe('rejected');
+    expect(refused.reason).toBeUndefined();
+    expect(refused.targets).toEqual([
+      expect.objectContaining({
+        targetId: 'agent-profile:a:default',
+        state: 'refused',
+        reason: 'provider-failure:quota_exhausted',
+        completedAt: expect.any(String),
+      }),
+    ]);
+  });
+
   it('rejects a run with no eligible target without inventing a provider identity', () => {
     const s = store();
     const { run } = s.appendCompleteWithAsyncRun({
