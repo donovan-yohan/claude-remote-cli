@@ -187,6 +187,8 @@ export interface ChannelChatRouterDeps {
   attachmentStore?: ChannelAttachmentStore | null;
   hub: ChannelHub;
   topicStore: WorkspaceTopicStore | null;
+  /** #1585: follow-up chain hop cap for `channels.run.wait`. */
+  deliveryContractMaxFollowups?: number;
   /** Human project names for `in:<project>` transcript scopes. */
   iaStore?: Pick<IaStore, 'listWorkspaces'> | null;
   /** @-mention routing binder (#1167); roster/interrupt/approval routes 503 without it. */
@@ -2072,8 +2074,13 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     const serverRestartCancelGraceMs = 2000;
     const terminalFinalizationGraceMs = 2000;
     let serverRestartCancelledAt: number | null = null;
-    const maxFollowupHops = 8;
-    let hop = 0;
+    const configuredMaxFollowups = deps.deliveryContractMaxFollowups ?? 3;
+    const maxFollowupRunsToVisit =
+      Number.isSafeInteger(configuredMaxFollowups) &&
+      configuredMaxFollowups >= 0
+        ? configuredMaxFollowups + 1
+        : 4;
+    let hop = 0; // edges traversed
     let runId: ChannelAsyncRunId = input.runId;
     while (Date.now() < deadline && !signal.aborted) {
       const latest = store.getAsyncRun(runId);
@@ -2100,7 +2107,11 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           typeof latest.deliveryContract?.childRunId === 'string'
             ? (latest.deliveryContract.childRunId as ChannelAsyncRunId)
             : null;
-        if (childRunId && childRunId !== latest.id && hop < maxFollowupHops) {
+        if (
+          childRunId &&
+          childRunId !== latest.id &&
+          hop + 1 < maxFollowupRunsToVisit
+        ) {
           hop += 1;
           runId = childRunId;
           serverRestartCancelledAt = null;

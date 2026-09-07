@@ -154,6 +154,7 @@ async function harness(
       hub: ChannelHub;
       topicStore: WorkspaceTopicStore;
     }) => ChannelAgentBinder;
+    deliveryContractMaxFollowups?: number;
     requireWriteActorAuth?: (command: string) => RequestHandler;
     requireReadActorAuth?: (command: string) => RequestHandler;
   } = {}
@@ -227,6 +228,9 @@ async function harness(
         options.withAttachmentStore === false ? null : attachmentStore,
       hub,
       topicStore,
+      ...(options.deliveryContractMaxFollowups !== undefined
+        ? { deliveryContractMaxFollowups: options.deliveryContractMaxFollowups }
+        : {}),
       ...(options.iaStore ? { iaStore: options.iaStore } : {}),
       broadcastEvent: (type, data) => {
         broadcasts.push({ type, ...(data ? { data } : {}) });
@@ -2397,6 +2401,94 @@ describe('channel routes — gateway capability mapping', () => {
         run: { id: child.run.id, state: 'completed' },
         outcome: 'completed',
         finalText: 'DONE',
+      });
+    });
+
+    it('caps childRunId hop following by configured maxFollowups+1 (#1585)', async () => {
+      const h = await harness({
+        withAuth: true,
+        deliveryContractMaxFollowups: 0,
+      });
+      const targetId = builtInAgentProfileId('codex');
+
+      const parent = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'ship it @codex',
+        targetIds: [targetId],
+        deliveryContract: { expect: ['text:^DONE$'] },
+        meta: { deliveryContract: { expect: ['text:^DONE$'] } },
+      });
+      const turnA = channelTurnId(parent.message.id, targetId);
+      const parentFinal = h.store.beginStream({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        source: { runtimeId: 'rt', turnId: turnA, itemId: 'item-final' },
+        text: 'PARENT',
+        meta: { asyncRun: { runId: parent.run.id, targetId } },
+      });
+      h.store.finalizeStream(parentFinal.id, {
+        text: 'PARENT',
+        status: 'complete',
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: parent.run.id,
+        targetId,
+        state: 'completed',
+      });
+
+      const child = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'follow-up @codex',
+        targetIds: [targetId],
+      });
+      const turnB = channelTurnId(child.message.id, targetId);
+      const childFinal = h.store.beginStream({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        source: { runtimeId: 'rt', turnId: turnB, itemId: 'item-final' },
+        text: 'DONE',
+        meta: { asyncRun: { runId: child.run.id, targetId } },
+      });
+      h.store.finalizeStream(childFinal.id, {
+        text: 'DONE',
+        status: 'complete',
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: child.run.id,
+        targetId,
+        state: 'completed',
+      });
+
+      h.store.finalizeAsyncRunDeliveryContract({
+        runId: parent.run.id,
+        result: {
+          met: false,
+          unmet: ['text:^DONE$'],
+          unknown: [],
+          evaluatedAt: new Date().toISOString(),
+        },
+        followupPostedAt: new Date().toISOString(),
+        childRunId: child.run.id,
+      });
+
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        finalText: string;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(parent.run.id)}&for=any&timeoutMs=200`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+      // With maxFollowups=0, hop cap is 1: do not follow childRunId.
+      expect(res.body).toMatchObject({
+        run: { id: parent.run.id, state: 'completed_unmet' },
+        outcome: 'completed_unmet',
+        finalText: 'PARENT',
       });
     });
   });

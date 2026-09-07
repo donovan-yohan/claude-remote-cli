@@ -218,8 +218,10 @@ still prints the JSON envelope, but then waits for the correlated run to settle
 (code 2) for a provider-failure refusal.
 
 Delivery-contract follow-ups (#1585) produce their own runs; `run.deliveryContract`
-may additionally carry `followupDepth` (0 for the original post) and
-`parentRunId` (the immediate prior run id in the chain).
+may additionally carry `followupDepth` (0 for the original post),
+`parentRunId` (the immediate prior run id in the chain), `childRunId` (the next
+run id when a follow-up was created), and `abandonedAt` (timestamp when Relay
+stopped chaining follow-ups).
 
 `relay-ide v1 channels run get --channel-id <id> --run-id <id>
 [--thread-id <root-or-thread-id>] --json` reads one opaque run with
@@ -233,6 +235,10 @@ a terminal state (or times out) and returns an orchestration-friendly envelope:
 `{ run: { id, state, reason }, outcome, finalText, contract }`. `finalText` is
 **only** the last assistant principal text item for that run (no thoughts, tool
 cards, or interim progress).
+
+When waiting by `--run`, Relay follows a delivery-contract chain via
+`run.deliveryContract.childRunId` and returns the terminal run at the end of the
+chain.
 
 `relay-ide v1 channels history --run <chrun:...> [--kinds text,thought,tool,system]
 --json` is the inspect lane: it returns that run’s ordered durable items (including

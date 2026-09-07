@@ -3393,6 +3393,7 @@ async function main(): Promise<void> {
       attachmentStore: channelAttachmentStore,
       hub: channelHub,
       topicStore: workspaceTopicStore,
+      deliveryContractMaxFollowups: channelContractMaxFollowups,
       iaStore,
       binder: channelAgentBinder,
       knownProviderIds: Object.keys(v2Adapters),
