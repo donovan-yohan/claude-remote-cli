@@ -75,7 +75,7 @@ import {
 //    catch-up window, and thread parent stays valid. Nothing in this file may
 //    ever issue `DELETE FROM channel_messages` for an operator action.
 
-const SCHEMA_VERSION = 22;
+const SCHEMA_VERSION = 23;
 const ASYNC_RUN_SETTLED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const logger = createLogger('channel-message-store');
 export const CHANNEL_HISTORY_DEFAULT_LIMIT = 50;
@@ -3688,7 +3688,11 @@ function runSchemaMigrations(db: Database.Database): void {
         CREATE INDEX idx_chart_run_state
           ON channel_async_run_targets(run_id, state);
       `);
-
+      db.prepare('UPDATE schema_version SET version = 22').run();
+    })();
+  }
+  if (current < 23) {
+    db.transaction(() => {
       // #1585: delivery-contract follow-ups chain (bounded). Persist follow-up
       // ancestry scalars as dedicated columns so they survive contract JSON
       // evolution and can be backfilled deterministically.
@@ -3713,14 +3717,14 @@ function runSchemaMigrations(db: Database.Database): void {
           'ALTER TABLE channel_async_runs ADD COLUMN delivery_contract_parent_run_id TEXT'
         );
       }
-      // Backfill: every pre-v22 delivery contract is an original post, so depth=0.
+      // Backfill: every pre-v23 delivery contract is an original post, so depth=0.
       db.exec(`
         UPDATE channel_async_runs
            SET delivery_contract_followup_depth = 0
          WHERE delivery_contract_json IS NOT NULL
            AND delivery_contract_followup_depth IS NULL
       `);
-      db.prepare('UPDATE schema_version SET version = 22').run();
+      db.prepare('UPDATE schema_version SET version = 23').run();
     })();
   }
 }
