@@ -3491,8 +3491,8 @@ export function createChannelAgentBinder(
     completionCallback?: ChannelCompletionCallbackEdge,
     callbackEdgeRequest?: CallbackEdgeRequest
   ): void {
-    if (binding.sendPreflight) return;
-    binding.sendPreflight = true;
+    const adapter = binding.adapter;
+    if (!adapter) return;
 
     const turnId = completionCallback
       ? completionCallbackTurnId(completionCallback, binding.profileActorId)
@@ -3509,7 +3509,6 @@ export function createChannelAgentBinder(
         ? buildCompletionCallbackPacket(binding, trigger, completionCallback)
         : buildPacket(binding, trigger);
     } catch (err) {
-      binding.sendPreflight = false;
       logger.warn('channel binder packet build failed:', err);
       postSystemRow(
         binding.channelId,
@@ -3532,6 +3531,84 @@ export function createChannelAgentBinder(
       pump(binding); // activeTurnId is still null — keep the queue draining
       return;
     }
+
+    const needsBaselineCapture = (() => {
+      if (completionCallback) return false;
+      const asyncRun = store.getAsyncRunForRequestMessage(trigger.id);
+      const contract = asyncRun?.deliveryContract;
+      const expect = contract?.expect ?? [];
+      return (
+        Boolean(asyncRun) &&
+        Boolean(contract) &&
+        expect.length > 0 &&
+        !Object.prototype.hasOwnProperty.call(contract, 'baseline')
+      );
+    })();
+
+    // Fast path: no baseline capture needed. Stay synchronous so binder lifecycle
+    // tests and queue draining remain tick-free.
+    if (!needsBaselineCapture) {
+      // Retained parents exist solely for output that opens shortly after a bare
+      // idle finalized its turn. Once a successor starts, the old association is
+      // no longer safe for a turn-0 fallback and must not accumulate forever.
+      if (binding.parentMessageIdByTurn.size > 0) {
+        binding.turnZeroFallbackUnsafe = true;
+      }
+      retainExactTurnTombstones(binding);
+      binding.parentMessageIdByTurn.clear();
+      binding.requestMessageIdByTurn.clear();
+      binding.activeTurnId = turnId;
+      binding.parentMessageIdByTurn.set(
+        turnId,
+        parentForTrigger(trigger) ?? null
+      );
+      if (!completionCallback) {
+        binding.requestMessageIdByTurn.set(turnId, trigger.id);
+        const asyncRun = store.getAsyncRunForRequestMessage(trigger.id);
+        if (asyncRun) {
+          const changed = store.transitionAsyncRunTarget({
+            runId: asyncRun.id,
+            targetId: binding.profileActorId,
+            state: 'working',
+          });
+          if (changed) hub.broadcastRunLifecycle(changed);
+        }
+      }
+      if (completionCallback?.continuationParentCallbackId) {
+        binding.continuationByTurn.set(turnId, {
+          childCallbackId: completionCallback.id,
+          parentCallbackId: completionCallback.continuationParentCallbackId,
+        });
+      }
+      if (completionCallback) {
+        binding.completionCallbackByTurn.set(turnId, completionCallback);
+      }
+      binding.sawStream = false;
+      binding.openToolItems.clear();
+      binding.waitingOn = null;
+      binding.activeContent = packet.content;
+      binding.activeAttachments = packet.attachments;
+      setStatus(binding, 'thinking');
+      emitReceipt({
+        trigger,
+        targetProfileId: binding.profileActorId,
+        state: 'turn_started',
+      });
+      armWatchdog(binding);
+      armTurnCeiling(binding);
+      deliver(
+        binding,
+        adapter,
+        turnId,
+        trigger,
+        completionCallback,
+        callbackEdgeRequest
+      );
+      return;
+    }
+
+    if (binding.sendPreflight) return;
+    binding.sendPreflight = true;
 
     void (async () => {
       // #1578: capture delivery-contract baseline BEFORE the runtime accepts input,
@@ -4591,9 +4668,7 @@ export function createChannelAgentBinder(
       hasOpenPrForBranch: (
         branch: string
       ) => Promise<DeliveryContractProbeOutcome<boolean>>;
-      getOpenPrForBranch: (
-        branch: string
-      ) => Promise<
+      getOpenPrForBranch: (branch: string) => Promise<
         DeliveryContractProbeOutcome<{
           number: number;
           headSha: string | null;
