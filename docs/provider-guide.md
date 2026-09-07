@@ -336,6 +336,9 @@ passes for quota failures. Roster entries carry the structured
 `agent-profiles list` returns `reasonCode` + `reason` for the same split. A hub
 restart clears this in-memory state.
 
+Provider failures with no `retryAfter` self-heal after a cooldown TTL. Configure
+the TTL with `RELAY_PROVIDER_FAILURE_COOLDOWN_MS` (default: 30 minutes).
+
 ### Live Pi and Prime RPC smoke
 
 Run the opt-in, model-backed protocol probe with an explicit provider:
