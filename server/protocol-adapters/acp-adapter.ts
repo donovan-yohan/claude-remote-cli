@@ -5,6 +5,7 @@ import {
   buildChildEnv,
   createPatchSink,
   createTurnQueue,
+  classifyBinaryMissingFailure,
   emitErrorPatch,
   emitLiveStatePatch,
   emitProviderExtensionPatch,
@@ -55,22 +56,7 @@ const logger = createLogger('acp-adapter');
 function classifyAcpProviderFailure(
   message: string
 ): { failureCode: ProviderFailureCode; providerMessage: string } | null {
-  const lower = message.toLowerCase();
-  if (
-    lower.includes('authentication required') ||
-    lower.includes('not logged in')
-  ) {
-    return { failureCode: 'auth_required', providerMessage: message };
-  }
-  if (
-    lower.includes('enoent') ||
-    lower.includes('not found on path') ||
-    lower.includes('command not found') ||
-    (lower.includes('spawn') && lower.includes('not found'))
-  ) {
-    return { failureCode: 'binary_missing', providerMessage: message };
-  }
-  return null;
+  return classifyBinaryMissingFailure(message);
 }
 
 /** The ACP major version this adapter speaks. */
@@ -184,6 +170,13 @@ export interface AcpHarnessProfile {
   commandToolNames?: ReadonlySet<string>;
   /** Native tool titles that should render as a file-change card. */
   fileToolNames?: ReadonlySet<string>;
+  /**
+   * QUIRK hook: provider-specific failure classification for #1571.
+   * Used for auth/quota phrases that are not shared across ACP harnesses.
+   */
+  classifyProviderFailure?: (
+    message: string
+  ) => { failureCode: ProviderFailureCode; providerMessage: string } | null;
   command: string | ((config: AdapterConfig) => string);
   args?: string[] | ((config: AdapterConfig) => string[]);
   authMethodId?: string | null;
@@ -415,7 +408,9 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
       this.providerSessionId = providerSessionId;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const failure = classifyAcpProviderFailure(message);
+      const failure =
+        this.profile.classifyProviderFailure?.(message) ??
+        classifyAcpProviderFailure(message);
       // Emit a best-effort classified error patch even when connect fails: this
       // is the only way the binder can surface auth/binary failures on the
       // roster without grepping provider stderr (#1571).
@@ -1521,7 +1516,9 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
   }
 
   private emitError(message: string): void {
-    const failure = classifyAcpProviderFailure(message);
+    const failure =
+      this.profile.classifyProviderFailure?.(message) ??
+      classifyAcpProviderFailure(message);
     emitErrorPatch(this.patchSink, message, this.activeTurnId, {
       ...(failure ? { failureCode: failure.failureCode } : {}),
       ...(failure ? { providerMessage: failure.providerMessage } : {}),

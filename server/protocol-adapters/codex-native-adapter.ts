@@ -1,6 +1,7 @@
 import {
   buildChildEnv,
   createPatchSink,
+  classifyBinaryMissingFailure,
   emitLiveStatePatch,
   emitProviderExtensionPatch,
   createTurnQueue,
@@ -141,15 +142,9 @@ function classifyCodexProviderFailure(
   retryAfter?: string;
   providerMessage: string;
 } | null {
+  const binary = classifyBinaryMissingFailure(message);
+  if (binary) return binary;
   const lower = message.toLowerCase();
-  if (
-    /(?:^|\s)enoent(?:\s|$|:)/.test(lower) ||
-    lower.includes('not found on path') ||
-    (lower.includes('spawn') && lower.includes('not found')) ||
-    lower.includes('command not found')
-  ) {
-    return { failureCode: 'binary_missing', providerMessage: message };
-  }
   if (
     lower.includes("you've hit your usage limit") ||
     lower.includes('hit your usage limit') ||

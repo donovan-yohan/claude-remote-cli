@@ -7,6 +7,7 @@ import {
   buildChildEnv,
   createPatchSink,
   createTurnQueue,
+  classifyBinaryMissingFailure,
   emitErrorPatch,
   emitLiveStatePatch,
   emitProviderExtensionPatch,
@@ -52,13 +53,8 @@ function classifyAntigravityProviderFailure(
   if (lower.includes('individual quota reached')) {
     return { failureCode: 'quota_exhausted', providerMessage: message };
   }
-  if (
-    lower.includes('not found on path') ||
-    lower.includes('cli not found') ||
-    lower.includes('enoent')
-  ) {
-    return { failureCode: 'binary_missing', providerMessage: message };
-  }
+  const binary = classifyBinaryMissingFailure(message);
+  if (binary) return binary;
   if (lower.includes('authentication required')) {
     return { failureCode: 'auth_required', providerMessage: message };
   }

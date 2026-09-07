@@ -9,6 +9,7 @@ import {
   buildChildEnv,
   createPatchSink,
   createTurnQueue,
+  classifyBinaryMissingFailure,
   emitLiveStatePatch,
   emitProviderExtensionPatch,
   emitSessionUpdatePatch,
@@ -64,16 +65,9 @@ const logger = createLogger('claude-adapter');
 function classifyClaudeProviderFailure(
   message: string
 ): { failureCode: ProviderFailureCode; providerMessage: string } | null {
+  const binary = classifyBinaryMissingFailure(message);
+  if (binary) return binary;
   const lower = message.toLowerCase();
-  if (
-    lower.includes('cli not found on path') ||
-    (lower.includes('spawn') && lower.includes('enoent')) ||
-    lower.includes('not found on path')
-  ) {
-    return { failureCode: 'binary_missing', providerMessage: message };
-  }
-  // Anchor on Claude's explicit instruction rather than generic "login"
-  // substrings (which can appear in unrelated provider output).
   if (lower.includes('run `claude login`')) {
     return { failureCode: 'auth_required', providerMessage: message };
   }

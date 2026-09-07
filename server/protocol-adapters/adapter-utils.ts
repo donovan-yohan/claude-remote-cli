@@ -29,6 +29,22 @@ import { nowIso } from './wire-values.js';
 
 const logger = createLogger('adapter-utils');
 
+export function classifyBinaryMissingFailure(
+  message: string
+): { failureCode: 'binary_missing'; providerMessage: string } | null {
+  const lower = message.toLowerCase();
+  if (
+    /(?:^|\s)enoent(?:\s|$|:)/.test(lower) ||
+    lower.includes('cli not found on path') ||
+    lower.includes('not found on path') ||
+    lower.includes('command not found') ||
+    (lower.includes('spawn') && lower.includes('not found'))
+  ) {
+    return { failureCode: 'binary_missing', providerMessage: message };
+  }
+  return null;
+}
+
 export interface ReconnectWithStoredConfigOptions {
   /** Config captured by the last successful connect; null before one. */
   config: AdapterConfig | null | undefined;
