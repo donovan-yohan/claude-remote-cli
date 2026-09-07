@@ -5406,6 +5406,7 @@ describe('channel-agent-binder — lifecycle', () => {
       ],
       knownProviderIds: ['mock', 'b'],
       agentProfileStore: profiles,
+      deliveryContractMaxFollowups: 0,
       deliveryContractProbeFactory: () => ({
         git: {
           currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
@@ -5458,6 +5459,11 @@ describe('channel-agent-binder — lifecycle', () => {
     );
     const run = store.getAsyncRun(result.run.id)!;
     expect(run.deliveryContract?.followupPostedAt).toBeFalsy();
+    expect(
+      systemRows(store).some((m) =>
+        m.body.text.includes('Contract still unmet after 0 follow-ups')
+      )
+    ).toBe(false);
 
     await waitFor(() => {
       const rows = systemRows(store).filter((m) =>
