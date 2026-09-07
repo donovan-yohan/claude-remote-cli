@@ -8,6 +8,8 @@ import { bindSessionToChannel } from './channel-agent-bridge.js';
 import { getPrForBranchResult } from './gh.js';
 import {
   evaluateDeliveryContract,
+  type DeliveryContractGitProbe,
+  type DeliveryContractPrProbe,
   type DeliveryContractProbeOutcome,
 } from './channel-delivery-contract-evaluator.js';
 import {
@@ -5034,8 +5036,8 @@ export function createChannelAgentBinder(
       followupDepth: depth + 1,
       parentRunId: run.id,
     };
-    // #1578: follow-ups capture their own post-time baseline.
-    delete (nextContract as { baseline?: unknown }).baseline;
+    // #1578: follow-ups inherit the ORIGINAL baseline so the chain measures
+    // progress since the operator's post.
     delete (nextContract as { result?: unknown }).result;
     delete (nextContract as { followupPostedAt?: unknown }).followupPostedAt;
 
@@ -5100,6 +5102,121 @@ export function createChannelAgentBinder(
     if (withFollowup) hub.broadcastRunLifecycle(withFollowup);
   }
 
+  function shortSha(sha: string | null | undefined): string | null {
+    const trimmed = typeof sha === 'string' ? sha.trim() : '';
+    return trimmed.length >= 7 ? trimmed.slice(0, 7) : trimmed || null;
+  }
+
+  async function computeDeliveryContractDeltaSummary(input: {
+    unmet: string[];
+    baseline:
+      | NonNullable<
+          NonNullable<ChannelAsyncRun['deliveryContract']>['baseline']
+        >
+      | null
+      | undefined;
+    probe: { git: DeliveryContractGitProbe; pr: DeliveryContractPrProbe };
+  }): Promise<string | undefined> {
+    const baseline = input.baseline;
+    if (baseline === undefined) return undefined;
+    if (baseline === null)
+      return 'baseline unavailable; evaluated with legacy semantics';
+    // TypeScript does not keep the null-check narrowing through nested async
+    // helper closures.
+    const baselineOk = baseline as NonNullable<typeof baseline>;
+
+    const wantsCommit = input.unmet.includes('commit');
+    const wantsPush = input.unmet.includes('push');
+    const wantsPr = input.unmet.some(
+      (spec) => spec === 'pr' || spec.startsWith('pr:')
+    );
+    if (!wantsCommit && !wantsPush && !wantsPr) return undefined;
+
+    const parts: string[] = [];
+
+    async function tryCommitDelta(): Promise<string | null> {
+      if (!wantsCommit) return null;
+      if (!input.probe.git.headSha || !input.probe.git.commitsBetween)
+        return null;
+      const head = await input.probe.git.headSha().catch(() => null);
+      const headSha =
+        head && head.kind === 'ok' && head.value ? head.value : null;
+      if (!headSha) return null;
+      const delta = await input.probe.git
+        .commitsBetween(baselineOk.headSha, headSha)
+        .catch(() => null);
+      if (!delta || delta.kind !== 'ok') return null;
+      const base = shortSha(baselineOk.headSha) ?? 'unknown';
+      return delta.value === 0
+        ? `head unchanged since baseline ${base}`
+        : `head advanced by ${delta.value} commit(s) since baseline ${base}`;
+    }
+
+    async function tryPushDelta(): Promise<string | null> {
+      if (!wantsPush) return null;
+      if (!baselineOk.upstreamSha) return 'baseline upstream unavailable';
+      if (!input.probe.git.upstreamSha || !input.probe.git.commitsBetween)
+        return null;
+      const upstream = await input.probe.git.upstreamSha().catch(() => null);
+      const upstreamSha =
+        upstream && upstream.kind === 'ok' && upstream.value
+          ? upstream.value
+          : null;
+      if (!upstreamSha) return null;
+      const delta = await input.probe.git
+        .commitsBetween(baselineOk.upstreamSha, upstreamSha)
+        .catch(() => null);
+      if (!delta || delta.kind !== 'ok') return null;
+      const base = shortSha(baselineOk.upstreamSha) ?? 'unknown';
+      return delta.value === 0
+        ? `upstream unchanged since baseline ${base}`
+        : `upstream advanced by ${delta.value} commit(s) since baseline ${base}`;
+    }
+
+    async function tryPrDelta(): Promise<string | null> {
+      if (!wantsPr) return null;
+      if (!input.probe.pr.getOpenPrForBranch) return null;
+      if (!input.probe.git.commitsBetween) return null;
+      const branch = await input.probe.git.currentBranch().catch(() => null);
+      const branchName =
+        branch && branch.kind === 'ok' && branch.value ? branch.value : null;
+      if (!branchName) return null;
+      const pr = await input.probe.pr
+        .getOpenPrForBranch(branchName)
+        .catch(() => null);
+      if (!pr || pr.kind !== 'ok') return null;
+      if (!pr.value) return 'no open PR for branch';
+
+      if (baselineOk.prNumber === null) {
+        return `open PR #${pr.value.number} existed but baseline had no prNumber`;
+      }
+      if (pr.value.number !== baselineOk.prNumber) {
+        return `different PR open (#${pr.value.number}); baseline was #${baselineOk.prNumber}`;
+      }
+      if (!baselineOk.prHeadSha || !pr.value.headSha)
+        return 'pr head unavailable';
+      const delta = await input.probe.git
+        .commitsBetween(baselineOk.prHeadSha, pr.value.headSha)
+        .catch(() => null);
+      if (!delta || delta.kind !== 'ok') return null;
+      const base = shortSha(baselineOk.prHeadSha) ?? 'unknown';
+      return delta.value === 0
+        ? `pr head unchanged since baseline ${base}`
+        : `pr head advanced by ${delta.value} commit(s) since baseline ${base}`;
+    }
+
+    const [commitDelta, pushDelta, prDelta] = await Promise.all([
+      tryCommitDelta(),
+      tryPushDelta(),
+      tryPrDelta(),
+    ]);
+    if (commitDelta) parts.push(commitDelta);
+    if (pushDelta) parts.push(pushDelta);
+    if (prDelta) parts.push(prDelta);
+
+    return parts.length ? parts.join('; ') : undefined;
+  }
+
   async function evaluateDeliveryContractForCompletedRun(
     binding: LiveBinding,
     turnId: string,
@@ -5151,12 +5268,18 @@ export function createChannelAgentBinder(
         deliveryProbe
       );
       const evaluatedAt = new Date(now()).toISOString();
+      const deltaSummary = await computeDeliveryContractDeltaSummary({
+        unmet: evaluation.unmet,
+        baseline: run.deliveryContract?.baseline,
+        probe: deliveryProbe,
+      });
       const updated = store.finalizeAsyncRunDeliveryContract({
         runId: run.id,
         result: {
           met: evaluation.met,
           unmet: evaluation.unmet,
           unknown: evaluation.unknown,
+          ...(deltaSummary ? { deltaSummary } : {}),
           evaluatedAt,
         },
       });

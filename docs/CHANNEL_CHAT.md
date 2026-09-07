@@ -388,7 +388,7 @@ Supported specs:
 - `file:<path>` — require a path to exist relative to the routing cwd
 - `text:<regex>` — require the run’s final assistant text to match
 
-Baseline capture is best-effort and bounded by probe timeouts. If capture fails, the run records `baseline: null` and evaluation falls back to the legacy absolute semantics for `commit`/`pr` (and treats `push` as unverifiable).
+Baseline capture is best-effort and bounded by probe timeouts. If capture fails, the run records `baseline: null` and evaluation falls back to the legacy absolute semantics for `commit`/`pr` (and treats `push` as unverifiable). Follow-up runs in a contract chain inherit the original baseline so the chain measures progress since the operator’s post.
 
 When a routed run completes, the binder evaluates the contract. If any spec is unmet, the run is marked `completed_unmet`, a system row names the unmet items, an `attention` event is emitted, and Relay posts automatic follow-up triggers until the contract is met or the bounded follow-up depth is exhausted (#1585).
 

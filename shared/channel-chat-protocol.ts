@@ -136,6 +136,12 @@ export interface ChannelAsyncRun {
        * never count as unmet and must not force `completed_unmet`.
        */
       unknown?: Array<{ spec: string; reason: string }>;
+      /**
+       * #1578: human-readable one-line delta summary for contract debugging.
+       * Present only when the contract is unmet and Relay can compute it from
+       * the baseline and available probes.
+       */
+      deltaSummary?: string;
       evaluatedAt: string;
     };
     followupPostedAt?: string;

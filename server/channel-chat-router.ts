@@ -1597,6 +1597,9 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     if (!contract?.result) return null;
     return {
       ...contract.result,
+      ...(Object.prototype.hasOwnProperty.call(contract, 'baseline')
+        ? { baseline: contract.baseline }
+        : {}),
       ...(contract.followupPostedAt
         ? { followupPostedAt: contract.followupPostedAt }
         : {}),

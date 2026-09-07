@@ -3715,6 +3715,29 @@ const channelAsyncRunSchema: RelayJsonSchema = {
       additionalProperties: true,
       properties: {
         expect: { type: 'array', items: stringSchema },
+        baseline: {
+          oneOf: [
+            { type: 'null' },
+            {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                headSha: stringSchema,
+                upstreamSha: nullableStringSchema,
+                prNumber: { oneOf: [{ type: 'null' }, { type: 'integer' }] },
+                prHeadSha: nullableStringSchema,
+                capturedAt: { type: 'string', format: 'date-time' },
+              },
+              required: [
+                'headSha',
+                'upstreamSha',
+                'prNumber',
+                'prHeadSha',
+                'capturedAt',
+              ],
+            },
+          ],
+        },
         followupDepth: { type: 'integer', minimum: 0 },
         parentRunId: stringSchema,
         childRunId: stringSchema,
@@ -3741,6 +3764,7 @@ const channelAsyncRunSchema: RelayJsonSchema = {
                   },
                 },
                 evaluatedAt: { type: 'string', format: 'date-time' },
+                deltaSummary: stringSchema,
               },
               required: ['met', 'unmet', 'evaluatedAt'],
             },
@@ -3878,6 +3902,32 @@ const channelRunWaitOutputDataSchema: RelayJsonSchema = {
           properties: {
             met: booleanSchema,
             unmet: { type: 'array', items: stringSchema },
+            baseline: {
+              oneOf: [
+                { type: 'null' },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    headSha: stringSchema,
+                    upstreamSha: nullableStringSchema,
+                    prNumber: {
+                      oneOf: [{ type: 'null' }, { type: 'integer' }],
+                    },
+                    prHeadSha: nullableStringSchema,
+                    capturedAt: stringSchema,
+                  },
+                  required: [
+                    'headSha',
+                    'upstreamSha',
+                    'prNumber',
+                    'prHeadSha',
+                    'capturedAt',
+                  ],
+                },
+              ],
+            },
+            deltaSummary: stringSchema,
           },
         },
       ],

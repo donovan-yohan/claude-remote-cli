@@ -821,6 +821,12 @@ export function createChannelHub(options: ChannelHubOptions): ChannelHub {
       if (terminal && run.deliveryContract?.result) {
         extras['contract'] = {
           ...run.deliveryContract.result,
+          ...(Object.prototype.hasOwnProperty.call(
+            run.deliveryContract,
+            'baseline'
+          )
+            ? { baseline: run.deliveryContract.baseline }
+            : {}),
           ...(run.deliveryContract.followupPostedAt
             ? { followupPostedAt: run.deliveryContract.followupPostedAt }
             : {}),
