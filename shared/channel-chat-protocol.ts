@@ -57,7 +57,9 @@ export type ChannelAsyncRunState =
 /** Targets are admitted locally before delivery; they are never independently submitted. */
 export type ChannelAsyncRunTargetState =
   | Exclude<ChannelAsyncRunState, 'submitted'>
-  | 'queued';
+  | 'queued'
+  /** Target refused admission (e.g. provider failure), reason carries detail (#1571/#1560). */
+  | 'refused';
 export type ChannelAsyncRunApprovalState = 'requested' | 'resolved' | 'expired';
 
 /** Public, provider-neutral target projection. `targetId` is a Relay profile actor id. */
@@ -1370,6 +1372,8 @@ export const CHANNEL_DELIVERY_RECEIPT_STATES = [
   'held_busy',
   'dropped_queue_full',
   'refused_policy',
+  /** #1571: provider failure refusal (distinct from #1560 policy refusal). */
+  'refused_provider',
   'unreachable_offline',
   'expired_watchdog',
   'failed_runtime',
@@ -1395,7 +1399,12 @@ export type ChannelDeliveryReceiptReasonCode =
   | 'agent_busy'
   | 'profile_missing'
   | 'provider_unavailable'
-  | 'mention_chain_paused';
+  | 'mention_chain_paused'
+  /** #1571: classified provider failures refuse posts fast. */
+  | 'provider_quota_exhausted'
+  | 'provider_auth_required'
+  | 'provider_binary_missing'
+  | 'provider_unknown_failure';
 
 /**
  * A typed, CONTENT-FREE delivery receipt (#1442).
@@ -1473,6 +1482,10 @@ const CHANNEL_DELIVERY_RECEIPT_REASON_CODES = new Set<string>([
   'profile_missing',
   'provider_unavailable',
   'mention_chain_paused',
+  'provider_quota_exhausted',
+  'provider_auth_required',
+  'provider_binary_missing',
+  'provider_unknown_failure',
 ]);
 
 export function isChannelDeliveryReceipt(
@@ -1742,6 +1755,7 @@ const ASYNC_RUN_TARGET_STATES = new Set<ChannelAsyncRunTargetState>([
   'failed',
   'cancelled',
   'rejected',
+  'refused',
 ]);
 
 function isInFlightArray(value: unknown): value is ChannelInFlightRef[] {

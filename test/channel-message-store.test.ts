@@ -137,7 +137,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(21);
+    ).toBe(22);
     expect(
       (
         inspect
@@ -607,7 +607,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(21);
+    ).toBe(22);
     expect(
       (
         inspect.prepare('PRAGMA table_info(channel_messages)').all() as Array<{
@@ -795,7 +795,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(21);
+    ).toBe(22);
     expect(
       inspect
         .prepare('SELECT heal_id, candidates, healed FROM channel_heal_state')
@@ -1079,7 +1079,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(21);
+    ).toBe(22);
     expect(
       (
         inspect
@@ -1143,7 +1143,7 @@ describe('channel-message-store async-run migration (#1391)', () => {
     const inspect = new Database(file, { readonly: true });
     cleanup.push(() => inspect.close());
     expect(inspect.prepare('SELECT version FROM schema_version').get()).toEqual(
-      { version: 21 }
+      { version: 22 }
     );
     expect(
       inspect
@@ -2075,6 +2075,33 @@ describe('channel-message-store async runs (#1391)', () => {
         state: 'completed',
       })
     ).toEqual(failed);
+  });
+
+  it('allows refused admission targets on a fresh database schema (#1571)', () => {
+    const s = store();
+    const { run } = s.appendCompleteWithAsyncRun({
+      channelId: 'topic:async',
+      sender: HUMAN,
+      text: '@a investigate',
+      targetIds: ['agent-profile:a:default'],
+    });
+
+    const refused = s.transitionAsyncRunTarget({
+      runId: run.id,
+      targetId: 'agent-profile:a:default',
+      state: 'refused',
+      reason: 'provider-failure:quota_exhausted',
+    })!;
+    expect(refused.state).toBe('rejected');
+    expect(refused.reason).toBeUndefined();
+    expect(refused.targets).toEqual([
+      expect.objectContaining({
+        targetId: 'agent-profile:a:default',
+        state: 'refused',
+        reason: 'provider-failure:quota_exhausted',
+        completedAt: expect.any(String),
+      }),
+    ]);
   });
 
   it('rejects a run with no eligible target without inventing a provider identity', () => {
@@ -3940,7 +3967,7 @@ describe('channel-message-store full-text search (#1308 slice 2 item 1)', () => 
       .get() as { version: number };
     counted.close();
     expect(rows.count).toBe(1);
-    expect(version.version).toBe(21);
+    expect(version.version).toBe(22);
   });
 
   it('backfills across more than one batch without dropping or duplicating rows', () => {
@@ -5459,7 +5486,7 @@ describe('channel-message-store invite and removal (#1455 slice 2)', () => {
           version: number;
         }
       ).version
-    ).toBe(21);
+    ).toBe(22);
     expect(upgraded.listMembers('topic:v17')).toEqual([
       expect.objectContaining({
         id: 'agent:claude',

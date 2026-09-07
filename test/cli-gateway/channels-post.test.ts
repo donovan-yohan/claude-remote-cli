@@ -122,6 +122,7 @@ describe('channels.post CLI gateway command', () => {
       '<text>',
       '[--format <text|markdown>]',
       '[--expect <spec>]',
+      '[--fail-on-refused]',
       '[--thread-id <id|null>]',
       '[--parent-message-id <id>]',
       '[--client-message-id <id>]',
@@ -269,6 +270,62 @@ describe('channels.post CLI gateway command', () => {
       },
     });
     expect(request.body).not.toHaveProperty('channelId');
+  });
+
+  it('exits non-zero when --fail-on-refused observes a provider-failure refusal', async () => {
+    const captureDir = mkdtempSync(path.join(tmpdir(), 'relay-cli-fetch-'));
+    const capturePath = path.join(captureDir, 'request.json');
+    try {
+      const stdout = await new Promise<string>((resolve, reject) => {
+        execFile(
+          process.execPath,
+          [
+            RELAY_BIN,
+            'v1',
+            'channels',
+            'post',
+            '--channel-id',
+            'product/main',
+            '--text',
+            'hi',
+            '--fail-on-refused',
+            '--json',
+          ],
+          {
+            encoding: 'utf8',
+            env: {
+              ...process.env,
+              RELAY_IDE_PORT: '4567',
+              RELAY_IDE_ACTOR_TOKEN: 'relay-sac-v1.test-actor.[REDACTED]',
+              RELAY_IDE_BROWSER_TOKEN: '',
+              NODE_OPTIONS: `--import=${FETCH_PRELOAD}`,
+              RELAY_TEST_FETCH_CAPTURE: capturePath,
+              RELAY_TEST_CHANNELS_POST_REFUSED: '1',
+            },
+            timeout: 10_000,
+          },
+          (error, stdoutText, stderr) => {
+            if (!error) {
+              reject(new Error(`CLI unexpectedly succeeded: ${stdoutText}`));
+              return;
+            }
+            if (String(error.code) !== '2') {
+              reject(
+                new Error(
+                  `expected exit code 2, got ${String(error.code)}: ${stderr || stdoutText}`
+                )
+              );
+              return;
+            }
+            resolve(stdoutText);
+          }
+        );
+      });
+      const envelope = JSON.parse(stdout) as Record<string, unknown>;
+      expect(envelope).toMatchObject({ ok: true, command: 'channels.post' });
+    } finally {
+      rmSync(captureDir, { recursive: true, force: true });
+    }
   });
 
   it('accepts repeatable --expect and forwards it as expect[]', async () => {

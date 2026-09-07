@@ -5,6 +5,7 @@ import {
   buildChildEnv,
   createPatchSink,
   createTurnQueue,
+  classifyBinaryMissingFailure,
   emitErrorPatch,
   emitLiveStatePatch,
   emitProviderExtensionPatch,
@@ -40,6 +41,7 @@ import type {
   AgentSessionLiveStateV2,
   AgentUsageV2,
 } from '../../shared/agent-chat-protocol-v2.js';
+import type { ProviderFailureCode } from '../../shared/agent-chat-protocol-v2.js';
 import { emptyAgentSessionV2 } from '../../shared/agent-chat-protocol-v2.js';
 import {
   AcpClient,
@@ -50,6 +52,12 @@ import {
 } from '../acp-client.js';
 
 const logger = createLogger('acp-adapter');
+
+function classifyAcpProviderFailure(
+  message: string
+): { failureCode: ProviderFailureCode; providerMessage: string } | null {
+  return classifyBinaryMissingFailure(message);
+}
 
 /** The ACP major version this adapter speaks. */
 export const ACP_PROTOCOL_VERSION = 1;
@@ -162,6 +170,13 @@ export interface AcpHarnessProfile {
   commandToolNames?: ReadonlySet<string>;
   /** Native tool titles that should render as a file-change card. */
   fileToolNames?: ReadonlySet<string>;
+  /**
+   * QUIRK hook: provider-specific failure classification for #1571.
+   * Used for auth/quota phrases that are not shared across ACP harnesses.
+   */
+  classifyProviderFailure?: (
+    message: string
+  ) => { failureCode: ProviderFailureCode; providerMessage: string } | null;
   command: string | ((config: AdapterConfig) => string);
   args?: string[] | ((config: AdapterConfig) => string[]);
   authMethodId?: string | null;
@@ -392,6 +407,17 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
         );
       this.providerSessionId = providerSessionId;
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failure =
+        this.profile.classifyProviderFailure?.(message) ??
+        classifyAcpProviderFailure(message);
+      // Emit a best-effort classified error patch even when connect fails: this
+      // is the only way the binder can surface auth/binary failures on the
+      // roster without grepping provider stderr (#1571).
+      emitErrorPatch(this.patchSink, message, null, {
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
+      });
       this._status = 'disconnected';
       this.client = null;
       this.clientGeneration += 1;
@@ -1490,7 +1516,13 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
   }
 
   private emitError(message: string): void {
-    emitErrorPatch(this.patchSink, message, this.activeTurnId);
+    const failure =
+      this.profile.classifyProviderFailure?.(message) ??
+      classifyAcpProviderFailure(message);
+    emitErrorPatch(this.patchSink, message, this.activeTurnId, {
+      ...(failure ? { failureCode: failure.failureCode } : {}),
+      ...(failure ? { providerMessage: failure.providerMessage } : {}),
+    });
   }
 
   protected emitProviderExtension(

@@ -148,6 +148,7 @@ export const AUTH_ROUTE_LANE_INVENTORY: AuthRouteLaneInventoryEntry[] = [
       'GET /agent-profiles/:id',
       'POST /agent-profiles',
       'PATCH /agent-profiles/:id',
+      'POST /agent-profiles/:id/reset',
     ],
     acceptedLanes: ['scoped-actor-credential', 'browser-session'],
     middleware:

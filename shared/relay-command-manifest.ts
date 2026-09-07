@@ -192,6 +192,7 @@ const COMMAND_LABELS: Record<RelayCliGatewayCommand, string> = {
   'agent-profiles.get': 'agent profile details',
   'agent-profiles.create': 'create agent profile',
   'agent-profiles.update': 'update agent profile',
+  'agent-profiles.reset': 'reset agent profile provider failure state',
   'agent-profiles.credential.mint': 'mint agent profile credential',
   'agent-profiles.credential.revoke': 'revoke agent profile credential',
   'agent-profiles.credential.status': 'agent profile credential status',
@@ -279,6 +280,7 @@ const WRITE_GATEWAY_COMMANDS = new Set<RelayCliGatewayCommand>([
   'channels.invite',
   'agent-profiles.create',
   'agent-profiles.update',
+  'agent-profiles.reset',
   // Minting revokes the profile's previous credential as its first act, but it
   // is classified as a write rather than as destructive: the operator's intent
   // is to hand the agent a working credential, and the surface that would

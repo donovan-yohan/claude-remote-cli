@@ -80,6 +80,16 @@ const DSH_PROFILE: AcpHarnessProfile = {
   capabilities: CAPABILITIES,
   providerNamespace: 'dsh',
   providerSessionKey: 'dshSessionId',
+  classifyProviderFailure: (message) => {
+    const lower = message.toLowerCase();
+    if (
+      lower.includes('authentication required') ||
+      lower.includes('not logged in')
+    ) {
+      return { failureCode: 'auth_required', providerMessage: message };
+    }
+    return null;
+  },
   extensionNamespace: 'dsh',
   otherKindHeuristics: false,
   commandToolNames: COMMAND_TOOL_NAMES,

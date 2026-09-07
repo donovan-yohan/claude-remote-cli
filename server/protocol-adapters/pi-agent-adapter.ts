@@ -1,6 +1,7 @@
 import { PI_AGENT_CHANNEL_COMMAND } from './launch-commands.js';
 import {
   buildChildEnv,
+  classifyBinaryMissingFailure,
   createPatchSink,
   createTurnQueue,
   emitErrorPatch,
@@ -213,6 +214,12 @@ export class PiAgentProtocolAdapter extends BaseProtocolAdapterV2 {
         error: null,
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failure = classifyBinaryMissingFailure(message);
+      emitErrorPatch(this.patchSink, message, null, {
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
+      });
       this._status = 'disconnected';
       await client.stop().catch(() => undefined);
       throw error;
@@ -874,7 +881,11 @@ export class PiAgentProtocolAdapter extends BaseProtocolAdapterV2 {
       });
   }
   private emitError(message: string): void {
-    emitErrorPatch(this.patchSink, message, this.activeTurnId);
+    const failure = classifyBinaryMissingFailure(message);
+    emitErrorPatch(this.patchSink, message, this.activeTurnId, {
+      ...(failure ? { failureCode: failure.failureCode } : {}),
+      ...(failure ? { providerMessage: failure.providerMessage } : {}),
+    });
   }
   private emitProviderExtension(
     payload: Record<string, unknown>,

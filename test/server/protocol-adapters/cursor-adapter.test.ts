@@ -191,6 +191,65 @@ describe('CursorProtocolAdapter', () => {
     });
   });
 
+  it('classifies authenticate failures as auth_required', async () => {
+    const h = harness();
+    h.request.mockImplementation(async (method: string) => {
+      if (method === 'authenticate') {
+        throw new Error('Authentication required');
+      }
+      if (method === 'session/new' || method === 'session/load')
+        return { sessionId: SESSION_ID };
+      return {};
+    });
+    await expect(h.adapter.connect(config)).rejects.toThrow(
+      'Authentication required'
+    );
+    expect(h.patches).toContainEqual(
+      expect.objectContaining({
+        type: 'agent-error-v2',
+        failureCode: 'auth_required',
+        providerMessage: 'Authentication required',
+      })
+    );
+  });
+
+  it('classifies not logged in errors as auth_required', async () => {
+    const h = harness();
+    h.request.mockImplementation(async (method: string) => {
+      if (method === 'authenticate') {
+        throw new Error('Not logged in');
+      }
+      if (method === 'session/new' || method === 'session/load')
+        return { sessionId: SESSION_ID };
+      return {};
+    });
+    await expect(h.adapter.connect(config)).rejects.toThrow('Not logged in');
+    expect(h.patches).toContainEqual(
+      expect.objectContaining({
+        type: 'agent-error-v2',
+        failureCode: 'auth_required',
+        providerMessage: 'Not logged in',
+      })
+    );
+  });
+
+  it('classifies ENOENT spawn failures as binary_missing', async () => {
+    const h = harness();
+    h.start.mockImplementation(async () => {
+      const err = Object.assign(new Error('spawn cursor-agent ENOENT'), {
+        code: 'ENOENT',
+      }) as NodeJS.ErrnoException;
+      throw err;
+    });
+    await expect(h.adapter.connect(config)).rejects.toThrow('ENOENT');
+    expect(h.patches).toContainEqual(
+      expect.objectContaining({
+        type: 'agent-error-v2',
+        failureCode: 'binary_missing',
+      })
+    );
+  });
+
   it('passes --model and --yolo when configured', async () => {
     const h = harness();
     await h.adapter.connect({

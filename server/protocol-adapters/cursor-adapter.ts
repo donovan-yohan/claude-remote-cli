@@ -70,6 +70,16 @@ const CURSOR_PROFILE: AcpHarnessProfile = {
   capabilities: CAPABILITIES,
   providerNamespace: 'cursor',
   providerSessionKey: 'cursorSessionId',
+  classifyProviderFailure: (message) => {
+    const lower = message.toLowerCase();
+    if (
+      lower.includes('authentication required') ||
+      lower.includes('not logged in')
+    ) {
+      return { failureCode: 'auth_required', providerMessage: message };
+    }
+    return null;
+  },
   approvalSupport: CURSOR_APPROVAL_SUPPORT,
   command: CURSOR_CHANNEL_COMMAND,
   authMethodId: 'cursor_login',

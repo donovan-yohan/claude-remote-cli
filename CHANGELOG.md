@@ -133,6 +133,11 @@ workflow.
   keeps the working directory it was started in, so repointing the channel at a
   different worktree posts a note naming both directories and telling you to
   restart the agent to move it (#1534)
+- Provider failures (quota exhaustion, auth required, missing binary) are now
+  classified by adapters and surfaced on the channel roster with an optional
+  retry-after timestamp; mention routing refuses fast with a typed delivery
+  receipt reason and emits an `attention` event so failures do not hide in logs
+  (#1571).
 - A channel post typed at the hub's own terminal (`relay-ide v1 channels post`)
   no longer marks its run `failed` while the agent is still working. The
   host-local CLI is the operator, not an agent profile, so its posts no longer

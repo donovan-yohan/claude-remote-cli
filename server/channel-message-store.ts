@@ -75,7 +75,7 @@ import {
 //    catch-up window, and thread parent stays valid. Nothing in this file may
 //    ever issue `DELETE FROM channel_messages` for an operator action.
 
-const SCHEMA_VERSION = 21;
+const SCHEMA_VERSION = 22;
 const ASYNC_RUN_SETTLED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const logger = createLogger('channel-message-store');
 export const CHANNEL_HISTORY_DEFAULT_LIMIT = 50;
@@ -920,7 +920,7 @@ CREATE INDEX IF NOT EXISTS idx_char_channel_created
 CREATE TABLE IF NOT EXISTS channel_async_run_targets (
   run_id             TEXT NOT NULL,
   target_id          TEXT NOT NULL,
-  state              TEXT NOT NULL CHECK (state IN ('queued','working','input-required','auth-required','completed','failed','cancelled','rejected')),
+  state              TEXT NOT NULL CHECK (state IN ('queued','working','input-required','auth-required','completed','failed','cancelled','rejected','refused')),
   reason             TEXT,
   approval_state     TEXT,
   -- #1570: effective turn id for wait/history correlation even when a trigger
@@ -3650,6 +3650,37 @@ function runSchemaMigrations(db: Database.Database): void {
       db.prepare('UPDATE schema_version SET version = 21').run();
     })();
   }
+  if (current < 22) {
+    db.transaction(() => {
+      // #1560/#1571: add per-target refused admission state. SQLite CHECK
+      // constraints require a rebuild.
+      db.exec(`
+        DROP INDEX IF EXISTS idx_chart_run_state;
+        CREATE TABLE channel_async_run_targets_v22 (
+          run_id TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          state TEXT NOT NULL CHECK (state IN ('queued','working','input-required','auth-required','completed','failed','cancelled','rejected','refused')),
+          reason TEXT,
+          approval_state TEXT,
+          turn_id TEXT,
+          updated_at TEXT NOT NULL,
+          completed_at TEXT,
+          PRIMARY KEY(run_id, target_id)
+        );
+        INSERT INTO channel_async_run_targets_v22 (
+          run_id, target_id, state, reason, approval_state, turn_id, updated_at, completed_at
+        )
+        SELECT
+          run_id, target_id, state, reason, approval_state, turn_id, updated_at, completed_at
+        FROM channel_async_run_targets;
+        DROP TABLE channel_async_run_targets;
+        ALTER TABLE channel_async_run_targets_v22 RENAME TO channel_async_run_targets;
+        CREATE INDEX idx_chart_run_state
+          ON channel_async_run_targets(run_id, state);
+      `);
+      db.prepare('UPDATE schema_version SET version = 22').run();
+    })();
+  }
 }
 
 export function initChannelMessageStore(
@@ -4479,7 +4510,7 @@ export function createChannelMessageStore(
     if (
       targets.some(
         (target) =>
-          !['completed', 'failed', 'cancelled', 'rejected'].includes(
+          !['completed', 'failed', 'cancelled', 'rejected', 'refused'].includes(
             target.state
           )
       )
@@ -4494,11 +4525,18 @@ export function createChannelMessageStore(
     }
     if (targets.every((target) => target.state === 'completed'))
       return 'completed';
-    if (targets.every((target) => target.state === 'rejected'))
+    if (
+      targets.every(
+        (target) => target.state === 'rejected' || target.state === 'refused'
+      )
+    )
       return 'rejected';
     if (
       targets.some(
-        (target) => target.state === 'failed' || target.state === 'rejected'
+        (target) =>
+          target.state === 'failed' ||
+          target.state === 'rejected' ||
+          target.state === 'refused'
       )
     )
       return 'failed';
@@ -4584,6 +4622,7 @@ export function createChannelMessageStore(
         'failed',
         'cancelled',
         'rejected',
+        'refused',
       ].includes(input.state);
       const changed = db
         .prepare(
@@ -4594,7 +4633,7 @@ export function createChannelMessageStore(
                 completed_at = CASE WHEN ? THEN ? ELSE NULL END
           WHERE run_id = ? AND target_id = ?
             AND (
-              state NOT IN ('completed','failed','cancelled','rejected')
+              state NOT IN ('completed','failed','cancelled','rejected','refused')
               OR (state = 'cancelled' AND reason IN ('server-restarted','watchdog','turn-ceiling'))
             )`
         )
@@ -4714,7 +4753,7 @@ export function createChannelMessageStore(
           SET state = 'cancelled', reason = 'server-restarted', updated_at = ?,
               completed_at = ?
         WHERE run_id = ?
-          AND state NOT IN ('completed','failed','cancelled','rejected')`
+          AND state NOT IN ('completed','failed','cancelled','rejected','refused')`
     );
     const updateRun = db.prepare(
       `UPDATE channel_async_runs

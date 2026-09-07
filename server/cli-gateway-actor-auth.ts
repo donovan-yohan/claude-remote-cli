@@ -149,6 +149,7 @@ export const CLI_GATEWAY_ACTOR_WRITE_COMMANDS = [
   // agent holding `context:write` still cannot mint or rebind a profile.
   'agent-profiles.create',
   'agent-profiles.update',
+  'agent-profiles.reset',
   // #1455 slice 3: mint/revoke the durable per-profile actor credential. Same
   // lane and the same host-local write gate as create/update — a delegated
   // actor holding `context:write` cannot mint itself (or anybody else) a
@@ -168,6 +169,41 @@ const cliGatewayActorReadCommandSet = new Set<string>(
 const cliGatewayActorWriteCommandSet = new Set<string>(
   CLI_GATEWAY_ACTOR_WRITE_COMMANDS
 );
+
+const CHANNEL_READ_COMMANDS = new Set<CliGatewayActorCommand>([
+  'channels.list',
+  'channels.get',
+  'channels.run.get',
+  'channels.run.wait',
+  'channels.run.history',
+  'channels.history',
+  'channels.receipts',
+  'channels.subscribe',
+  'channels.threads.history',
+  'channels.roster',
+  'channels.members',
+  'channels.search',
+]);
+
+const CHANNEL_WRITE_COMMANDS = new Set<CliGatewayActorCommand>([
+  'channels.post',
+  'channels.invite',
+  'channels.remove-member',
+]);
+
+const AGENT_PROFILE_READ_COMMANDS = new Set<CliGatewayActorCommand>([
+  'agent-profiles.list',
+  'agent-profiles.get',
+  'agent-profiles.credential.status',
+]);
+
+const AGENT_PROFILE_WRITE_COMMANDS = new Set<CliGatewayActorCommand>([
+  'agent-profiles.create',
+  'agent-profiles.update',
+  'agent-profiles.reset',
+  'agent-profiles.credential.mint',
+  'agent-profiles.credential.revoke',
+]);
 const cliGatewayActorGrantCapabilitySet = new Set<string>(
   CLI_GATEWAY_ACTOR_GRANT_CAPABILITIES
 );
@@ -520,47 +556,17 @@ export function cliGatewayActorCommandCapabilities(
   // `channels.search` (#1410) is a read of the same durable message log, so it
   // gates on the same bit; its blast radius is bounded by the credential's
   // `channelIds` scope, not by this capability row.
-  if (
-    command === 'channels.list' ||
-    command === 'channels.get' ||
-    command === 'channels.run.get' ||
-    command === 'channels.run.wait' ||
-    command === 'channels.run.history' ||
-    command === 'channels.history' ||
-    command === 'channels.receipts' ||
-    command === 'channels.subscribe' ||
-    command === 'channels.threads.history' ||
-    command === 'channels.roster' ||
-    command === 'channels.members' ||
-    command === 'channels.search'
-  )
-    return ['context:read'];
+  if (CHANNEL_READ_COMMANDS.has(command)) return ['context:read'];
   // #1455 slice 2: membership WRITES gate on the same bit as a post. Membership
   // is channel authorization, not hub configuration, and it is bounded by the
   // same two gates a post is (credential `channelIds` scope, then hub-owned
   // membership of the caller), so it needs no capability of its own.
-  if (
-    command === 'channels.post' ||
-    command === 'channels.invite' ||
-    command === 'channels.remove-member'
-  )
-    return ['context:write'];
+  if (CHANNEL_WRITE_COMMANDS.has(command)) return ['context:write'];
   // #1473: agent-profile reads are a roster read; writes are hub-local config
   // mutations. Both resolve explicitly so neither falls into the generic
   // `session:read` read fallback or the `artifact:write` write fallback below.
-  if (
-    command === 'agent-profiles.list' ||
-    command === 'agent-profiles.get' ||
-    command === 'agent-profiles.credential.status'
-  )
-    return ['context:read'];
-  if (
-    command === 'agent-profiles.create' ||
-    command === 'agent-profiles.update' ||
-    command === 'agent-profiles.credential.mint' ||
-    command === 'agent-profiles.credential.revoke'
-  )
-    return ['context:write'];
+  if (AGENT_PROFILE_READ_COMMANDS.has(command)) return ['context:read'];
+  if (AGENT_PROFILE_WRITE_COMMANDS.has(command)) return ['context:write'];
   if (
     command === 'workflow-runs.list' ||
     command === 'workflow-runs.get' ||

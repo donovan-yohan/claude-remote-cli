@@ -20,6 +20,8 @@
 // boundaryCheck (#1231): AgentProfile rows are local hub sqlite/config Actor rows.
 // No Nostr keypair identity, no `community_id` scoping, no signed Persona Pack.
 
+import type { ProviderFailureCode } from './agent-chat-protocol-v2.js';
+
 export const AGENT_PROFILE_SCHEMA_VERSION = 1 as const;
 
 /**
@@ -106,6 +108,20 @@ export interface AgentProfile {
   isDefault: boolean;
   /** Seeded, non-user-authored profile. */
   isBuiltIn: boolean;
+
+  /**
+   * Optional runtime availability projection (#1571).
+   * Present on `agent-profiles.list` responses, not persisted in the profile store.
+   */
+  available?: boolean;
+  /** Optional structured availability code when unavailable due to provider failure (#1571). */
+  reasonCode?: ProviderFailureCode | null;
+  /** Optional human-readable availability reason (#1571). */
+  reason?: string | null;
+  /** Optional ISO timestamp of when unavailability started (#1571). */
+  since?: string;
+  /** Optional ISO timestamp when retry is expected to succeed (#1571). */
+  retryAfter?: string;
 }
 
 /**

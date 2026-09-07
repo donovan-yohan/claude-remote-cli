@@ -179,6 +179,35 @@ describe('PrimeAgentProtocolAdapter', () => {
     });
   });
 
+  it('classifies ENOENT launch failures as binary_missing (#1571)', async () => {
+    const client = new PrimeAgentRpcClient();
+    vi.spyOn(client, 'start').mockRejectedValue(
+      Object.assign(new Error('spawn prime-agent ENOENT'), { code: 'ENOENT' })
+    );
+    vi.spyOn(client, 'call').mockResolvedValue({
+      type: 'response',
+      command: 'get_available_models',
+      success: true,
+      data: { models: [] },
+    });
+    vi.spyOn(client, 'stop').mockResolvedValue();
+    const adapter = new PrimeAgentProtocolAdapter(() => client);
+    const patches: Array<Record<string, unknown>> = [];
+    adapter.onPatch((patch) =>
+      patches.push(patch as unknown as Record<string, unknown>)
+    );
+
+    await expect(adapter.connect(config)).rejects.toThrow(/ENOENT/);
+    expect(patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'agent-error-v2',
+          failureCode: 'binary_missing',
+        }),
+      ])
+    );
+  });
+
   it('discovers live Prime controls and executes them on the RPC control lane', async () => {
     const { adapter, call, patches } = harness();
     await adapter.connect(config);

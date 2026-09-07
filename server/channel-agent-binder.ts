@@ -80,10 +80,12 @@ import type {
   AgentLiveStateUpdatedPatchV2,
   AgentPatchV2,
   AgentSlashCommandV2,
+  ProviderFailureCode,
 } from '../shared/agent-chat-protocol-v2.js';
 import type { AgentRole } from '../shared/agent-roster.js';
 import { isDmChannel } from '../shared/dm-channels.js';
 import { workspaceTopicAgentRuntimeLinkPatch } from '../shared/workspace-topics.js';
+import { sanitizeProviderDiagnostic } from './protocol-adapters/adapter-utils.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -236,6 +238,16 @@ export const MAX_CONSECUTIVE_AGENT_TURNS = 4;
 /** Dedupe identical unavailable/cross-node system rows per (channel, agent). */
 const UNAVAILABLE_ROW_TTL_MS = 5 * 60 * 1000;
 /**
+ * #1571: quota failures often lack a precise provider retry time. Default to a
+ * bounded cooldown so the binder eventually admits a probe turn (the next
+ * attempt) without requiring an explicit operator reset.
+ *
+ * Env knob: RELAY_PROVIDER_FAILURE_COOLDOWN_MS
+ */
+const DEFAULT_PROVIDER_FAILURE_COOLDOWN_MS = 30 * 60 * 1000;
+const WATCHDOG_TERMINAL_REASON = 'watchdog' as const;
+const TURN_CEILING_TERMINAL_REASON = 'turn-ceiling' as const;
+/**
  * Keep exact provider turn ids briefly after a bare-idle successor starts.
  * These tombstones are deliberately never candidates for anonymous `turn-0`.
  */
@@ -281,6 +293,10 @@ export interface ChannelAgentRosterEntry {
   kind: 'framework';
   available: boolean;
   reason: string | null;
+  /** #1571: structured provider failure classification when unavailable. */
+  providerFailureCode?: ProviderFailureCode;
+  providerFailureRetryAfter?: string;
+  providerFailureSince?: string;
   role?: AgentRole;
   binding: {
     runtimeId: string;
@@ -434,6 +450,21 @@ export interface ChannelAgentBinder {
     threadId?: string | null
   ): Promise<void>;
   rosterForChannel(channelId: string): Promise<ChannelAgentRosterEntry[]>;
+  /**
+   * #1571: operator-facing profile availability projection used by
+   * `agent-profiles.list`. Includes provider-failure metadata when present.
+   */
+  agentProfileStatus(profileActorId: string): Promise<{
+    available: boolean;
+    reasonCode?: ProviderFailureCode | null;
+    reason: string | null;
+    since?: string;
+    retryAfter?: string;
+  }>;
+  /** #1571: operator reset of a profile’s provider-failure state. */
+  resetAgentProfileProviderFailure(profileActorId: string): Promise<{
+    cleared: boolean;
+  }>;
   /**
    * Synchronous by design: callers check this and archive in one JS turn, so a
    * new binder operation cannot interleave between the invariant and mutation.
@@ -804,6 +835,16 @@ export function createChannelAgentBinder(
   const presenceSweepMs = deps.presenceSweepMs ?? DEFAULT_PRESENCE_SWEEP_MS;
   const yolo = deps.yolo ?? CHANNEL_BINDING_YOLO_DEFAULT;
   const now = deps.now ?? (() => Date.now());
+  const binderEnv = deps.processEnv ?? process.env;
+  const providerFailureCooldownMs = (() => {
+    const raw = Number.parseInt(
+      binderEnv['RELAY_PROVIDER_FAILURE_COOLDOWN_MS'] ?? '',
+      10
+    );
+    return Number.isFinite(raw) && raw >= 0
+      ? raw
+      : DEFAULT_PROVIDER_FAILURE_COOLDOWN_MS;
+  })();
 
   const live = new Map<string, LiveBinding>();
   const inflight = new Map<string, Promise<LiveBinding>>();
@@ -823,6 +864,18 @@ export function createChannelAgentBinder(
     }
   >();
   const unavailableRowAt = new Map<string, number>();
+  // #1571: last classified provider failure per profile actor id. Global to the
+  // hub process (not per-channel): quota/auth/binary failures are profile-level
+  // conditions and should surface consistently on every roster.
+  const providerFailureByProfileActorId = new Map<
+    string,
+    {
+      code: ProviderFailureCode;
+      since: string;
+      retryAfter?: string;
+      providerMessage?: string;
+    }
+  >();
   // Retry storm brake, synchronous half (#1308 review). The `live` binding's
   // busy state is only observable AFTER `routeOne` has awaited its way to
   // `enqueueTurn`, so a check against it alone is a TOCTOU: two retries issued
@@ -1575,6 +1628,104 @@ export function createChannelAgentBinder(
     return { available: true, reason: null };
   }
 
+  function providerFailureReceiptReason(
+    code: ProviderFailureCode
+  ): ChannelDeliveryReceiptReasonCode {
+    switch (code) {
+      case 'quota_exhausted':
+        return 'provider_quota_exhausted';
+      case 'auth_required':
+        return 'provider_auth_required';
+      case 'binary_missing':
+        return 'provider_binary_missing';
+      case 'unknown':
+        return 'provider_unknown_failure';
+    }
+  }
+
+  function activeProviderFailure(
+    profile: AgentProfile,
+    target: MentionTarget | undefined
+  ): {
+    code: ProviderFailureCode;
+    since: string;
+    retryAfter?: string;
+    providerMessage?: string;
+    reason: string;
+  } | null {
+    const failure = providerFailureByProfileActorId.get(profile.id);
+    if (!failure) return null;
+
+    // Self-healing guards where we have a cheap external signal.
+    if (failure.code === 'quota_exhausted') {
+      const retryAt =
+        failure.retryAfter && failure.retryAfter.trim().length > 0
+          ? Date.parse(failure.retryAfter)
+          : Number.NaN;
+      if (Number.isFinite(retryAt)) {
+        if (now() >= retryAt) {
+          providerFailureByProfileActorId.delete(profile.id);
+          return null;
+        }
+      } else {
+        const sinceAt = Date.parse(failure.since);
+        // Fail soft: a missing/invalid since timestamp should never strand the
+        // profile unavailable forever.
+        if (
+          !Number.isFinite(sinceAt) ||
+          now() >= sinceAt + providerFailureCooldownMs
+        ) {
+          providerFailureByProfileActorId.delete(profile.id);
+          return null;
+        }
+      }
+    }
+
+    if (failure.code === 'binary_missing') {
+      if (
+        target?.command &&
+        resolveExecutablePath(target.command, effectiveLaunchEnv(profile))
+      ) {
+        providerFailureByProfileActorId.delete(profile.id);
+        return null;
+      }
+    }
+
+    if (failure.code === 'auth_required') {
+      const retryAt =
+        failure.retryAfter && failure.retryAfter.trim().length > 0
+          ? Date.parse(failure.retryAfter)
+          : Number.NaN;
+      const sinceAt = Date.parse(failure.since);
+      if (Number.isFinite(retryAt)) {
+        if (now() >= retryAt) {
+          providerFailureByProfileActorId.delete(profile.id);
+          return null;
+        }
+      } else if (
+        !Number.isFinite(sinceAt) ||
+        now() >= sinceAt + providerFailureCooldownMs
+      ) {
+        providerFailureByProfileActorId.delete(profile.id);
+        return null;
+      }
+    }
+
+    const suffix =
+      failure.code === 'quota_exhausted' && failure.retryAfter
+        ? ` (retry after ${failure.retryAfter})`
+        : '';
+    return {
+      code: failure.code,
+      since: failure.since,
+      ...(failure.retryAfter ? { retryAfter: failure.retryAfter } : {}),
+      ...(failure.providerMessage
+        ? { providerMessage: failure.providerMessage }
+        : {}),
+      reason: `${failure.code}${suffix}`,
+    };
+  }
+
   /**
    * Vendor catalog label for the DEFAULT profile's `ChannelSenderRef.displayName`
    * (#1234). Reuses the (cached) mention-target probe as the label source and
@@ -1926,7 +2077,7 @@ export function createChannelAgentBinder(
       });
       drainBoundedTurn(
         binding,
-        'turn-ceiling',
+        TURN_CEILING_TERMINAL_REASON,
         `@${binding.displayName} reached the ${describeMs(turnCeilingMs)} turn limit and was interrupted.`
       );
     }, turnCeilingMs);
@@ -1959,7 +2110,7 @@ export function createChannelAgentBinder(
     binding: LiveBinding,
     reason: Extract<
       ChannelCompletionCallbackTerminalReason,
-      'watchdog' | 'turn-ceiling'
+      typeof WATCHDOG_TERMINAL_REASON | typeof TURN_CEILING_TERMINAL_REASON
     >,
     text: string
   ): void {
@@ -3733,11 +3884,13 @@ export function createChannelAgentBinder(
         : // A ceiling drain is Relay cancelling the turn, not the provider
           // failing it (#1541) — and by here the runtime has been interrupted,
           // so no target claims a terminal state while its runtime works on.
-          terminalReason === 'interrupt' || terminalReason === 'turn-ceiling'
+          terminalReason === 'interrupt' ||
+            terminalReason === TURN_CEILING_TERMINAL_REASON
           ? 'cancelled'
           : 'failed';
     transitionAsyncRunTargetForTurn(binding, terminalTurnId, targetState, {
-      ...(terminalReason === 'watchdog' || terminalReason === 'turn-ceiling'
+      ...(terminalReason === WATCHDOG_TERMINAL_REASON ||
+      terminalReason === TURN_CEILING_TERMINAL_REASON
         ? { reason: terminalReason }
         : {}),
     });
@@ -3760,7 +3913,10 @@ export function createChannelAgentBinder(
       binding.requestMessageIdByTurn.get(terminalTurnId) ??
       binding.parentMessageIdByTurn.get(terminalTurnId);
     if (requestMessageId && store.getMessage(requestMessageId)) {
-      if (terminalReason === 'watchdog' || terminalReason === 'turn-ceiling') {
+      if (
+        terminalReason === WATCHDOG_TERMINAL_REASON ||
+        terminalReason === TURN_CEILING_TERMINAL_REASON
+      ) {
         // Both bounds are Relay-side timer expiries, so they share the receipt
         // STATE; the reason code says which bound ended the turn (#1541).
         emitReceipt({
@@ -3768,7 +3924,7 @@ export function createChannelAgentBinder(
           targetProfileId: binding.profileActorId,
           state: 'expired_watchdog',
           reasonCode:
-            terminalReason === 'watchdog'
+            terminalReason === WATCHDOG_TERMINAL_REASON
               ? 'watchdog_force_drain'
               : 'turn_ceiling',
         });
@@ -3858,6 +4014,165 @@ export function createChannelAgentBinder(
     return true;
   }
 
+  function recordProviderFailure(
+    binding: LiveBinding,
+    patch: Extract<AgentPatchV2, { type: 'agent-error-v2' }>
+  ): ProviderFailureCode | null {
+    if (!patch.failureCode) return null;
+    const since = new Date(now()).toISOString();
+    const providerMessage = sanitizeProviderDiagnostic(
+      patch.providerMessage ?? patch.message
+    );
+    if (patch.failureCode !== 'unknown') {
+      providerFailureByProfileActorId.set(binding.profileActorId, {
+        code: patch.failureCode,
+        since,
+        ...(patch.retryAfter ? { retryAfter: patch.retryAfter } : {}),
+        providerMessage,
+      });
+    }
+    logger.warn('channel provider failure classified', {
+      channelId: binding.channelId,
+      profileActorId: binding.profileActorId,
+      providerId: binding.framework,
+      failureCode: patch.failureCode,
+      retryAfter: patch.retryAfter ?? null,
+    });
+    // Attention is a metadata topic; keep payload redaction-safe.
+    deps.events?.publish({
+      topic: 'attention',
+      type: 'provider-failure.classified',
+      payload: {
+        channelId: binding.channelId,
+        targetProfileId: binding.profileActorId,
+        providerId: binding.framework,
+        failureCode: patch.failureCode,
+        ...(patch.retryAfter ? { retryAfter: patch.retryAfter } : {}),
+      },
+    });
+    return patch.failureCode;
+  }
+
+  function handleTurnCompletedPatch(
+    binding: LiveBinding,
+    patch: Extract<AgentPatchV2, { type: 'agent-turn-completed-v2' }>
+  ): void {
+    const priorProviderFailure =
+      providerFailureByProfileActorId.get(binding.profileActorId) ?? null;
+    const parentMessageId =
+      binding.parentMessageIdByTurn.get(patch.turnId) ?? undefined;
+    // The bridge listener runs first, so any terminally-opened row has already
+    // resolved its parent. Prune before finishTurn pumps a queued turn, so a
+    // Hermes fallback cannot become ambiguous with its successor.
+    const completedByExactTurnId = binding.parentMessageIdByTurn.has(
+      patch.turnId
+    );
+    const completedParentKey = parentKeyForTurn(binding, patch.turnId);
+    releaseTurnParent(binding, patch.turnId);
+    if (completedByExactTurnId) {
+      // An exact terminal establishes which retained generation ended, so a
+      // later isolated turn may safely use the anonymous fallback again.
+      binding.turnZeroFallbackUnsafe = false;
+    }
+    if (patch.status === 'completed') {
+      // #1571: any successful turn clears the last recorded provider failure
+      // classification for this profile, so the roster recovers.
+      providerFailureByProfileActorId.delete(binding.profileActorId);
+      if (priorProviderFailure) {
+        postSystemRow(
+          binding.channelId,
+          `@${binding.displayName} recovered from provider failure (${priorProviderFailure.code}).`,
+          { parentMessageId }
+        );
+      }
+    }
+    if (
+      patch.turnId === binding.activeTurnId ||
+      completedParentKey === binding.activeTurnId
+    ) {
+      finishTurn(
+        binding,
+        patch.status === 'interrupted'
+          ? 'interrupt'
+          : patch.status === 'failed'
+            ? 'error'
+            : 'completed'
+      );
+    }
+  }
+
+  function handleAgentErrorPatch(
+    binding: LiveBinding,
+    patch: Extract<AgentPatchV2, { type: 'agent-error-v2' }>
+  ): void {
+    const activeTurnId = binding.activeTurnId;
+    if (activeTurnId !== null && patch.turnId === undefined) {
+      // The completion paired with a legacy chat:error no longer rides the
+      // mapper: since #1411 it is owned by LegacyProtocolAdapterV2Bridge,
+      // which arms it one microtask later and fires it only when the adapter
+      // did not end the errored turn itself. The queued successor can bare-idle
+      // synchronously while finishTurn pumps it, so mark the anonymous
+      // namespace unsafe before that successor starts; a window that is wider
+      // than strictly needed is the safe direction here.
+      binding.turnZeroFallbackUnsafe = true;
+    }
+    const terminalTurnId = patch.turnId ?? binding.activeTurnId;
+    const terminalByExactTurnId =
+      patch.turnId !== undefined &&
+      binding.parentMessageIdByTurn.has(patch.turnId);
+    const terminalParentKey =
+      terminalTurnId === null
+        ? undefined
+        : parentKeyForTurn(binding, terminalTurnId);
+    const targetsActiveTurn =
+      activeTurnId !== null &&
+      (patch.turnId === activeTurnId || terminalParentKey === activeTurnId);
+    const targetsIdleBinding =
+      activeTurnId === null && patch.turnId === undefined;
+
+    if (targetsActiveTurn || targetsIdleBinding) {
+      const failureCode = recordProviderFailure(binding, patch);
+      // Only surface a system row when NO assistant row opened — otherwise the
+      // bridge's `failed` finalize is the visible artifact (§7, no duplicate).
+      if (!binding.sawStream) {
+        const suffix = failureCode ? ` (${failureCode})` : '';
+        postSystemRow(
+          binding.channelId,
+          `@${binding.displayName} errored${suffix}: ${patch.message}`,
+          {
+            parentMessageId:
+              activeTurnId === null
+                ? undefined
+                : parentForTurn(binding, activeTurnId),
+          }
+        );
+      }
+      if (failureCode && (binding.sawStream || targetsIdleBinding)) {
+        const retry = patch.retryAfter ? ` until ${patch.retryAfter}` : '';
+        postSystemRow(
+          binding.channelId,
+          `@${binding.displayName} unavailable (${failureCode})${retry}: ${patch.providerMessage ?? patch.message}`,
+          {
+            parentMessageId:
+              activeTurnId === null
+                ? undefined
+                : parentForTurn(binding, activeTurnId),
+          }
+        );
+      }
+    }
+
+    if (terminalTurnId !== null) {
+      releaseTurnParent(binding, terminalTurnId);
+    }
+    if (terminalByExactTurnId) {
+      binding.turnZeroFallbackUnsafe = false;
+    }
+    if (targetsActiveTurn) {
+      finishTurn(binding, 'error');
+    }
+  }
+
   function handleBindingPatch(binding: LiveBinding, patch: AgentPatchV2): void {
     if (handleSuppressedBindingPatch(binding, patch)) return;
     // Liveness before interpretation (#1541): a patch that belongs to the
@@ -3902,90 +4217,11 @@ export function createChannelAgentBinder(
       case 'agent-live-state-updated-v2':
         handleLiveState(binding, patch.live);
         break;
-      case 'agent-turn-completed-v2': {
-        // The bridge listener runs first, so any terminally-opened row has
-        // already resolved its parent. Prune before finishTurn pumps a queued
-        // turn, so a Hermes fallback cannot become ambiguous with its successor.
-        const completedByExactTurnId = binding.parentMessageIdByTurn.has(
-          patch.turnId
-        );
-        const completedParentKey = parentKeyForTurn(binding, patch.turnId);
-        releaseTurnParent(binding, patch.turnId);
-        if (completedByExactTurnId) {
-          // An exact terminal establishes which retained generation ended, so
-          // a later isolated turn may safely use the anonymous fallback again.
-          binding.turnZeroFallbackUnsafe = false;
-        }
-        if (
-          patch.turnId === binding.activeTurnId ||
-          completedParentKey === binding.activeTurnId
-        ) {
-          finishTurn(
-            binding,
-            patch.status === 'interrupted'
-              ? 'interrupt'
-              : patch.status === 'failed'
-                ? 'error'
-                : 'completed'
-          );
-        }
+      case 'agent-turn-completed-v2':
+        handleTurnCompletedPatch(binding, patch);
         break;
-      }
       case 'agent-error-v2':
-        {
-          const activeTurnId = binding.activeTurnId;
-          if (activeTurnId !== null && patch.turnId === undefined) {
-            // The completion paired with a legacy chat:error no longer rides
-            // the mapper: since #1411 it is owned by
-            // LegacyProtocolAdapterV2Bridge, which arms it one microtask later
-            // and fires it only when the adapter did not end the errored turn
-            // itself — so it lands after this handler returns, or not at all.
-            // The queued successor can bare-idle synchronously while finishTurn
-            // pumps it, so mark the anonymous namespace unsafe before that
-            // successor starts; a window that is wider than strictly needed is
-            // the safe direction here.
-            binding.turnZeroFallbackUnsafe = true;
-          }
-          const terminalTurnId = patch.turnId ?? binding.activeTurnId;
-          const terminalByExactTurnId =
-            patch.turnId !== undefined &&
-            binding.parentMessageIdByTurn.has(patch.turnId);
-          const terminalParentKey =
-            terminalTurnId === null
-              ? undefined
-              : parentKeyForTurn(binding, terminalTurnId);
-          const targetsActiveTurn =
-            activeTurnId !== null &&
-            (patch.turnId === activeTurnId ||
-              terminalParentKey === activeTurnId);
-          const targetsIdleBinding =
-            activeTurnId === null && patch.turnId === undefined;
-          if (targetsActiveTurn || targetsIdleBinding) {
-            // Only surface a system row when NO assistant row opened — otherwise the
-            // bridge's `failed` finalize is the visible artifact (§7, no duplicate).
-            if (!binding.sawStream) {
-              postSystemRow(
-                binding.channelId,
-                `@${binding.displayName} errored: ${patch.message}`,
-                {
-                  parentMessageId:
-                    activeTurnId === null
-                      ? undefined
-                      : parentForTurn(binding, activeTurnId),
-                }
-              );
-            }
-          }
-          if (terminalTurnId !== null) {
-            releaseTurnParent(binding, terminalTurnId);
-          }
-          if (terminalByExactTurnId) {
-            binding.turnZeroFallbackUnsafe = false;
-          }
-          if (targetsActiveTurn) {
-            finishTurn(binding, 'error');
-          }
-        }
+        handleAgentErrorPatch(binding, patch);
         break;
       default:
         break;
@@ -4509,13 +4745,16 @@ export function createChannelAgentBinder(
         }
       };
       try {
-        const rejectAsyncTarget = (reason: string) => {
+        const rejectAsyncTarget = (
+          state: ChannelAsyncRunTargetState,
+          reason: string
+        ) => {
           const run = store.getAsyncRunForRequestMessage(trigger.id);
           if (!run) return;
           const changed = store.transitionAsyncRunTarget({
             runId: run.id,
             targetId: profile.id,
-            state: 'rejected',
+            state,
             reason,
           });
           if (changed) hub.broadcastRunLifecycle(changed);
@@ -4525,7 +4764,7 @@ export function createChannelAgentBinder(
         if (closed) return; // close() raced the availability probe
         if (!target) {
           releaseDeferredParent();
-          rejectAsyncTarget('target-unavailable');
+          rejectAsyncTarget('rejected', 'target-unavailable');
           // Not a known framework. In a multi-party channel an unroutable
           // @name stays silent (§1). In a DM there is nobody ELSE to answer the
           // HUMAN, so silence reads as the product being broken — say so.
@@ -4553,9 +4792,31 @@ export function createChannelAgentBinder(
           return;
         }
         const availability = availabilityForProfile(profile, target);
+        if (availability.available) {
+          const failure = activeProviderFailure(profile, target);
+          if (failure) {
+            releaseDeferredParent();
+            rejectAsyncTarget('refused', `provider-failure:${failure.code}`);
+            const senderDisplayName =
+              profile.displayName || target.displayName || framework;
+            postUnavailableRow(
+              trigger.channelId,
+              profile.id,
+              `@${senderDisplayName} is unavailable — ${failure.reason}`,
+              parentForTrigger(trigger)
+            );
+            emitReceipt({
+              trigger,
+              targetProfileId: profile.id,
+              state: 'refused_provider',
+              reasonCode: providerFailureReceiptReason(failure.code),
+            });
+            return;
+          }
+        }
         if (!availability.available) {
           releaseDeferredParent();
-          rejectAsyncTarget('target-unavailable');
+          rejectAsyncTarget('rejected', 'target-unavailable');
           const senderDisplayName =
             profile.displayName || target.displayName || framework;
           postUnavailableRow(
@@ -4607,6 +4868,7 @@ export function createChannelAgentBinder(
           if (err instanceof ChannelBindingError) {
             releaseDeferredParent();
             rejectAsyncTarget(
+              'rejected',
               err.unavailable ? 'target-unavailable' : 'target-binding-failed'
             );
             if (err.unavailable) {
@@ -4655,7 +4917,7 @@ export function createChannelAgentBinder(
             releaseDeferredParent();
           }
         }
-        if (!admitted) rejectAsyncTarget('target-not-admitted');
+        if (!admitted) rejectAsyncTarget('rejected', 'target-not-admitted');
       } catch (err) {
         if (closed || err instanceof BinderClosedError) return;
         releaseDeferredParent();
@@ -5546,6 +5808,13 @@ export function createChannelAgentBinder(
       profiles.map(async (profile) => {
         const target = targetByProvider.get(profile.providerId);
         const availability = availabilityForProfile(profile, target);
+        const failure = availability.available
+          ? activeProviderFailure(profile, target)
+          : null;
+        const effectiveAvailable = availability.available && failure === null;
+        const effectiveReason =
+          availability.reason ??
+          (failure ? (failure.providerMessage ?? failure.reason) : null);
         const binding = live.get(bindingKey(channelId, profile.id));
         const row = store.getBinding(channelId, profile.id);
         const runtimeId = binding?.runtimeId ?? row?.runtimeId ?? null;
@@ -5569,8 +5838,17 @@ export function createChannelAgentBinder(
           isDefault: profile.isDefault,
           isBuiltIn: profile.isBuiltIn,
           kind: 'framework',
-          available: availability.available,
-          reason: availability.reason,
+          available: effectiveAvailable,
+          reason: effectiveReason,
+          ...(failure
+            ? {
+                providerFailureCode: failure.code,
+                ...(failure.retryAfter
+                  ? { providerFailureRetryAfter: failure.retryAfter }
+                  : {}),
+                providerFailureSince: failure.since,
+              }
+            : {}),
           ...(role !== undefined ? { role } : {}),
           binding: runtimeId
             ? {
@@ -5925,6 +6203,57 @@ export function createChannelAgentBinder(
     return { active: reasons.size > 0, reasons: Array.from(reasons) };
   }
 
+  async function agentProfileStatus(profileActorId: string): Promise<{
+    available: boolean;
+    reasonCode?: ProviderFailureCode | null;
+    reason: string | null;
+    since?: string;
+    retryAfter?: string;
+  }> {
+    const profile = profileForActorId(profileActorId);
+    if (!profile) {
+      return { available: false, reason: 'agent profile not found' };
+    }
+    const target = await resolveTarget(profile.providerId);
+    const failure = activeProviderFailure(profile, target);
+    if (failure) {
+      return {
+        available: false,
+        reasonCode: failure.code,
+        reason: failure.providerMessage ?? null,
+        since: failure.since,
+        ...(failure.retryAfter ? { retryAfter: failure.retryAfter } : {}),
+      };
+    }
+    const availability = availabilityForProfile(profile, target);
+    return { available: availability.available, reason: availability.reason };
+  }
+
+  async function resetAgentProfileProviderFailure(
+    profileActorId: string
+  ): Promise<{ cleared: boolean }> {
+    const existing = providerFailureByProfileActorId.get(profileActorId);
+    if (!existing) return { cleared: false };
+    providerFailureByProfileActorId.delete(profileActorId);
+
+    const profile = profileForActorId(profileActorId);
+    const displayName = profile?.displayName?.trim()
+      ? profile.displayName
+      : profileActorId;
+    const channels = new Set<string>();
+    for (const binding of live.values()) {
+      if (binding.profileActorId === profileActorId)
+        channels.add(binding.channelId);
+    }
+    for (const channelId of channels) {
+      postSystemRow(
+        channelId,
+        `@${displayName} provider failure reset (was ${existing.code}).`
+      );
+    }
+    return { cleared: true };
+  }
+
   return {
     handleMessagePosted,
     ensureBinding,
@@ -5935,6 +6264,8 @@ export function createChannelAgentBinder(
     retryMessage,
     respondToApproval,
     rosterForChannel,
+    agentProfileStatus,
+    resetAgentProfileProviderFailure,
     archiveActivityForChannel,
     executeCommand,
     restartScope,
@@ -5990,6 +6321,7 @@ export function createChannelAgentBinder(
       terminalizationRetryByCallbackId.clear();
       consecutiveAgentTurns.clear();
       unavailableRowAt.clear();
+      providerFailureByProfileActorId.clear();
       invalidateTargets();
     },
   };

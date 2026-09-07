@@ -717,10 +717,29 @@ export interface AgentTurnCompletedPatchV2 extends AgentPatchBaseV2 {
   error?: string;
 }
 
+/**
+ * #1571: provider failure classification for terminal adapter errors.
+ *
+ * Additive and optional: older hubs/adapters omit it and existing consumers
+ * keep working. When present, the binder may surface it on the roster, emit a
+ * post receipt refusal, and publish an attention event.
+ */
+export type ProviderFailureCode =
+  | 'quota_exhausted'
+  | 'auth_required'
+  | 'binary_missing'
+  | 'unknown';
+
 export interface AgentErrorPatchV2 extends AgentPatchBaseV2 {
   type: 'agent-error-v2';
   message: string;
   turnId?: string;
+  /** Optional classified provider failure code (#1571). */
+  failureCode?: ProviderFailureCode;
+  /** Optional ISO timestamp for when retry is expected to succeed (#1571). */
+  retryAfter?: string;
+  /** Optional bounded provider-authored message distinct from `message` (#1571). */
+  providerMessage?: string;
 }
 
 export type AgentPatchV2 =

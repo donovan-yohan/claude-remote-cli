@@ -1,6 +1,7 @@
 import {
   buildChildEnv,
   createPatchSink,
+  classifyBinaryMissingFailure,
   emitLiveStatePatch,
   emitProviderExtensionPatch,
   createTurnQueue,
@@ -51,12 +52,116 @@ import { createLogger } from '../logger.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { relayControlCatalogForProvider } from '../../shared/agent-command-catalog.js';
+import type { ProviderFailureCode } from '../../shared/agent-chat-protocol-v2.js';
 import {
   captureOwnedProcessTree,
   reapOwnedProcessTree,
 } from '../process-tree.js';
 
 const logger = createLogger('codex-native-adapter');
+
+function parseRetryAfterIsoFromUsageLimit(
+  message: string,
+  nowMs: number
+): string | undefined {
+  const toHour24 = (hourRaw: number, suffix: string): number | null => {
+    if (hourRaw < 1 || hourRaw > 12) return null;
+    const upper = suffix.toUpperCase();
+    if (upper !== 'AM' && upper !== 'PM') return null;
+    return upper === 'PM'
+      ? hourRaw === 12
+        ? 12
+        : hourRaw + 12
+      : hourRaw === 12
+        ? 0
+        : hourRaw;
+  };
+
+  // Real-world Codex message (issue comment): "try again at Sep 10th, 2026 12:54 AM."
+  const dateMatch =
+    /try again at\s+([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?,\s*(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)\b/i.exec(
+      message
+    );
+  if (dateMatch) {
+    const monthRaw = (dateMatch[1] ?? '').toLowerCase().slice(0, 3);
+    const day = parseInt(dateMatch[2] ?? '', 10);
+    const year = parseInt(dateMatch[3] ?? '', 10);
+    const hourRaw = parseInt(dateMatch[4] ?? '', 10);
+    const minute = parseInt(dateMatch[5] ?? '', 10);
+    const suffix = dateMatch[6] ?? '';
+    const monthIndexByAbbrev = {
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
+    } as const;
+    const month =
+      monthIndexByAbbrev[monthRaw as keyof typeof monthIndexByAbbrev];
+    const hour = toHour24(hourRaw, suffix);
+    if (month === undefined) return;
+    if (!Number.isFinite(day) || day < 1 || day > 31) return;
+    if (!Number.isFinite(year) || year < 1970 || year > 9999) return;
+    if (!Number.isFinite(minute) || minute < 0 || minute > 59) return;
+    if (hour === null) return;
+    return new Date(year, month, day, hour, minute, 0, 0).toISOString();
+  }
+
+  // Legacy Codex message form: "try again at 10:53 AM."
+  const timeMatch = /try again at\s+(\d{1,2}):(\d{2})\s*(AM|PM)\b/i.exec(
+    message
+  );
+  if (!timeMatch) return;
+  const hourRaw = parseInt(timeMatch[1] ?? '', 10);
+  const minute = parseInt(timeMatch[2] ?? '', 10);
+  const suffix = timeMatch[3] ?? '';
+  if (!Number.isFinite(minute) || minute < 0 || minute > 59) return;
+  const hour = toHour24(hourRaw, suffix);
+  if (hour === null) return;
+  const base = new Date(nowMs);
+  const candidate = new Date(base);
+  candidate.setHours(hour, minute, 0, 0);
+  if (candidate.getTime() <= nowMs) {
+    candidate.setDate(candidate.getDate() + 1);
+  }
+  return candidate.toISOString();
+}
+
+function classifyCodexProviderFailure(
+  message: string,
+  nowMs: number
+): {
+  failureCode: ProviderFailureCode;
+  retryAfter?: string;
+  providerMessage: string;
+} | null {
+  const binary = classifyBinaryMissingFailure(message);
+  if (binary) return binary;
+  const lower = message.toLowerCase();
+  if (
+    lower.includes("you've hit your usage limit") ||
+    lower.includes('hit your usage limit') ||
+    (lower.includes('usage limit') && lower.includes('try again'))
+  ) {
+    const retryAfter = parseRetryAfterIsoFromUsageLimit(message, nowMs);
+    return {
+      failureCode: 'quota_exhausted',
+      ...(retryAfter ? { retryAfter } : {}),
+      providerMessage: message,
+    };
+  }
+  if (lower.includes('authentication required')) {
+    return { failureCode: 'auth_required', providerMessage: message };
+  }
+  return null;
+}
 
 type CodexTurnInput =
   | { type: 'text'; text: string }
@@ -720,55 +825,78 @@ export class CodexNativeProtocolAdapter extends BaseProtocolAdapterV2 {
     this.commandCatalog = RELAY_CODEX_COMMANDS.filter(
       (command) => !CODEX_MODEL_CONTROL_KEYS.has(command.collisionKey ?? '')
     );
-    const client = this.createClient(config);
-    this.client = client;
-    this.exitedProcessRootPid = null;
+    try {
+      const client = this.createClient(config);
+      this.client = client;
+      this.exitedProcessRootPid = null;
 
-    this.wireClientEvents(client);
+      this.wireClientEvents(client);
 
-    await client.start();
+      await client.start();
 
-    const threadResult = config.resumeSessionId
-      ? await client.call<{ thread: { id: string } }>('thread/resume', {
-          threadId: config.resumeSessionId,
-          excludeTurns: false,
-          // Replayed, not re-derived: the resumed thread keeps the same profile
-          // prompt and collaboration contract the original thread/start sent.
-          ...this.threadInstructionParams(config),
-        })
-      : await client.call<{ thread: { id: string } }>('thread/start', {
-          cwd: config.cwd,
-          experimentalRawEvents: false,
-          persistExtendedHistory: false,
-          ...this.threadInstructionParams(config),
-          ...(config.model || this.pendingModelOverride
-            ? { model: this.pendingModelOverride ?? config.model }
+      const threadResult = config.resumeSessionId
+        ? await client.call<{ thread: { id: string } }>('thread/resume', {
+            threadId: config.resumeSessionId,
+            excludeTurns: false,
+            // Replayed, not re-derived: the resumed thread keeps the same profile
+            // prompt and collaboration contract the original thread/start sent.
+            ...this.threadInstructionParams(config),
+          })
+        : await client.call<{ thread: { id: string } }>('thread/start', {
+            cwd: config.cwd,
+            experimentalRawEvents: false,
+            persistExtendedHistory: false,
+            ...this.threadInstructionParams(config),
+            ...(config.model || this.pendingModelOverride
+              ? { model: this.pendingModelOverride ?? config.model }
+              : {}),
+            ...(this.initialServiceTier(config) !== undefined
+              ? { serviceTier: this.initialServiceTier(config) }
+              : {}),
+          });
+
+      // `thread/resume` normally echoes the durable id. Retain the requested id
+      // defensively if an app-server version omits it, rather than replacing the
+      // binding's only recovery handle with an empty session identity.
+      this.providerSessionId =
+        threadResult.thread.id || config.resumeSessionId || null;
+      this._status = 'connected';
+
+      this.emitSnapshot();
+      this.emitLiveState({
+        status: 'idle',
+        activeTurnId: null,
+        waitingOn: null,
+        activeRequestIds: [],
+        proposedPlanItemId: null,
+        queueLength: 0,
+        fastModeAvailable: false,
+        error: null,
+      });
+
+      this.refreshSlashCommands(config.cwd, client, catalogGeneration);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const classified = classifyCodexProviderFailure(message, Date.now());
+      if (classified?.failureCode) {
+        this.emitPatch({
+          type: 'agent-error-v2',
+          sessionId: this.sessionId,
+          timestamp: nowIso(),
+          message,
+          failureCode: classified.failureCode,
+          ...(classified?.retryAfter
+            ? { retryAfter: classified.retryAfter }
             : {}),
-          ...(this.initialServiceTier(config) !== undefined
-            ? { serviceTier: this.initialServiceTier(config) }
+          ...(classified?.providerMessage
+            ? { providerMessage: classified.providerMessage }
             : {}),
         });
-
-    // `thread/resume` normally echoes the durable id. Retain the requested id
-    // defensively if an app-server version omits it, rather than replacing the
-    // binding's only recovery handle with an empty session identity.
-    this.providerSessionId =
-      threadResult.thread.id || config.resumeSessionId || null;
-    this._status = 'connected';
-
-    this.emitSnapshot();
-    this.emitLiveState({
-      status: 'idle',
-      activeTurnId: null,
-      waitingOn: null,
-      activeRequestIds: [],
-      proposedPlanItemId: null,
-      queueLength: 0,
-      fastModeAvailable: false,
-      error: null,
-    });
-
-    this.refreshSlashCommands(config.cwd, client, catalogGeneration);
+      }
+      this._status = 'disconnected';
+      await this.teardownState();
+      throw err;
+    }
   }
 
   async resumeSession(threadId: string): Promise<void> {
@@ -1002,12 +1130,16 @@ export class CodexNativeProtocolAdapter extends BaseProtocolAdapterV2 {
     } catch (err) {
       logger.warn('Codex turn/start failed:', err);
       const message = err instanceof Error ? err.message : String(err);
+      const failure = classifyCodexProviderFailure(message, Date.now());
       this.emitPatch({
         type: 'agent-error-v2',
         sessionId: this.sessionId,
         timestamp: nowIso(),
         turnId: input.turnId,
         message,
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
       this.completeActiveTurn('failed', undefined, message);
       this.drainQueue();
@@ -1232,12 +1364,16 @@ export class CodexNativeProtocolAdapter extends BaseProtocolAdapterV2 {
       if (this._status === 'connected') {
         const turnId = this.activeTurnId;
         if (turnId !== null && !this.completedActiveTurn) {
+          const failure = classifyCodexProviderFailure(err.message, Date.now());
           this.emitPatch({
             type: 'agent-error-v2',
             sessionId: this.sessionId,
             timestamp: nowIso(),
             turnId,
             message: err.message,
+            ...(failure ? { failureCode: failure.failureCode } : {}),
+            ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
+            ...(failure ? { providerMessage: failure.providerMessage } : {}),
           });
           this.completeActiveTurn('failed', undefined, err.message);
         }

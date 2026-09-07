@@ -1873,6 +1873,7 @@ const CLI_GATEWAY_ACTOR_TOKEN_COMMANDS = new Set<RelayCliGatewayCommand>([
   'agent-profiles.get',
   'agent-profiles.create',
   'agent-profiles.update',
+  'agent-profiles.reset',
   // #1455 slice 3: minting a profile's durable credential is exactly the
   // web-UI-free setup step, so it must run on the host-local trust token too.
   'agent-profiles.credential.mint',
@@ -6513,6 +6514,31 @@ async function runGatewayAgentProfilesUpdate(
   printGatewayEnvelope(gatewayOk('agent-profiles.update', result), 0);
 }
 
+async function runGatewayAgentProfilesReset(
+  profileArgs: string[]
+): Promise<never> {
+  const parsed = parseAgentProfileCliFlags(
+    'agent-profiles.reset',
+    profileArgs,
+    ['--profile-id'],
+    []
+  );
+  const id = (parsed.values.get('--profile-id') ?? '').trim();
+  if (!id) {
+    gatewayInvalid('agent-profiles.reset', '--profile-id is required', {
+      field: 'id',
+    });
+  }
+  const result = await gatewayHttpJson({
+    commandName: 'agent-profiles.reset',
+    pathName: `/agent-profiles/${encodeURIComponent(id)}/reset`,
+    method: 'POST',
+    body: {},
+    capabilities: ['context:write'],
+  });
+  printGatewayEnvelope(gatewayOk('agent-profiles.reset', result), 0);
+}
+
 /**
  * #1455 slice 3: `relay-ide v1 agent-profiles credential mint|revoke|status`.
  *
@@ -6646,6 +6672,8 @@ async function runGatewayAgentProfiles(gatewayArgs: string[]): Promise<never> {
       return runGatewayAgentProfilesCreate(profileArgs);
     case 'update':
       return runGatewayAgentProfilesUpdate(profileArgs);
+    case 'reset':
+      return runGatewayAgentProfilesReset(profileArgs);
     case 'credential':
       return runGatewayAgentProfilesCredential(profileArgs);
     default:
@@ -7084,12 +7112,72 @@ async function runGatewayChannelsMembership(
   printGatewayEnvelope(gatewayOk(commandName, result), 0);
 }
 
+function hasProviderFailureRefusedTarget(targets: unknown): boolean {
+  return (
+    Array.isArray(targets) &&
+    targets.some((target) => {
+      if (typeof target !== 'object' || target === null) return false;
+      const record = target as Record<string, unknown>;
+      if (record['state'] !== 'refused') return false;
+      const reason = record['reason'];
+      return (
+        typeof reason === 'string' && reason.startsWith('provider-failure:')
+      );
+    })
+  );
+}
+
+async function observeProviderFailureRefusal(
+  channelId: string,
+  runId: string
+): Promise<{ refused: boolean; note: string | null }> {
+  const waitResult = await gatewayHttpJson({
+    commandName: 'channels.run.wait',
+    pathName: `/channels/wait?${new URLSearchParams({
+      runId,
+      for: 'any',
+      timeoutMs: '30000',
+    })}`,
+    // Some scoped credentials are write-only; treat read denial as best-effort.
+    capabilities: ['context:write'],
+    timeoutMs: 60_000,
+  });
+  const waitData = waitResult as Record<string, unknown>;
+  const outcome =
+    typeof waitData['outcome'] === 'string' ? waitData['outcome'] : '';
+  if (outcome === 'timeout') {
+    return {
+      refused: false,
+      note: 'channels post --fail-on-refused: channels.wait timed out; cannot determine refusal',
+    };
+  }
+
+  // Wait is a cheap settle barrier, but targets live on the run itself.
+  const runGetResult = await gatewayHttpJson({
+    commandName: 'channels.run.get',
+    pathName: `/channels/${encodeURIComponent(channelId)}/runs/${encodeURIComponent(runId)}`,
+    capabilities: ['context:write'],
+  });
+  const runGetData = runGetResult as Record<string, unknown>;
+  const fullRun =
+    typeof runGetData['run'] === 'object' && runGetData['run'] !== null
+      ? (runGetData['run'] as Record<string, unknown>)
+      : null;
+  const targets = fullRun ? fullRun['targets'] : null;
+  return { refused: hasProviderFailureRefusedTarget(targets), note: null };
+}
+
 async function runGatewayChannelsPost(channelArgs: string[]): Promise<void> {
   const deliveryExpect: string[] = [];
   const filteredArgs: string[] = [];
+  let failOnRefused = false;
   for (let i = 0; i < channelArgs.length; i += 1) {
     const arg = channelArgs[i];
     if (arg === undefined) continue;
+    if (arg === '--fail-on-refused') {
+      failOnRefused = true;
+      continue;
+    }
     if (arg === '--expect') {
       const value = channelArgs[i + 1];
       if (value === undefined) {
@@ -7189,7 +7277,30 @@ async function runGatewayChannelsPost(channelArgs: string[]): Promise<void> {
     body,
     capabilities: ['context:write'],
   });
-  printGatewayEnvelope(gatewayOk('channels.post', result), 0);
+  const data = result as Record<string, unknown>;
+  const run =
+    typeof data['run'] === 'object' && data['run'] !== null
+      ? (data['run'] as Record<string, unknown>)
+      : null;
+  let refusedByProviderFailure = false;
+  if (failOnRefused && run && typeof run['id'] === 'string') {
+    try {
+      const observed = await observeProviderFailureRefusal(
+        channelId,
+        run['id']
+      );
+      if (observed.note) console.error(observed.note);
+      refusedByProviderFailure = observed.refused;
+    } catch (err) {
+      console.error(
+        `channels post --fail-on-refused: cannot determine refusal (${String(err)})`
+      );
+    }
+  }
+  printGatewayEnvelope(
+    gatewayOk('channels.post', result),
+    refusedByProviderFailure ? 2 : 0
+  );
 }
 
 async function runGatewayChannelsList(channelArgs: string[]): Promise<void> {

@@ -106,6 +106,49 @@ describe('AntigravityProtocolAdapter', () => {
     }
   });
 
+  it('classifies ENOENT spawn failures as binary_missing', async () => {
+    const spawnFn = vi.fn(() => {
+      const err = Object.assign(new Error('spawn ENOENT'), {
+        code: 'ENOENT',
+      }) as NodeJS.ErrnoException;
+      throw err;
+    });
+    const adapter = new AntigravityProtocolAdapter(
+      spawnFn as any,
+      new AdapterProcessRegistry(1_000_000)
+    );
+    const patches: AgentPatchV2[] = [];
+    adapter.onPatch((p) => patches.push(p));
+    await expect(adapter.connect(config)).rejects.toThrow('agy CLI not found');
+    await Promise.resolve();
+    await Promise.resolve();
+    const err = patches.find((p) => p.type === 'agent-error-v2');
+    expect(err).toMatchObject({
+      type: 'agent-error-v2',
+      failureCode: 'binary_missing',
+    });
+  });
+
+  it('classifies init result errors as quota_exhausted (#1571)', async () => {
+    const { adapter, spawns, patches } = harness();
+    const pending = adapter.connect(config);
+    const child = spawns[spawns.length - 1]!.child;
+    child.serverWrite({
+      event: 'result',
+      result: { error: 'Individual quota reached' },
+    });
+    await expect(pending).rejects.toThrow('Individual quota reached');
+    // Patch delivery is async relative to the connect rejection.
+    await Promise.resolve();
+    expect(
+      patches.some(
+        (p) =>
+          p.type === 'agent-error-v2' &&
+          (p as any).failureCode === 'quota_exhausted'
+      )
+    ).toBe(true);
+  });
+
   // Test 2
   it('appends --dangerously-skip-permissions only for permissionMode always-proceed', async () => {
     const { adapter: a1, spawns: s1 } = harness();
@@ -750,6 +793,33 @@ describe('AntigravityProtocolAdapter', () => {
     await adapter.sendMessage({ turnId: 't2', content: 'after timeout' });
     expect(spawns.length).toBe(2);
     expect(spawns[1]!.args).toContain('--conversation');
+  });
+
+  it('classifies quota errors as quota_exhausted on agent-error-v2 (#1571)', async () => {
+    const { adapter, spawns, patches } = harness();
+    await connect(adapter, spawns);
+
+    const child = spawns[0]!.child;
+    await adapter.sendMessage({ turnId: 't1', content: 'quota' });
+
+    child.serverWrite({
+      event: 'result',
+      result: {
+        conversation_id: 'a53994f2-9dbe-4977-8bed-96343b8f7a47',
+        status: 'ERROR',
+        response: '',
+        error: 'Individual quota reached. Please upgrade your subscription.',
+        num_turns: 1,
+      },
+    });
+
+    const errorPatch = patches.find(
+      (p) => p.type === 'agent-error-v2'
+    ) as Extract<AgentPatchV2, { type: 'agent-error-v2' }>;
+    expect(errorPatch).toBeTruthy();
+    expect(errorPatch).toMatchObject({
+      failureCode: 'quota_exhausted',
+    });
   });
 
   // Test 13

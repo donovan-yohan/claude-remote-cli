@@ -108,6 +108,29 @@ describe('PiAgentProtocolAdapter', () => {
     });
   });
 
+  it('classifies ENOENT launch failures as binary_missing (#1571)', async () => {
+    const client = new PiAgentRpcClient();
+    vi.spyOn(client, 'start').mockRejectedValue(
+      Object.assign(new Error('spawn pi-agent ENOENT'), { code: 'ENOENT' })
+    );
+    vi.spyOn(client, 'stop').mockResolvedValue();
+    const adapter = new PiAgentProtocolAdapter(() => client);
+    const patches: Array<Record<string, unknown>> = [];
+    adapter.onPatch((patch) =>
+      patches.push(patch as unknown as Record<string, unknown>)
+    );
+
+    await expect(adapter.connect(config)).rejects.toThrow(/ENOENT/);
+    expect(patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'agent-error-v2',
+          failureCode: 'binary_missing',
+        }),
+      ])
+    );
+  });
+
   it('maps streaming text, thinking, and command tools to V2 patches', async () => {
     const { adapter, client, patches } = harness();
     await adapter.connect(config);

@@ -7,6 +7,7 @@ import {
   buildChildEnv,
   createPatchSink,
   createTurnQueue,
+  classifyBinaryMissingFailure,
   emitErrorPatch,
   emitLiveStatePatch,
   emitProviderExtensionPatch,
@@ -32,6 +33,7 @@ import type {
   AgentSessionLiveStateV2,
   AgentUsageV2,
 } from '../../shared/agent-chat-protocol-v2.js';
+import type { ProviderFailureCode } from '../../shared/agent-chat-protocol-v2.js';
 import { emptyAgentSessionV2 } from '../../shared/agent-chat-protocol-v2.js';
 import {
   AntigravityStreamClient,
@@ -42,6 +44,22 @@ import {
 import { createLogger } from '../logger.js';
 
 const logger = createLogger('antigravity-adapter');
+
+function classifyAntigravityProviderFailure(
+  message: string
+): { failureCode: ProviderFailureCode; providerMessage: string } | null {
+  const lower = message.toLowerCase();
+  // Anchor on the known quota phrase from #1571.
+  if (lower.includes('individual quota reached')) {
+    return { failureCode: 'quota_exhausted', providerMessage: message };
+  }
+  const binary = classifyBinaryMissingFailure(message);
+  if (binary) return binary;
+  if (lower.includes('authentication required')) {
+    return { failureCode: 'auth_required', providerMessage: message };
+  }
+  return null;
+}
 
 const COMMAND_TOOLS = new Set(['run_command']);
 const FILE_TOOLS = new Set([
@@ -231,6 +249,10 @@ export class AntigravityProtocolAdapter
       });
       this.registry.register(this);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Connect-time failures still need to emit an error patch so the binder
+      // can classify provider failures and surface them in the roster (#1571).
+      this.emitError(message);
       this._status = 'disconnected';
       await this.teardownClient().catch(() => undefined);
       throw error;
@@ -723,6 +745,11 @@ export class AntigravityProtocolAdapter
         const message = enoent
           ? 'agy CLI not found on PATH — install Antigravity CLI and log in.'
           : `Failed to spawn agy: ${err.message}`;
+        const failure = classifyAntigravityProviderFailure(message);
+        emitErrorPatch(this.patchSink, message, null, {
+          ...(failure ? { failureCode: failure.failureCode } : {}),
+          ...(failure ? { providerMessage: failure.providerMessage } : {}),
+        });
         reject(new Error(message));
       };
 
@@ -753,12 +780,15 @@ export class AntigravityProtocolAdapter
     this._status = 'disconnected';
     if (this.activeTurnId !== null) {
       const turnId = this.activeTurnId;
+      const failure = classifyAntigravityProviderFailure(message);
       this.emitPatch({
         type: 'agent-error-v2',
         sessionId: this.sessionId,
         timestamp: nowIso(),
         turnId,
         message,
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
       this.completeTurn('failed', message);
     }
@@ -1508,7 +1538,11 @@ export class AntigravityProtocolAdapter
   }
 
   private emitError(message: string): void {
-    emitErrorPatch(this.patchSink, message, this.activeTurnId);
+    const failure = classifyAntigravityProviderFailure(message);
+    emitErrorPatch(this.patchSink, message, this.activeTurnId, {
+      ...(failure ? { failureCode: failure.failureCode } : {}),
+      ...(failure ? { providerMessage: failure.providerMessage } : {}),
+    });
   }
 
   private emitProviderExtension(
