@@ -1597,6 +1597,11 @@ export interface ChannelMessageStore {
     channelId: string;
     runId: ChannelAsyncRunId;
   }): ChannelMessage | null;
+  /** Newest durable agent-detail (tool/thought/card) row seq for a given turn. */
+  getLastAgentDetailSeqForTurnId(input: {
+    channelId: string;
+    turnId: string;
+  }): number | null;
   /** System rows parented under a durable message id (threaded replies). */
   listSystemMessagesForParent(input: {
     channelId: string;
@@ -6060,6 +6065,24 @@ export function createChannelMessageStore(
         )
         .get(input.channelId, input.runId) as ChannelMessageRow | undefined;
       return row ? rowToMessage(row) : null;
+    },
+
+    getLastAgentDetailSeqForTurnId(input) {
+      const row = db
+        .prepare(
+          `SELECT seq
+             FROM channel_messages
+            WHERE channel_id = ?
+              AND source_turn_id = ?
+              AND kind = 'message'
+              AND status = 'complete'
+              AND meta_json IS NOT NULL
+              AND json_extract(meta_json, '$.agentDetail') IS NOT NULL
+            ORDER BY seq DESC
+            LIMIT 1`
+        )
+        .get(input.channelId, input.turnId) as { seq: number } | undefined;
+      return row ? row.seq : null;
     },
 
     listSystemMessagesForParent(input) {
