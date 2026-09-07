@@ -962,7 +962,7 @@ export function createChannelAgentBinder(
     deliveryContract: NonNullable<ChannelAsyncRun['deliveryContract']>;
     parentMessageId?: string;
     runId?: string;
-  }): void {
+  }): ChannelAsyncRunId | null {
     try {
       const result = store.appendCompleteWithAsyncRun({
         channelId: input.channelId,
@@ -983,8 +983,10 @@ export function createChannelAgentBinder(
       });
       hub.broadcastCreated(result.message);
       hub.broadcastRunLifecycle(result.run);
+      return result.run.id;
     } catch (err) {
       logger.warn('channel binder delivery-contract followup row failed:', err);
+      return null;
     }
   }
 
@@ -4707,7 +4709,7 @@ export function createChannelAgentBinder(
       const followupText = `Turn ended with contract unmet: ${evaluation.unmet.join(
         ', '
       )}.${sinceText} @${binding.displayName} finish it.`;
-      postDeliveryContractFollowupTrigger({
+      const childRunId = postDeliveryContractFollowupTrigger({
         channelId: binding.channelId,
         text: followupText,
         targetProfileId: binding.profileActorId,
@@ -4725,6 +4727,7 @@ export function createChannelAgentBinder(
           evaluatedAt,
         },
         followupPostedAt,
+        ...(childRunId ? { childRunId } : {}),
       });
       if (withFollowup) hub.broadcastRunLifecycle(withFollowup);
     } catch (err) {

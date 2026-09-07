@@ -104,6 +104,11 @@ export interface ChannelAsyncRun {
      * Absent on the original post.
      */
     parentRunId?: string;
+    /**
+     * #1585: child async-run id for the follow-up run triggered by this run.
+     * Present only when Relay successfully created a follow-up run.
+     */
+    childRunId?: string;
     result?: {
       met: boolean;
       unmet: string[];
