@@ -5989,6 +5989,93 @@ describe('channel-agent-binder — lifecycle', () => {
     expect(child?.deliveryContract?.parentRunId).toBe(parent.id);
   });
 
+  it('posts a restart-abandonment system row and attention event for cancelled contract runs (#1585)', async () => {
+    const dir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'binder-restart-abandon-')
+    );
+    cleanup.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const dbPath = path.join(dir, 'channel-chat.db');
+
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    // First process: create a nonterminal contract run.
+    {
+      const store = createChannelMessageStore(dbPath);
+      const hub = createChannelHub({ store, channelExists: () => true });
+      const binder = createChannelAgentBinder({
+        store,
+        hub,
+        topicStore: null,
+        agentProfileStore: profiles,
+        runtimes: makeSessions(
+          () => new ScriptedAdapter('mock', { mode: 'stall' })
+        ).sessions,
+        knownProviderIds: ['mock'],
+        mentionTargets: async () => MOCK_TARGETS,
+        port: 0,
+        configDir: '/tmp',
+        deliveryContractMaxFollowups: 1,
+      });
+      const mentions = parseMentions('@mock ship', ['mock']);
+      const posted = store.appendCompleteWithAsyncRun({
+        channelId: CH,
+        sender: OPERATOR,
+        text: '@mock ship',
+        mentions,
+        targetIds: [builtInAgentProfileId('mock')],
+        deliveryContract: { expect: ['text:^DONE$'] },
+        meta: { deliveryContract: { expect: ['text:^DONE$'] } },
+      });
+      binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+      binder.close();
+      hub.close();
+      store.close();
+    }
+
+    // Second process: recover, then boot binder which must announce restart abandonment.
+    const store = createChannelMessageStore(dbPath);
+    cleanup.push(() => store.close());
+    store.recoverAsyncRuns();
+    const hub = createChannelHub({ store, channelExists: () => true });
+    cleanup.push(() => hub.close());
+    const published: CliGatewayMetadataEvent[] = [];
+    const binder = createChannelAgentBinder({
+      store,
+      hub,
+      topicStore: null,
+      agentProfileStore: profiles,
+      runtimes: makeSessions(
+        () => new ScriptedAdapter('mock', { mode: 'stall' })
+      ).sessions,
+      knownProviderIds: ['mock'],
+      mentionTargets: async () => MOCK_TARGETS,
+      port: 0,
+      configDir: '/tmp',
+      deliveryContractMaxFollowups: 1,
+      events: {
+        publish: (event) => {
+          published.push(event as CliGatewayMetadataEvent);
+          return event as CliGatewayMetadataEvent;
+        },
+      },
+    });
+    cleanup.push(() => binder.close());
+
+    await waitFor(() =>
+      systemRows(store).some((m) =>
+        m.body.text.startsWith('Delivery contract abandoned after restart:')
+      )
+    );
+    expect(
+      published.some(
+        (e) =>
+          e.topic === 'attention' && e.type === 'delivery-contract.abandoned'
+      )
+    ).toBe(true);
+  });
+
   it('does not stamp followupPostedAt when the follow-up post fails (#1585)', async () => {
     const profiles = createAgentProfileStore(':memory:');
     cleanup.push(() => profiles.close());

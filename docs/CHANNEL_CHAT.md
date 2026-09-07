@@ -407,6 +407,12 @@ terminalizes its nonterminal targets as `cancelled` with `server-restarted`,
 preserving an inspectable outcome. Settled run rows have bounded retention and
 are removed with their channels during orphan cleanup.
 
+If a cancelled run carried a delivery contract that never reached a proof-bearing
+terminal evaluation, restart recovery records an abandonment terminus on the run
+(`deliveryContract.abandonedAt` with `deliveryContract.result.unknown[*].reason = "server-restarted"`).
+On next binder boot, Relay posts a system row noting the restart abandonment and
+emits a `delivery-contract.abandoned` attention event for automation.
+
 ### Read state and unread
 
 Unread is derived client-side; the _marker_ it derives from converges through

@@ -6511,6 +6511,85 @@ export function createChannelAgentBinder(
     return { cleared: true };
   }
 
+  function announceRestartAbandonedDeliveryContracts(): void {
+    // #1585: restart recovery cancels nonterminal runs as `server-restarted`.
+    // For delivery-contract runs, the store records a terminal contract
+    // abandonment (abandonedAt + unknown=server-restarted). The binder must
+    // surface this as an abandonment system row and attention event so clients
+    // do not observe a silent terminus.
+    try {
+      const channelIds = store.listChannelSummaries().map((s) => s.channelId);
+      for (const channelId of channelIds) {
+        const runs = store.listAsyncRuns(channelId, 200);
+        for (const run of runs) {
+          if (run.state !== 'cancelled' || run.reason !== 'server-restarted')
+            continue;
+          const contract = run.deliveryContract;
+          if (
+            !contract ||
+            !Array.isArray(contract.expect) ||
+            contract.expect.length === 0
+          )
+            continue;
+          if (
+            typeof contract.abandonedAt !== 'string' ||
+            contract.abandonedAt.length === 0
+          )
+            continue;
+          const unknown = contract.result?.unknown ?? [];
+          if (
+            !Array.isArray(unknown) ||
+            unknown.length === 0 ||
+            !unknown.every(
+              (u) =>
+                u && (u as { reason?: unknown }).reason === 'server-restarted'
+            )
+          ) {
+            continue;
+          }
+
+          const already = store
+            .listSystemMessagesForParent({
+              channelId,
+              parentMessageId: run.requestMessageId,
+              limit: 50,
+            })
+            .some((m) =>
+              m.body.text.startsWith(
+                'Delivery contract abandoned after restart:'
+              )
+            );
+          if (already) continue;
+
+          postSystemRow(
+            channelId,
+            `Delivery contract abandoned after restart: ${contract.expect.join(', ')}`,
+            { parentMessageId: run.requestMessageId }
+          );
+          deps.events?.publish({
+            topic: 'attention',
+            type: 'delivery-contract.abandoned',
+            payload: {
+              channelId,
+              runId: run.id,
+              targetProfileId: run.targets[0]?.targetId ?? '',
+              unmet: contract.expect,
+              followupDepth: contract.followupDepth ?? 0,
+              maxFollowups: deliveryContractMaxFollowups,
+            },
+          });
+        }
+      }
+    } catch (err) {
+      logger.warn(
+        'channel binder restart-abandonment scan failed:',
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+
+  announceRestartAbandonedDeliveryContracts();
+
   return {
     handleMessagePosted,
     ensureBinding,
