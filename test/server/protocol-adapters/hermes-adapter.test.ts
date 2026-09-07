@@ -17,6 +17,7 @@ import {
   emptyAgentSessionV2,
   type AgentPatchV2,
 } from '../../../shared/agent-chat-protocol-v2.js';
+import { mapChatEventToAgentPatchV2 } from '../../../shared/agent-chat-v1-compat.js';
 import type { ChatEvent } from '../../../shared/chat-events.js';
 import hermesDetailFixture from '../../fixtures/agent-detail/hermes.js';
 
@@ -111,6 +112,24 @@ describe('Hermes V2 web adapter registration', () => {
     expect(opencode.capabilities.resume).toBe(false);
     await expect(opencode.resumeSession('anything')).rejects.toThrow(
       /does not support resume/
+    );
+  });
+
+  it('maps chat:error ENOENT to binary_missing failureCode (#1571)', () => {
+    const patches = mapChatEventToAgentPatchV2({
+      type: 'chat:error',
+      kind: 'protocol',
+      message: 'spawn hermes ENOENT',
+      retryable: false,
+      sessionId: 'session-1',
+      timestamp: new Date('2026-09-06T08:13:00.000Z').toISOString(),
+      source: 'hermes',
+    });
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        type: 'agent-error-v2',
+        failureCode: 'binary_missing',
+      })
     );
   });
 });

@@ -206,6 +206,24 @@ describe('OpenCode streaming capability is backed by real deltas', () => {
       })
     );
   });
+
+  it('maps chat:error ENOENT to binary_missing failureCode (#1571)', () => {
+    const patches = mapChatEventToAgentPatchV2({
+      type: 'chat:error',
+      kind: 'protocol',
+      message: 'spawn opencode ENOENT',
+      retryable: false,
+      sessionId: 'session-1',
+      timestamp: new Date('2026-09-06T08:13:00.000Z').toISOString(),
+      source: 'opencode',
+    });
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        type: 'agent-error-v2',
+        failureCode: 'binary_missing',
+      })
+    );
+  });
 });
 
 /**

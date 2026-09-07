@@ -142,7 +142,22 @@ export function mapChatEventToAgentPatchV2(event: ChatEvent): AgentPatchV2[] {
                 failureCode: 'quota_exhausted' as const,
                 providerMessage: event.message,
               }
-            : {}),
+            : (() => {
+                const lower = event.message.toLowerCase();
+                if (
+                  /(?:^|\s)enoent(?:\s|$|:)/.test(lower) ||
+                  lower.includes('cli not found on path') ||
+                  lower.includes('not found on path') ||
+                  lower.includes('command not found') ||
+                  (lower.includes('spawn') && lower.includes('not found'))
+                ) {
+                  return {
+                    failureCode: 'binary_missing' as const,
+                    providerMessage: event.message,
+                  };
+                }
+                return {};
+              })()),
         },
       ];
 
