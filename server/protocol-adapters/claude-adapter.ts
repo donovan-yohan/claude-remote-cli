@@ -62,14 +62,112 @@ import {
 
 const logger = createLogger('claude-adapter');
 
-function classifyClaudeProviderFailure(
-  message: string
-): { failureCode: ProviderFailureCode; providerMessage: string } | null {
+function parseClaudeRetryAfterIso(message: string): string | undefined {
+  // Common shapes observed in Claude usage limit messages:
+  // - "Your limit will reset at 2026-09-10 12:54 AM"
+  // - "your limit will reset at Sep 10th, 2026 12:54 AM"
+  //
+  // Keep this intentionally conservative: if parsing fails, we still classify
+  // quota_exhausted but omit retryAfter.
+  const lower = message.toLowerCase();
+  const idx = lower.indexOf('will reset at');
+  if (idx === -1) return;
+  const tail = message.slice(idx);
+  // Date form with month name + day + year.
+  const dateMatch =
+    /reset at\s+([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?,\s*(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)\b/i.exec(
+      tail
+    );
+  const toHour24 = (hourRaw: number, suffix: string): number | null => {
+    if (hourRaw < 1 || hourRaw > 12) return null;
+    const upper = suffix.toUpperCase();
+    if (upper !== 'AM' && upper !== 'PM') return null;
+    return upper === 'PM'
+      ? hourRaw === 12
+        ? 12
+        : hourRaw + 12
+      : hourRaw === 12
+        ? 0
+        : hourRaw;
+  };
+  if (dateMatch) {
+    const monthRaw = (dateMatch[1] ?? '').toLowerCase().slice(0, 3);
+    const day = parseInt(dateMatch[2] ?? '', 10);
+    const year = parseInt(dateMatch[3] ?? '', 10);
+    const hourRaw = parseInt(dateMatch[4] ?? '', 10);
+    const minute = parseInt(dateMatch[5] ?? '', 10);
+    const suffix = dateMatch[6] ?? '';
+    const monthIndexByAbbrev = {
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
+    } as const;
+    const month =
+      monthIndexByAbbrev[monthRaw as keyof typeof monthIndexByAbbrev];
+    const hour = toHour24(hourRaw, suffix);
+    if (month === undefined) return;
+    if (!Number.isFinite(day) || day < 1 || day > 31) return;
+    if (!Number.isFinite(year) || year < 1970 || year > 9999) return;
+    if (!Number.isFinite(minute) || minute < 0 || minute > 59) return;
+    if (hour === null) return;
+    return new Date(year, month, day, hour, minute, 0, 0).toISOString();
+  }
+
+  // ISO-ish numeric form (YYYY-MM-DD HH:MM AM/PM). Treat as hub-local time.
+  const isoishMatch =
+    /reset at\s+(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s*(AM|PM)\b/i.exec(
+      tail
+    );
+  if (!isoishMatch) return;
+  const year = parseInt(isoishMatch[1] ?? '', 10);
+  const month = parseInt(isoishMatch[2] ?? '', 10) - 1;
+  const day = parseInt(isoishMatch[3] ?? '', 10);
+  const hourRaw = parseInt(isoishMatch[4] ?? '', 10);
+  const minute = parseInt(isoishMatch[5] ?? '', 10);
+  const suffix = isoishMatch[6] ?? '';
+  const hour = toHour24(hourRaw, suffix);
+  if (!Number.isFinite(month) || month < 0 || month > 11) return;
+  if (!Number.isFinite(day) || day < 1 || day > 31) return;
+  if (!Number.isFinite(year) || year < 1970 || year > 9999) return;
+  if (!Number.isFinite(minute) || minute < 0 || minute > 59) return;
+  if (hour === null) return;
+  return new Date(year, month, day, hour, minute, 0, 0).toISOString();
+}
+
+function classifyClaudeProviderFailure(message: string): {
+  failureCode: ProviderFailureCode;
+  providerMessage: string;
+  retryAfter?: string;
+} | null {
   const binary = classifyBinaryMissingFailure(message);
   if (binary) return binary;
   const lower = message.toLowerCase();
   if (lower.includes('run `claude login`')) {
     return { failureCode: 'auth_required', providerMessage: message };
+  }
+  // Anchor on Claude usage-limit phrasing; avoid classifying generic 429/rate
+  // limit text which is often retryable/transient.
+  const quotaAnchors = [
+    'usage limit reached',
+    'claude ai usage limit',
+    'your limit will reset at',
+  ];
+  if (quotaAnchors.some((needle) => lower.includes(needle))) {
+    const retryAfter = parseClaudeRetryAfterIso(message);
+    return {
+      failureCode: 'quota_exhausted',
+      providerMessage: message,
+      ...(retryAfter ? { retryAfter } : {}),
+    };
   }
   return null;
 }
@@ -1415,6 +1513,7 @@ export class ClaudeProtocolAdapter
         turnId,
         message,
         ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
         ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
       this.completeActiveTurn('failed', undefined, message);
@@ -1461,6 +1560,7 @@ export class ClaudeProtocolAdapter
         turnId,
         message,
         ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
         ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
       this.completeActiveTurn('failed', undefined, message);
@@ -1472,6 +1572,7 @@ export class ClaudeProtocolAdapter
         timestamp: nowIso(),
         message,
         ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
         ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
     }
@@ -1585,12 +1686,16 @@ export class ClaudeProtocolAdapter
       const errors = Array.isArray(message.errors)
         ? message.errors.join('\n')
         : stringField(message.error, 'Claude turn failed');
+      const failure = classifyClaudeProviderFailure(errors);
       this.emitPatch({
         type: 'agent-error-v2',
         sessionId: this.sessionId,
         timestamp: nowIso(),
         turnId,
         message: errors,
+        ...(failure ? { failureCode: failure.failureCode } : {}),
+        ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
+        ...(failure ? { providerMessage: failure.providerMessage } : {}),
       });
       this.completeActiveTurn('failed', usage, errors);
     } else {

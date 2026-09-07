@@ -1413,6 +1413,86 @@ describe('ClaudeProtocolAdapter (stream-json subprocess)', () => {
     await adapter.disconnect();
   });
 
+  it('classifies Claude usage-limit errors as quota_exhausted with retryAfter when a reset hint is present (#1571)', async () => {
+    const priorTz = process.env.TZ;
+    process.env.TZ = 'UTC';
+    try {
+      const harness = makeHarness();
+      const adapter = new ClaudeProtocolAdapter(
+        harness.spawnFn,
+        inertRegistry()
+      );
+      const patches = collectPatches(adapter);
+      await adapter.connect(baseConfig());
+
+      await adapter.sendMessage({ turnId: 'turn-limit', content: 'go' });
+      const child = harness.latest().child;
+      await child.waitForFrames(1);
+      child.serverWrite({ type: 'system', subtype: 'init', session_id: 's' });
+      child.serverWrite({
+        type: 'result',
+        subtype: 'error',
+        is_error: true,
+        duration_ms: 1,
+        total_cost_usd: 0,
+        usage: {},
+        session_id: 'claude-session-1',
+        error:
+          'Claude AI usage limit reached. Your limit will reset at Sep 10th, 2026 12:54 AM.',
+      });
+      await waitFor(() =>
+        patches.some(
+          (p) => p.type === 'agent-error-v2' && p.turnId === 'turn-limit'
+        )
+      );
+      const err = patches.find(
+        (p) => p.type === 'agent-error-v2' && p.turnId === 'turn-limit'
+      );
+      expect(err).toMatchObject({
+        type: 'agent-error-v2',
+        failureCode: 'quota_exhausted',
+        retryAfter: '2026-09-10T00:54:00.000Z',
+      });
+
+      await adapter.disconnect();
+    } finally {
+      process.env.TZ = priorTz;
+    }
+  });
+
+  it('does not classify generic 429 text as quota_exhausted (transient) (#1571)', async () => {
+    const harness = makeHarness();
+    const adapter = new ClaudeProtocolAdapter(harness.spawnFn, inertRegistry());
+    const patches = collectPatches(adapter);
+    await adapter.connect(baseConfig());
+
+    await adapter.sendMessage({ turnId: 'turn-429', content: 'go' });
+    const child = harness.latest().child;
+    await child.waitForFrames(1);
+    child.serverWrite({ type: 'system', subtype: 'init', session_id: 's' });
+    child.serverWrite({
+      type: 'result',
+      subtype: 'error',
+      is_error: true,
+      duration_ms: 1,
+      total_cost_usd: 0,
+      usage: {},
+      session_id: 'claude-session-1',
+      error: 'HTTP 429: rate limit exceeded, please retry.',
+    });
+    await waitFor(() =>
+      patches.some(
+        (p) => p.type === 'agent-error-v2' && p.turnId === 'turn-429'
+      )
+    );
+    const err = patches.find(
+      (p) => p.type === 'agent-error-v2' && p.turnId === 'turn-429'
+    );
+    expect(err?.type === 'agent-error-v2' && err.failureCode).toBeUndefined();
+
+    await adapter.disconnect();
+  });
+
   it('every emitted patch passes isAgentPatchV2 (base-class guard is exercised)', async () => {
     const harness = makeHarness();
     const adapter = new ClaudeProtocolAdapter(harness.spawnFn, inertRegistry());
