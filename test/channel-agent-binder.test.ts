@@ -4838,6 +4838,7 @@ describe('channel-agent-binder — lifecycle', () => {
     expect(contractRuns[0]!.deliveryContract?.followupPostedAt).toBeTruthy();
     expect(contractRuns[1]!.deliveryContract?.followupPostedAt).toBeTruthy();
     expect(contractRuns[2]!.deliveryContract?.followupPostedAt).toBeFalsy();
+    expect(contractRuns[2]!.deliveryContract?.abandonedAt).toBeTruthy();
 
     const sys = systemRows(store).map((m) => m.body.text);
     expect(sys.some((t) => t.includes('Delivery contract unmet'))).toBe(true);

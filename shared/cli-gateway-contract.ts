@@ -3718,6 +3718,7 @@ const channelAsyncRunSchema: RelayJsonSchema = {
         followupDepth: { type: 'integer', minimum: 0 },
         parentRunId: stringSchema,
         childRunId: stringSchema,
+        abandonedAt: stringSchema,
         result: {
           oneOf: [
             { type: 'null' },

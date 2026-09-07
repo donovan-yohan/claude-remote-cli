@@ -1537,6 +1537,7 @@ export interface ChannelMessageStore {
     };
     followupPostedAt?: string;
     childRunId?: ChannelAsyncRunId;
+    abandonedAt?: string;
   }): ChannelAsyncRun | null;
   beginStream(input: BeginStreamInput): ChannelMessage;
   updateStreamText(id: string, text: string): ChannelMessage | null;
@@ -4789,6 +4790,7 @@ export function createChannelMessageStore(
       };
       followupPostedAt?: string;
       childRunId?: ChannelAsyncRunId;
+      abandonedAt?: string;
     }): ChannelAsyncRun | null => {
       const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
       if (!run) return null;
@@ -4816,6 +4818,9 @@ export function createChannelMessageStore(
           : {}),
         ...(input.childRunId && !contract.childRunId
           ? { childRunId: input.childRunId }
+          : {}),
+        ...(input.abandonedAt && !contract.abandonedAt
+          ? { abandonedAt: input.abandonedAt }
           : {}),
       };
 

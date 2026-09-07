@@ -109,6 +109,11 @@ export interface ChannelAsyncRun {
      * Present only when Relay successfully created a follow-up run.
      */
     childRunId?: string;
+    /**
+     * #1585: timestamp at which Relay abandoned the delivery contract follow-up
+     * chain (e.g. max follow-up depth reached).
+     */
+    abandonedAt?: string;
     result?: {
       met: boolean;
       unmet: string[];

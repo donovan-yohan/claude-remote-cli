@@ -4629,6 +4629,16 @@ export function createChannelAgentBinder(
           )}`,
           { parentMessageId }
         );
+        store.finalizeAsyncRunDeliveryContract({
+          runId: run.id,
+          result: {
+            met: evaluation.met,
+            unmet: evaluation.unmet,
+            unknown: evaluation.unknown,
+            evaluatedAt,
+          },
+          abandonedAt: new Date(now()).toISOString(),
+        });
         deps.events?.publish({
           topic: 'attention',
           type: 'delivery-contract.abandoned',
