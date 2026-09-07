@@ -1593,11 +1593,13 @@ export interface ChannelMessageStore {
   getLastPrincipalProseForTurns(input: {
     channelId: string;
     turnIds: readonly string[];
+    includeParts?: boolean;
   }): ChannelMessage | null;
   /** Newest complete assistant principal prose row correlated via meta.asyncRun. */
   getLastPrincipalProseForRunId(input: {
     channelId: string;
     runId: ChannelAsyncRunId;
+    includeParts?: boolean;
   }): ChannelMessage | null;
   /** Newest durable agent-detail (tool/thought/card) row seq for a given turn. */
   getLastAgentDetailSeqForTurnId(input: {
@@ -6071,6 +6073,7 @@ export function createChannelMessageStore(
 
     getLastPrincipalProseForTurns(input) {
       const channelId = input.channelId;
+      const includeParts = input.includeParts === true;
       const raw = [...new Set(input.turnIds)].filter(
         (id) => typeof id === 'string' && id.trim().length > 0
       );
@@ -6088,7 +6091,11 @@ export function createChannelMessageStore(
              AND m.status = 'complete'
              AND TRIM(m.body_text) != ''
              AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
-             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)
+             ${
+               includeParts
+                 ? ''
+                 : "AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)"
+             }
            ORDER BY m.seq DESC
            LIMIT 1`
         )
@@ -6097,6 +6104,7 @@ export function createChannelMessageStore(
     },
 
     getLastPrincipalProseForRunId(input) {
+      const includeParts = input.includeParts === true;
       const row = db
         .prepare(
           `SELECT m.*,
@@ -6108,7 +6116,11 @@ export function createChannelMessageStore(
              AND m.status = 'complete'
              AND TRIM(m.body_text) != ''
              AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
-             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)
+             ${
+               includeParts
+                 ? ''
+                 : "AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)"
+             }
              AND json_extract(m.meta_json, '$.asyncRun.runId') = ?
            ORDER BY m.seq DESC
            LIMIT 1`

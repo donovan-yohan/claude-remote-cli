@@ -4393,6 +4393,168 @@ export function createChannelAgentBinder(
     }
   }
 
+  function resolveFinalAssistantTextForContract(input: {
+    binding: LiveBinding;
+    turnId: string;
+    runId: ChannelAsyncRunId;
+  }): { finalText: string; finalAssistantTextIsClosing?: boolean } {
+    const finalProse = store.getLastPrincipalProseForRunId({
+      channelId: input.binding.channelId,
+      runId: input.runId,
+      includeParts: true,
+    });
+    const fallbackText = input.binding.finalMessageByTurn.get(input.turnId)
+      ?.body.text;
+    const finalText = finalProse?.body.text ?? fallbackText ?? '';
+    const finalSeq = finalProse?.seq ?? null;
+    const lastCardSeq = store.getLastAgentDetailSeqForTurnId({
+      channelId: input.binding.channelId,
+      turnId: input.turnId,
+    });
+    const closing =
+      finalSeq === null
+        ? undefined
+        : lastCardSeq === null || finalSeq > lastCardSeq;
+    return closing === undefined
+      ? { finalText }
+      : { finalText, finalAssistantTextIsClosing: closing };
+  }
+
+  function notGitRepoReason(err: unknown): string | null {
+    const rec = err as { stderr?: string; message?: string };
+    const text = `${rec?.stderr ?? ''}\n${rec?.message ?? ''}`.toLowerCase();
+    return text.includes('not a git repository')
+      ? 'not a git repository'
+      : null;
+  }
+
+  function createDefaultDeliveryContractProbe(input: { cwd: string }): {
+    git: {
+      currentBranch: () => Promise<DeliveryContractProbeOutcome<string | null>>;
+      aheadCount: () => Promise<DeliveryContractProbeOutcome<number>>;
+    };
+    pr: {
+      hasOpenPrForBranch: (
+        branch: string
+      ) => Promise<DeliveryContractProbeOutcome<boolean>>;
+    };
+  } {
+    const cwd = input.cwd;
+    const gitProbe = {
+      currentBranch: async (): Promise<
+        DeliveryContractProbeOutcome<string | null>
+      > => {
+        try {
+          const { stdout } = await execFileAsync(
+            'git',
+            ['symbolic-ref', '--quiet', '--short', 'HEAD'],
+            { cwd, timeout: 5000 }
+          );
+          const name = stdout.trim();
+          return { kind: 'ok', value: name ? name : null };
+        } catch (err) {
+          const reason = notGitRepoReason(err);
+          if (reason) return { kind: 'unknown', reason };
+          // Detached/unborn HEAD is normal; treat as "no branch".
+          return { kind: 'ok', value: null };
+        }
+      },
+      aheadCount: async (): Promise<DeliveryContractProbeOutcome<number>> => {
+        const resolveDefaultBase = async (): Promise<
+          DeliveryContractProbeOutcome<string | null>
+        > => {
+          try {
+            const { stdout } = await execFileAsync(
+              'git',
+              ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+              { cwd, timeout: 5000 }
+            );
+            const upstream = stdout.trim();
+            if (upstream) return { kind: 'ok', value: upstream };
+          } catch (err) {
+            const reason = notGitRepoReason(err);
+            if (reason) return { kind: 'unknown', reason };
+            /* no upstream */
+          }
+          try {
+            const { stdout } = await execFileAsync(
+              'git',
+              ['symbolic-ref', 'refs/remotes/origin/HEAD'],
+              { cwd, timeout: 5000 }
+            );
+            const ref = stdout.trim();
+            const prefix = 'refs/remotes/origin/';
+            if (ref.startsWith(prefix)) {
+              return {
+                kind: 'ok',
+                value: `origin/${ref.slice(prefix.length)}`,
+              };
+            }
+          } catch (err) {
+            const reason = notGitRepoReason(err);
+            if (reason) return { kind: 'unknown', reason };
+            /* no origin/HEAD */
+          }
+          return { kind: 'ok', value: null };
+        };
+
+        const base = await resolveDefaultBase();
+        if (base.kind === 'unknown') return base;
+        if (!base.value) {
+          return {
+            kind: 'unknown',
+            reason: 'no upstream or origin/HEAD to compare against',
+          };
+        }
+        try {
+          const { stdout } = await execFileAsync(
+            'git',
+            ['rev-list', '--count', `${base.value}..HEAD`],
+            { cwd, timeout: 5000 }
+          );
+          const n = Number(stdout.trim());
+          if (!Number.isFinite(n) || n < 0) {
+            return {
+              kind: 'unknown',
+              reason: 'git ahead-count probe returned an invalid count',
+            };
+          }
+          return { kind: 'ok', value: n };
+        } catch (err) {
+          const reason = notGitRepoReason(err);
+          if (reason) return { kind: 'unknown', reason };
+          return {
+            kind: 'unknown',
+            reason: 'git ahead-count probe failed',
+          };
+        }
+      },
+    };
+
+    const prProbe = {
+      hasOpenPrForBranch: async (
+        branch: string
+      ): Promise<DeliveryContractProbeOutcome<boolean>> => {
+        type ExecLike = (
+          file: string,
+          args: string[],
+          options: { cwd: string; timeout?: number }
+        ) => Promise<{ stdout: string; stderr: string }>;
+        const pr = await getPrForBranchResult(cwd, branch, {
+          exec: execFileAsync as unknown as ExecLike,
+        });
+        if (pr.kind === 'unknown')
+          return { kind: 'unknown', reason: pr.reason };
+        return {
+          kind: 'ok',
+          value: Boolean(pr.pr && pr.pr.state === 'OPEN'),
+        };
+      },
+    };
+
+    return { git: gitProbe, pr: prProbe };
+  }
+
   async function evaluateDeliveryContractForCompletedRun(
     binding: LiveBinding,
     turnId: string,
@@ -4411,152 +4573,30 @@ export function createChannelAgentBinder(
         runtime?.cwd ??
         deps.topicStore?.get(binding.channelId)?.routingDefaults.cwd ??
         os.homedir();
-      const finalProse = store.getLastPrincipalProseForRunId({
-        channelId: binding.channelId,
-        runId: run.id,
-      });
-      const finalText = finalProse?.body.text ?? '';
-      const finalSeq = finalProse?.seq ?? null;
-      const lastCardSeq = store.getLastAgentDetailSeqForTurnId({
-        channelId: binding.channelId,
-        turnId,
-      });
-      const finalAssistantTextIsClosing =
-        finalSeq !== null && (lastCardSeq === null || finalSeq > lastCardSeq);
-
-      function notGitRepoReason(err: unknown): string | null {
-        const rec = err as { stderr?: string; message?: string };
-        const text =
-          `${rec?.stderr ?? ''}\n${rec?.message ?? ''}`.toLowerCase();
-        return text.includes('not a git repository')
-          ? 'not a git repository'
-          : null;
-      }
-
-      const gitProbe = {
-        currentBranch: async (): Promise<
-          DeliveryContractProbeOutcome<string | null>
-        > => {
-          try {
-            const { stdout } = await execFileAsync(
-              'git',
-              ['symbolic-ref', '--quiet', '--short', 'HEAD'],
-              { cwd, timeout: 5000 }
-            );
-            const name = stdout.trim();
-            return { kind: 'ok', value: name ? name : null };
-          } catch (err) {
-            const reason = notGitRepoReason(err);
-            if (reason) return { kind: 'unknown', reason };
-            // Detached/unborn HEAD is normal; treat as "no branch".
-            return { kind: 'ok', value: null };
-          }
-        },
-        aheadCount: async (): Promise<DeliveryContractProbeOutcome<number>> => {
-          const resolveDefaultBase = async (): Promise<
-            DeliveryContractProbeOutcome<string | null>
-          > => {
-            try {
-              const { stdout } = await execFileAsync(
-                'git',
-                ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
-                { cwd, timeout: 5000 }
-              );
-              const upstream = stdout.trim();
-              if (upstream) return { kind: 'ok', value: upstream };
-            } catch (err) {
-              const reason = notGitRepoReason(err);
-              if (reason) return { kind: 'unknown', reason };
-              /* no upstream */
-            }
-            try {
-              const { stdout } = await execFileAsync(
-                'git',
-                ['symbolic-ref', 'refs/remotes/origin/HEAD'],
-                { cwd, timeout: 5000 }
-              );
-              const ref = stdout.trim();
-              const prefix = 'refs/remotes/origin/';
-              if (ref.startsWith(prefix)) {
-                return {
-                  kind: 'ok',
-                  value: `origin/${ref.slice(prefix.length)}`,
-                };
-              }
-            } catch (err) {
-              const reason = notGitRepoReason(err);
-              if (reason) return { kind: 'unknown', reason };
-              /* no origin/HEAD */
-            }
-            return { kind: 'ok', value: null };
-          };
-
-          const base = await resolveDefaultBase();
-          if (base.kind === 'unknown') return base;
-          if (!base.value) {
-            return {
-              kind: 'unknown',
-              reason: 'no upstream or origin/HEAD to compare against',
-            };
-          }
-          try {
-            const { stdout } = await execFileAsync(
-              'git',
-              ['rev-list', '--count', `${base.value}..HEAD`],
-              { cwd, timeout: 5000 }
-            );
-            const raw = stdout.trim();
-            const n = Number.parseInt(raw, 10);
-            if (!Number.isFinite(n) || n < 0) {
-              return {
-                kind: 'unknown',
-                reason: 'unable to parse git ahead count',
-              };
-            }
-            return { kind: 'ok', value: n };
-          } catch (err) {
-            const reason = notGitRepoReason(err);
-            if (reason) return { kind: 'unknown', reason };
-            return {
-              kind: 'unknown',
-              reason: 'git ahead-count probe failed',
-            };
-          }
-        },
-      };
-
-      const prProbe = {
-        hasOpenPrForBranch: async (
-          branch: string
-        ): Promise<DeliveryContractProbeOutcome<boolean>> => {
-          type ExecLike = (
-            file: string,
-            args: string[],
-            options: { cwd: string; timeout?: number }
-          ) => Promise<{ stdout: string; stderr: string }>;
-          const pr = await getPrForBranchResult(cwd, branch, {
-            exec: execFileAsync as unknown as ExecLike,
-          });
-          if (pr.kind === 'unknown')
-            return { kind: 'unknown', reason: pr.reason };
-          return {
-            kind: 'ok',
-            value: Boolean(pr.pr && pr.pr.state === 'OPEN'),
-          };
-        },
-      };
+      const { finalText, finalAssistantTextIsClosing } =
+        resolveFinalAssistantTextForContract({
+          binding,
+          turnId,
+          runId: run.id,
+        });
 
       const deliveryProbe = deps.deliveryContractProbeFactory
         ? deps.deliveryContractProbeFactory({ cwd })
-        : { git: gitProbe, pr: prProbe };
+        : createDefaultDeliveryContractProbe({ cwd });
 
       const evaluation = await evaluateDeliveryContract(
-        {
-          expect,
-          cwd,
-          finalAssistantText: finalText,
-          finalAssistantTextIsClosing,
-        },
+        finalAssistantTextIsClosing === undefined
+          ? {
+              expect,
+              cwd,
+              finalAssistantText: finalText,
+            }
+          : {
+              expect,
+              cwd,
+              finalAssistantText: finalText,
+              finalAssistantTextIsClosing,
+            },
         deliveryProbe
       );
       const evaluatedAt = new Date(now()).toISOString();

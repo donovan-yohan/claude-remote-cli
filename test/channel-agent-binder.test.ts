@@ -5147,6 +5147,246 @@ describe('channel-agent-binder — lifecycle', () => {
     );
   });
 
+  it('falls back to the binding final message when run-correlated prose is unavailable (#1585)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    class ProseOnlyAdapter extends BaseProtocolAdapterV2 {
+      readonly runtimeOwnership = 'spawned' as const;
+      readonly capabilities: AgentCapabilitySetV2 = {
+        text: true,
+        queue: false,
+        interrupt: true,
+        approvals: false,
+        streaming: true,
+      };
+      private _status: AdapterStatus = 'disconnected';
+      private sid = 'prose-only';
+      constructor(readonly agentType: string) {
+        super();
+      }
+      get status(): AdapterStatus {
+        return this._status;
+      }
+      async connect(config: AdapterConfig): Promise<void> {
+        this._status = 'connected';
+        this.sid = config.sessionId;
+      }
+      protected async onDisconnect(): Promise<void> {
+        this._status = 'disconnected';
+      }
+      async reconnect(): Promise<void> {}
+      async resumeSession(): Promise<void> {}
+      async respondToApproval(): Promise<void> {}
+      async respondToInput(): Promise<void> {}
+      async interrupt(): Promise<void> {}
+
+      async sendMessage(input: AgentSendMessageInputV2): Promise<void> {
+        const turnId = input.turnId;
+        this.emitPatch({
+          type: 'agent-turn-started-v2',
+          sessionId: this.sid,
+          timestamp: 't',
+          turn: {
+            id: turnId,
+            status: 'running',
+            inputMessageId: `u-${turnId}`,
+            items: [],
+            startedAt: 't',
+          },
+        });
+        const assistantId = `a-${turnId}`;
+        this.emitPatch({
+          type: 'agent-item-started-v2',
+          sessionId: this.sid,
+          timestamp: 't',
+          turnId,
+          item: { type: 'assistantMessage', id: assistantId, text: '' },
+        });
+        this.emitPatch({
+          type: 'agent-item-delta-v2',
+          sessionId: this.sid,
+          timestamp: 't',
+          turnId,
+          itemId: assistantId,
+          delta: { text: 'DONE' },
+        });
+        this.emitPatch({
+          type: 'agent-item-updated-v2',
+          sessionId: this.sid,
+          timestamp: 't',
+          turnId,
+          item: {
+            type: 'assistantMessage',
+            id: assistantId,
+            text: 'DONE',
+            status: 'completed',
+          },
+        });
+        this.emitPatch({
+          type: 'agent-turn-completed-v2',
+          sessionId: this.sid,
+          timestamp: 't',
+          turnId,
+          status: 'completed',
+        });
+      }
+    }
+
+    const { binder, store } = makeBinder({
+      build: (agentType) => new ProseOnlyAdapter(agentType),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractMaxFollowups: 0,
+    });
+
+    // Simulate an uncorrelated/filtered store lookup (e.g. Hermes late turn-0).
+    store.getLastPrincipalProseForRunId = () => null;
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['text:^DONE$'] },
+      meta: { deliveryContract: { expect: ['text:^DONE$'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() =>
+      Boolean(store.getAsyncRun(posted.run.id)?.deliveryContract?.result)
+    );
+    const run = store.getAsyncRun(posted.run.id)!;
+    expect(run.deliveryContract?.result?.met).toBe(true);
+    expect(run.deliveryContract?.result?.unmet).toEqual([]);
+  });
+
+  it('includes parts-bearing principal prose when evaluating text: expectations (#1585)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    let storeRef: ChannelMessageStore | null = null;
+    class PartsProseAdapter extends BaseProtocolAdapterV2 {
+      readonly runtimeOwnership = 'spawned' as const;
+      readonly capabilities: AgentCapabilitySetV2 = {
+        text: true,
+        queue: false,
+        interrupt: true,
+        approvals: false,
+        streaming: true,
+      };
+      private _status: AdapterStatus = 'disconnected';
+      private sid = 'parts-prose';
+      constructor(readonly agentType: string) {
+        super();
+      }
+      get status(): AdapterStatus {
+        return this._status;
+      }
+      async connect(config: AdapterConfig): Promise<void> {
+        this._status = 'connected';
+        this.sid = config.sessionId;
+      }
+      protected async onDisconnect(): Promise<void> {
+        this._status = 'disconnected';
+      }
+      async reconnect(): Promise<void> {}
+      async resumeSession(): Promise<void> {}
+      async respondToApproval(): Promise<void> {}
+      async respondToInput(): Promise<void> {}
+      async interrupt(): Promise<void> {}
+
+      async sendMessage(input: AgentSendMessageInputV2): Promise<void> {
+        const turnId = input.turnId;
+        const store = storeRef;
+        if (store) {
+          const run = store
+            .listAsyncRuns(CH, 50)
+            .find((r) =>
+              (r.deliveryContract?.expect ?? []).includes('text:^DONE$')
+            );
+          const runId = run?.id ?? null;
+          const targetId = builtInAgentProfileId('mock');
+          if (runId) {
+            const started = store.beginStream({
+              channelId: CH,
+              sender: { kind: 'agent', id: targetId, providerId: 'mock' },
+              source: { runtimeId: this.sid, turnId, itemId: 'parts-prose' },
+              text: 'DONE',
+              parts: [
+                {
+                  type: 'image',
+                  id: 'cha:fixture',
+                  mime: 'image/png',
+                  w: 1,
+                  h: 1,
+                  bytes: 7,
+                },
+              ],
+              meta: { asyncRun: { runId, targetId } },
+            });
+            store.finalizeStream(started.id, {
+              text: 'DONE',
+              status: 'complete',
+            });
+          }
+        }
+        this.emitPatch({
+          type: 'agent-turn-started-v2',
+          sessionId: this.sid,
+          timestamp: 't',
+          turn: {
+            id: turnId,
+            status: 'running',
+            inputMessageId: `u-${turnId}`,
+            items: [],
+            startedAt: 't',
+          },
+        });
+        this.emitPatch({
+          type: 'agent-turn-completed-v2',
+          sessionId: this.sid,
+          timestamp: 't',
+          turnId,
+          status: 'completed',
+        });
+      }
+    }
+
+    const { binder, store } = makeBinder({
+      build: (agentType) => new PartsProseAdapter(agentType),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractMaxFollowups: 0,
+    });
+    storeRef = store;
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['text:^DONE$'] },
+      meta: { deliveryContract: { expect: ['text:^DONE$'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() =>
+      Boolean(store.getAsyncRun(posted.run.id)?.deliveryContract?.result)
+    );
+    const run = store.getAsyncRun(posted.run.id)!;
+    expect(run.deliveryContract?.result?.met).toBe(true);
+    expect(run.deliveryContract?.result?.unmet).toEqual([]);
+  });
+
   it('stops chaining when the contract is met on follow-up 2 (#1585)', async () => {
     const profiles = createAgentProfileStore(':memory:');
     cleanup.push(() => profiles.close());
