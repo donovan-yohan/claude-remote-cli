@@ -2099,7 +2099,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     const deadline = Date.now() + input.timeoutMs;
     const serverRestartCancelGraceMs = 2000;
     const terminalFinalizationGraceMs = 2000;
-    const contractFinalizationGraceMs = 2000;
+    const contractFinalizationGraceMs = 30_000;
     let serverRestartCancelledAt: number | null = null;
     const configuredMaxFollowups = deps.deliveryContractMaxFollowups ?? 3;
     const maxFollowupRunsToVisit =
