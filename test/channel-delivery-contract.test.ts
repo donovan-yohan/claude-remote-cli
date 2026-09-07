@@ -101,6 +101,7 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
         expect: ['commit', 'pr', 'file:out.txt', 'text:hello'],
         cwd: '/tmp/repo',
         finalAssistantText: 'hello world',
+        finalAssistantTextIsClosing: true,
       },
       {
         git: {
@@ -115,6 +116,56 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
         },
         fs: {
           exists: async (p) => ({ kind: 'ok', value: p === 'out.txt' }),
+        },
+      }
+    );
+    expect(result).toEqual({ met: true, unmet: [], unknown: [] });
+  });
+
+  it('treats a text expectation as unmet when the final prose is not closing (#1585)', async () => {
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['text:^DONE$'],
+        cwd: '/tmp/repo',
+        finalAssistantText: 'DONE',
+        finalAssistantTextIsClosing: false,
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: null }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result.met).toBe(false);
+    expect(result.unmet).toEqual(['text:^DONE$']);
+    expect(result.unknown).toEqual([]);
+  });
+
+  it('matches text expectations against a closing final prose row (#1585)', async () => {
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['text:^DONE$'],
+        cwd: '/tmp/repo',
+        finalAssistantText: 'DONE',
+        finalAssistantTextIsClosing: true,
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: null }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
         },
       }
     );

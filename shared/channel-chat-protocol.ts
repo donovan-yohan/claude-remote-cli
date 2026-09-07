@@ -94,6 +94,26 @@ export interface ChannelAsyncRun {
    */
   deliveryContract?: {
     expect: string[];
+    /**
+     * #1585: follow-up chain depth for delivery-contract followups.
+     * 0 for the original post; follow-up turns increment by 1.
+     */
+    followupDepth?: number;
+    /**
+     * #1585: parent async-run id for a follow-up run (immediate predecessor).
+     * Absent on the original post.
+     */
+    parentRunId?: string;
+    /**
+     * #1585: child async-run id for the follow-up run triggered by this run.
+     * Present only when Relay successfully created a follow-up run.
+     */
+    childRunId?: string;
+    /**
+     * #1585: timestamp at which Relay abandoned the delivery contract follow-up
+     * chain (e.g. max follow-up depth reached).
+     */
+    abandonedAt?: string;
     result?: {
       met: boolean;
       unmet: string[];

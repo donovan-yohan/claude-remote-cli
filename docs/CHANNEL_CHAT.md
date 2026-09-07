@@ -387,9 +387,11 @@ Supported specs:
 - `file:<path>` — require a path to exist relative to the routing cwd
 - `text:<regex>` — require the run’s final assistant text to match
 
-When a routed run completes, the binder evaluates the contract. If any spec is unmet, the run is marked `completed_unmet`, a system row names the unmet items, an `attention` event is emitted, and Relay posts exactly **one** automatic follow-up mention to the same profile so the turn cannot silently end after a completion summary.
+When a routed run completes, the binder evaluates the contract. If any spec is unmet, the run is marked `completed_unmet`, a system row names the unmet items, an `attention` event is emitted, and Relay posts automatic follow-up triggers until the contract is met or the bounded follow-up depth is exhausted (#1585).
 
-The automatic follow-up is implemented as a binder-authored system row that routes a new mention to the same profile. That routed follow-up is **not tracked as a `ChannelAsyncRun`** and therefore does not appear in `channels.run.get`; the original run’s contract result records only whether a follow-up was posted (via `followupPostedAt`).
+Each follow-up is implemented as a binder-authored system row that routes a new mention to the same profile **and creates a new `ChannelAsyncRun`**. The follow-up run inherits the parent run’s `deliveryContract` and carries `deliveryContract.followupDepth` (0 for the original post) plus `deliveryContract.parentRunId` for chaining. Each run records whether it posted a follow-up via `deliveryContract.followupPostedAt`.
+
+Follow-up chaining is bounded by `RELAY_IDE_CHANNEL_CONTRACT_MAX_FOLLOWUPS` (default `3`). The value must be a non-negative integer; `0` disables follow-up chaining entirely.
 
 Idempotent retries are keyed by `(channelId, server-derived sender,
 clientMessageId)`: a replay returns the original request message and run and
@@ -404,6 +406,12 @@ Relay never redelivers a nonterminal run after process restart: recovery
 terminalizes its nonterminal targets as `cancelled` with `server-restarted`,
 preserving an inspectable outcome. Settled run rows have bounded retention and
 are removed with their channels during orphan cleanup.
+
+If a cancelled run carried a delivery contract that never reached a proof-bearing
+terminal evaluation, restart recovery records an abandonment terminus on the run
+(`deliveryContract.abandonedAt` with `deliveryContract.result.unknown[*].reason = "server-restarted"`).
+On next binder boot, Relay posts a system row noting the restart abandonment and
+emits a `delivery-contract.abandoned` attention event for automation.
 
 ### Read state and unread
 

@@ -36,6 +36,16 @@ export interface EvaluateDeliveryContractInput {
   cwd: string;
   /** Final assistant message text for this run/turn. */
   finalAssistantText: string;
+  /**
+   * #1585: `text:` expectations are evaluated ONLY against a "closing" principal
+   * prose row — one emitted after the run's last tool/thought/card activity.
+   *
+   * If the last prose row precedes a later non-prose card row, the expectation
+   * is treated as unmet even if the stored text happens to match.
+   *
+   * Omitted defaults to `true` for backwards compatibility with older callers.
+   */
+  finalAssistantTextIsClosing?: boolean;
 }
 
 export interface DeliveryContractResult {
@@ -116,6 +126,9 @@ export async function evaluateDeliveryContract(
         return fsProbe.exists(expectation.path);
       }
       case 'text': {
+        if (input.finalAssistantTextIsClosing === false) {
+          return { kind: 'ok', value: false };
+        }
         const haystack = input.finalAssistantText.slice(0, MAX_TEXT_BYTES);
         const result = await safeRegexTest(expectation.regex, haystack, {
           timeoutMs: TEXT_REGEX_TIMEOUT_MS,

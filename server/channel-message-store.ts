@@ -75,7 +75,7 @@ import {
 //    catch-up window, and thread parent stays valid. Nothing in this file may
 //    ever issue `DELETE FROM channel_messages` for an operator action.
 
-const SCHEMA_VERSION = 22;
+const SCHEMA_VERSION = 23;
 const ASYNC_RUN_SETTLED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const logger = createLogger('channel-message-store');
 export const CHANNEL_HISTORY_DEFAULT_LIMIT = 50;
@@ -911,6 +911,8 @@ CREATE TABLE IF NOT EXISTS channel_async_runs (
   state              TEXT NOT NULL CHECK (state IN ('submitted','working','input-required','auth-required','completed','completed_unmet','failed','cancelled','rejected')),
   reason             TEXT,
   delivery_contract_json TEXT,
+  delivery_contract_followup_depth INTEGER,
+  delivery_contract_parent_run_id TEXT,
   created_at         TEXT NOT NULL,
   updated_at         TEXT NOT NULL,
   completed_at       TEXT
@@ -1060,6 +1062,8 @@ interface AsyncRunRow {
   state: ChannelAsyncRunState;
   reason: string | null;
   delivery_contract_json: string | null;
+  delivery_contract_followup_depth: number | null;
+  delivery_contract_parent_run_id: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -1111,6 +1115,12 @@ export interface CreateChannelAsyncRunPostInput extends AppendCompleteInput {
   /** Optional delivery contract (#1569), persisted on the run record. */
   deliveryContract?: {
     expect: string[];
+    /** #1585: 0 for original, increments for follow-ups. */
+    followupDepth?: number;
+    /** #1585: parent run id for follow-ups. */
+    parentRunId?: string;
+    /** Forward-compatible contract fields (e.g. baseline) are additive. */
+    [key: string]: unknown;
   };
 }
 
@@ -1526,6 +1536,8 @@ export interface ChannelMessageStore {
       evaluatedAt: string;
     };
     followupPostedAt?: string;
+    childRunId?: ChannelAsyncRunId;
+    abandonedAt?: string;
   }): ChannelAsyncRun | null;
   beginStream(input: BeginStreamInput): ChannelMessage;
   updateStreamText(id: string, text: string): ChannelMessage | null;
@@ -1581,12 +1593,19 @@ export interface ChannelMessageStore {
   getLastPrincipalProseForTurns(input: {
     channelId: string;
     turnIds: readonly string[];
+    includeParts?: boolean;
   }): ChannelMessage | null;
   /** Newest complete assistant principal prose row correlated via meta.asyncRun. */
   getLastPrincipalProseForRunId(input: {
     channelId: string;
     runId: ChannelAsyncRunId;
+    includeParts?: boolean;
   }): ChannelMessage | null;
+  /** Newest durable agent-detail (tool/thought/card) row seq for a given turn. */
+  getLastAgentDetailSeqForTurnId(input: {
+    channelId: string;
+    turnId: string;
+  }): number | null;
   /** System rows parented under a durable message id (threaded replies). */
   listSystemMessagesForParent(input: {
     channelId: string;
@@ -3681,6 +3700,42 @@ function runSchemaMigrations(db: Database.Database): void {
       db.prepare('UPDATE schema_version SET version = 22').run();
     })();
   }
+  if (current < 23) {
+    db.transaction(() => {
+      // #1585: delivery-contract follow-ups chain (bounded). Persist follow-up
+      // ancestry scalars as dedicated columns so they survive contract JSON
+      // evolution and can be backfilled deterministically.
+      const columns = db
+        .prepare(`PRAGMA table_info(channel_async_runs)`)
+        .all() as Array<{ name: string }>;
+      if (
+        !columns.some(
+          (column) => column.name === 'delivery_contract_followup_depth'
+        )
+      ) {
+        db.exec(
+          'ALTER TABLE channel_async_runs ADD COLUMN delivery_contract_followup_depth INTEGER'
+        );
+      }
+      if (
+        !columns.some(
+          (column) => column.name === 'delivery_contract_parent_run_id'
+        )
+      ) {
+        db.exec(
+          'ALTER TABLE channel_async_runs ADD COLUMN delivery_contract_parent_run_id TEXT'
+        );
+      }
+      // Backfill: every pre-v23 delivery contract is an original post, so depth=0.
+      db.exec(`
+        UPDATE channel_async_runs
+           SET delivery_contract_followup_depth = 0
+         WHERE delivery_contract_json IS NOT NULL
+           AND delivery_contract_followup_depth IS NULL
+      `);
+      db.prepare('UPDATE schema_version SET version = 23').run();
+    })();
+  }
 }
 
 export function initChannelMessageStore(
@@ -4469,6 +4524,30 @@ export function createChannelMessageStore(
     row: AsyncRunRow,
     targets = selectAsyncRunTargets.all(row.id) as AsyncRunTargetRow[]
   ): ChannelAsyncRun {
+    let deliveryContract: ChannelAsyncRun['deliveryContract'] | undefined;
+    if (row.delivery_contract_json) {
+      try {
+        deliveryContract = JSON.parse(
+          row.delivery_contract_json
+        ) as NonNullable<ChannelAsyncRun['deliveryContract']>;
+      } catch {
+        deliveryContract = undefined;
+      }
+      if (deliveryContract) {
+        if (row.delivery_contract_followup_depth !== null) {
+          deliveryContract = {
+            ...deliveryContract,
+            followupDepth: row.delivery_contract_followup_depth,
+          };
+        }
+        if (row.delivery_contract_parent_run_id) {
+          deliveryContract = {
+            ...deliveryContract,
+            parentRunId: row.delivery_contract_parent_run_id,
+          };
+        }
+      }
+    }
     return {
       id: row.id as ChannelAsyncRunId,
       channelId: row.channel_id,
@@ -4477,13 +4556,7 @@ export function createChannelMessageStore(
       requesterId: row.requester_id,
       state: row.state,
       ...(row.reason ? { reason: row.reason } : {}),
-      ...(row.delivery_contract_json
-        ? {
-            deliveryContract: JSON.parse(
-              row.delivery_contract_json
-            ) as NonNullable<ChannelAsyncRun['deliveryContract']>,
-          }
-        : {}),
+      ...(deliveryContract ? { deliveryContract } : {}),
       targets: targets.map(
         (target): ChannelAsyncRunTarget => ({
           targetId: target.target_id,
@@ -4571,10 +4644,37 @@ export function createChannelMessageStore(
       const state: ChannelAsyncRunState =
         targetIds.length === 0 ? 'rejected' : 'submitted';
       const runId = `chrun:${crypto.randomUUID()}` as ChannelAsyncRunId;
+      const contract = input.deliveryContract;
+      const followupDepth =
+        contract && Number.isSafeInteger(contract.followupDepth)
+          ? (contract.followupDepth as number)
+          : contract
+            ? 0
+            : null;
+      const parentRunId =
+        contract && typeof contract.parentRunId === 'string'
+          ? contract.parentRunId
+          : null;
+      // Persist follow-up ancestry as dedicated columns (#1585). Keep the JSON
+      // payload forward-compatible for additional contract fields (e.g. #1578
+      // baseline) without duplicating the ancestry scalars.
+      const contractJson =
+        contract !== undefined
+          ? (() => {
+              const {
+                followupDepth: _depth,
+                parentRunId: _parent,
+                ...rest
+              } = contract;
+              return JSON.stringify(rest);
+            })()
+          : null;
       db.prepare(
         `INSERT INTO channel_async_runs
-           (id, channel_id, thread_id, request_message_id, requester_id, state, reason, delivery_contract_json, created_at, updated_at, completed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           (id, channel_id, thread_id, request_message_id, requester_id, state, reason,
+            delivery_contract_json, delivery_contract_followup_depth, delivery_contract_parent_run_id,
+            created_at, updated_at, completed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         runId,
         message.channelId,
@@ -4583,7 +4683,9 @@ export function createChannelMessageStore(
         message.sender.id,
         state,
         targetIds.length === 0 ? 'no-eligible-target' : null,
-        input.deliveryContract ? JSON.stringify(input.deliveryContract) : null,
+        contractJson,
+        followupDepth,
+        parentRunId,
         now,
         now,
         targetIds.length === 0 ? now : null
@@ -4689,6 +4791,8 @@ export function createChannelMessageStore(
         evaluatedAt: string;
       };
       followupPostedAt?: string;
+      childRunId?: ChannelAsyncRunId;
+      abandonedAt?: string;
     }): ChannelAsyncRun | null => {
       const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
       if (!run) return null;
@@ -4713,6 +4817,12 @@ export function createChannelMessageStore(
           : { result: input.result }),
         ...(input.followupPostedAt && !contract.followupPostedAt
           ? { followupPostedAt: input.followupPostedAt }
+          : {}),
+        ...(input.childRunId && !contract.childRunId
+          ? { childRunId: input.childRunId }
+          : {}),
+        ...(input.abandonedAt && !contract.abandonedAt
+          ? { abandonedAt: input.abandonedAt }
           : {}),
       };
 
@@ -4760,11 +4870,51 @@ export function createChannelMessageStore(
           SET state = ?, reason = 'server-restarted', updated_at = ?, completed_at = ?
         WHERE id = ?`
     );
+    const updateRunContract = db.prepare(
+      `UPDATE channel_async_runs
+          SET delivery_contract_json = ?, updated_at = ?
+        WHERE id = ?`
+    );
     for (const row of rows) {
       cancelTarget.run(now, now, row.id);
       const targets = selectAsyncRunTargets.all(row.id) as AsyncRunTargetRow[];
       const state = aggregateAsyncRunState(targets);
       updateRun.run(state, now, now, row.id);
+
+      // #1585: a cancelled run with a delivery contract must still reach a
+      // terminal contract outcome so automation does not observe a dangling
+      // contract indefinitely after a restart.
+      if (row.delivery_contract_json) {
+        try {
+          const contract = JSON.parse(row.delivery_contract_json) as
+            | NonNullable<ChannelAsyncRun['deliveryContract']>
+            | null
+            | undefined;
+          if (
+            contract &&
+            Array.isArray(contract.expect) &&
+            contract.expect.length > 0 &&
+            !contract.result
+          ) {
+            const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+              ...contract,
+              abandonedAt: contract.abandonedAt ?? now,
+              result: {
+                met: false,
+                unmet: [],
+                unknown: contract.expect.map((spec) => ({
+                  spec,
+                  reason: 'server-restarted',
+                })),
+                evaluatedAt: now,
+              },
+            };
+            updateRunContract.run(JSON.stringify(next), now, row.id);
+          }
+        } catch {
+          /* ignore invalid json */
+        }
+      }
     }
     return rows.map((row) =>
       asyncRunFromRow(selectAsyncRun.get(row.id) as AsyncRunRow)
@@ -5923,6 +6073,7 @@ export function createChannelMessageStore(
 
     getLastPrincipalProseForTurns(input) {
       const channelId = input.channelId;
+      const includeParts = input.includeParts === true;
       const raw = [...new Set(input.turnIds)].filter(
         (id) => typeof id === 'string' && id.trim().length > 0
       );
@@ -5940,7 +6091,11 @@ export function createChannelMessageStore(
              AND m.status = 'complete'
              AND TRIM(m.body_text) != ''
              AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
-             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)
+             ${
+               includeParts
+                 ? ''
+                 : "AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)"
+             }
            ORDER BY m.seq DESC
            LIMIT 1`
         )
@@ -5949,6 +6104,7 @@ export function createChannelMessageStore(
     },
 
     getLastPrincipalProseForRunId(input) {
+      const includeParts = input.includeParts === true;
       const row = db
         .prepare(
           `SELECT m.*,
@@ -5960,13 +6116,35 @@ export function createChannelMessageStore(
              AND m.status = 'complete'
              AND TRIM(m.body_text) != ''
              AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
-             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)
+             ${
+               includeParts
+                 ? ''
+                 : "AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)"
+             }
              AND json_extract(m.meta_json, '$.asyncRun.runId') = ?
            ORDER BY m.seq DESC
            LIMIT 1`
         )
         .get(input.channelId, input.runId) as ChannelMessageRow | undefined;
       return row ? rowToMessage(row) : null;
+    },
+
+    getLastAgentDetailSeqForTurnId(input) {
+      const row = db
+        .prepare(
+          `SELECT seq
+             FROM channel_messages
+            WHERE channel_id = ?
+              AND source_turn_id = ?
+              AND kind = 'message'
+              AND status IN ('complete','failed','interrupted')
+              AND meta_json IS NOT NULL
+              AND json_extract(meta_json, '$.agentDetail') IS NOT NULL
+            ORDER BY seq DESC
+            LIMIT 1`
+        )
+        .get(input.channelId, input.turnId) as { seq: number } | undefined;
+      return row ? row.seq : null;
     },
 
     listSystemMessagesForParent(input) {

@@ -187,6 +187,8 @@ export interface ChannelChatRouterDeps {
   attachmentStore?: ChannelAttachmentStore | null;
   hub: ChannelHub;
   topicStore: WorkspaceTopicStore | null;
+  /** #1585: follow-up chain hop cap for `channels.run.wait`. */
+  deliveryContractMaxFollowups?: number;
   /** Human project names for `in:<project>` transcript scopes. */
   iaStore?: Pick<IaStore, 'listWorkspaces'> | null;
   /** @-mention routing binder (#1167); roster/interrupt/approval routes 503 without it. */
@@ -2057,24 +2059,33 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     input: Extract<ParsedWait, { mode: 'run' }>,
     signal: AbortSignal
   ): Promise<void> {
-    const run = store.getAsyncRun(input.runId);
-    if (!run) {
+    const initial = store.getAsyncRun(input.runId);
+    if (!initial) {
       sendGatewayError(res, 'NOT_FOUND', 'run not found', false, {
         runId: input.runId,
       });
       return;
     }
-    if (denyOutOfScopeChannel(req, res, run.channelId)) return;
-    if (denyNonMemberChannel(req, res, deps.store, run.channelId)) return;
-    if (!requirePersistedChannelById(res, run.channelId)) return;
+    if (denyOutOfScopeChannel(req, res, initial.channelId)) return;
+    if (denyNonMemberChannel(req, res, deps.store, initial.channelId)) return;
+    if (!requirePersistedChannelById(res, initial.channelId)) return;
 
     const deadline = Date.now() + input.timeoutMs;
     const serverRestartCancelGraceMs = 2000;
     const terminalFinalizationGraceMs = 2000;
     let serverRestartCancelledAt: number | null = null;
+    const configuredMaxFollowups = deps.deliveryContractMaxFollowups ?? 3;
+    const maxFollowupRunsToVisit =
+      Number.isSafeInteger(configuredMaxFollowups) &&
+      configuredMaxFollowups >= 0
+        ? configuredMaxFollowups + 1
+        : 4;
+    let hop = 0; // edges traversed
+    let runId: ChannelAsyncRunId = input.runId;
     while (Date.now() < deadline && !signal.aborted) {
-      const latest = store.getAsyncRun(run.id);
+      const latest = store.getAsyncRun(runId);
       if (!latest) break;
+      if (latest.channelId !== initial.channelId) break;
       if (
         latest.state === 'cancelled' &&
         latest.reason === 'server-restarted'
@@ -2092,9 +2103,24 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         serverRestartCancelledAt = null;
       }
       if (runTerminalState(latest.state)) {
+        const childRunId =
+          typeof latest.deliveryContract?.childRunId === 'string'
+            ? (latest.deliveryContract.childRunId as ChannelAsyncRunId)
+            : null;
+        if (
+          childRunId &&
+          childRunId !== latest.id &&
+          hop + 1 < maxFollowupRunsToVisit
+        ) {
+          hop += 1;
+          runId = childRunId;
+          serverRestartCancelledAt = null;
+          await sleepWithAbort(0, signal);
+          continue;
+        }
         const final = await finalAssistantTextForTerminalRun(
           store,
-          run.id,
+          runId,
           latest,
           deadline,
           terminalFinalizationGraceMs,
@@ -2118,7 +2144,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       await sleepWithAbort(50, signal);
     }
     if (signal.aborted) return;
-    const latest = store.getAsyncRun(run.id);
+    const latest = store.getAsyncRun(runId);
     res.json(
       operatorClientPublicValue(req, {
         run: latest
@@ -2128,9 +2154,9 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
               ...(latest.reason ? { reason: latest.reason } : {}),
             }
           : {
-              id: run.id,
-              state: run.state,
-              ...(run.reason ? { reason: run.reason } : {}),
+              id: initial.id,
+              state: initial.state,
+              ...(initial.reason ? { reason: initial.reason } : {}),
             },
         outcome: 'timeout',
         finalText: '',

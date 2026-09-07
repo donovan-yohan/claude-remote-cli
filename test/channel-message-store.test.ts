@@ -137,7 +137,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(22);
+    ).toBe(23);
     expect(
       (
         inspect
@@ -607,7 +607,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(22);
+    ).toBe(23);
     expect(
       (
         inspect.prepare('PRAGMA table_info(channel_messages)').all() as Array<{
@@ -795,7 +795,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(22);
+    ).toBe(23);
     expect(
       inspect
         .prepare('SELECT heal_id, candidates, healed FROM channel_heal_state')
@@ -1079,7 +1079,7 @@ describe('channel-message-store schema migration', () => {
           version: number;
         }
       ).version
-    ).toBe(22);
+    ).toBe(23);
     expect(
       (
         inspect
@@ -1088,7 +1088,13 @@ describe('channel-message-store schema migration', () => {
           name: string;
         }>
       ).map((c) => c.name)
-    ).toContain('delivery_contract_json');
+    ).toEqual(
+      expect.arrayContaining([
+        'delivery_contract_json',
+        'delivery_contract_followup_depth',
+        'delivery_contract_parent_run_id',
+      ])
+    );
 
     expect(
       inspect
@@ -1113,6 +1119,88 @@ describe('channel-message-store schema migration', () => {
         )
         .run();
     }).not.toThrow();
+  });
+
+  it('upgrades a v22 db to v23 so delivery-contract posts succeed (#1585/#1571)', () => {
+    const file = dbPath();
+    const seeded = store(file);
+    seeded.close();
+
+    // Recreate `channel_async_runs` in the v22 shape (#1571) without the
+    // #1585 follow-up ancestry columns. A nightly v22 db would skip the
+    // original v22 migration from this branch, so opening it at v23 must add
+    // the missing columns before any contract insert runs.
+    const legacy = new Database(file);
+    legacy.exec(`
+      CREATE TABLE channel_async_runs_v22 (
+        id                 TEXT PRIMARY KEY,
+        channel_id         TEXT NOT NULL,
+        thread_id          TEXT,
+        request_message_id TEXT NOT NULL UNIQUE,
+        requester_id       TEXT NOT NULL,
+        state              TEXT NOT NULL,
+        reason             TEXT,
+        delivery_contract_json TEXT,
+        created_at         TEXT NOT NULL,
+        updated_at         TEXT NOT NULL,
+        completed_at       TEXT
+      );
+      INSERT INTO channel_async_runs_v22 (
+        id, channel_id, thread_id, request_message_id, requester_id, state, reason,
+        delivery_contract_json, created_at, updated_at, completed_at
+      )
+      SELECT
+        id, channel_id, thread_id, request_message_id, requester_id, state, reason,
+        delivery_contract_json, created_at, updated_at, completed_at
+      FROM channel_async_runs;
+      DROP TABLE channel_async_runs;
+      ALTER TABLE channel_async_runs_v22 RENAME TO channel_async_runs;
+
+      UPDATE schema_version SET version = 22;
+    `);
+    legacy.close();
+
+    const upgraded = store(file);
+    expect(() =>
+      upgraded.appendCompleteWithAsyncRun({
+        channelId: 'topic:v22-to-v23',
+        sender: HUMAN,
+        text: '@mock ship',
+        mentions: [
+          {
+            raw: '@mock',
+            providerId: 'mock',
+            profileId: 'agent-profile:mock:default',
+          },
+        ],
+        targetIds: [builtInAgentProfileId('mock')],
+        deliveryContract: { expect: ['file:missing.txt'] },
+        meta: { deliveryContract: { expect: ['file:missing.txt'] } },
+      })
+    ).not.toThrow();
+    upgraded.close();
+
+    const inspect = new Database(file, { readonly: true });
+    cleanup.push(() => inspect.close());
+    expect(
+      (
+        inspect.prepare('SELECT version FROM schema_version').get() as {
+          version: number;
+        }
+      ).version
+    ).toBe(23);
+    expect(
+      (
+        inspect
+          .prepare('PRAGMA table_info(channel_async_runs)')
+          .all() as Array<{ name: string }>
+      ).map((c) => c.name)
+    ).toEqual(
+      expect.arrayContaining([
+        'delivery_contract_followup_depth',
+        'delivery_contract_parent_run_id',
+      ])
+    );
   });
 });
 
@@ -1143,7 +1231,7 @@ describe('channel-message-store async-run migration (#1391)', () => {
     const inspect = new Database(file, { readonly: true });
     cleanup.push(() => inspect.close());
     expect(inspect.prepare('SELECT version FROM schema_version').get()).toEqual(
-      { version: 22 }
+      { version: 23 }
     );
     expect(
       inspect
@@ -1994,6 +2082,35 @@ describe('channel-message-store async runs (#1391)', () => {
     })!;
     expect(completed.state).toBe('completed');
     expect(completed.reason).toBeUndefined();
+  });
+
+  it('marks cancelled delivery-contract runs as abandoned on restart recovery (#1585)', () => {
+    const file = dbPath();
+    const s = store(file);
+    const { run } = s.appendCompleteWithAsyncRun({
+      channelId: 'topic:async',
+      sender: HUMAN,
+      text: '@a ship',
+      clientMessageId: 'client-async-contract-1',
+      targetIds: ['agent-profile:a:default'],
+      deliveryContract: { expect: ['text:^DONE$'] },
+      meta: { deliveryContract: { expect: ['text:^DONE$'] } },
+    });
+    expect(run.state).toBe('submitted');
+    s.close();
+
+    const reopened = store(file);
+    reopened.recoverAsyncRuns();
+    const recovered = reopened.getAsyncRun(run.id)!;
+    expect(recovered.state).toBe('cancelled');
+    expect(recovered.reason).toBe('server-restarted');
+    expect(recovered.deliveryContract?.abandonedAt).toBeTruthy();
+    expect(recovered.deliveryContract?.result).toMatchObject({
+      met: false,
+      unmet: [],
+      evaluatedAt: expect.any(String),
+      unknown: [{ spec: 'text:^DONE$', reason: 'server-restarted' }],
+    });
   });
 
   it('derives aggregate terminal state from durable per-target CAS outcomes', () => {
@@ -3967,7 +4084,7 @@ describe('channel-message-store full-text search (#1308 slice 2 item 1)', () => 
       .get() as { version: number };
     counted.close();
     expect(rows.count).toBe(1);
-    expect(version.version).toBe(22);
+    expect(version.version).toBe(23);
   });
 
   it('backfills across more than one batch without dropping or duplicating rows', () => {
@@ -5486,7 +5603,7 @@ describe('channel-message-store invite and removal (#1455 slice 2)', () => {
           version: number;
         }
       ).version
-    ).toBe(22);
+    ).toBe(23);
     expect(upgraded.listMembers('topic:v17')).toEqual([
       expect.objectContaining({
         id: 'agent:claude',

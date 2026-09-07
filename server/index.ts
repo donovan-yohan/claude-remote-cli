@@ -1847,6 +1847,8 @@ async function main(): Promise<void> {
   const channelTurnCeilingMs = positiveIntegerEnv(
     'RELAY_IDE_CHANNEL_TURN_CEILING_MS'
   );
+  const channelContractMaxFollowups =
+    nonNegativeIntegerEnv('RELAY_IDE_CHANNEL_CONTRACT_MAX_FOLLOWUPS') ?? 3;
   const channelAgentBinder: ChannelAgentBinder | null = channelMessageStore
     ? createChannelAgentBinder({
         store: channelMessageStore,
@@ -1867,6 +1869,7 @@ async function main(): Promise<void> {
         ...(channelTurnCeilingMs !== undefined
           ? { turnCeilingMs: channelTurnCeilingMs }
           : {}),
+        deliveryContractMaxFollowups: channelContractMaxFollowups,
       })
     : null;
   if (channelAgentBinder) {
@@ -3390,6 +3393,7 @@ async function main(): Promise<void> {
       attachmentStore: channelAttachmentStore,
       hub: channelHub,
       topicStore: workspaceTopicStore,
+      deliveryContractMaxFollowups: channelContractMaxFollowups,
       iaStore,
       binder: channelAgentBinder,
       knownProviderIds: Object.keys(v2Adapters),
@@ -7038,6 +7042,17 @@ function positiveIntegerEnv(name: string): number | undefined {
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     logger.warn(`Ignoring ${name}: expected a positive integer number of ms.`);
+    return undefined;
+  }
+  return parsed;
+}
+
+function nonNegativeIntegerEnv(name: string): number | undefined {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    logger.warn(`Ignoring ${name}: expected a non-negative integer.`);
     return undefined;
   }
   return parsed;
