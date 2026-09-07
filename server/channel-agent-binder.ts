@@ -582,6 +582,10 @@ export interface LiveBinding {
   routingCwdDivergenceReported: string | null;
   /** Last terminal prose row by turn, available before the terminal patch lands. */
   finalMessageByTurn: Map<string, ChannelMessage>;
+  /** #1585: wall-clock stamp of the last finalized assistant prose row per turn. */
+  lastAssistantProseFinalizedAtByTurn: Map<string, number>;
+  /** #1585: wall-clock stamp of the last tool/thought/card activity per turn. */
+  lastCardActivityAtByTurn: Map<string, number>;
   /** Child callback and ancestor edge awaited by its internal callback turn. */
   continuationByTurn: Map<
     string,
@@ -1978,6 +1982,36 @@ export function createChannelAgentBinder(
   }
 
   /**
+   * #1585: Track non-prose "card" activity for closing-message detection.
+   *
+   * The delivery-contract `text:` expectation is evaluated only against a
+   * closing principal prose row: one that arrives AFTER the last tool/thought/
+   * card activity. This timestamp is therefore updated ONLY by item lifecycle
+   * patches (and excludes plain assistant-message text deltas and turn-complete
+   * lifecycle patches).
+   */
+  function noteCardActivity(binding: LiveBinding, patch: AgentPatchV2): void {
+    if (!isActiveTurnPatch(binding, patch)) return;
+    switch (patch.type) {
+      case 'agent-item-started-v2':
+      case 'agent-item-updated-v2': {
+        if (patch.item.type === 'assistantMessage') return;
+        binding.lastCardActivityAtByTurn.set(patch.turnId, now());
+        return;
+      }
+      case 'agent-item-delta-v2': {
+        // Assistant-message deltas carry text; other item deltas are treated as
+        // card activity.
+        if (typeof patch.delta.text === 'string') return;
+        binding.lastCardActivityAtByTurn.set(patch.turnId, now());
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  /**
    * Close one open tool item. When it was the LAST one the silence budget
    * restarts from this moment: the turn only just stopped being busy, so it
    * gets a full idle window to produce its next thing.
@@ -2205,6 +2239,8 @@ export function createChannelAgentBinder(
       drainedTurnIds: new Set(),
       routingCwdDivergenceReported: null,
       finalMessageByTurn: new Map(),
+      lastAssistantProseFinalizedAtByTurn: new Map(),
+      lastCardActivityAtByTurn: new Map(),
       continuationByTurn: new Map(),
       completionCallbackByTurn: new Map(),
       deferredCompletionTerminalByTurn: new Map(),
@@ -3701,6 +3737,8 @@ export function createChannelAgentBinder(
       releaseUnacceptedCompletionCallbackTurn(binding, turnId);
       releaseTurnParent(binding, turnId);
       binding.finalMessageByTurn.delete(turnId);
+      binding.lastAssistantProseFinalizedAtByTurn.delete(turnId);
+      binding.lastCardActivityAtByTurn.delete(turnId);
       binding.continuationByTurn.delete(turnId);
       if (binding.activeTurnId === turnId) {
         binding.activeTurnId = null;
@@ -3870,6 +3908,8 @@ export function createChannelAgentBinder(
         );
       }
       binding.finalMessageByTurn.delete(activeTurnId);
+      binding.lastAssistantProseFinalizedAtByTurn.delete(activeTurnId);
+      binding.lastCardActivityAtByTurn.delete(activeTurnId);
       binding.continuationByTurn.delete(activeTurnId);
     }
     binding.activeTurnId = null;
@@ -3974,6 +4014,8 @@ export function createChannelAgentBinder(
       binding.completionCallbackByTurn.delete(terminalTurnId);
     }
     binding.finalMessageByTurn.delete(terminalTurnId);
+    binding.lastAssistantProseFinalizedAtByTurn.delete(terminalTurnId);
+    binding.lastCardActivityAtByTurn.delete(terminalTurnId);
     binding.continuationByTurn.delete(terminalTurnId);
     binding.activeTurnId = null;
     binding.activeContent = null;
@@ -4196,6 +4238,7 @@ export function createChannelAgentBinder(
     // to mean below.
     noteRuntimeActivity(binding, patch);
     noteToolItemLifecycle(binding, patch);
+    noteCardActivity(binding, patch);
     switch (patch.type) {
       case 'agent-session-updated-v2':
         if (patch.providerSession) {
@@ -4410,6 +4453,10 @@ export function createChannelAgentBinder(
         deps.topicStore?.get(binding.channelId)?.routingDefaults.cwd ??
         os.homedir();
       const finalText = binding.finalMessageByTurn.get(turnId)?.body.text ?? '';
+      const proseAt = binding.lastAssistantProseFinalizedAtByTurn.get(turnId);
+      const cardAt = binding.lastCardActivityAtByTurn.get(turnId);
+      const finalAssistantTextIsClosing =
+        proseAt !== undefined && (cardAt === undefined || proseAt > cardAt);
 
       function notGitRepoReason(err: unknown): string | null {
         const rec = err as { stderr?: string; message?: string };
@@ -4534,7 +4581,12 @@ export function createChannelAgentBinder(
       };
 
       const evaluation = await evaluateDeliveryContract(
-        { expect, cwd, finalAssistantText: finalText },
+        {
+          expect,
+          cwd,
+          finalAssistantText: finalText,
+          finalAssistantTextIsClosing,
+        },
         deps.deliveryContractProbeFactory
           ? deps.deliveryContractProbeFactory({ cwd })
           : { git: gitProbe, pr: prProbe }
@@ -5479,6 +5531,8 @@ export function createChannelAgentBinder(
     if (closed) return;
     const sourceTurnId = message.source?.turnId;
     if (sourceTurnId) binding.finalMessageByTurn.set(sourceTurnId, message);
+    if (sourceTurnId)
+      binding.lastAssistantProseFinalizedAtByTurn.set(sourceTurnId, now());
     const mentions = resolveMentions(message.body.text);
     const profiles = eligibleProfiles(message, mentions);
     const explicitReturnProfiles = new Set<string>();
@@ -5598,6 +5652,8 @@ export function createChannelAgentBinder(
     binding.requestMessageIdByTurn.clear();
     binding.exactTurnTombstones.clear();
     binding.finalMessageByTurn.clear();
+    binding.lastAssistantProseFinalizedAtByTurn.clear();
+    binding.lastCardActivityAtByTurn.clear();
     binding.continuationByTurn.clear();
     binding.completionCallbackByTurn.clear();
     binding.deferredCompletionTerminalByTurn.clear();
