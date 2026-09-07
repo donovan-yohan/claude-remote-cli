@@ -973,6 +973,7 @@ describe('channel-delivery-receipt-v1 (#1442)', () => {
         'held_busy',
         'dropped_queue_full',
         'refused_policy',
+        'refused_provider',
         'unreachable_offline',
         'expired_watchdog',
         'failed_runtime',
