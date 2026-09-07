@@ -430,7 +430,9 @@ describe('buildChildEnv', () => {
 
 describe('readSseStream', () => {
   /** A ReadableStream that yields exactly the given chunks, as bytes. */
-  function streamOf(chunks: (string | Uint8Array)[]): ReadableStream<Uint8Array> {
+  function streamOf(
+    chunks: (string | Uint8Array)[]
+  ): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder();
     return new ReadableStream<Uint8Array>({
       start(controller) {
@@ -490,12 +492,12 @@ describe('readSseStream', () => {
   it('reassembles a record split across chunks at any boundary', async () => {
     const source = 'event: e1\ndata: {"a":1}\n\nevent: e2\ndata: {"b":2}\n\n';
     for (let split = 1; split < source.length; split += 1) {
-      expect(await collect([source.slice(0, split), source.slice(split)])).toEqual(
-        [
-          { event: 'e1', data: '{"a":1}' },
-          { event: 'e2', data: '{"b":2}' },
-        ]
-      );
+      expect(
+        await collect([source.slice(0, split), source.slice(split)])
+      ).toEqual([
+        { event: 'e1', data: '{"a":1}' },
+        { event: 'e2', data: '{"b":2}' },
+      ]);
     }
   });
 
@@ -531,7 +533,9 @@ describe('readSseStream', () => {
   });
 
   it('trims one space after the field colon, as all three adapters did', async () => {
-    expect(await collect(['data:no-space\n\n'])).toEqual([{ data: 'no-space' }]);
+    expect(await collect(['data:no-space\n\n'])).toEqual([
+      { data: 'no-space' },
+    ]);
     expect(await collect(['data:   padded   \n\n'])).toEqual([
       { data: 'padded' },
     ]);
@@ -674,14 +678,10 @@ describe('patch emission conventions', () => {
       });
       expect(
         (patches[0] as unknown as { item: Record<string, unknown> }).item
-      ).toMatchObject(
-        { metadata: { eventVisibility: 'debug' } }
-      );
+      ).toMatchObject({ metadata: { eventVisibility: 'debug' } });
       expect(
         (patches[1] as unknown as { item: Record<string, unknown> }).item
-      ).toMatchObject(
-        { metadata: { eventVisibility: 'trace' } }
-      );
+      ).toMatchObject({ metadata: { eventVisibility: 'trace' } });
     });
 
     it('stamps timestamp, startedAt, and completedAt from one clock read', () => {
@@ -723,12 +723,31 @@ describe('patch emission conventions', () => {
         expect(patch).not.toHaveProperty('turnId');
       }
     });
+
+    it('truncates and redacts credential-shaped diagnostics (#1571)', () => {
+      const { sink, patches } = harness();
+      const longToken =
+        'relay-sac-v1.0e7afa86-9af4-4d76-8923-b25a43c334a3.535cec4ae52808a40787a99d693928fdb0b7ae9533309796c18d3ab6a9bbf832';
+      emitErrorPatch(sink, `Bearer ${longToken} ${'x'.repeat(600)}`, null, {
+        providerMessage: `OPENAI_API_KEY=${'sk-'.padEnd(40, 'a')}`,
+      });
+      const patch = patches[0] as { message: string; providerMessage?: string };
+      expect(patch.message).toContain('Bearer [REDACTED]');
+      expect(patch.message).not.toContain(longToken);
+      expect(patch.message.length).toBeLessThanOrEqual(512);
+      expect(patch.providerMessage).toBeDefined();
+      expect(patch.providerMessage).toContain('OPENAI_API_KEY=[REDACTED]');
+      expect(patch.providerMessage!.length).toBeLessThanOrEqual(512);
+    });
   });
 
   describe('emitTurnStartedPatch', () => {
     it('opens a turn with an empty item list and a user- input message id', () => {
       const { sink, patches } = harness();
-      emitTurnStartedPatch(sink, { turnId: 't1', startedAt: '2020-01-01T00:00:00.000Z' });
+      emitTurnStartedPatch(sink, {
+        turnId: 't1',
+        startedAt: '2020-01-01T00:00:00.000Z',
+      });
       expect(patches[0]).toEqual({
         type: 'agent-turn-started-v2',
         sessionId: 'session-1',

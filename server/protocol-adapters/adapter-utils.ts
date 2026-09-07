@@ -312,15 +312,44 @@ export function emitErrorPatch(
     providerMessage?: string;
   }
 ): void {
+  const DIAGNOSTIC_MAX_CHARS = 512;
+  const DIAGNOSTIC_TRUNCATION_MARKER = '… [truncated]';
+  const sanitizeDiagnostic = (input: string): string => {
+    let text = input;
+    // Token-ish and key-ish shapes. Conservative: redact only when the prefix is
+    // explicit; avoid over-redacting arbitrary strings.
+    text = text.replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]');
+    text = text.replace(
+      /\brelay-sac-v1\.[A-Za-z0-9-]+\.[A-Za-z0-9._-]+\b/g,
+      'relay-sac-v1.[REDACTED]'
+    );
+    text = text.replace(/\bghp_[A-Za-z0-9]{20,}\b/g, '[REDACTED]');
+    text = text.replace(/\bsk-[A-Za-z0-9]{16,}\b/g, '[REDACTED]');
+    text = text.replace(
+      /\b(API_SERVER_KEY|HERMES_API_KEY|HERMES_API_TOKEN|DEEPSEEK_API_KEY|OPENAI_API_KEY)\s*[:=]\s*\S+/gi,
+      '$1=[REDACTED]'
+    );
+
+    if (text.length > DIAGNOSTIC_MAX_CHARS) {
+      const head = DIAGNOSTIC_MAX_CHARS - DIAGNOSTIC_TRUNCATION_MARKER.length;
+      text = `${text.slice(0, Math.max(0, head))}${DIAGNOSTIC_TRUNCATION_MARKER}`;
+    }
+    return text;
+  };
+
+  const safeMessage = sanitizeDiagnostic(message);
+  const safeProviderMessage = meta?.providerMessage
+    ? sanitizeDiagnostic(meta.providerMessage)
+    : undefined;
   sink.emitPatch({
     type: 'agent-error-v2',
     sessionId: sink.sessionId,
     timestamp: nowIso(),
-    message,
+    message: safeMessage,
     ...(turnId ? { turnId } : {}),
     ...(meta?.failureCode ? { failureCode: meta.failureCode } : {}),
     ...(meta?.retryAfter ? { retryAfter: meta.retryAfter } : {}),
-    ...(meta?.providerMessage ? { providerMessage: meta.providerMessage } : {}),
+    ...(safeProviderMessage ? { providerMessage: safeProviderMessage } : {}),
   });
 }
 
