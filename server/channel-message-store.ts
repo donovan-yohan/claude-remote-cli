@@ -4868,11 +4868,51 @@ export function createChannelMessageStore(
           SET state = ?, reason = 'server-restarted', updated_at = ?, completed_at = ?
         WHERE id = ?`
     );
+    const updateRunContract = db.prepare(
+      `UPDATE channel_async_runs
+          SET delivery_contract_json = ?, updated_at = ?
+        WHERE id = ?`
+    );
     for (const row of rows) {
       cancelTarget.run(now, now, row.id);
       const targets = selectAsyncRunTargets.all(row.id) as AsyncRunTargetRow[];
       const state = aggregateAsyncRunState(targets);
       updateRun.run(state, now, now, row.id);
+
+      // #1585: a cancelled run with a delivery contract must still reach a
+      // terminal contract outcome so automation does not observe a dangling
+      // contract indefinitely after a restart.
+      if (row.delivery_contract_json) {
+        try {
+          const contract = JSON.parse(row.delivery_contract_json) as
+            | NonNullable<ChannelAsyncRun['deliveryContract']>
+            | null
+            | undefined;
+          if (
+            contract &&
+            Array.isArray(contract.expect) &&
+            contract.expect.length > 0 &&
+            !contract.result
+          ) {
+            const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+              ...contract,
+              abandonedAt: contract.abandonedAt ?? now,
+              result: {
+                met: false,
+                unmet: [],
+                unknown: contract.expect.map((spec) => ({
+                  spec,
+                  reason: 'server-restarted',
+                })),
+                evaluatedAt: now,
+              },
+            };
+            updateRunContract.run(JSON.stringify(next), now, row.id);
+          }
+        } catch {
+          /* ignore invalid json */
+        }
+      }
     }
     return rows.map((row) =>
       asyncRunFromRow(selectAsyncRun.get(row.id) as AsyncRunRow)

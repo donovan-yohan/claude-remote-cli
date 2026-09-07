@@ -2084,6 +2084,35 @@ describe('channel-message-store async runs (#1391)', () => {
     expect(completed.reason).toBeUndefined();
   });
 
+  it('marks cancelled delivery-contract runs as abandoned on restart recovery (#1585)', () => {
+    const file = dbPath();
+    const s = store(file);
+    const { run } = s.appendCompleteWithAsyncRun({
+      channelId: 'topic:async',
+      sender: HUMAN,
+      text: '@a ship',
+      clientMessageId: 'client-async-contract-1',
+      targetIds: ['agent-profile:a:default'],
+      deliveryContract: { expect: ['text:^DONE$'] },
+      meta: { deliveryContract: { expect: ['text:^DONE$'] } },
+    });
+    expect(run.state).toBe('submitted');
+    s.close();
+
+    const reopened = store(file);
+    reopened.recoverAsyncRuns();
+    const recovered = reopened.getAsyncRun(run.id)!;
+    expect(recovered.state).toBe('cancelled');
+    expect(recovered.reason).toBe('server-restarted');
+    expect(recovered.deliveryContract?.abandonedAt).toBeTruthy();
+    expect(recovered.deliveryContract?.result).toMatchObject({
+      met: false,
+      unmet: [],
+      evaluatedAt: expect.any(String),
+      unknown: [{ spec: 'text:^DONE$', reason: 'server-restarted' }],
+    });
+  });
+
   it('derives aggregate terminal state from durable per-target CAS outcomes', () => {
     const s = store();
     const { run } = s.appendCompleteWithAsyncRun({
