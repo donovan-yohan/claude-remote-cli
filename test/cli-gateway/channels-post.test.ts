@@ -272,7 +272,7 @@ describe('channels.post CLI gateway command', () => {
     expect(request.body).not.toHaveProperty('channelId');
   });
 
-  it('exits non-zero when --fail-on-refused sees a provider-failure refusal', async () => {
+  it('exits non-zero when --fail-on-refused observes a provider-failure refusal', async () => {
     const captureDir = mkdtempSync(path.join(tmpdir(), 'relay-cli-fetch-'));
     const capturePath = path.join(captureDir, 'request.json');
     try {

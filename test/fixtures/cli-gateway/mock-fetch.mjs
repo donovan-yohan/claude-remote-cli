@@ -61,12 +61,30 @@ globalThis.fetch = async (url, init = {}) => {
       : String(url).includes('/agent-profiles')
         ? { profile: agentProfile, profiles: [agentProfile] }
         : String(url).includes('/channels/wait')
-          ? {
-              run: { id: 'chrun:test', state: 'completed' },
-              outcome: 'completed',
-              finalText: 'ok',
-              contract: null,
-            }
+          ? process.env.RELAY_TEST_CHANNELS_POST_REFUSED
+            ? {
+                run: {
+                  id: 'chrun:test',
+                  state: 'failed',
+                  targets: [
+                    {
+                      targetId: 'agent-profile:codex:default',
+                      state: 'refused',
+                      reason: 'provider-failure:quota_exhausted',
+                      updatedAt: '2026-08-12T00:00:00.000Z',
+                    },
+                  ],
+                },
+                outcome: 'failed',
+                finalText: null,
+                contract: null,
+              }
+            : {
+                run: { id: 'chrun:test', state: 'completed' },
+                outcome: 'completed',
+                finalText: 'ok',
+                contract: null,
+              }
           : String(url).includes('/channels/runs/') &&
               String(url).includes('/history')
             ? { run: { id: 'chrun:test', state: 'completed' }, items: [] }
@@ -80,16 +98,13 @@ globalThis.fetch = async (url, init = {}) => {
                     requestMessageId: 'chm:test',
                     requesterId: 'actor:test',
                     state: 'submitted',
-                    targets: process.env.RELAY_TEST_CHANNELS_POST_REFUSED
-                      ? [
-                          {
-                            targetId: 'agent-profile:codex:default',
-                            state: 'refused',
-                            reason: 'provider-failure:quota_exhausted',
-                            updatedAt: '2026-08-12T00:00:00.000Z',
-                          },
-                        ]
-                      : [],
+                    targets: [
+                      {
+                        targetId: 'agent-profile:codex:default',
+                        state: 'queued',
+                        updatedAt: '2026-08-12T00:00:00.000Z',
+                      },
+                    ],
                     createdAt: '2026-08-12T00:00:00.000Z',
                     updatedAt: '2026-08-12T00:00:00.000Z',
                   },

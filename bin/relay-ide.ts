@@ -7227,19 +7227,36 @@ async function runGatewayChannelsPost(channelArgs: string[]): Promise<void> {
     typeof data['run'] === 'object' && data['run'] !== null
       ? (data['run'] as Record<string, unknown>)
       : null;
-  const targets = run ? run['targets'] : null;
-  const refusedByProviderFailure =
-    failOnRefused &&
-    Array.isArray(targets) &&
-    targets.some((target) => {
-      if (typeof target !== 'object' || target === null) return false;
-      const record = target as Record<string, unknown>;
-      if (record['state'] !== 'refused') return false;
-      const reason = record['reason'];
-      return (
-        typeof reason === 'string' && reason.startsWith('provider-failure:')
-      );
+  let refusedByProviderFailure = false;
+  if (failOnRefused && run && typeof run['id'] === 'string') {
+    const waitResult = await gatewayHttpJson({
+      commandName: 'channels.run.wait',
+      pathName: `/channels/wait?${new URLSearchParams({
+        runId: run['id'],
+        for: 'any',
+        timeoutMs: '30000',
+      })}`,
+      capabilities: ['context:read'],
+      timeoutMs: 60_000,
     });
+    const waitData = waitResult as Record<string, unknown>;
+    const waitedRun =
+      typeof waitData['run'] === 'object' && waitData['run'] !== null
+        ? (waitData['run'] as Record<string, unknown>)
+        : null;
+    const targets = waitedRun ? waitedRun['targets'] : null;
+    refusedByProviderFailure =
+      Array.isArray(targets) &&
+      targets.some((target) => {
+        if (typeof target !== 'object' || target === null) return false;
+        const record = target as Record<string, unknown>;
+        if (record['state'] !== 'refused') return false;
+        const reason = record['reason'];
+        return (
+          typeof reason === 'string' && reason.startsWith('provider-failure:')
+        );
+      });
+  }
   printGatewayEnvelope(
     gatewayOk('channels.post', result),
     refusedByProviderFailure ? 2 : 0

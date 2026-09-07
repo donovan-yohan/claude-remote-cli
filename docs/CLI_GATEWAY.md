@@ -213,8 +213,9 @@ When a target is refused during admission (such as a classified provider failure
 #1571), the corresponding `run.targets[]` entry terminalizes as
 `state: "refused"` with a `reason` string (for provider failures,
 `provider-failure:<code>`). `--fail-on-refused` is a CLI-only convenience: it
-still prints the JSON envelope, but exits non-zero (code 2) when it observes a
-provider-failure refusal in the returned run targets.
+still prints the JSON envelope, but then waits for the correlated run to settle
+(via the same `channels wait` surface) before deciding whether to exit non-zero
+(code 2) for a provider-failure refusal.
 
 `relay-ide v1 channels run get --channel-id <id> --run-id <id>
 [--thread-id <root-or-thread-id>] --json` reads one opaque run with
