@@ -4656,7 +4656,7 @@ export function createChannelAgentBinder(
             headSha = (
               await execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
                 cwd,
-                timeout: 200,
+                timeout: 5000,
               })
             ).stdout.trim();
           } catch {
