@@ -63,22 +63,67 @@ function parseRetryAfterIsoFromUsageLimit(
   message: string,
   nowMs: number
 ): string | undefined {
-  const match = /try again at\s+(\d{1,2}):(\d{2})\s*(AM|PM)\b/i.exec(message);
-  if (!match) return;
-  const hourRaw = parseInt(match[1] ?? '', 10);
-  const minute = parseInt(match[2] ?? '', 10);
-  const suffix = (match[3] ?? '').toUpperCase();
-  if (!Number.isFinite(hourRaw) || !Number.isFinite(minute)) return;
-  if (minute < 0 || minute > 59) return;
-  if (hourRaw < 1 || hourRaw > 12) return;
-  const hour =
-    suffix === 'PM'
+  const toHour24 = (hourRaw: number, suffix: string): number | null => {
+    if (hourRaw < 1 || hourRaw > 12) return null;
+    const upper = suffix.toUpperCase();
+    if (upper !== 'AM' && upper !== 'PM') return null;
+    return upper === 'PM'
       ? hourRaw === 12
         ? 12
         : hourRaw + 12
       : hourRaw === 12
         ? 0
         : hourRaw;
+  };
+
+  // Real-world Codex message (issue comment): "try again at Sep 10th, 2026 12:54 AM."
+  const dateMatch =
+    /try again at\s+([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?,\s*(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)\b/i.exec(
+      message
+    );
+  if (dateMatch) {
+    const monthRaw = (dateMatch[1] ?? '').toLowerCase().slice(0, 3);
+    const day = parseInt(dateMatch[2] ?? '', 10);
+    const year = parseInt(dateMatch[3] ?? '', 10);
+    const hourRaw = parseInt(dateMatch[4] ?? '', 10);
+    const minute = parseInt(dateMatch[5] ?? '', 10);
+    const suffix = dateMatch[6] ?? '';
+    const monthIndexByAbbrev = {
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
+    } as const;
+    const month =
+      monthIndexByAbbrev[monthRaw as keyof typeof monthIndexByAbbrev];
+    const hour = toHour24(hourRaw, suffix);
+    if (month === undefined) return;
+    if (!Number.isFinite(day) || day < 1 || day > 31) return;
+    if (!Number.isFinite(year) || year < 1970 || year > 9999) return;
+    if (!Number.isFinite(minute) || minute < 0 || minute > 59) return;
+    if (hour === null) return;
+    return new Date(year, month, day, hour, minute, 0, 0).toISOString();
+  }
+
+  // Legacy Codex message form: "try again at 10:53 AM."
+  const timeMatch = /try again at\s+(\d{1,2}):(\d{2})\s*(AM|PM)\b/i.exec(
+    message
+  );
+  if (!timeMatch) return;
+  const hourRaw = parseInt(timeMatch[1] ?? '', 10);
+  const minute = parseInt(timeMatch[2] ?? '', 10);
+  const suffix = timeMatch[3] ?? '';
+  if (!Number.isFinite(minute) || minute < 0 || minute > 59) return;
+  const hour = toHour24(hourRaw, suffix);
+  if (hour === null) return;
   const base = new Date(nowMs);
   const candidate = new Date(base);
   candidate.setHours(hour, minute, 0, 0);

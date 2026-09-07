@@ -3802,8 +3802,10 @@ describe('CodexNativeProtocolAdapter — relay-control dispatch', () => {
     await adapter.disconnect();
   });
 
-  it('classifies usage-limit errors as quota_exhausted with retryAfter (#1571)', async () => {
+  it('classifies usage-limit errors as quota_exhausted with retryAfter (time-only form) (#1571)', async () => {
     vi.useFakeTimers();
+    const priorTz = process.env.TZ;
+    process.env.TZ = 'UTC';
     vi.setSystemTime(new Date('2026-09-06T10:00:00.000Z'));
     const factory = makeStubFactory();
     const adapter = new CodexNativeProtocolAdapter(factory);
@@ -3835,6 +3837,46 @@ describe('CodexNativeProtocolAdapter — relay-control dispatch', () => {
     );
 
     await adapter.disconnect();
+    process.env.TZ = priorTz;
+    vi.useRealTimers();
+  });
+
+  it('classifies usage-limit errors as quota_exhausted with retryAfter (date form) (#1571)', async () => {
+    vi.useFakeTimers();
+    const priorTz = process.env.TZ;
+    process.env.TZ = 'UTC';
+    vi.setSystemTime(new Date('2026-09-06T10:00:00.000Z'));
+    const factory = makeStubFactory();
+    const adapter = new CodexNativeProtocolAdapter(factory);
+    const patches = collectPatches(adapter);
+    factory.lastClient.serverResponses.set('thread/start', {
+      thread: { id: 'thread-1' },
+    });
+    factory.lastClient.serverResponses.set('skills/list', { skills: [] });
+    factory.lastClient.serverResponses.set('model/list', []);
+    await adapter.connect(config);
+
+    factory.lastClient.serverResponses.set(
+      'turn/start',
+      new Error(
+        "You've hit your usage limit for GPT-5.3-Codex-Spark. Switch to another model now, or try again at Sep 10th, 2026 12:54 AM."
+      )
+    );
+
+    await adapter.sendMessage({ turnId: 'turn-limit-date', content: 'go' });
+
+    expect(patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'agent-error-v2',
+          failureCode: 'quota_exhausted',
+          retryAfter: '2026-09-10T00:54:00.000Z',
+        }),
+      ])
+    );
+
+    await adapter.disconnect();
+    process.env.TZ = priorTz;
     vi.useRealTimers();
   });
 });
