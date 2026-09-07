@@ -312,34 +312,9 @@ export function emitErrorPatch(
     providerMessage?: string;
   }
 ): void {
-  const DIAGNOSTIC_MAX_CHARS = 512;
-  const DIAGNOSTIC_TRUNCATION_MARKER = '… [truncated]';
-  const sanitizeDiagnostic = (input: string): string => {
-    let text = input;
-    // Token-ish and key-ish shapes. Conservative: redact only when the prefix is
-    // explicit; avoid over-redacting arbitrary strings.
-    text = text.replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]');
-    text = text.replace(
-      /\brelay-sac-v1\.[A-Za-z0-9-]+\.[A-Za-z0-9._-]+\b/g,
-      'relay-sac-v1.[REDACTED]'
-    );
-    text = text.replace(/\bghp_[A-Za-z0-9]{20,}\b/g, '[REDACTED]');
-    text = text.replace(/\bsk-[A-Za-z0-9]{16,}\b/g, '[REDACTED]');
-    text = text.replace(
-      /\b(API_SERVER_KEY|HERMES_API_KEY|HERMES_API_TOKEN|DEEPSEEK_API_KEY|OPENAI_API_KEY)\s*[:=]\s*\S+/gi,
-      '$1=[REDACTED]'
-    );
-
-    if (text.length > DIAGNOSTIC_MAX_CHARS) {
-      const head = DIAGNOSTIC_MAX_CHARS - DIAGNOSTIC_TRUNCATION_MARKER.length;
-      text = `${text.slice(0, Math.max(0, head))}${DIAGNOSTIC_TRUNCATION_MARKER}`;
-    }
-    return text;
-  };
-
-  const safeMessage = sanitizeDiagnostic(message);
+  const safeMessage = sanitizeProviderDiagnostic(message);
   const safeProviderMessage = meta?.providerMessage
-    ? sanitizeDiagnostic(meta.providerMessage)
+    ? sanitizeProviderDiagnostic(meta.providerMessage)
     : undefined;
   sink.emitPatch({
     type: 'agent-error-v2',
@@ -351,6 +326,39 @@ export function emitErrorPatch(
     ...(meta?.retryAfter ? { retryAfter: meta.retryAfter } : {}),
     ...(safeProviderMessage ? { providerMessage: safeProviderMessage } : {}),
   });
+}
+
+const DIAGNOSTIC_MAX_CHARS = 512;
+const DIAGNOSTIC_TRUNCATION_MARKER = '… [truncated]';
+
+/**
+ * Shared safety belt for diagnostics that may cross trust boundaries:
+ * truncates to 512 chars and redacts credential-shaped substrings.
+ *
+ * Used by adapters at emit-time and by the binder when recording provider
+ * failures, since some adapters emit `agent-error-v2` patches directly.
+ */
+export function sanitizeProviderDiagnostic(input: string): string {
+  let text = input;
+  // Token-ish and key-ish shapes. Conservative: redact only when the prefix is
+  // explicit; avoid over-redacting arbitrary strings.
+  text = text.replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]');
+  text = text.replace(
+    /\brelay-sac-v1\.[A-Za-z0-9-]+\.[A-Za-z0-9._-]+\b/g,
+    'relay-sac-v1.[REDACTED]'
+  );
+  text = text.replace(/\bghp_[A-Za-z0-9]{20,}\b/g, '[REDACTED]');
+  text = text.replace(/\bsk-[A-Za-z0-9]{16,}\b/g, '[REDACTED]');
+  text = text.replace(
+    /\b(API_SERVER_KEY|HERMES_API_KEY|HERMES_API_TOKEN|DEEPSEEK_API_KEY|OPENAI_API_KEY)\s*[:=]\s*\S+/gi,
+    '$1=[REDACTED]'
+  );
+
+  if (text.length > DIAGNOSTIC_MAX_CHARS) {
+    const head = DIAGNOSTIC_MAX_CHARS - DIAGNOSTIC_TRUNCATION_MARKER.length;
+    text = `${text.slice(0, Math.max(0, head))}${DIAGNOSTIC_TRUNCATION_MARKER}`;
+  }
+  return text;
 }
 
 // ── Turn lifecycle ───────────────────────────────────────────────────────────

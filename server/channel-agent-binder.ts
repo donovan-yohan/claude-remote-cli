@@ -85,6 +85,7 @@ import type {
 import type { AgentRole } from '../shared/agent-roster.js';
 import { isDmChannel } from '../shared/dm-channels.js';
 import { workspaceTopicAgentRuntimeLinkPatch } from '../shared/workspace-topics.js';
+import { sanitizeProviderDiagnostic } from './protocol-adapters/adapter-utils.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -4019,12 +4020,15 @@ export function createChannelAgentBinder(
   ): ProviderFailureCode | null {
     if (!patch.failureCode) return null;
     const since = new Date(now()).toISOString();
+    const providerMessage = sanitizeProviderDiagnostic(
+      patch.providerMessage ?? patch.message
+    );
     if (patch.failureCode !== 'unknown') {
       providerFailureByProfileActorId.set(binding.profileActorId, {
         code: patch.failureCode,
         since,
         ...(patch.retryAfter ? { retryAfter: patch.retryAfter } : {}),
-        providerMessage: patch.providerMessage ?? patch.message,
+        providerMessage,
       });
     }
     logger.warn('channel provider failure classified', {

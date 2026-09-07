@@ -1528,6 +1528,7 @@ class ScriptedAdapter extends BaseProtocolAdapterV2 {
     meta?: {
       failureCode?: import('../shared/agent-chat-protocol-v2.js').ProviderFailureCode;
       retryAfter?: string;
+      providerMessage?: string;
     }
   ): void {
     this.emitPatch({
@@ -1538,6 +1539,9 @@ class ScriptedAdapter extends BaseProtocolAdapterV2 {
       message,
       ...(meta?.failureCode ? { failureCode: meta.failureCode } : {}),
       ...(meta?.retryAfter ? { retryAfter: meta.retryAfter } : {}),
+      ...(meta?.providerMessage
+        ? { providerMessage: meta.providerMessage }
+        : {}),
     });
   }
 
@@ -10032,6 +10036,55 @@ describe('channel-agent-binder — delivery receipts (#1442)', () => {
 
     post(store, binder, '@mock probe', ['mock']);
     await waitFor(() => adapter.sendCalls.length === 2);
+  });
+
+  it('sanitizes recorded provider failure diagnostics even when adapters emit raw patches (#1571)', async () => {
+    const { binder, store, hub, sessions } = makeBinder({
+      build: (agentType) => new ScriptedAdapter(agentType, { mode: 'stall' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+    });
+
+    post(store, binder, '@mock go', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = sessions.adapterFor(
+      sessions.firstSessionId()
+    ) as ScriptedAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    const longToken =
+      'relay-sac-v1.0e7afa86-9af4-4d76-8923-b25a43c334a3.535cec4ae52808a40787a99d693928fdb0b7ae9533309796c18d3ab6a9bbf832';
+    adapter.emitError('provider failed', {
+      failureCode: 'auth_required',
+      providerMessage: `Bearer ${longToken} OPENAI_API_KEY=sk-${'a'.repeat(40)} ${'x'.repeat(600)}`,
+    });
+
+    await waitFor(() =>
+      systemRows(store).some((row) => row.body.text.includes('auth_required'))
+    );
+
+    const roster = await binder.rosterForChannel(CH);
+    const entry = roster.find(
+      (row) => row.id === builtInAgentProfileId('mock')
+    );
+    expect(entry).toMatchObject({
+      available: false,
+      providerFailureCode: 'auth_required',
+    });
+    expect(entry?.reason ?? '').toContain('Bearer [REDACTED]');
+    expect(entry?.reason ?? '').toContain('OPENAI_API_KEY=[REDACTED]');
+    expect(entry?.reason ?? '').not.toContain(longToken);
+    expect((entry?.reason ?? '').length).toBeLessThanOrEqual(512);
+
+    const refused = post(store, binder, '@mock refused', ['mock']);
+    await waitFor(() =>
+      collectReceipts(hub, CH).some(
+        (r) =>
+          r.messageId === refused.id &&
+          r.state === 'refused_provider' &&
+          r.reasonCode === 'provider_auth_required'
+      )
+    );
   });
 
   it('closes the loop: classified failure -> roster unavailable -> refused -> attention -> recovery (#1571)', async () => {
