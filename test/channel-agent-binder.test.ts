@@ -5474,6 +5474,158 @@ describe('channel-agent-binder — lifecycle', () => {
     expect(deferred.sendInputs).toHaveLength(1);
   });
 
+  it('terminalizes a follow-up run when paused at follow-up routing time (#1585)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }, { id: 'b' }]);
+
+    const { binder, store } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: [
+        {
+          id: 'mock',
+          displayName: 'Mock',
+          kind: 'framework',
+          available: true,
+          reason: null,
+        },
+        {
+          id: 'b',
+          displayName: 'B',
+          kind: 'framework',
+          available: true,
+          reason: null,
+        },
+      ],
+      knownProviderIds: ['mock', 'b'],
+      agentProfileStore: profiles,
+      deliveryContractMaxFollowups: 3,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const mentions = parseMentions('@mock please ship', ['mock', 'b']);
+    const result = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['pr:feat/x'] },
+      meta: { deliveryContract: { expect: ['pr:feat/x'] } },
+    });
+    binder.handleMessagePosted(result.message, result.message.mentions ?? []);
+
+    await waitFor(() =>
+      systemRows(store).some((m) =>
+        m.body.text.includes('Turn ended with contract unmet')
+      )
+    );
+    const followup = systemRows(store).find((m) =>
+      m.body.text.includes('Turn ended with contract unmet')
+    )!;
+    const followupRun = store.getAsyncRunForRequestMessage(followup.id);
+    expect(followupRun).not.toBeNull();
+
+    // Pause the chain AFTER the follow-up row exists but BEFORE it is routed.
+    for (let i = 0; i < MAX_CONSECUTIVE_AGENT_TURNS + 1; i += 1) {
+      postAgentTurnRow(
+        store,
+        binder,
+        `pause-followup-${i}`,
+        'item-0',
+        `@b pause me ${i}`,
+        ['b'],
+        'session:not-registered',
+        AGENT_SENDER
+      );
+    }
+    await waitFor(() =>
+      systemRows(store).some((m) =>
+        m.body.text.includes('Mention chain paused')
+      )
+    );
+
+    binder.handleMessagePosted(followup, followup.mentions ?? []);
+    await waitFor(
+      () => store.getAsyncRun(followupRun!.id)?.state === 'rejected'
+    );
+  });
+
+  it('terminalizes a follow-up run when the target profile is missing (#1585)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+    const custom = profiles.create({
+      id: 'profile:missing-later',
+      providerId: 'mock',
+      displayName: 'Custom',
+    });
+
+    const { binder, store } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractMaxFollowups: 3,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const result = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please ship',
+      mentions: [{ raw: '@mock', providerId: 'mock', profileId: custom.id }],
+      targetIds: [custom.id],
+      deliveryContract: { expect: ['pr:feat/x'] },
+      meta: { deliveryContract: { expect: ['pr:feat/x'] } },
+    });
+    binder.handleMessagePosted(result.message, result.message.mentions ?? []);
+
+    await waitFor(() =>
+      systemRows(store).some((m) =>
+        m.body.text.includes('Turn ended with contract unmet')
+      )
+    );
+    const followup = systemRows(store).find((m) =>
+      m.body.text.includes('Turn ended with contract unmet')
+    )!;
+    const followupRun = store.getAsyncRunForRequestMessage(followup.id);
+    expect(followupRun).not.toBeNull();
+
+    // Delete the profile before routing the follow-up system row.
+    expect(profiles.delete(custom.id)).toBe(true);
+    binder.handleMessagePosted(followup, followup.mentions ?? []);
+
+    await waitFor(
+      () => store.getAsyncRun(followupRun!.id)?.state === 'rejected'
+    );
+    expect(
+      systemRows(store).some((m) =>
+        m.body.text.includes(
+          'Delivery contract follow-up skipped: target profile missing'
+        )
+      )
+    ).toBe(true);
+  });
+
   it('records a could-not-verify result and posts a system row when evaluation throws (#1569)', async () => {
     const unhandled: unknown[] = [];
     const handler = (reason: unknown) => {

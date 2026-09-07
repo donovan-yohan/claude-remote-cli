@@ -5301,6 +5301,21 @@ export function createChannelAgentBinder(
   ): void {
     if (closed) return;
     if (message.kind !== 'message') {
+      function rejectFollowupRun(
+        run: ChannelAsyncRun | null,
+        targetProfileId: string,
+        reason: string
+      ): void {
+        if (!run) return;
+        const changed = store.transitionAsyncRunTarget({
+          runId: run.id,
+          targetId: targetProfileId,
+          state: 'rejected',
+          reason,
+        });
+        if (changed) hub.broadcastRunLifecycle(changed);
+      }
+
       // Narrow exception (#1569): one binder-authored system row can request a
       // single follow-up routed turn to the SAME profile without consuming the
       // consecutive-agent brake.
@@ -5317,23 +5332,47 @@ export function createChannelAgentBinder(
         const targetProfileId = (followup as Record<string, unknown>)[
           'targetProfileId'
         ] as string;
+        const followupRun = store.getAsyncRunForRequestMessage(message.id);
         const profile = deps.agentProfileStore?.get(targetProfileId) ?? null;
-        if (profile) {
-          const scopeKey = conversationScopeKey(
-            message.channelId,
-            message.threadId
+        const scopeKey = conversationScopeKey(
+          message.channelId,
+          message.threadId
+        );
+        const state = consecutiveAgentTurns.get(scopeKey);
+        if (state?.paused) {
+          // #1585: A delivery-contract follow-up mention is exempt from
+          // incrementing the brake, but it MUST still respect the paused state.
+          // Crucially: the follow-up row already created its own async run, so
+          // refusing routing must terminalize it (otherwise it is stranded in
+          // queued forever).
+          rejectFollowupRun(
+            followupRun,
+            targetProfileId,
+            'mention-chain-paused'
           );
-          const state = consecutiveAgentTurns.get(scopeKey);
-          if (state?.paused) {
-            postSystemRow(
-              message.channelId,
-              `Mention chain paused — ${state.count} agent turns without a human.`,
-              { parentMessageId: parentForTrigger(message) }
-            );
-            return;
-          }
-          void routeOne(message, profile);
+          postSystemRow(
+            message.channelId,
+            `Mention chain paused — ${state.count} agent turns without a human.`,
+            { parentMessageId: parentForTrigger(message) }
+          );
+          return;
         }
+        if (!profile) {
+          // #1585: If the target profile is missing (deleted / not seeded),
+          // the follow-up async run must not remain queued forever.
+          rejectFollowupRun(
+            followupRun,
+            targetProfileId,
+            'target-profile-missing'
+          );
+          postSystemRow(
+            message.channelId,
+            `Delivery contract follow-up skipped: target profile missing (${targetProfileId}).`,
+            { parentMessageId: parentForTrigger(message) }
+          );
+          return;
+        }
+        void routeOne(message, profile);
       }
       return; // ordinary system rows never route (§1)
     }
