@@ -4546,6 +4546,10 @@ export function createChannelAgentBinder(
         },
       };
 
+      const deliveryProbe = deps.deliveryContractProbeFactory
+        ? deps.deliveryContractProbeFactory({ cwd })
+        : { git: gitProbe, pr: prProbe };
+
       const evaluation = await evaluateDeliveryContract(
         {
           expect,
@@ -4553,9 +4557,7 @@ export function createChannelAgentBinder(
           finalAssistantText: finalText,
           finalAssistantTextIsClosing,
         },
-        deps.deliveryContractProbeFactory
-          ? deps.deliveryContractProbeFactory({ cwd })
-          : { git: gitProbe, pr: prProbe }
+        deliveryProbe
       );
       const evaluatedAt = new Date(now()).toISOString();
       const updated = store.finalizeAsyncRunDeliveryContract({
@@ -4648,7 +4650,6 @@ export function createChannelAgentBinder(
           typeof contract?.parentRunId === 'string'
             ? contract.parentRunId
             : null;
-        if (!parentRunId) return '';
         try {
           let headSha: string | null = null;
           try {
@@ -4663,7 +4664,7 @@ export function createChannelAgentBinder(
           }
           let ahead: number | null = null;
           try {
-            const outcome = await gitProbe.aheadCount();
+            const outcome = await deliveryProbe.git.aheadCount();
             if (outcome.kind === 'ok' && Number.isFinite(outcome.value)) {
               ahead = outcome.value;
             }
@@ -4671,28 +4672,31 @@ export function createChannelAgentBinder(
             ahead = null;
           }
           let newRows: number | null = null;
-          try {
-            const parentFinal = store.getLastPrincipalProseForRunId({
-              channelId: binding.channelId,
-              runId: parentRunId as ChannelAsyncRunId,
-            });
-            const currentFinal = store.getLastPrincipalProseForRunId({
-              channelId: binding.channelId,
-              runId: run.id,
-            });
-            if (parentFinal && currentFinal) {
-              newRows = Math.max(0, currentFinal.seq - parentFinal.seq);
+          if (parentRunId) {
+            try {
+              const parentFinal = store.getLastPrincipalProseForRunId({
+                channelId: binding.channelId,
+                runId: parentRunId as ChannelAsyncRunId,
+              });
+              const currentFinal = store.getLastPrincipalProseForRunId({
+                channelId: binding.channelId,
+                runId: run.id,
+              });
+              if (parentFinal && currentFinal) {
+                newRows = Math.max(0, currentFinal.seq - parentFinal.seq);
+              }
+            } catch {
+              /* best-effort */
             }
-          } catch {
-            /* best-effort */
           }
           const parts: string[] = [];
           if (headSha) parts.push(`head=${headSha}`);
           if (ahead !== null) parts.push(`ahead=${ahead}`);
           if (newRows !== null) parts.push(`new_rows=${newRows}`);
-          return parts.length > 0
+          if (parts.length === 0) return '';
+          return parentRunId
             ? ` Since last follow-up: ${parts.join(', ')}.`
-            : '';
+            : ` At follow-up: ${parts.join(', ')}.`;
         } catch {
           return '';
         }

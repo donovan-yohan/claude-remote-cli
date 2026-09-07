@@ -4845,6 +4845,9 @@ describe('channel-agent-binder — lifecycle', () => {
       sys.filter((t) => t.includes('Turn ended with contract unmet'))
     ).toHaveLength(2);
     expect(
+      sys.some((t) => t.includes('At follow-up:') && t.includes('ahead=0'))
+    ).toBe(true);
+    expect(
       sys.some((t) => t.includes('Contract still unmet after 2 follow-ups'))
     ).toBe(true);
   });
