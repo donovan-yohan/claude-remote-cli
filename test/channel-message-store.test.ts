@@ -1088,7 +1088,13 @@ describe('channel-message-store schema migration', () => {
           name: string;
         }>
       ).map((c) => c.name)
-    ).toContain('delivery_contract_json');
+    ).toEqual(
+      expect.arrayContaining([
+        'delivery_contract_json',
+        'delivery_contract_followup_depth',
+        'delivery_contract_parent_run_id',
+      ])
+    );
 
     expect(
       inspect

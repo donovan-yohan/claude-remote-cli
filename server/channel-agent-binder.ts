@@ -62,6 +62,7 @@ import {
   isChannelMessageDeleted,
   parseMentions,
   CHANNEL_RETRY_OF_META_KEY,
+  type ChannelAsyncRun,
   type ChannelAsyncRunId,
   type ChannelAsyncRunApprovalState,
   type ChannelAsyncRunTargetState,
@@ -376,6 +377,11 @@ export interface ChannelAgentBinderDeps {
   now?: () => number;
   /** Base environment inherited by channel adapter subprocesses. */
   processEnv?: NodeJS.ProcessEnv;
+  /**
+   * #1585: Maximum automatic delivery-contract follow-ups after the original
+   * turn. Default 3 (depth 0 original + depths 1..3 follow-ups).
+   */
+  deliveryContractMaxFollowups?: number;
   /** Optional probes for delivery contract evaluation (#1569); tests inject network-free probes. */
   deliveryContractProbeFactory?: (input: {
     cwd: string;
@@ -845,6 +851,12 @@ export function createChannelAgentBinder(
       ? raw
       : DEFAULT_PROVIDER_FAILURE_COOLDOWN_MS;
   })();
+  const deliveryContractMaxFollowups =
+    deps.deliveryContractMaxFollowups !== undefined &&
+    Number.isSafeInteger(deps.deliveryContractMaxFollowups) &&
+    deps.deliveryContractMaxFollowups >= 0
+      ? deps.deliveryContractMaxFollowups
+      : 3;
 
   const live = new Map<string, LiveBinding>();
   const inflight = new Map<string, Promise<LiveBinding>>();
@@ -947,15 +959,18 @@ export function createChannelAgentBinder(
     channelId: string;
     text: string;
     targetProfileId: string;
+    deliveryContract: NonNullable<ChannelAsyncRun['deliveryContract']>;
     parentMessageId?: string;
     runId?: string;
   }): void {
     try {
-      const message = store.appendComplete({
+      const result = store.appendCompleteWithAsyncRun({
         channelId: input.channelId,
         kind: 'system',
         sender: { ...SYSTEM_SENDER },
         text: input.text,
+        targetIds: [input.targetProfileId],
+        deliveryContract: input.deliveryContract,
         ...(input.parentMessageId
           ? { parentMessageId: input.parentMessageId }
           : {}),
@@ -966,7 +981,8 @@ export function createChannelAgentBinder(
           },
         },
       });
-      hub.broadcastCreated(message);
+      hub.broadcastCreated(result.message);
+      hub.broadcastRunLifecycle(result.run);
     } catch (err) {
       logger.warn('channel binder delivery-contract followup row failed:', err);
     }
@@ -4569,10 +4585,8 @@ export function createChannelAgentBinder(
         },
       });
 
-      const alreadyFollowedUp = Boolean(
-        updated?.deliveryContract?.followupPostedAt ??
-        run.deliveryContract?.followupPostedAt
-      );
+      const contract = updated?.deliveryContract ?? run.deliveryContract;
+      const alreadyFollowedUp = Boolean(contract?.followupPostedAt);
       if (alreadyFollowedUp) return;
 
       const scopeKey = conversationScopeKey(binding.channelId, run.threadId);
@@ -4586,13 +4600,102 @@ export function createChannelAgentBinder(
         return;
       }
 
+      const depth = contract?.followupDepth ?? 0;
+      if (depth >= deliveryContractMaxFollowups) {
+        postSystemRow(
+          binding.channelId,
+          `Contract still unmet after ${deliveryContractMaxFollowups} follow-ups: ${evaluation.unmet.join(
+            ', '
+          )}`,
+          { parentMessageId }
+        );
+        deps.events?.publish({
+          topic: 'attention',
+          type: 'delivery-contract.abandoned',
+          ...(runtime?.repoPath ? { repoPath: runtime.repoPath } : {}),
+          payload: {
+            channelId: binding.channelId,
+            runId: run.id,
+            targetProfileId: binding.profileActorId,
+            unmet: evaluation.unmet,
+            followupDepth: depth,
+            maxFollowups: deliveryContractMaxFollowups,
+          },
+        });
+        return;
+      }
+
+      const sinceText = await (async (): Promise<string> => {
+        const parentRunId =
+          typeof contract?.parentRunId === 'string'
+            ? contract.parentRunId
+            : null;
+        if (!parentRunId) return '';
+        try {
+          let headSha: string | null = null;
+          try {
+            headSha = (
+              await execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
+                cwd,
+                timeout: 200,
+              })
+            ).stdout.trim();
+          } catch {
+            headSha = null;
+          }
+          let ahead: number | null = null;
+          try {
+            const outcome = await gitProbe.aheadCount();
+            if (outcome.kind === 'ok' && Number.isFinite(outcome.value)) {
+              ahead = outcome.value;
+            }
+          } catch {
+            ahead = null;
+          }
+          let newRows: number | null = null;
+          try {
+            const parentFinal = store.getLastPrincipalProseForRunId({
+              channelId: binding.channelId,
+              runId: parentRunId as ChannelAsyncRunId,
+            });
+            const currentFinal = store.getLastPrincipalProseForRunId({
+              channelId: binding.channelId,
+              runId: run.id,
+            });
+            if (parentFinal && currentFinal) {
+              newRows = Math.max(0, currentFinal.seq - parentFinal.seq);
+            }
+          } catch {
+            /* best-effort */
+          }
+          const parts: string[] = [];
+          if (headSha) parts.push(`head=${headSha}`);
+          if (ahead !== null) parts.push(`ahead=${ahead}`);
+          if (newRows !== null) parts.push(`new_rows=${newRows}`);
+          return parts.length > 0
+            ? ` Since last follow-up: ${parts.join(', ')}.`
+            : '';
+        } catch {
+          return '';
+        }
+      })();
+
+      const nextContract: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+        ...(contract ? { ...contract } : { expect }),
+        followupDepth: depth + 1,
+        parentRunId: run.id,
+      };
+      delete (nextContract as { result?: unknown }).result;
+      delete (nextContract as { followupPostedAt?: unknown }).followupPostedAt;
+
       const followupText = `Turn ended with contract unmet: ${evaluation.unmet.join(
         ', '
-      )}. @${binding.displayName} finish it.`;
+      )}.${sinceText} @${binding.displayName} finish it.`;
       postDeliveryContractFollowupTrigger({
         channelId: binding.channelId,
         text: followupText,
         targetProfileId: binding.profileActorId,
+        deliveryContract: nextContract,
         ...(parentMessageId ? { parentMessageId } : {}),
         runId: run.id,
       });

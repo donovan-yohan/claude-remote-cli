@@ -387,9 +387,9 @@ Supported specs:
 - `file:<path>` — require a path to exist relative to the routing cwd
 - `text:<regex>` — require the run’s final assistant text to match
 
-When a routed run completes, the binder evaluates the contract. If any spec is unmet, the run is marked `completed_unmet`, a system row names the unmet items, an `attention` event is emitted, and Relay posts exactly **one** automatic follow-up mention to the same profile so the turn cannot silently end after a completion summary.
+When a routed run completes, the binder evaluates the contract. If any spec is unmet, the run is marked `completed_unmet`, a system row names the unmet items, an `attention` event is emitted, and Relay posts automatic follow-up triggers until the contract is met or the bounded follow-up depth is exhausted (#1585).
 
-The automatic follow-up is implemented as a binder-authored system row that routes a new mention to the same profile. That routed follow-up is **not tracked as a `ChannelAsyncRun`** and therefore does not appear in `channels.run.get`; the original run’s contract result records only whether a follow-up was posted (via `followupPostedAt`).
+Each follow-up is implemented as a binder-authored system row that routes a new mention to the same profile **and creates a new `ChannelAsyncRun`**. The follow-up run inherits the parent run’s `deliveryContract` and carries `deliveryContract.followupDepth` (0 for the original post) plus `deliveryContract.parentRunId` for chaining. Each run records whether it posted a follow-up via `deliveryContract.followupPostedAt`.
 
 Idempotent retries are keyed by `(channelId, server-derived sender,
 clientMessageId)`: a replay returns the original request message and run and

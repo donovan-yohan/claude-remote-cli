@@ -94,6 +94,16 @@ export interface ChannelAsyncRun {
    */
   deliveryContract?: {
     expect: string[];
+    /**
+     * #1585: follow-up chain depth for delivery-contract followups.
+     * 0 for the original post; follow-up turns increment by 1.
+     */
+    followupDepth?: number;
+    /**
+     * #1585: parent async-run id for a follow-up run (immediate predecessor).
+     * Absent on the original post.
+     */
+    parentRunId?: string;
     result?: {
       met: boolean;
       unmet: string[];

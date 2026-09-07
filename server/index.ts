@@ -1847,6 +1847,8 @@ async function main(): Promise<void> {
   const channelTurnCeilingMs = positiveIntegerEnv(
     'RELAY_IDE_CHANNEL_TURN_CEILING_MS'
   );
+  const channelContractMaxFollowups =
+    positiveIntegerEnv('RELAY_IDE_CHANNEL_CONTRACT_MAX_FOLLOWUPS') ?? 3;
   const channelAgentBinder: ChannelAgentBinder | null = channelMessageStore
     ? createChannelAgentBinder({
         store: channelMessageStore,
@@ -1867,6 +1869,7 @@ async function main(): Promise<void> {
         ...(channelTurnCeilingMs !== undefined
           ? { turnCeilingMs: channelTurnCeilingMs }
           : {}),
+        deliveryContractMaxFollowups: channelContractMaxFollowups,
       })
     : null;
   if (channelAgentBinder) {
