@@ -383,9 +383,12 @@ post without an eligible target is safely rejected. Approval metadata reserves
 Supported specs:
 
 - `pr` or `pr:<branch>` — require an open PR for the branch (defaults to the routing cwd’s current branch)
-- `commit` — require the branch to be ahead of its upstream/base by at least one commit
+- `commit` — require HEAD to move past the post-time baseline (commit even if later pushed)
+- `push` — require the upstream/base ref to move past the post-time baseline (a new push)
 - `file:<path>` — require a path to exist relative to the routing cwd
 - `text:<regex>` — require the run’s final assistant text to match
+
+Baseline capture is best-effort and bounded by probe timeouts. If capture fails, the run records `baseline: null` and evaluation falls back to the legacy absolute semantics for `commit`/`pr` (and treats `push` as unverifiable).
 
 When a routed run completes, the binder evaluates the contract. If any spec is unmet, the run is marked `completed_unmet`, a system row names the unmet items, an `attention` event is emitted, and Relay posts automatic follow-up triggers until the contract is met or the bounded follow-up depth is exhausted (#1585).
 

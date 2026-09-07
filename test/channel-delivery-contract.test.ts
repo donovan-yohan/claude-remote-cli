@@ -12,6 +12,9 @@ describe('channel delivery contract parsing (#1569)', () => {
     expect(parseChannelDeliveryExpectation('commit')).toEqual({
       kind: 'commit',
     });
+    expect(parseChannelDeliveryExpectation('push')).toEqual({
+      kind: 'push',
+    });
     expect(parseChannelDeliveryExpectation('pr')).toEqual({ kind: 'pr' });
     expect(parseChannelDeliveryExpectation('pr:feat/x')).toEqual({
       kind: 'pr',
@@ -116,6 +119,160 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
         },
         fs: {
           exists: async (p) => ({ kind: 'ok', value: p === 'out.txt' }),
+        },
+      }
+    );
+    expect(result).toEqual({ met: true, unmet: [], unknown: [] });
+  });
+
+  it('treats commit as met when HEAD moved past the post-time baseline, even if aheadCount is 0 (#1578)', async () => {
+    const baselineHead = 'a'.repeat(40);
+    const currentHead = 'b'.repeat(40);
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['commit'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: baselineHead,
+          upstreamSha: 'c'.repeat(40),
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/y' }),
+          // Legacy semantics would fail here; baseline semantics should pass.
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          headSha: async () => ({ kind: 'ok', value: currentHead }),
+          commitsBetween: async (base, head) => ({
+            kind: 'ok',
+            value: base === baselineHead && head === currentHead ? 1 : 0,
+          }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result).toEqual({ met: true, unmet: [], unknown: [] });
+  });
+
+  it('treats pr as unmet when the PR existed at baseline and its head did not move (#1578)', async () => {
+    const prHead = 'a'.repeat(40);
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['pr:feat/y'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamSha: null,
+          prNumber: 123,
+          prHeadSha: prHead,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/y' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          commitsBetween: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: true }),
+          getOpenPrForBranch: async () => ({
+            kind: 'ok',
+            value: { number: 123, headSha: prHead },
+          }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result.met).toBe(false);
+    expect(result.unmet).toEqual(['pr:feat/y']);
+    expect(result.unknown).toEqual([]);
+  });
+
+  it('treats pr as met when the PR head moved past baseline (#1578)', async () => {
+    const baselinePrHead = 'a'.repeat(40);
+    const currentPrHead = 'b'.repeat(40);
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['pr'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamSha: null,
+          prNumber: 123,
+          prHeadSha: baselinePrHead,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/y' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          commitsBetween: async (base, head) => ({
+            kind: 'ok',
+            value: base === baselinePrHead && head === currentPrHead ? 2 : 0,
+          }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: true }),
+          getOpenPrForBranch: async () => ({
+            kind: 'ok',
+            value: { number: 123, headSha: currentPrHead },
+          }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result).toEqual({ met: true, unmet: [], unknown: [] });
+  });
+
+  it('treats push as met when the upstream ref moved past baseline (#1578)', async () => {
+    const baselineUpstream = 'a'.repeat(40);
+    const currentUpstream = 'b'.repeat(40);
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamSha: baselineUpstream,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/y' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          upstreamSha: async () => ({ kind: 'ok', value: currentUpstream }),
+          commitsBetween: async (base, head) => ({
+            kind: 'ok',
+            value:
+              base === baselineUpstream && head === currentUpstream ? 1 : 0,
+          }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
         },
       }
     );

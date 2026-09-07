@@ -3,6 +3,7 @@ import path from 'node:path';
 export type ChannelDeliveryExpectation =
   | { kind: 'pr'; branch?: string }
   | { kind: 'commit' }
+  | { kind: 'push' }
   | { kind: 'file'; path: string }
   | { kind: 'text'; regex: string };
 
@@ -159,6 +160,7 @@ export function parseChannelDeliveryExpectation(
     );
   }
   if (spec === 'commit') return { kind: 'commit' };
+  if (spec === 'push') return { kind: 'push' };
   if (spec === 'pr') return { kind: 'pr' };
   if (spec.startsWith('pr:')) {
     const branch = ensureNonEmpty(spec.slice('pr:'.length), 'pr branch', spec);
@@ -214,7 +216,14 @@ export function parseChannelDeliveryExpectation(
   throw new ChannelDeliveryContractParseError('unknown expect spec kind', {
     spec,
     kind,
-    allowed: ['pr', 'pr:<branch>', 'commit', 'file:<path>', 'text:<regex>'],
+    allowed: [
+      'pr',
+      'pr:<branch>',
+      'commit',
+      'push',
+      'file:<path>',
+      'text:<regex>',
+    ],
   });
 }
 
