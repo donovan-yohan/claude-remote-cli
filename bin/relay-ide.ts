@@ -7112,6 +7112,61 @@ async function runGatewayChannelsMembership(
   printGatewayEnvelope(gatewayOk(commandName, result), 0);
 }
 
+function hasProviderFailureRefusedTarget(targets: unknown): boolean {
+  return (
+    Array.isArray(targets) &&
+    targets.some((target) => {
+      if (typeof target !== 'object' || target === null) return false;
+      const record = target as Record<string, unknown>;
+      if (record['state'] !== 'refused') return false;
+      const reason = record['reason'];
+      return (
+        typeof reason === 'string' && reason.startsWith('provider-failure:')
+      );
+    })
+  );
+}
+
+async function observeProviderFailureRefusal(
+  channelId: string,
+  runId: string
+): Promise<{ refused: boolean; note: string | null }> {
+  const waitResult = await gatewayHttpJson({
+    commandName: 'channels.run.wait',
+    pathName: `/channels/wait?${new URLSearchParams({
+      runId,
+      for: 'any',
+      timeoutMs: '30000',
+    })}`,
+    // Some scoped credentials are write-only; treat read denial as best-effort.
+    capabilities: ['context:write'],
+    timeoutMs: 60_000,
+  });
+  const waitData = waitResult as Record<string, unknown>;
+  const outcome =
+    typeof waitData['outcome'] === 'string' ? waitData['outcome'] : '';
+  if (outcome === 'timeout') {
+    return {
+      refused: false,
+      note: 'channels post --fail-on-refused: channels.wait timed out; cannot determine refusal',
+    };
+  }
+
+  // Wait is a cheap settle barrier, but targets live on the run itself.
+  const runGetResult = await gatewayHttpJson({
+    commandName: 'channels.run.get',
+    pathName: `/channels/${encodeURIComponent(channelId)}/runs/${encodeURIComponent(runId)}`,
+    capabilities: ['context:write'],
+  });
+  const runGetData = runGetResult as Record<string, unknown>;
+  const fullRun =
+    typeof runGetData['run'] === 'object' && runGetData['run'] !== null
+      ? (runGetData['run'] as Record<string, unknown>)
+      : null;
+  const targets = fullRun ? fullRun['targets'] : null;
+  return { refused: hasProviderFailureRefusedTarget(targets), note: null };
+}
+
 async function runGatewayChannelsPost(channelArgs: string[]): Promise<void> {
   const deliveryExpect: string[] = [];
   const filteredArgs: string[] = [];
@@ -7229,44 +7284,17 @@ async function runGatewayChannelsPost(channelArgs: string[]): Promise<void> {
       : null;
   let refusedByProviderFailure = false;
   if (failOnRefused && run && typeof run['id'] === 'string') {
-    const runId = run['id'];
-    const waitResult = await gatewayHttpJson({
-      commandName: 'channels.run.wait',
-      pathName: `/channels/wait?${new URLSearchParams({
-        runId,
-        for: 'any',
-        timeoutMs: '30000',
-      })}`,
-      capabilities: ['context:read'],
-      timeoutMs: 60_000,
-    });
-    const waitData = waitResult as Record<string, unknown>;
-    const outcome =
-      typeof waitData['outcome'] === 'string' ? waitData['outcome'] : '';
-    // Wait is a cheap settle barrier, but targets live on the run itself.
-    if (outcome !== 'timeout') {
-      const runGetResult = await gatewayHttpJson({
-        commandName: 'channels.run.get',
-        pathName: `/channels/${encodeURIComponent(channelId)}/runs/${encodeURIComponent(runId)}`,
-        capabilities: ['context:read'],
-      });
-      const runGetData = runGetResult as Record<string, unknown>;
-      const fullRun =
-        typeof runGetData['run'] === 'object' && runGetData['run'] !== null
-          ? (runGetData['run'] as Record<string, unknown>)
-          : null;
-      const targets = fullRun ? fullRun['targets'] : null;
-      refusedByProviderFailure =
-        Array.isArray(targets) &&
-        targets.some((target) => {
-          if (typeof target !== 'object' || target === null) return false;
-          const record = target as Record<string, unknown>;
-          if (record['state'] !== 'refused') return false;
-          const reason = record['reason'];
-          return (
-            typeof reason === 'string' && reason.startsWith('provider-failure:')
-          );
-        });
+    try {
+      const observed = await observeProviderFailureRefusal(
+        channelId,
+        run['id']
+      );
+      if (observed.note) console.error(observed.note);
+      refusedByProviderFailure = observed.refused;
+    } catch (err) {
+      console.error(
+        `channels post --fail-on-refused: cannot determine refusal (${String(err)})`
+      );
     }
   }
   printGatewayEnvelope(
