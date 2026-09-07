@@ -251,7 +251,8 @@ operator-facing lanes:
 
 - **Roster**: `channels.roster` marks the profile `available:false` and records
   `providerFailureCode`, `providerFailureSince`, and optional
-  `providerFailureRetryAfter`.
+  `providerFailureRetryAfter`. `reason` remains the human-readable message; the
+  structured code is carried separately as `providerFailureCode`.
 - **Run admission**: `channels.post` may refuse an addressed target during
   admission. The returned `run.targets[]` entry terminalizes as
   `state:"refused"` with a structured `reason` (for provider failures,

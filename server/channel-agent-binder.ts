@@ -455,6 +455,7 @@ export interface ChannelAgentBinder {
    */
   agentProfileStatus(profileActorId: string): Promise<{
     available: boolean;
+    reasonCode?: ProviderFailureCode | null;
     reason: string | null;
     since?: string;
     retryAfter?: string;
@@ -5808,7 +5809,8 @@ export function createChannelAgentBinder(
           : null;
         const effectiveAvailable = availability.available && failure === null;
         const effectiveReason =
-          availability.reason ?? (failure ? failure.reason : null);
+          availability.reason ??
+          (failure ? (failure.providerMessage ?? failure.reason) : null);
         const binding = live.get(bindingKey(channelId, profile.id));
         const row = store.getBinding(channelId, profile.id);
         const runtimeId = binding?.runtimeId ?? row?.runtimeId ?? null;
@@ -6199,6 +6201,7 @@ export function createChannelAgentBinder(
 
   async function agentProfileStatus(profileActorId: string): Promise<{
     available: boolean;
+    reasonCode?: ProviderFailureCode | null;
     reason: string | null;
     since?: string;
     retryAfter?: string;
@@ -6212,7 +6215,8 @@ export function createChannelAgentBinder(
     if (failure) {
       return {
         available: false,
-        reason: failure.providerMessage ?? failure.code,
+        reasonCode: failure.code,
+        reason: failure.providerMessage ?? null,
         since: failure.since,
         ...(failure.retryAfter ? { retryAfter: failure.retryAfter } : {}),
       };

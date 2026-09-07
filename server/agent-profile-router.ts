@@ -521,6 +521,7 @@ export function createAgentProfileRouter(deps: AgentProfileRouterDeps): Router {
             ? {
                 ...profile,
                 available: status.available,
+                ...(status.reasonCode ? { reasonCode: status.reasonCode } : {}),
                 reason: status.reason,
                 ...(status.since ? { since: status.since } : {}),
                 ...(status.retryAfter ? { retryAfter: status.retryAfter } : {}),

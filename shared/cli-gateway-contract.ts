@@ -637,6 +637,10 @@ const agentProfileSchema: RelayJsonSchema = {
     isBuiltIn: booleanSchema,
     // #1571 runtime availability projection (not persisted on the profile row).
     available: booleanSchema,
+    reasonCode: {
+      type: 'string',
+      enum: ['quota_exhausted', 'auth_required', 'binary_missing', 'unknown'],
+    },
     reason: nullableStringSchema,
     since: stringSchema,
     retryAfter: stringSchema,

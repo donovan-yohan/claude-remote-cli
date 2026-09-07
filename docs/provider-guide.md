@@ -331,7 +331,10 @@ Mapping guidance:
 The binder records the latest classified failure per profile actor id (in
 process memory today) and marks the roster entry unavailable until recovery
 (successful turn), until the default cooldown elapses, or until `retryAfter`
-passes for quota failures. A hub restart clears this in-memory state.
+passes for quota failures. Roster entries carry the structured
+`providerFailureCode` separately from the human `reason` message, and
+`agent-profiles list` returns `reasonCode` + `reason` for the same split. A hub
+restart clears this in-memory state.
 
 ### Live Pi and Prime RPC smoke
 
