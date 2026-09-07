@@ -9989,6 +9989,51 @@ describe('channel-agent-binder — delivery receipts (#1442)', () => {
     ).toBe(true);
   });
 
+  it('expires quota_exhausted without retryAfter after a cooldown and admits a probe turn (#1571)', async () => {
+    let nowMs = new Date('2026-09-06T08:00:00.000Z').getTime();
+    const { binder, store, hub, sessions } = makeBinder({
+      build: (agentType) => new ScriptedAdapter(agentType, { mode: 'stall' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      now: () => nowMs,
+      processEnv: { RELAY_PROVIDER_FAILURE_COOLDOWN_MS: '1000' },
+    });
+
+    post(store, binder, '@mock go', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = sessions.adapterFor(
+      sessions.firstSessionId()
+    ) as ScriptedAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    adapter.emitError("You've hit your usage limit.", {
+      failureCode: 'quota_exhausted',
+    });
+    await waitFor(() =>
+      systemRows(store).some((row) => row.body.text.includes('quota_exhausted'))
+    );
+
+    const refused = post(store, binder, '@mock refused', ['mock']);
+    await waitFor(() =>
+      collectReceipts(hub, CH).some(
+        (r) =>
+          r.messageId === refused.id &&
+          r.state === 'refused_policy' &&
+          r.reasonCode === 'provider_quota_exhausted'
+      )
+    );
+
+    nowMs += 1_500;
+    expect(
+      (await binder.rosterForChannel(CH)).find(
+        (row) => row.id === builtInAgentProfileId('mock')
+      )
+    ).toMatchObject({ available: true });
+
+    post(store, binder, '@mock probe', ['mock']);
+    await waitFor(() => adapter.sendCalls.length === 2);
+  });
+
   it('closes the loop: classified failure -> roster unavailable -> refused -> attention -> recovery (#1571)', async () => {
     let nowMs = new Date('2026-09-06T08:00:00.000Z').getTime();
     const attention: Array<Record<string, unknown>> = [];

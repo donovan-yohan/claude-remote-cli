@@ -239,6 +239,14 @@ export const MAX_CONSECUTIVE_AGENT_TURNS = 4;
 /** Dedupe identical unavailable/cross-node system rows per (channel, agent). */
 const UNAVAILABLE_ROW_TTL_MS = 5 * 60 * 1000;
 /**
+ * #1571: quota failures often lack a precise provider retry time. Default to a
+ * bounded cooldown so the binder eventually admits a probe turn (the next
+ * attempt) without requiring an explicit operator reset.
+ *
+ * Env knob: RELAY_PROVIDER_FAILURE_COOLDOWN_MS
+ */
+const DEFAULT_PROVIDER_FAILURE_COOLDOWN_MS = 30 * 60 * 1000;
+/**
  * Keep exact provider turn ids briefly after a bare-idle successor starts.
  * These tombstones are deliberately never candidates for anonymous `turn-0`.
  */
@@ -825,6 +833,16 @@ export function createChannelAgentBinder(
   const presenceSweepMs = deps.presenceSweepMs ?? DEFAULT_PRESENCE_SWEEP_MS;
   const yolo = deps.yolo ?? CHANNEL_BINDING_YOLO_DEFAULT;
   const now = deps.now ?? (() => Date.now());
+  const binderEnv = deps.processEnv ?? process.env;
+  const providerFailureCooldownMs = (() => {
+    const raw = Number.parseInt(
+      binderEnv['RELAY_PROVIDER_FAILURE_COOLDOWN_MS'] ?? '',
+      10
+    );
+    return Number.isFinite(raw) && raw >= 0
+      ? raw
+      : DEFAULT_PROVIDER_FAILURE_COOLDOWN_MS;
+  })();
 
   const live = new Map<string, LiveBinding>();
   const inflight = new Map<string, Promise<LiveBinding>>();
@@ -1657,11 +1675,27 @@ export function createChannelAgentBinder(
     if (!failure) return null;
 
     // Self-healing guards where we have a cheap external signal.
-    if (failure.code === 'quota_exhausted' && failure.retryAfter) {
-      const retryAt = Date.parse(failure.retryAfter);
-      if (Number.isFinite(retryAt) && now() >= retryAt) {
-        providerFailureByProfileActorId.delete(profile.id);
-        return null;
+    if (failure.code === 'quota_exhausted') {
+      const retryAt =
+        failure.retryAfter && failure.retryAfter.trim().length > 0
+          ? Date.parse(failure.retryAfter)
+          : Number.NaN;
+      if (Number.isFinite(retryAt)) {
+        if (now() >= retryAt) {
+          providerFailureByProfileActorId.delete(profile.id);
+          return null;
+        }
+      } else {
+        const sinceAt = Date.parse(failure.since);
+        // Fail soft: a missing/invalid since timestamp should never strand the
+        // profile unavailable forever.
+        if (
+          !Number.isFinite(sinceAt) ||
+          now() >= sinceAt + providerFailureCooldownMs
+        ) {
+          providerFailureByProfileActorId.delete(profile.id);
+          return null;
+        }
       }
     }
 
