@@ -69,6 +69,7 @@ import {
   channelTurnId,
   parseMentions,
   CHANNEL_RETRY_OF_META_KEY,
+  type ChannelAsyncRunId,
   type ChannelDeliveryReceiptV1,
   type ChannelAttachmentId,
   type ChannelImagePart,
@@ -2729,6 +2730,7 @@ function makeBinder(cfg: {
   targets: MentionTarget[];
   mentionTargets?: () => Promise<MentionTarget[]>;
   knownProviderIds: string[];
+  subscribeToHub?: boolean;
   topicStore?: WorkspaceTopicStore | null;
   events?: Pick<CliGatewayEventBus, 'publish'>;
   watchdogMs?: number;
@@ -2795,6 +2797,12 @@ function makeBinder(cfg: {
       : {}),
   });
   cleanup.push(() => binder.close());
+  if (cfg.subscribeToHub) {
+    const unsubscribe = hub.onMessagePosted((message, mentions, options) =>
+      binder.handleMessagePosted(message, mentions, options)
+    );
+    cleanup.push(() => unsubscribe());
+  }
   return { binder, store, hub, sessions };
 }
 
@@ -5472,6 +5480,60 @@ describe('channel-agent-binder — lifecycle', () => {
       return rows.length === pauseRowsBefore + 1;
     });
     expect(deferred.sendInputs).toHaveLength(1);
+  });
+
+  it('routes delivery-contract follow-ups via hub broadcastCreated re-entry (#1585)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    const deferred = new DeferredAdapter('mock');
+    const { store, hub } = makeBinder({
+      build: () => deferred,
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      subscribeToHub: true,
+      deliveryContractMaxFollowups: 1,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const mentions = parseMentions('@mock please ship', ['mock']);
+    const result = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['pr:feat/x'] },
+      meta: { deliveryContract: { expect: ['pr:feat/x'] } },
+    });
+    hub.broadcastCreated(result.message, result.message.mentions ?? []);
+
+    await waitFor(() => deferred.sendInputs.length === 1);
+    deferred.completeReply(deferred.sendCalls[0]!, 'no');
+
+    await waitFor(() => deferred.sendInputs.length === 2);
+    const followups = systemRows(store).filter((m) =>
+      m.body.text.includes('Turn ended with contract unmet')
+    );
+    expect(followups).toHaveLength(1);
+
+    const parent = store.getAsyncRun(result.run.id)!;
+    expect(parent.deliveryContract?.childRunId).toBeTruthy();
+    const child = store.getAsyncRun(
+      parent.deliveryContract!.childRunId as ChannelAsyncRunId
+    );
+    expect(child?.deliveryContract?.followupDepth).toBe(1);
+    expect(child?.deliveryContract?.parentRunId).toBe(parent.id);
   });
 
   it('terminalizes a follow-up run when paused at follow-up routing time (#1585)', async () => {
