@@ -2499,11 +2499,12 @@ describe('channel routes — gateway capability mapping', () => {
         deliveryContract: { expect: ['text:^DONE$'] },
         meta: { deliveryContract: { expect: ['text:^DONE$'] } },
       });
-      h.store.transitionAsyncRunTarget({
+      const parentCompleted = h.store.transitionAsyncRunTarget({
         runId: parent.run.id,
         targetId,
         state: 'completed',
       });
+      if (parentCompleted) h.hub.broadcastRunLifecycle(parentCompleted);
 
       const child = h.store.appendCompleteWithAsyncRun({
         channelId: h.channelId,
@@ -2520,11 +2521,12 @@ describe('channel routes — gateway capability mapping', () => {
         meta: { asyncRun: { runId: child.run.id, targetId } },
       });
       h.store.finalizeStream(final.id, { text: 'DONE', status: 'complete' });
-      h.store.transitionAsyncRunTarget({
+      const childCompleted = h.store.transitionAsyncRunTarget({
         runId: child.run.id,
         targetId,
         state: 'completed',
       });
+      if (childCompleted) h.hub.broadcastRunLifecycle(childCompleted);
 
       h.store.finalizeAsyncRunDeliveryContract({
         runId: parent.run.id,
@@ -2596,7 +2598,7 @@ describe('channel routes — gateway capability mapping', () => {
       });
 
       // Parent result lands first (no childRunId yet).
-      h.store.finalizeAsyncRunDeliveryContract({
+      const parentResult = h.store.finalizeAsyncRunDeliveryContract({
         runId: parent.run.id,
         result: {
           met: false,
@@ -2605,9 +2607,10 @@ describe('channel routes — gateway capability mapping', () => {
           evaluatedAt: new Date().toISOString(),
         },
       });
+      if (parentResult) h.hub.broadcastRunLifecycle(parentResult);
 
       setTimeout(() => {
-        h.store.finalizeAsyncRunDeliveryContract({
+        const updated = h.store.finalizeAsyncRunDeliveryContract({
           runId: parent.run.id,
           result: {
             met: false,
@@ -2618,6 +2621,7 @@ describe('channel routes — gateway capability mapping', () => {
           followupPostedAt: new Date().toISOString(),
           childRunId: child.run.id,
         });
+        if (updated) h.hub.broadcastRunLifecycle(updated);
       }, 50);
 
       const res = await req<{

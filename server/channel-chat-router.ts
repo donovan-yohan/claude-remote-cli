@@ -2132,6 +2132,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
 
   async function waitForWaitableRun(input: {
     store: ChannelMessageStore;
+    hub: Pick<ChannelHub, 'onRunLifecycle'>;
     initial: ChannelAsyncRun;
     timeoutMs: number;
     maxFollowupRunsToVisit: number;
@@ -2141,7 +2142,8 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     runId: ChannelAsyncRunId;
     run: ChannelAsyncRun | null;
   }> {
-    const { store, initial, timeoutMs, maxFollowupRunsToVisit, signal } = input;
+    const { store, hub, initial, timeoutMs, maxFollowupRunsToVisit, signal } =
+      input;
     const deadline = Date.now() + timeoutMs;
     const serverRestartCancelGraceMs = 2000;
     let serverRestartCancelledAt: number | null = null;
@@ -2164,6 +2166,33 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       return hop + 1 < maxFollowupRunsToVisit;
     };
 
+    const waitForLifecycle = async (
+      runId: ChannelAsyncRunId,
+      maxMs: number
+    ): Promise<void> => {
+      if (signal.aborted) return;
+      const cap = Math.max(0, Math.min(1000, maxMs));
+      if (cap === 0) return;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, cap);
+        const unlisten = hub.onRunLifecycle((run) => {
+          if (run.id !== runId) return;
+          clearTimeout(timer);
+          unlisten();
+          resolve();
+        });
+        signal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            unlisten();
+            resolve();
+          },
+          { once: true }
+        );
+      });
+    };
+
     while (Date.now() < deadline && !signal.aborted) {
       const latest = store.getAsyncRun(runId);
       if (!latest) break;
@@ -2179,7 +2208,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           Date.now() - serverRestartCancelledAt <
           serverRestartCancelGraceMs
         ) {
-          await sleepWithAbort(50, signal);
+          await waitForLifecycle(runId, deadline - Date.now());
           continue;
         }
       } else {
@@ -2187,7 +2216,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       }
 
       if (!runTerminalState(latest.state)) {
-        await sleepWithAbort(50, signal);
+        await waitForLifecycle(runId, deadline - Date.now());
         continue;
       }
 
@@ -2214,7 +2243,10 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           hopWaitUntil = Date.now() + hopWaitMs;
         }
         if (Date.now() < hopWaitUntil) {
-          await sleepWithAbort(50, signal);
+          await waitForLifecycle(
+            runId,
+            Math.min(deadline - Date.now(), hopWaitUntil - Date.now())
+          );
           continue;
         }
       }
@@ -2252,6 +2284,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         : 4;
     const waited = await waitForWaitableRun({
       store,
+      hub: deps.hub,
       initial,
       timeoutMs: input.timeoutMs,
       maxFollowupRunsToVisit,
