@@ -64,7 +64,7 @@ describe('hub.lock config-dir isolation (#1587)', () => {
     throw new Error('dist/server/index.js missing — run npm run build first');
   }
 
-  it('`--help` exits 0 and does not touch a locked config dir', async () => {
+  it('`--help` refuses when another live hub owns the config dir (but does not touch disk)', async () => {
     const home = makeTmpDir();
     const configDir = path.join(home, '.config', 'relay-ide');
     fs.mkdirSync(configDir, { recursive: true });
@@ -100,8 +100,10 @@ describe('hub.lock config-dir isolation (#1587)', () => {
       });
       const { code, output } = await collectExit(child);
 
-      expect(code).toBe(0);
-      expect(output).toContain('Usage:');
+      expect(code).toBe(1);
+      expect(output).toContain('hub.lock');
+      expect(output).toContain('owned by a live hub');
+      expect(output).toContain('#1587');
       expect(fs.existsSync(path.join(configDir, 'channel-chat.db'))).toBe(
         false
       );

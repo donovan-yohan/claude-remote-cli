@@ -34,6 +34,7 @@ import {
 } from './runtime-state-paths.js';
 import {
   acquireHubLockOrThrow,
+  assertConfigDirNotOwnedByAnotherLiveHub,
   HubConfigDirLockedError,
   releaseHubLockBestEffort,
   updateHubLockBestEffort,
@@ -634,10 +635,6 @@ try {
   console.error('Run with --help for usage.');
   process.exit(1);
 }
-if (entryArgs.help) {
-  printServerEntrypointHelp();
-  process.exit(0);
-}
 
 // When run via the CLI bin or the dev runner, RELAY_IDE_CONFIG is set
 // explicitly. When run directly from source (e.g. `node dist/server/index.js`),
@@ -677,6 +674,20 @@ if (
     sourceLaunchConfig.legacyConfigPath,
     CONFIG_PATH
   );
+}
+
+// #1587: treat `--help` as a potentially hazardous invocation too. Resolve the
+// effective configDir and refuse if it is owned by another live hub (but do not
+// open any SQLite store).
+if (entryArgs.help) {
+  try {
+    assertConfigDirNotOwnedByAnotherLiveHub(getConfigDir(CONFIG_PATH));
+  } catch (err) {
+    logger.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+  printServerEntrypointHelp();
+  process.exit(0);
 }
 
 const DEFAULT_GITHUB_CLIENT_ID = 'Ov23lilheF3LelYSo0bu';
