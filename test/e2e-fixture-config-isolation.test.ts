@@ -83,7 +83,12 @@ describe('findFixtureConfigIsolationViolation (#1214)', () => {
   it('refuses the deployed hub config file itself', () => {
     expect(
       findFixtureConfigIsolationViolation({
-        explicitConfigPath: path.join(home, '.config', 'relay-ide', 'config.json'),
+        explicitConfigPath: path.join(
+          home,
+          '.config',
+          'relay-ide',
+          'config.json'
+        ),
         env: {},
         homedir: home,
       })
@@ -126,7 +131,12 @@ describe('findFixtureConfigIsolationViolation (#1214)', () => {
     ).toContain(path.join('/xdg', 'relay-ide'));
     expect(
       findFixtureConfigIsolationViolation({
-        explicitConfigPath: path.join(home, '.config', 'relay-ide', 'config.json'),
+        explicitConfigPath: path.join(
+          home,
+          '.config',
+          'relay-ide',
+          'config.json'
+        ),
         env,
         homedir: home,
       })
@@ -156,7 +166,12 @@ describe('findFixtureConfigIsolationViolation (#1214)', () => {
   it('is not fooled by a sibling directory that shares a name prefix', () => {
     expect(
       findFixtureConfigIsolationViolation({
-        explicitConfigPath: path.join(home, '.config', 'relay-ide-e2e', 'config.json'),
+        explicitConfigPath: path.join(
+          home,
+          '.config',
+          'relay-ide-e2e',
+          'config.json'
+        ),
         env: {},
         homedir: home,
       })
@@ -191,13 +206,13 @@ describe('e2e harness config resolution (#1214)', () => {
   });
 
   it('hard-fails on an inherited RELAY_IDE_CONFIG pointing at the shared root', () => {
-    const shared = path.join(
-      relayAppDataDir(process.env, os.homedir()),
-      'config.json'
-    );
+    // Do not consult the suite's process env here: vitest setup pins XDG + config
+    // to a run-scoped temp dir (#1587). This test needs a stable shared root.
+    const home = '/home/operator';
+    const shared = path.join(home, '.config', 'relay-ide', 'config.json');
     expect(() =>
       resolveE2eConfigPath({ [CONFIG_PATH_ENV_VAR]: shared })
-    ).toThrow(/shared Relay config root/);
+    ).toThrow(/shared Relay config root|not run-scoped/);
   });
 
   it('honors an inherited RELAY_IDE_CONFIG that is itself run-scoped', () => {
@@ -206,8 +221,9 @@ describe('e2e harness config resolution (#1214)', () => {
       fs.mkdtempSync(path.join(tmpRoot, E2E_CONFIG_DIR_PREFIX)),
       'config.json'
     );
-    expect(resolveE2eConfig({ [CONFIG_PATH_ENV_VAR]: configPath }, tmpRoot))
-      .toEqual({ configPath, minted: false });
+    expect(
+      resolveE2eConfig({ [CONFIG_PATH_ENV_VAR]: configPath }, tmpRoot)
+    ).toEqual({ configPath, minted: false });
   });
 
   // Review found the old rule too weak: "outside ~/.config/relay-ide" is not
@@ -407,9 +423,7 @@ describe('fixture-mode server boot (#1214)', () => {
     return new Promise<number>((resolve, reject) => {
       let output = '';
       const timeout = setTimeout(() => {
-        reject(
-          new Error(`fixture server never listened; output: ${output}`)
-        );
+        reject(new Error(`fixture server never listened; output: ${output}`));
       }, timeoutMs);
       child.stdout?.on('data', (chunk: Buffer) => {
         output += chunk.toString();

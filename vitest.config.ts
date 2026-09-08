@@ -51,6 +51,7 @@ export default defineConfig({
         test: {
           name: 'serial-subprocess',
           include: SERIAL_SUBPROCESS_FILES,
+          setupFiles: ['test/vitest.setup.ts'],
           testTimeout: PROJECT_TEST_TIMEOUT_MS,
           fileParallelism: false,
         },
@@ -60,6 +61,7 @@ export default defineConfig({
           name: 'parallel',
           include: ['test/**/*.test.ts'],
           exclude: ['test/e2e/**', ...SERIAL_SUBPROCESS_FILES],
+          setupFiles: ['test/vitest.setup.ts'],
           testTimeout: PROJECT_TEST_TIMEOUT_MS,
         },
       },
