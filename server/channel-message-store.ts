@@ -4953,6 +4953,58 @@ export function createChannelMessageStore(
   );
 
   const recoverAsyncRunsImpl = db.transaction((): ChannelAsyncRun[] => {
+    const now = nowIso();
+    const recoverPendingTerminalRuns = () => {
+      const pending = db
+        .prepare(
+          `SELECT * FROM channel_async_runs
+             WHERE state IN ('completed','completed_unmet','failed','cancelled','rejected')
+               AND delivery_contract_json IS NOT NULL
+               AND json_extract(delivery_contract_json, '$.contractPending') = 1`
+        )
+        .all() as AsyncRunRow[];
+      if (pending.length === 0) return;
+      const updateRunContract = db.prepare(
+        `UPDATE channel_async_runs
+            SET delivery_contract_json = ?, updated_at = ?
+          WHERE id = ?`
+      );
+      for (const row of pending) {
+        try {
+          const contract = JSON.parse(row.delivery_contract_json ?? 'null') as
+            | NonNullable<ChannelAsyncRun['deliveryContract']>
+            | null
+            | undefined;
+          if (
+            contract &&
+            Array.isArray(contract.expect) &&
+            contract.expect.length > 0 &&
+            contract.contractPending === true &&
+            !contract.result
+          ) {
+            const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+              ...contract,
+              contractPending: false,
+              result: {
+                met: false,
+                unmet: [],
+                unknown: contract.expect.map((spec) => ({
+                  spec,
+                  reason: 'server-restarted',
+                })),
+                evaluatedAt: now,
+              },
+            };
+            updateRunContract.run(JSON.stringify(next), now, row.id);
+          }
+        } catch {
+          /* ignore invalid json */
+        }
+      }
+    };
+
+    recoverPendingTerminalRuns();
+
     const rows = db
       .prepare(
         `SELECT * FROM channel_async_runs
@@ -4960,7 +5012,6 @@ export function createChannelMessageStore(
       )
       .all() as AsyncRunRow[];
     if (rows.length === 0) return [];
-    const now = nowIso();
     const cancelTarget = db.prepare(
       `UPDATE channel_async_run_targets
           SET state = 'cancelled', reason = 'server-restarted', updated_at = ?,

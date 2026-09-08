@@ -2150,6 +2150,45 @@ describe('channel-message-store async runs (#1391)', () => {
     });
   });
 
+  it('clears contractPending with unknown result on restart recovery (#1578 review)', () => {
+    const file = dbPath();
+    const s = store(file);
+    const { run } = s.appendCompleteWithAsyncRun({
+      channelId: 'topic:async',
+      sender: HUMAN,
+      text: '@a ship',
+      clientMessageId: 'client-async-contract-pending-1',
+      targetIds: ['agent-profile:a:default'],
+      deliveryContract: { expect: ['text:^DONE$'] },
+      meta: { deliveryContract: { expect: ['text:^DONE$'] } },
+    });
+    s.transitionAsyncRunTarget({
+      runId: run.id,
+      targetId: 'agent-profile:a:default',
+      state: 'completed',
+    });
+    const pending = s.setAsyncRunDeliveryContractPending({
+      runId: run.id,
+      pending: true,
+    })!;
+    expect(pending.state).toBe('completed');
+    expect(pending.deliveryContract?.contractPending).toBe(true);
+    expect(pending.deliveryContract?.result).toBeUndefined();
+    s.close();
+
+    const reopened = store(file);
+    reopened.recoverAsyncRuns();
+    const recovered = reopened.getAsyncRun(run.id)!;
+    expect(recovered.state).toBe('completed');
+    expect(recovered.deliveryContract?.contractPending).not.toBe(true);
+    expect(recovered.deliveryContract?.result).toMatchObject({
+      met: false,
+      unmet: [],
+      evaluatedAt: expect.any(String),
+      unknown: [{ spec: 'text:^DONE$', reason: 'server-restarted' }],
+    });
+  });
+
   it('derives aggregate terminal state from durable per-target CAS outcomes', () => {
     const s = store();
     const { run } = s.appendCompleteWithAsyncRun({
