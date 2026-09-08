@@ -192,8 +192,25 @@ export function acquireHubLockOrThrow(
     startedAt?: string | undefined;
   } = { port: null, host: null }
 ): HubLockRecord {
-  assertConfigDirNotOwnedByAnotherLiveHub(configDir);
   fs.mkdirSync(configDir, { recursive: true });
+  const lockPath = hubLockPath(configDir);
+  const existing = readHubLock(configDir);
+  if (
+    existing &&
+    existing.hostname === os.hostname() &&
+    isPidAlive(existing.pid)
+  ) {
+    if (existing.pid !== process.pid) {
+      throw new HubConfigDirLockedError(configDir, existing);
+    }
+  } else if (existing) {
+    // Stale lock: best-effort remove so an atomic create can succeed.
+    try {
+      fs.unlinkSync(lockPath);
+    } catch {
+      /* best effort */
+    }
+  }
   const resolved: HubLockRecord = {
     pid: record.pid ?? process.pid,
     port: record.port ?? null,
@@ -201,7 +218,33 @@ export function acquireHubLockOrThrow(
     startedAt: record.startedAt ?? new Date().toISOString(),
     hostname: record.hostname ?? os.hostname(),
   };
-  writeHubLockSync(configDir, resolved);
+  const payload = JSON.stringify(resolved, null, 2) + '\n';
+  try {
+    fs.writeFileSync(lockPath, payload, { encoding: 'utf8', flag: 'wx' });
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    if (e?.code !== 'EEXIST') throw err;
+    // Somebody else created the lock concurrently. Re-read and refuse.
+    const raced = readHubLock(configDir);
+    if (
+      raced &&
+      raced.hostname === os.hostname() &&
+      isPidAlive(raced.pid) &&
+      raced.pid !== process.pid
+    ) {
+      throw new HubConfigDirLockedError(configDir, raced);
+    }
+    // If it's stale/garbled, try one more unlink + exclusive create.
+    try {
+      fs.unlinkSync(lockPath);
+      fs.writeFileSync(lockPath, payload, { encoding: 'utf8', flag: 'wx' });
+    } catch {
+      // Fall back to the stronger refusal message.
+      const final = readHubLock(configDir);
+      if (final) throw new HubConfigDirLockedError(configDir, final);
+      throw err;
+    }
+  }
   return resolved;
 }
 

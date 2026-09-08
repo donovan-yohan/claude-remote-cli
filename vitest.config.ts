@@ -36,6 +36,7 @@ const SERIAL_SUBPROCESS_FILES = [
   'test/cli-gateway/events.test.ts',
   'test/cli-help.test.ts',
   'test/server-entrypoint-flags.test.ts',
+  'test/hub-lock-concurrency.test.ts',
   'test/hub-liveness-fallback.test.ts',
   'test/hub-node-packaging.test.ts',
   'test/hub-lock-config-isolation.test.ts',
