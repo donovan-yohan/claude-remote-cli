@@ -317,7 +317,7 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
   }
 
   ownedProcessRootPids(): number[] {
-    const pid = this.client?.pid ?? this.exitedProcessRootPid;
+    const pid = this.client?.pid;
     return typeof pid === 'number' && pid > 1 ? [pid] : [];
   }
 

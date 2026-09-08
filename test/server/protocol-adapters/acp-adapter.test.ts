@@ -623,6 +623,6 @@ describe('AcpProtocolAdapter (base)', () => {
     expect(h.adapter.ownedProcessRootPids()).toEqual([4242]);
 
     await h.adapter.disconnect();
-    expect(h.adapter.ownedProcessRootPids()).toEqual([4242]);
+    expect(h.adapter.ownedProcessRootPids()).toEqual([]);
   });
 });

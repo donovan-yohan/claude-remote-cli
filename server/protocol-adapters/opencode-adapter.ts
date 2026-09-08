@@ -100,7 +100,7 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
   }
 
   ownedProcessRootPids(): number[] {
-    const pid = this._process?.pid ?? this._exitedProcessRootPid;
+    const pid = this._process?.pid;
     return typeof pid === 'number' && pid > 1 ? [pid] : [];
   }
 

@@ -1839,6 +1839,6 @@ describe('PrimeAgentProtocolAdapter', () => {
     expect(adapter.ownedProcessRootPids()).toEqual([6161]);
 
     await adapter.disconnect();
-    expect(adapter.ownedProcessRootPids()).toEqual([6161]);
+    expect(adapter.ownedProcessRootPids()).toEqual([]);
   });
 });

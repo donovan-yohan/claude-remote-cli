@@ -191,7 +191,7 @@ describe('OpenCode V2 web adapter registration', () => {
       });
       expect(adapter.ownedProcessRootPids()).toEqual([7171]);
       await adapter.disconnect();
-      expect(adapter.ownedProcessRootPids()).toEqual([7171]);
+      expect(adapter.ownedProcessRootPids()).toEqual([]);
     } finally {
       fetchMock.mockRestore();
     }

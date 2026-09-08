@@ -1112,6 +1112,6 @@ describe('PiAgentProtocolAdapter', () => {
     expect(adapter.ownedProcessRootPids()).toEqual([5151]);
 
     await adapter.disconnect();
-    expect(adapter.ownedProcessRootPids()).toEqual([5151]);
+    expect(adapter.ownedProcessRootPids()).toEqual([]);
   });
 });
