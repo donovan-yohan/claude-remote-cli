@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { commandSpec } from '../../shared/cli-gateway-contract.js';
+import { validateCommandCenterArgs } from '../../shared/command-center-resolver.js';
 
 const RELAY_BIN = path.resolve('dist/bin/relay-ide.js');
 const FETCH_PRELOAD = pathToFileURL(
@@ -388,6 +389,12 @@ describe('channels.post CLI gateway command', () => {
           }
         );
         const envelope = JSON.parse(result.stdout) as Record<string, unknown>;
+        expect(
+          validateCommandCenterArgs(
+            envelope,
+            commandSpec('channels.post').outputSchema
+          )
+        ).toEqual([]);
         expect(envelope).toMatchObject({
           ok: true,
           command: 'channels.post',
@@ -494,6 +501,12 @@ describe('channels.post CLI gateway command', () => {
         expect(JSON.parse(result.stdout)).toMatchObject({
           data: { mentions: [] },
         });
+        expect(
+          validateCommandCenterArgs(
+            JSON.parse(result.stdout),
+            commandSpec('channels.post').outputSchema
+          )
+        ).toEqual([]);
         expect(result.stderr).toContain(reasonCode);
         const request = JSON.parse(readFileSync(capturePath, 'utf8')) as Record<
           string,
