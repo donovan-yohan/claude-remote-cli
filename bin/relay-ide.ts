@@ -95,6 +95,7 @@ import {
 import {
   channelSubscriptionFilterValidationError,
   normalizeChannelSubscriptionFilter,
+  projectDurableMentionDelivery,
   CHANNEL_SEARCH_MAX_RESULTS,
   CHANNEL_SEARCH_QUERY_MAX_CHARS,
   type ChannelSubscriptionFilter,
@@ -7132,22 +7133,33 @@ function synchronousRefusalReasonCodes(
   targets: unknown
 ): string[] {
   const reasonCodes = new Set<string>();
-  const addRefusal = (value: unknown) => {
+  const addMentionRefusal = (value: unknown) => {
     if (typeof value !== 'object' || value === null) return;
     const record = value as Record<string, unknown>;
     const state = record['state'];
     const reasonCode = record['reasonCode'];
-    if (state === 'refused_policy' || state === 'refused_provider') {
+    if (
+      state === 'refused_policy' ||
+      state === 'refused_provider' ||
+      state === 'unreachable_offline'
+    ) {
       reasonCodes.add(
         typeof reasonCode === 'string' && reasonCode
           ? reasonCode
           : String(state)
       );
-      return;
     }
   };
-  if (Array.isArray(mentions)) mentions.forEach(addRefusal);
-  if (Array.isArray(targets)) targets.forEach(addRefusal);
+  const addDurableTargetRefusal = (value: unknown) => {
+    if (typeof value !== 'object' || value === null) return;
+    const projected = projectDurableMentionDelivery(
+      value as Parameters<typeof projectDurableMentionDelivery>[0]
+    );
+    if (!projected) return;
+    reasonCodes.add(projected.reasonCode ?? projected.state);
+  };
+  if (Array.isArray(mentions)) mentions.forEach(addMentionRefusal);
+  if (Array.isArray(targets)) targets.forEach(addDurableTargetRefusal);
   return [...reasonCodes];
 }
 

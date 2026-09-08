@@ -52,15 +52,28 @@ globalThis.fetch = async (url, init = {}) => {
   const synchronousRefusal = process.env.RELAY_TEST_CHANNELS_POST_SYNC_REFUSAL;
   const synchronousTargetRefusal =
     process.env.RELAY_TEST_CHANNELS_POST_SYNC_TARGET_REFUSAL;
+  const synchronousTargetReason =
+    {
+      policy: 'mention-chain-paused',
+      offline: 'target-unavailable',
+      auth: 'provider-failure:auth_required',
+      binary: 'provider-failure:binary_missing',
+      unknown: 'provider-failure:unknown',
+    }[synchronousTargetRefusal] ?? 'provider-failure:quota_exhausted';
   const mentions = synchronousRefusal
     ? [
         {
           targetProfileId: 'agent-profile:codex:default',
-          state: `refused_${synchronousRefusal}`,
+          state:
+            synchronousRefusal === 'offline'
+              ? 'unreachable_offline'
+              : `refused_${synchronousRefusal}`,
           reasonCode:
-            synchronousRefusal === 'policy'
-              ? 'mention_chain_paused'
-              : 'provider_quota_exhausted',
+            synchronousRefusal === 'offline'
+              ? 'runtime_unavailable'
+              : synchronousRefusal === 'policy'
+                ? 'mention_chain_paused'
+                : 'provider_quota_exhausted',
         },
       ]
     : [{ targetProfileId: 'agent-profile:codex:default', state: 'queued' }];
@@ -68,8 +81,14 @@ globalThis.fetch = async (url, init = {}) => {
     ? [
         {
           targetId: 'agent-profile:codex:default',
-          state: `refused_${synchronousTargetRefusal}`,
-          reasonCode: 'provider_quota_exhausted',
+          // Durable async-run targets use `refused` or `rejected`; the
+          // immediate delivery projection derives its outcome from this reason.
+          state:
+            synchronousTargetRefusal === 'offline' ||
+            synchronousTargetRefusal === 'policy'
+              ? 'rejected'
+              : 'refused',
+          reason: synchronousTargetReason,
           updatedAt: '2026-08-12T00:00:00.000Z',
         },
       ]
