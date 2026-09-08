@@ -981,4 +981,24 @@ describe('provider registry drift guards', () => {
       ).toEqual([]);
     });
   });
+
+  describe('spawned runtime process ownership drift guard (#1561)', () => {
+    it.each(PROVIDER_IDS)(
+      'every spawned adapter implements ownedProcessRootPids for %s',
+      (id) => {
+        const adapter = adapterFor(id);
+        if (adapter.runtimeOwnership === 'spawned') {
+          expect(
+            typeof (adapter as unknown as { ownedProcessRootPids?: unknown })
+              .ownedProcessRootPids,
+            `spawned adapter '${id}' must implement ownedProcessRootPids()`
+          ).toBe('function');
+          const pids = (
+            adapter as unknown as { ownedProcessRootPids: () => number[] }
+          ).ownedProcessRootPids();
+          expect(Array.isArray(pids)).toBe(true);
+        }
+      }
+    );
+  });
 });

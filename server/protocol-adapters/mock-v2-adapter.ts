@@ -66,6 +66,10 @@ function isAbortError(err: unknown): boolean {
 export class MockProtocolAdapterV2 extends BaseProtocolAdapterV2 {
   readonly agentType = 'mock';
   readonly runtimeOwnership = 'spawned' as const;
+
+  ownedProcessRootPids(): number[] {
+    return [];
+  }
   readonly capabilities: AgentCapabilitySetV2 = {
     text: true,
     reasoning: true,

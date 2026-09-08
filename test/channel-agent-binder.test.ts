@@ -1968,6 +1968,24 @@ class HeartbeatAdapter extends BaseProtocolAdapterV2 {
     });
   }
 
+  emitCheckpoint(stepIndex: number, turnId?: string): void {
+    const targetTurn = turnId ?? this.activeTurn;
+    if (!targetTurn) return;
+    this.emitPatch({
+      type: 'agent-item-started-v2',
+      sessionId: this.sid,
+      timestamp: 't',
+      turnId: targetTurn,
+      item: {
+        type: 'providerExtension',
+        id: `ext-antigravity-${targetTurn}-${stepIndex}`,
+        namespace: 'antigravity',
+        payload: { kind: 'checkpoint', state: 'DONE', stepIndex },
+        status: 'completed',
+      },
+    });
+  }
+
   emitError(message: string, turnId?: string): void {
     const targetTurn = turnId ?? this.activeTurn;
     this.emitPatch({
@@ -9040,6 +9058,69 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     expect(
       collectReceipts(hub, CH).some((r) => r.state === 'expired_watchdog')
     ).toBe(true);
+  });
+
+  it('turn ceiling still fires while hasLiveChildProcesses stays true (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 25,
+      turnCeilingMs: 60,
+    });
+    postWithAsyncRun(store, binder, '@mock runaway-child', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    // Keep child processes active indefinitely
+    sessions.setHasLiveChildProcesses(sessionId, true);
+
+    // Turn ceiling must still fire and drain the runaway turn
+    await waitFor(
+      () => systemRows(store).some((m) => m.body.text.includes('turn limit')),
+      4000
+    );
+    const drainRow = systemRows(store).find((m) =>
+      m.body.text.includes('turn limit')
+    )!;
+    expect(drainRow.body.text).toContain('turn limit');
+    expect(adapter.interruptCalls).toEqual([adapter.sendCalls[0]]);
+  });
+
+  it('antigravity checkpoint poll refresh keeps turn active (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 40,
+    });
+    postWithAsyncRun(store, binder, '@mock poll-refresh', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+    const turnId = adapter.sendCalls[0]!;
+
+    // Periodic checkpoint provider extensions arrive before watchdogMs expires
+    for (let i = 0; i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      adapter.emitCheckpoint(i, turnId);
+    }
+
+    // 80ms have elapsed (watchdogMs is 40ms) but checkpoint keep-alives kept turn alive
+    expect(
+      systemRows(store).some((m) => m.body.text.includes('force-drained'))
+    ).toBe(false);
+
+    // Once checkpoints stop, watchdog drains
+    await waitFor(
+      () =>
+        systemRows(store).some((m) => m.body.text.includes('force-drained')),
+      4000
+    );
+    expect(adapter.interruptCalls).toEqual([turnId]);
   });
 
   it('drain row includes remaining turn ceiling budget when watchdog expires (#1561)', async () => {
