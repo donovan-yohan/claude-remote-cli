@@ -1670,6 +1670,16 @@ export function stopReasonMessage(
   if (stopReason === 'max_turn_requests')
     return `${agentType} hit its per-turn request limit`;
   if (stopReason === 'refusal') return `${agentType} refused this request`;
+  const timeoutMatch =
+    /^(?:tool_?)?timeout(?::?\s*(\d+)\s*s?)?$/i.exec(stopReason) ||
+    /tool.*timeout.*?(\d+)\s*s?/i.exec(stopReason) ||
+    /timed?\s*out.*?(?:after\s*)?(\d+)\s*s?/i.exec(stopReason);
+  if (timeoutMatch) {
+    const seconds = timeoutMatch[1];
+    return seconds
+      ? `tool call timed out after ${seconds} s`
+      : 'tool call timed out';
+  }
   return `${agentType} ended the turn: ${stopReason}`;
 }
 

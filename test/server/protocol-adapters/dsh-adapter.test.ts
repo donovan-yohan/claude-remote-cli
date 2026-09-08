@@ -798,4 +798,66 @@ describe('DshProtocolAdapter', () => {
     await settle('end_turn');
     await adapter.disconnect();
   });
+
+  it('a long-running shell tool stays an open item through intermediate updates until terminal update (#1561)', async () => {
+    const { adapter, patches, update, settle } = harness();
+    await adapter.connect(config);
+    const send = queueSend(adapter, {
+      turnId: 't1',
+      content: 'run long command',
+    });
+    update({
+      sessionUpdate: 'tool_call',
+      toolCallId: BASH_CALL_ID,
+      title: 'bash',
+      kind: 'other',
+      status: 'in_progress',
+      rawInput: { command: 'sleep 10' },
+    });
+
+    expect(itemsOf(patches, 'agent-item-started-v2').at(-1)).toMatchObject({
+      type: 'commandExecution',
+      id: BASH_CALL_ID,
+      status: 'running',
+    });
+
+    // Intermediate progress updates must NOT close or update the item
+    update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: BASH_CALL_ID,
+      status: 'in_progress',
+    });
+    update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: BASH_CALL_ID,
+      status: 'pending',
+    });
+
+    expect(
+      patches.filter(
+        (p) =>
+          p.type === 'agent-item-updated-v2' &&
+          (p as any).item?.id === BASH_CALL_ID
+      )
+    ).toHaveLength(0);
+
+    // Terminal update
+    update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: BASH_CALL_ID,
+      status: 'completed',
+      content: [{ type: 'content', content: { type: 'text', text: 'done\n' } }],
+    });
+
+    expect(itemsOf(patches, 'agent-item-updated-v2').at(-1)).toMatchObject({
+      type: 'commandExecution',
+      id: BASH_CALL_ID,
+      status: 'completed',
+      output: 'done\n',
+    });
+
+    await settle('end_turn');
+    await send;
+    await adapter.disconnect();
+  });
 });

@@ -1183,4 +1183,100 @@ describe('CursorProtocolAdapter', () => {
       )
     ).toBe(true);
   });
+
+  it('a long-running shell tool stays an open item through intermediate updates until terminal update (#1561)', async () => {
+    const h = harness();
+    await h.adapter.connect(config);
+    const send = queueSend(h.adapter, {
+      turnId: 'turn-long-tool',
+      content: 'run command',
+    });
+    h.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: EXEC_CALL_ID,
+      title: '`sleep 10`',
+      kind: 'execute',
+      rawInput: { command: 'sleep 10' },
+    });
+
+    const started = h.patches.filter((p) => p.type === 'agent-item-started-v2');
+    expect(started.at(-1)).toMatchObject({
+      type: 'agent-item-started-v2',
+      item: {
+        id: EXEC_CALL_ID,
+        type: 'commandExecution',
+        status: 'running',
+      },
+    });
+
+    // Intermediate progress updates must NOT close or update the item
+    h.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: EXEC_CALL_ID,
+      status: 'in_progress',
+    });
+    h.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: EXEC_CALL_ID,
+      status: 'pending',
+    });
+
+    const updatedDuringProgress = h.patches.filter(
+      (p) =>
+        p.type === 'agent-item-updated-v2' &&
+        (p as any).item?.id === EXEC_CALL_ID
+    );
+    expect(updatedDuringProgress).toHaveLength(0);
+
+    // Terminal completion
+    h.update({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: EXEC_CALL_ID,
+      status: 'completed',
+      rawOutput: { exitCode: 0, stdout: 'done\n' },
+    });
+
+    const terminalUpdates = h.patches.filter(
+      (p) =>
+        p.type === 'agent-item-updated-v2' &&
+        (p as any).item?.id === EXEC_CALL_ID
+    );
+    expect(terminalUpdates).toHaveLength(1);
+    expect(terminalUpdates[0]).toMatchObject({
+      type: 'agent-item-updated-v2',
+      item: {
+        id: EXEC_CALL_ID,
+        status: 'completed',
+        output: 'done\n',
+        exitCode: 0,
+      },
+    });
+
+    h.settlePrompt('end_turn');
+    await send;
+  });
+
+  it('posts a system row tool call timed out after N s when tool timeout ends the turn (#1561)', async () => {
+    const h = harness();
+    await h.adapter.connect(config);
+    const send = queueSend(h.adapter, {
+      turnId: 'turn-tool-timeout',
+      content: 'run command',
+    });
+    h.update({
+      sessionUpdate: 'tool_call',
+      toolCallId: EXEC_CALL_ID,
+      title: '`sleep 100`',
+      kind: 'execute',
+      rawInput: { command: 'sleep 100' },
+    });
+
+    // Settle with tool timeout stopReason
+    h.settlePrompt('tool_timeout: 30');
+    await send;
+
+    const errorPatch = h.patches.find((p) => p.type === 'agent-error-v2');
+    expect(errorPatch).toBeDefined();
+    expect((errorPatch as any).message).toBe('tool call timed out after 30 s');
+  });
 });

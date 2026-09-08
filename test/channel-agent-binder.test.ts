@@ -1968,6 +1968,31 @@ class HeartbeatAdapter extends BaseProtocolAdapterV2 {
     });
   }
 
+  emitError(message: string, turnId?: string): void {
+    const targetTurn = turnId ?? this.activeTurn;
+    this.emitPatch({
+      type: 'agent-error-v2',
+      sessionId: this.sid,
+      timestamp: 't',
+      ...(targetTurn ? { turnId: targetTurn } : {}),
+      message,
+    });
+  }
+
+  fail(_message = 'turn failed'): void {
+    const turnId = this.activeTurn;
+    if (turnId === null) return;
+    this.stopBeating();
+    this.activeTurn = null;
+    this.emitPatch({
+      type: 'agent-turn-completed-v2',
+      sessionId: this.sid,
+      timestamp: 't',
+      turnId,
+      status: 'failed',
+    });
+  }
+
   complete(text = 'long job done'): void {
     const turnId = this.activeTurn;
     if (turnId === null) return;
@@ -9042,6 +9067,38 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     )!;
     expect(drainRow.body.text).toContain('remaining turn budget:');
     expect(drainRow.body.text).toContain('sent nothing for 25 ms');
+  });
+
+  it('posts a system row when a tool call times out even after sawStream is true (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+    });
+    postWithAsyncRun(store, binder, '@mock timeout-tool', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    // Open a tool item
+    adapter.startTool('npm test');
+
+    // Adapter errors out due to tool timeout
+    adapter.emitError('tool call timed out after 30 s', adapter.sendCalls[0]);
+    adapter.fail('tool call timed out after 30 s');
+
+    await waitFor(
+      () =>
+        systemRows(store).some((m) =>
+          m.body.text.includes('tool call timed out after 30 s')
+        ),
+      4000
+    );
+    const timeoutRow = systemRows(store).find((m) =>
+      m.body.text.includes('tool call timed out after 30 s')
+    )!;
+    expect(timeoutRow.body.text).toBe('tool call timed out after 30 s');
   });
 
   it('cross-node topics fail visibly and never spawn a local stand-in', async () => {
