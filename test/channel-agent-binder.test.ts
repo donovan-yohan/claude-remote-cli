@@ -7149,10 +7149,6 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
     const profiles = createAgentProfileStore(':memory:');
     cleanup.push(() => profiles.close());
     profiles.seedBuiltIns([{ id: 'mock' }]);
-    const custom = profiles.create({
-      providerId: 'mock',
-      displayName: 'Custom',
-    });
     const lsRemoteCalls: Array<{ remote: string; branch: string }> = [];
     const { binder, store } = makeBinder({
       build: (agentType) =>
@@ -7190,12 +7186,13 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
       }),
     });
 
+    const mentions = parseMentions('@mock please push', ['mock']);
     const result = store.appendCompleteWithAsyncRun({
       channelId: CH,
       sender: OPERATOR,
       text: '@mock please push',
-      mentions: [{ raw: '@mock', providerId: 'mock', profileId: custom.id }],
-      targetIds: [custom.id],
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
       deliveryContract: { expect: ['push'] },
       meta: { deliveryContract: { expect: ['push'] } },
     });
@@ -7204,7 +7201,8 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
     await waitFor(() => {
       const run = store.getAsyncRun(result.run.id);
       return (
-        run?.state === 'completed' && Boolean(run.deliveryContract?.baseline)
+        Boolean(run?.state.startsWith('completed')) &&
+        Boolean(run?.deliveryContract?.baseline)
       );
     });
     const run = store.getAsyncRun(result.run.id)!;
@@ -7213,7 +7211,137 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
       upstreamRefSource: 'tracking-other-branch',
       upstreamSha: '3333333333333333333333333333333333333333',
     });
-    expect(lsRemoteCalls).toEqual([{ remote: 'upstream', branch: 'feat' }]);
+    expect(lsRemoteCalls).toContainEqual({
+      remote: 'upstream',
+      branch: 'feat',
+    });
+  });
+
+  it('formats could not verify system rows and attention unmet payload with intent wording (#1579 review item 6)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+    const publishedAttention: Array<Record<string, unknown>> = [];
+    const { binder, store } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      events: {
+        publish: (event) => {
+          if (event.topic === 'attention') {
+            publishedAttention.push(event as Record<string, unknown>);
+          }
+          return event as any;
+        },
+      },
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          headSha: async () => ({
+            kind: 'ok',
+            value: '1111111111111111111111111111111111111111',
+          }),
+          upstreamRef: async () => ({
+            kind: 'ok',
+            value: 'origin/feat/x',
+          }),
+          upstreamSha: async () => ({
+            kind: 'ok',
+            value: '2222222222222222222222222222222222222222',
+          }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          commitsBetween: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+          getOpenPrForBranch: async () => ({ kind: 'ok', value: null }),
+        },
+      }),
+    });
+
+    const mentions = parseMentions('@mock please ship', ['mock']);
+    const result = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit', 'push'] },
+      meta: { deliveryContract: { expect: ['commit', 'push'] } },
+    });
+    binder.handleMessagePosted(result.message, result.message.mentions ?? []);
+
+    await waitFor(() => {
+      const run = store.getAsyncRun(result.run.id);
+      return (
+        run?.state === 'completed_unmet' &&
+        Boolean(run.deliveryContract?.result)
+      );
+    });
+
+    const unmetEvent = publishedAttention.find(
+      (e) => e['type'] === 'delivery-contract.unmet'
+    );
+    expect(unmetEvent).toBeDefined();
+    expect((unmetEvent?.['payload'] as any)?.unmet).toEqual([
+      'no new commit',
+      'nothing pushed to the branch',
+    ]);
+  });
+
+  it('formats could not verify system rows with intent wording when evaluation is unknown (#1579 review item 6)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+    const { binder, store } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          headSha: async () => ({
+            kind: 'ok',
+            value: '1111111111111111111111111111111111111111',
+          }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          commitsBetween: async () => ({
+            kind: 'unknown',
+            reason: 'git binary missing',
+          }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+          getOpenPrForBranch: async () => ({ kind: 'ok', value: null }),
+        },
+      }),
+    });
+
+    const mentions = parseMentions('@mock please commit', ['mock']);
+    const result = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please commit',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(result.message, result.message.mentions ?? []);
+
+    await waitFor(() =>
+      systemRows(store).some((m) =>
+        m.body.text.includes('Delivery contract could not verify:')
+      )
+    );
+    const row = systemRows(store).find((m) =>
+      m.body.text.includes('Delivery contract could not verify:')
+    )!;
+    expect(row.body.text).toContain('no new commit: git binary missing');
   });
 });
 

@@ -12,7 +12,10 @@ import {
   type DeliveryContractPrProbe,
   type DeliveryContractProbeOutcome,
 } from './channel-delivery-contract-evaluator.js';
-import { formatDeliveryContractUnmetIntents } from '../shared/channel-delivery-contract.js';
+import {
+  deliveryContractUnmetIntent,
+  formatDeliveryContractUnmetIntents,
+} from '../shared/channel-delivery-contract.js';
 import {
   buildMentionContextPacketEnvelope,
   PACKET_MAX_ROWS,
@@ -3468,7 +3471,7 @@ export function createChannelAgentBinder(
         const outcome = await git.upstreamRef();
         if (outcome.kind !== 'ok') return { ref: null, source: null };
         const ref = String(outcome.value ?? '').trim();
-        return { ref: ref ? ref : null, source: null };
+        return { ref: ref ? ref : null, source: 'upstream' };
       }
       // Fallback: best-effort ref discovery.
       try {
@@ -3572,6 +3575,8 @@ export function createChannelAgentBinder(
         upstreamRefValue === expectedOrigin || upstreamRefValue === branch;
       if (!isSameBranch) {
         upstreamRefSource = 'tracking-other-branch';
+      } else if (upstreamRefSource === null) {
+        upstreamRefSource = 'upstream';
       }
     }
 
@@ -5752,7 +5757,7 @@ export function createChannelAgentBinder(
         postSystemRow(
           binding.channelId,
           `Delivery contract could not verify: ${evaluation.unknown
-            .map((u) => `${u.spec}: ${u.reason}`)
+            .map((u) => `${deliveryContractUnmetIntent(u.spec)}: ${u.reason}`)
             .join(', ')}`,
           { parentMessageId }
         );
@@ -5776,7 +5781,7 @@ export function createChannelAgentBinder(
           channelId: binding.channelId,
           runId: run.id,
           targetProfileId: binding.profileActorId,
-          unmet: evaluation.unmet,
+          unmet: evaluation.unmet.map(deliveryContractUnmetIntent),
         },
       });
       await maybePostDeliveryContractFollowup({
@@ -5814,7 +5819,7 @@ export function createChannelAgentBinder(
       postSystemRow(
         binding.channelId,
         `Delivery contract could not verify: ${unknown
-          .map((u) => `${u.spec}: ${u.reason}`)
+          .map((u) => `${deliveryContractUnmetIntent(u.spec)}: ${u.reason}`)
           .join(', ')}`,
         { parentMessageId }
       );
