@@ -98,6 +98,11 @@ type HubLivenessProbeConfig = {
   configPath: string;
   /** Abort the probe after this many ms. */
   timeoutMs: number;
+  /**
+   * Effective port this process intends to use. When provided, it overrides
+   * the port read from the config file (flag > env > config > default).
+   */
+  port?: number | undefined;
 };
 
 function readConfiguredPortOrDefault(configPath: string): number {
@@ -119,9 +124,14 @@ export async function probeLiveHubHealth(
   // #1587: upgrade window safety. Older hubs don't write hub.lock yet, so the
   // lock check alone cannot prevent accidental store opens. If no lock exists,
   // probe the configured port's /health endpoint and refuse if a hub answers.
-  if (readHubLock(configDir)) return null;
+  const lock = readHubLock(configDir);
+  // Skip the probe only when the lock looks live. A stale lock must not disable
+  // the liveness fallback forever (#1587 review).
+  if (lock && lock.hostname === os.hostname() && isPidAlive(lock.pid)) {
+    return null;
+  }
 
-  const port = readConfiguredPortOrDefault(opts.configPath);
+  const port = opts.port ?? readConfiguredPortOrDefault(opts.configPath);
   const url = `http://127.0.0.1:${port}/health`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
