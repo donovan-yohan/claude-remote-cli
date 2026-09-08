@@ -2026,33 +2026,11 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     });
   }
 
-  function terminalStateCarriesPrincipalProse(
-    state: ChannelAsyncRun['state']
-  ): boolean {
-    return state === 'completed' || state === 'completed_unmet';
-  }
-
-  async function finalAssistantTextForTerminalRun(
+  function finalAssistantTextForTerminalRun(
     store: ChannelMessageStore,
-    runId: ChannelAsyncRunId,
-    run: ChannelAsyncRun,
-    deadline: number,
-    graceMs: number,
-    signal: AbortSignal
-  ): Promise<{ finalText: string | null; finalMessageSeq: number | null }> {
-    let final = finalAssistantTextForRun(store, run);
-    if (final.finalMessageSeq !== null) return final;
-    if (!terminalStateCarriesPrincipalProse(run.state)) return final;
-    const graceDeadline = Math.min(deadline, Date.now() + graceMs);
-    while (Date.now() < graceDeadline && !signal.aborted) {
-      await sleepWithAbort(50, signal);
-      const refreshed = store.getAsyncRun(runId);
-      if (!refreshed) break;
-      if (!runTerminalState(refreshed.state)) continue;
-      final = finalAssistantTextForRun(store, refreshed);
-      if (final.finalMessageSeq !== null) break;
-    }
-    return final;
+    run: ChannelAsyncRun
+  ): { finalText: string | null; finalMessageSeq: number | null } {
+    return finalAssistantTextForRun(store, run);
   }
 
   async function respondWaitByRunId(
@@ -2075,7 +2053,6 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
 
     const deadline = Date.now() + input.timeoutMs;
     const serverRestartCancelGraceMs = 2000;
-    const terminalFinalizationGraceMs = 2000;
     let serverRestartCancelledAt: number | null = null;
     const configuredMaxFollowups = deps.deliveryContractMaxFollowups ?? 3;
     const maxFollowupRunsToVisit =
@@ -2135,14 +2112,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           await sleepWithAbort(50, signal);
           continue;
         }
-        const final = await finalAssistantTextForTerminalRun(
-          store,
-          runId,
-          latest,
-          deadline,
-          terminalFinalizationGraceMs,
-          signal
-        );
+        const final = finalAssistantTextForTerminalRun(store, latest);
         res.json(
           operatorClientPublicValue(req, {
             run: {
