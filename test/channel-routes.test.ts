@@ -1980,7 +1980,7 @@ describe('channel routes — gateway capability mapping', () => {
       });
     });
 
-    it('includes the delivery contract summary once evaluation finalizes (grace)', async () => {
+    it('returns immediately when a terminal run reports contractPending', async () => {
       const h = await harness({ withAuth: true });
       const targetId = builtInAgentProfileId('codex');
       const baseline = {
@@ -1995,7 +1995,11 @@ describe('channel routes — gateway capability mapping', () => {
         sender: { kind: 'human', id: 'human:operator' },
         text: 'ship it @codex',
         targetIds: [targetId],
-        deliveryContract: { expect: ['commit'], baseline },
+        deliveryContract: {
+          expect: ['commit'],
+          baseline,
+          contractPending: true,
+        },
         meta: { deliveryContract: { expect: ['commit'] } },
       });
       const turnId = channelTurnId(trigger.id, targetId);
@@ -2016,19 +2020,8 @@ describe('channel routes — gateway capability mapping', () => {
         state: 'completed',
       });
 
-      setTimeout(() => {
-        h.store.finalizeAsyncRunDeliveryContract({
-          runId: run.id,
-          result: {
-            met: true,
-            unmet: [],
-            evaluatedAt: '2026-09-07T00:00:01.000Z',
-          },
-        });
-      }, 50);
-
       const res = await req<{
-        run: { id: string; state: string };
+        run: { id: string; state: string; contractPending?: boolean };
         outcome: string;
         finalText: string;
         finalMessageSeq: number | null;
@@ -2041,14 +2034,102 @@ describe('channel routes — gateway capability mapping', () => {
       });
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
-        run: { id: run.id, state: 'completed' },
+        run: { id: run.id, state: 'completed', contractPending: true },
         outcome: 'completed',
         finalText: 'final summary',
       });
+      expect(res.body.contract).toBe(null);
+    });
+
+    it('returns cancelled-with-contract within 2s (no contract grace)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'ship it @codex',
+        targetIds: [targetId],
+        deliveryContract: { expect: ['commit'] },
+        meta: { deliveryContract: { expect: ['commit'] } },
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'cancelled',
+        reason: 'user-requested',
+      });
+      h.store.finalizeAsyncRunDeliveryContract({
+        runId: run.id,
+        result: {
+          met: false,
+          unmet: [],
+          unknown: [
+            { spec: 'commit', reason: 'run ended cancelled: user-requested' },
+          ],
+          evaluatedAt: '2026-09-07T00:00:01.000Z',
+        },
+      });
+
+      const start = Date.now();
+      const res = await req<{ contract: unknown }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=2000`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      const elapsed = Date.now() - start;
+      expect(res.status).toBe(200);
+      expect(elapsed).toBeLessThan(2000);
       expect(res.body.contract).toMatchObject({
-        met: true,
+        met: false,
         unmet: [],
-        baseline,
+        unknown: [{ spec: 'commit' }],
+      });
+    });
+
+    it('returns failed-with-contract within 2s (no contract grace)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'ship it @codex',
+        targetIds: [targetId],
+        deliveryContract: { expect: ['commit'] },
+        meta: { deliveryContract: { expect: ['commit'] } },
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'failed',
+        reason: 'adapter-error',
+      });
+      h.store.finalizeAsyncRunDeliveryContract({
+        runId: run.id,
+        result: {
+          met: false,
+          unmet: [],
+          unknown: [
+            { spec: 'commit', reason: 'run ended failed: adapter-error' },
+          ],
+          evaluatedAt: '2026-09-07T00:00:01.000Z',
+        },
+      });
+
+      const start = Date.now();
+      const res = await req<{ contract: unknown }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=2000`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      const elapsed = Date.now() - start;
+      expect(res.status).toBe(200);
+      expect(elapsed).toBeLessThan(2000);
+      expect(res.body.contract).toMatchObject({
+        met: false,
+        unmet: [],
+        unknown: [{ spec: 'commit' }],
       });
     });
 

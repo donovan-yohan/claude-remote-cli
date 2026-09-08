@@ -4564,22 +4564,12 @@ export function createChannelAgentBinder(
       ...options,
     });
     if (changed) {
-      hub.broadcastRunLifecycle(changed);
-      if (
-        changed.state === 'completed' &&
-        changed.deliveryContract?.expect?.length
-      ) {
-        void evaluateDeliveryContractForCompletedRun(
-          binding,
-          turnId,
-          changed
-        ).catch((err) => {
-          logger.warn(
-            'channel binder delivery-contract evaluation failed:',
-            err instanceof Error ? err.message : String(err)
-          );
-        });
-      }
+      const updated = handleTerminalDeliveryContract({
+        binding,
+        turnId,
+        run: changed,
+      });
+      hub.broadcastRunLifecycle(updated ?? changed);
     }
   }
 
@@ -4601,23 +4591,66 @@ export function createChannelAgentBinder(
       ...options,
     });
     if (changed) {
-      hub.broadcastRunLifecycle(changed);
-      if (
-        changed.state === 'completed' &&
-        changed.deliveryContract?.expect?.length
-      ) {
-        void evaluateDeliveryContractForCompletedRun(
-          binding,
-          turnId,
-          changed
-        ).catch((err) => {
-          logger.warn(
-            'channel binder delivery-contract evaluation failed:',
-            err instanceof Error ? err.message : String(err)
-          );
-        });
-      }
+      const updated = handleTerminalDeliveryContract({
+        binding,
+        turnId,
+        run: changed,
+      });
+      hub.broadcastRunLifecycle(updated ?? changed);
     }
+  }
+
+  function handleTerminalDeliveryContract(input: {
+    binding: LiveBinding;
+    turnId: string;
+    run: ChannelAsyncRun;
+  }): ChannelAsyncRun | null {
+    const contract = input.run.deliveryContract;
+    const expect = contract?.expect ?? [];
+    if (!expect.length) return null;
+    if (contract?.result) return null;
+    const terminal = [
+      'completed',
+      'completed_unmet',
+      'failed',
+      'cancelled',
+      'rejected',
+    ].includes(input.run.state);
+    if (!terminal) return null;
+
+    if (input.run.state === 'completed') {
+      // Mark pending immediately so `channels wait` can return without blocking.
+      const pending =
+        store.setAsyncRunDeliveryContractPending({
+          runId: input.run.id,
+          pending: true,
+        }) ?? null;
+      void evaluateDeliveryContractForCompletedRun(
+        input.binding,
+        input.turnId,
+        pending ?? input.run
+      ).catch((err) => {
+        logger.warn(
+          'channel binder delivery-contract evaluation failed:',
+          err instanceof Error ? err.message : String(err)
+        );
+      });
+      return pending;
+    }
+
+    // Non-completed terminal states: finalize immediately as unknown.
+    const evaluatedAt = new Date(now()).toISOString();
+    const reason = input.run.reason ?? input.run.state;
+    const unknown = expect.map((spec) => ({
+      spec,
+      reason: `run ended ${input.run.state}: ${reason}`,
+    }));
+    return (
+      store.finalizeAsyncRunDeliveryContract({
+        runId: input.run.id,
+        result: { met: false, unmet: [], unknown, evaluatedAt },
+      }) ?? null
+    );
   }
 
   function resolveFinalAssistantTextForContract(input: {

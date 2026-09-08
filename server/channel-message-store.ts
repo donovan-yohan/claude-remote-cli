@@ -1542,6 +1542,11 @@ export interface ChannelMessageStore {
     childRunId?: ChannelAsyncRunId;
     abandonedAt?: string;
   }): ChannelAsyncRun | null;
+  /** Mark a contract as pending final evaluation. */
+  setAsyncRunDeliveryContractPending(input: {
+    runId: ChannelAsyncRunId;
+    pending: boolean;
+  }): ChannelAsyncRun | null;
   /** Persist the post-time baseline used for delta evaluation (#1578). */
   setAsyncRunDeliveryContractBaseline(input: {
     runId: ChannelAsyncRunId;
@@ -4828,6 +4833,7 @@ export function createChannelMessageStore(
 
       const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
         ...contract,
+        contractPending: false,
         // Keep an existing result if one is already recorded.
         ...(contract.result
           ? { result: contract.result }
@@ -4862,6 +4868,41 @@ export function createChannelMessageStore(
             SET state = ?, reason = ?, delivery_contract_json = ?, updated_at = ?
           WHERE id = ?`
       ).run(nextState, nextReason ?? null, JSON.stringify(next), now, run.id);
+      return asyncRunFromRow(selectAsyncRun.get(run.id) as AsyncRunRow);
+    }
+  );
+
+  const setAsyncRunDeliveryContractPendingImpl = db.transaction(
+    (input: {
+      runId: ChannelAsyncRunId;
+      pending: boolean;
+    }): ChannelAsyncRun | null => {
+      const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
+      if (!run) return null;
+      if (!run.delivery_contract_json) return asyncRunFromRow(run);
+
+      let contract: NonNullable<ChannelAsyncRun['deliveryContract']>;
+      try {
+        contract = JSON.parse(run.delivery_contract_json) as NonNullable<
+          ChannelAsyncRun['deliveryContract']
+        >;
+      } catch {
+        return asyncRunFromRow(run);
+      }
+      if (!contract || !Array.isArray(contract.expect))
+        return asyncRunFromRow(run);
+      if (contract.contractPending === input.pending)
+        return asyncRunFromRow(run);
+
+      const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+        ...contract,
+        contractPending: input.pending,
+      };
+      const now = nowIso();
+      db.prepare(
+        `UPDATE channel_async_runs SET delivery_contract_json = ?, updated_at = ?
+          WHERE id = ?`
+      ).run(JSON.stringify(next), now, run.id);
       return asyncRunFromRow(selectAsyncRun.get(run.id) as AsyncRunRow);
     }
   );
@@ -5725,6 +5766,10 @@ export function createChannelMessageStore(
 
     finalizeAsyncRunDeliveryContract(input) {
       return finalizeAsyncRunDeliveryContractImpl(input);
+    },
+
+    setAsyncRunDeliveryContractPending(input) {
+      return setAsyncRunDeliveryContractPendingImpl(input);
     },
 
     setAsyncRunDeliveryContractBaseline(input) {

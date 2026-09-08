@@ -108,6 +108,12 @@ export interface ChannelAsyncRun {
       capturedAt: string;
     } | null;
     /**
+     * True when the run is terminal but the contract result has not been
+     * finalized yet (e.g. repo probes still pending). Consumers should treat
+     * the contract as pending and re-read the run for its final result.
+     */
+    contractPending?: boolean;
+    /**
      * #1585: follow-up chain depth for delivery-contract followups.
      * 0 for the original post; follow-up turns increment by 1.
      */

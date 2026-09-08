@@ -1606,29 +1606,6 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     };
   }
 
-  async function contractSummaryForTerminalRun(
-    store: ChannelMessageStore,
-    runId: ChannelAsyncRunId,
-    run: ChannelAsyncRun,
-    deadline: number,
-    graceMs: number,
-    signal: AbortSignal
-  ): Promise<Record<string, unknown> | null> {
-    let summary = contractSummaryForRun(run);
-    if (summary) return summary;
-    if (!run.deliveryContract?.expect?.length) return null;
-    const graceDeadline = Math.min(deadline, Date.now() + graceMs);
-    while (Date.now() < graceDeadline && !signal.aborted) {
-      await sleepWithAbort(50, signal);
-      const refreshed = store.getAsyncRun(runId);
-      if (!refreshed) break;
-      if (!runTerminalState(refreshed.state)) continue;
-      summary = contractSummaryForRun(refreshed);
-      if (summary) break;
-    }
-    return summary;
-  }
-
   function finalAssistantTextForRun(
     store: Pick<
       ChannelMessageStore,
@@ -2099,7 +2076,6 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     const deadline = Date.now() + input.timeoutMs;
     const serverRestartCancelGraceMs = 2000;
     const terminalFinalizationGraceMs = 2000;
-    const contractFinalizationGraceMs = Math.min(input.timeoutMs, 120_000);
     let serverRestartCancelledAt: number | null = null;
     const configuredMaxFollowups = deps.deliveryContractMaxFollowups ?? 3;
     const maxFollowupRunsToVisit =
@@ -2153,25 +2129,20 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           terminalFinalizationGraceMs,
           signal
         );
-        const contract = await contractSummaryForTerminalRun(
-          store,
-          runId,
-          latest,
-          deadline,
-          contractFinalizationGraceMs,
-          signal
-        );
         res.json(
           operatorClientPublicValue(req, {
             run: {
               id: latest.id,
               state: latest.state,
               ...(latest.reason ? { reason: latest.reason } : {}),
+              ...(latest.deliveryContract?.contractPending
+                ? { contractPending: true }
+                : {}),
             },
             outcome: latest.state,
             finalText: final.finalText ?? '',
             finalMessageSeq: final.finalMessageSeq ?? null,
-            contract,
+            contract: contractSummaryForRun(latest),
           })
         );
         return;
@@ -2187,6 +2158,9 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
               id: latest.id,
               state: latest.state,
               ...(latest.reason ? { reason: latest.reason } : {}),
+              ...(latest.deliveryContract?.contractPending
+                ? { contractPending: true }
+                : {}),
             }
           : {
               id: initial.id,

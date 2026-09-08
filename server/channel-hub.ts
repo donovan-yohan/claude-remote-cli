@@ -818,19 +818,19 @@ export function createChannelHub(options: ChannelHubOptions): ChannelHub {
           );
         }
       }
-      if (terminal && run.deliveryContract?.result) {
-        extras['contract'] = {
-          ...run.deliveryContract.result,
-          ...(Object.prototype.hasOwnProperty.call(
-            run.deliveryContract,
-            'baseline'
-          )
-            ? { baseline: run.deliveryContract.baseline }
+      if (terminal && run.deliveryContract) {
+        const contract = run.deliveryContract;
+        const summary: Record<string, unknown> = {
+          ...(contract.result ? contract.result : {}),
+          ...(contract.contractPending ? { contractPending: true } : {}),
+          ...(Object.prototype.hasOwnProperty.call(contract, 'baseline')
+            ? { baseline: contract.baseline }
             : {}),
-          ...(run.deliveryContract.followupPostedAt
-            ? { followupPostedAt: run.deliveryContract.followupPostedAt }
+          ...(contract.followupPostedAt
+            ? { followupPostedAt: contract.followupPostedAt }
             : {}),
         };
+        if (Object.keys(summary).length > 0) extras['contract'] = summary;
       }
       broadcast(run.channelId, {
         type: 'channel-run-lifecycle-v1',
