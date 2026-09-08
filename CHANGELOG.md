@@ -100,9 +100,13 @@ workflow.
 
 ### Channels
 
+#### Added
+
+- Delivery contracts for channel turns now support `push` expectations (require the upstream/base ref to advance) alongside `commit`, `pr`, `file:`, and `text:` (#1569, #1585, #1578).
+
 #### Fixed
 
-- Delivery contracts now evaluate `commit`, `push`, and `pr` as deltas from a post-time baseline, so a commit-then-push turn still satisfies `commit` and an existing PR does not satisfy `pr` unless it advanced (#1569, #1585, #1578).
+- Delivery contracts now evaluate `commit`, `push`, and `pr` as deltas from a post-time baseline, so a commit-then-push turn still satisfies `commit` and an existing PR does not satisfy `pr` unless it advanced (#1578).
 - An agent turn is no longer interrupted while it sits inside one long, silent
   command. `npm run check`, a full test run, or any tool call that takes minutes
   and prints nothing looks identical to a wedged agent to a watchdog that only
