@@ -93,6 +93,69 @@ export function assertConfigDirNotOwnedByAnotherLiveHub(
   throw new HubConfigDirLockedError(configDir, lock);
 }
 
+type HubLivenessProbeConfig = {
+  /** Path to config.json inside the candidate configDir. */
+  configPath: string;
+  /** Abort the probe after this many ms. */
+  timeoutMs: number;
+};
+
+function readConfiguredPortOrDefault(configPath: string): number {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
+      port?: unknown;
+    };
+    const port = parsed?.port;
+    return typeof port === 'number' && Number.isFinite(port) ? port : 3456;
+  } catch {
+    return 3456;
+  }
+}
+
+export async function probeLiveHubHealth(
+  configDir: string,
+  opts: HubLivenessProbeConfig
+): Promise<{ port: number } | null> {
+  // #1587: upgrade window safety. Older hubs don't write hub.lock yet, so the
+  // lock check alone cannot prevent accidental store opens. If no lock exists,
+  // probe the configured port's /health endpoint and refuse if a hub answers.
+  if (readHubLock(configDir)) return null;
+
+  const port = readConfiguredPortOrDefault(opts.configPath);
+  const url = `http://127.0.0.1:${port}/health`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    if (res.ok) return { port };
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(
+  configDir: string,
+  opts: HubLivenessProbeConfig
+): Promise<void> {
+  assertConfigDirNotOwnedByAnotherLiveHub(configDir);
+  const live = await probeLiveHubHealth(configDir, opts);
+  if (!live) return;
+  throw new Error(
+    [
+      `Refusing to open Relay hub config dir: a hub is listening on :${live.port} (no hub.lock present).`,
+      `configDir: ${configDir}`,
+      `health: http://127.0.0.1:${live.port}/health`,
+      `Pass an isolated config path via --config /path/to/config.json. (#1587)`,
+    ].join('\n')
+  );
+}
+
 function writeHubLockSync(configDir: string, record: HubLockRecord): void {
   const lockPath = hubLockPath(configDir);
   const tmp = lockPath + `.tmp.${process.pid}.${Date.now()}`;

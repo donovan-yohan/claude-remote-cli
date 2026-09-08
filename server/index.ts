@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
@@ -35,9 +34,8 @@ import {
 } from './runtime-state-paths.js';
 import {
   acquireHubLockOrThrow,
-  assertConfigDirNotOwnedByAnotherLiveHub,
+  assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub,
   HubConfigDirLockedError,
-  readHubLock,
   releaseHubLockBestEffort,
   updateHubLockBestEffort,
 } from './hub-lock.js';
@@ -638,22 +636,6 @@ try {
   process.exit(1);
 }
 
-async function isPortInUse(host: string, port: number): Promise<boolean> {
-  return await new Promise<boolean>((resolve) => {
-    const server = net.createServer();
-    server.once('error', (err) => {
-      const e = err as NodeJS.ErrnoException;
-      resolve(e?.code === 'EADDRINUSE');
-    });
-    server.once('listening', () => {
-      server.close(() => resolve(false));
-    });
-    // Listen on the same address the hub would bind. An existing listener on
-    // 0.0.0.0 will also block a 127.0.0.1 bind on this port (EADDRINUSE).
-    server.listen(port, host);
-  });
-}
-
 // When run via the CLI bin or the dev runner, RELAY_IDE_CONFIG is set
 // explicitly. When run directly from source (e.g. `node dist/server/index.js`),
 // default the config — and therefore every runtime SQLite store beside it — to
@@ -700,31 +682,10 @@ if (
 if (entryArgs.help) {
   try {
     const configDir = getConfigDir(CONFIG_PATH);
-    assertConfigDirNotOwnedByAnotherLiveHub(configDir);
-    // Transitional safety: older deployed hubs won't have hub.lock until they
-    // restart onto a build that writes it. When the lock is missing but the
-    // configured port is already in use, refuse rather than touching disk.
-    const lock = readHubLock(configDir);
-    if (!lock) {
-      const startup = loadConfig(CONFIG_PATH);
-      const host = entryArgs.host ?? process.env.RELAY_IDE_HOST ?? startup.host;
-      const port =
-        entryArgs.port ??
-        nonNegativeIntegerEnv('RELAY_IDE_PORT') ??
-        startup.port;
-      const inUse =
-        typeof host === 'string' && typeof port === 'number'
-          ? await isPortInUse(host, port)
-          : false;
-      if (inUse) {
-        throw new Error(
-          `Refusing to run --help: ${host}:${port} is already in use and ${path.join(
-            configDir,
-            'hub.lock'
-          )} is missing. This looks like a running hub on an older build. Pass --config to an isolated temp dir. (#1587)`
-        );
-      }
-    }
+    await assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
+      configPath: path.join(configDir, 'config.json'),
+      timeoutMs: 500,
+    });
   } catch (err) {
     logger.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
@@ -1812,19 +1773,12 @@ async function main(): Promise<void> {
   if (entryArgs.port !== null) startupConfig.port = entryArgs.port;
   if (entryArgs.host !== null) startupConfig.host = entryArgs.host;
 
-  // #1587 transitional safety: older deployed hubs won't have hub.lock until
-  // they restart onto a build that writes it. When the lock is missing but the
-  // configured port is already in use, refuse rather than touching SQLite.
-  if (!readHubLock(configDir)) {
-    if (await isPortInUse(startupConfig.host, startupConfig.port)) {
-      throw new Error(
-        `Refusing to boot: ${startupConfig.host}:${startupConfig.port} is already in use and ${path.join(
-          configDir,
-          'hub.lock'
-        )} is missing. This looks like a running hub on an older build. Pass --config to an isolated temp dir. (#1587)`
-      );
-    }
-  }
+  // #1587 liveness fallback: when hub.lock is absent (older deployed hub),
+  // probe /health on the configured port and refuse before opening persistence.
+  await assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
+    configPath: CONFIG_PATH,
+    timeoutMs: 500,
+  });
 
   // #1587: claim ownership of the config dir before any SQLite store is opened.
   acquireHubLockOrThrow(configDir, {

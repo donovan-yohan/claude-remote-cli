@@ -139,6 +139,13 @@ running deployed hub, the hub writes `<configDir>/hub.lock` at boot and removes
 it on clean shutdown. Any other process that would open the channel store
 (`channel-chat.db`) refuses while the owning PID is alive.
 
+During upgrades, a deployed hub may still be running a build that predates
+`hub.lock`. In that case, a from-checkout `node dist/server/index.js` (or even
+`--help`) still must not open the live store: when no valid `hub.lock` exists,
+Relay reads `<configDir>/config.json` for the port (default `3456`) and probes
+`http://127.0.0.1:<port>/health` with a 500 ms timeout; if a hub answers, the
+process refuses before opening any persistence.
+
 ### Inspect
 
 ```bash
