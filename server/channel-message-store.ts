@@ -3768,9 +3768,6 @@ export function initChannelMessageStore(
   const store = createChannelMessageStore(
     path.join(configDir, 'channel-chat.db')
   );
-  // Only the hub owner observes a restart. Additional handles must not cancel
-  // work which is still live in the owner process.
-  store.recoverAsyncRuns();
   return store;
 }
 

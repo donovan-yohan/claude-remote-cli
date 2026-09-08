@@ -1853,6 +1853,19 @@ async function main(): Promise<void> {
   );
   const channelMessageStore =
     persistenceState.get<ChannelMessageStore>('channel-messages');
+  // #1587: restart recovery must be explicit and owned by the hub process that
+  // holds the config-dir lock. Any other handle opening the DB must not cancel
+  // live runs (and must refuse entirely when another hub owns the directory).
+  if (channelMessageStore) {
+    try {
+      channelMessageStore.recoverAsyncRuns();
+    } catch (err) {
+      logger.warn(
+        'Channel async-run recovery failed:',
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
   const hubNodeRegistry = createAuditedHubNodeRegistry(
     configDir,
     securityAuditLog
