@@ -129,6 +129,8 @@ export interface LiveChildCheckOptions {
   nowMs?: number;
   /** Optional custom regex matchers for persistent helper processes. */
   helperPatterns?: readonly RegExp[];
+  /** Deliberate sampling delay in ms when cached table shows no delta (defaults to 200). */
+  sampleDelayMs?: number;
 }
 
 export interface ChannelAgentRuntimeManagerOptions {
@@ -835,6 +837,18 @@ export class ChannelAgentRuntimeManager {
     };
   }
 
+  private syncSleep(ms: number): void {
+    if (ms <= 0) return;
+    try {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+    } catch {
+      const start = Date.now();
+      while (Date.now() - start < ms) {
+        // Fallback synchronous busy wait
+      }
+    }
+  }
+
   liveChildProcesses(
     id: string,
     options: LiveChildCheckOptions = {}
@@ -843,84 +857,117 @@ export class ChannelAgentRuntimeManager {
     if (!runtime) return [];
     const rootPids = ownedProcessRootPids(runtime.adapter);
     if (rootPids.length === 0) return [];
-    const table = this.readProcessTable();
-    const candidatePids = new Set<number>();
-    for (const rootPid of rootPids) {
-      for (const desc of descendantsOf(rootPid, table)) {
-        if (desc.pid !== rootPid) candidatePids.add(desc.pid);
-      }
-      for (const proc of table) {
-        if (proc.pgid === rootPid && proc.pid !== rootPid) {
-          candidatePids.add(proc.pid);
+
+    const evaluate = (
+      table: ProcessInfo[]
+    ): { active: ProcessInfo[]; needsCpuDelta: boolean } => {
+      const candidatePids = new Set<number>();
+      for (const rootPid of rootPids) {
+        for (const desc of descendantsOf(rootPid, table)) {
+          if (desc.pid !== rootPid) candidatePids.add(desc.pid);
+        }
+        for (const proc of table) {
+          if (proc.pgid === rootPid && proc.pid !== rootPid) {
+            candidatePids.add(proc.pid);
+          }
         }
       }
-    }
-    if (candidatePids.size === 0) return [];
+      if (candidatePids.size === 0) return { active: [], needsCpuDelta: false };
 
-    const now = options.nowMs ?? Date.now();
-    const activeProcesses: ProcessInfo[] = [];
-    const turnStart = options.turnStartedAt ?? options.lastActivityAt;
+      const now = options.nowMs ?? Date.now();
+      const activeProcesses: ProcessInfo[] = [];
+      const turnStart = options.turnStartedAt ?? options.lastActivityAt;
+      let hasInconclusiveCandidates = false;
 
-    for (const pid of candidatePids) {
-      const proc = table.find((p) => p.pid === pid);
-      if (!proc) continue;
-      // Skip dead/zombie processes (§7)
-      if (isZombieProcess(proc.state)) continue;
+      for (const pid of candidatePids) {
+        const proc = table.find((p) => p.pid === pid);
+        if (!proc) continue;
+        // Skip dead/zombie processes (§7)
+        if (isZombieProcess(proc.state)) continue;
 
-      const currentCpu =
-        this.currentCpuTicksByPid.get(proc.pid) ?? proc.cpuTicks ?? 0;
-      const prevCpu = this.lastCpuTicksByPid.get(proc.pid);
-      const hasCpuDelta = prevCpu !== undefined && currentCpu > prevCpu;
-      const isStateActive = proc.state === 'R' || proc.state === 'D';
-      const helperPatterns =
-        options.helperPatterns ??
-        (typeof runtime.adapter.persistentHelperPatterns === 'function'
-          ? runtime.adapter.persistentHelperPatterns()
-          : []);
-      const isPersistentHelper = isPersistentHelperProcess(
-        proc,
-        helperPatterns
-      );
+        const currentCpu =
+          this.currentCpuTicksByPid.get(proc.pid) ?? proc.cpuTicks ?? 0;
+        const prevCpu = this.lastCpuTicksByPid.get(proc.pid);
+        const hasCpuDelta = prevCpu !== undefined && currentCpu > prevCpu;
+        const isStateActive = proc.state === 'R' || proc.state === 'D';
+        const helperPatterns =
+          options.helperPatterns ??
+          (typeof runtime.adapter.persistentHelperPatterns === 'function'
+            ? runtime.adapter.persistentHelperPatterns()
+            : []);
+        const isPersistentHelper = isPersistentHelperProcess(
+          proc,
+          helperPatterns
+        );
 
-      if (isPersistentHelper) {
-        // Persistent helpers (tsserver, language servers, harness hosts, etc.)
-        // only count as evidence of work if they are actively running or consuming CPU.
-        if (hasCpuDelta || isStateActive) activeProcesses.push(proc);
-        continue;
-      }
-
-      // Non-helper child processes:
-      if (hasCpuDelta || isStateActive) {
-        activeProcesses.push(proc);
-        continue;
-      }
-
-      if (turnStart !== undefined) {
-        let procStartMs: number | undefined;
-        if (proc.ageMs !== undefined) {
-          procStartMs = now - proc.ageMs;
-        } else if (
-          proc.startTicks !== undefined &&
-          options.uptimeSeconds !== undefined
-        ) {
-          const clockTickHz = options.clockTickHz ?? 100;
-          const startSeconds = proc.startTicks / clockTickHz;
-          const ageMs = Math.max(
-            0,
-            Math.round((options.uptimeSeconds - startSeconds) * 1000)
-          );
-          procStartMs = now - ageMs;
+        if (isPersistentHelper) {
+          // Persistent helpers (tsserver, language servers, harness hosts, etc.)
+          // only count as evidence of work if they are actively running or consuming CPU.
+          if (hasCpuDelta || isStateActive) {
+            activeProcesses.push(proc);
+          } else {
+            hasInconclusiveCandidates = true;
+          }
+          continue;
         }
-        if (procStartMs !== undefined && procStartMs >= turnStart - 1000) {
+
+        // Non-helper child processes:
+        if (hasCpuDelta || isStateActive) {
           activeProcesses.push(proc);
           continue;
         }
-      } else {
-        activeProcesses.push(proc);
+
+        if (turnStart !== undefined) {
+          let procStartMs: number | undefined;
+          if (proc.ageMs !== undefined) {
+            procStartMs = now - proc.ageMs;
+          } else if (
+            proc.startTicks !== undefined &&
+            options.uptimeSeconds !== undefined
+          ) {
+            const clockTickHz = options.clockTickHz ?? 100;
+            const startSeconds = proc.startTicks / clockTickHz;
+            const ageMs = Math.max(
+              0,
+              Math.round((options.uptimeSeconds - startSeconds) * 1000)
+            );
+            procStartMs = now - ageMs;
+          }
+          if (procStartMs !== undefined && procStartMs >= turnStart - 1000) {
+            activeProcesses.push(proc);
+            continue;
+          }
+        } else {
+          activeProcesses.push(proc);
+          continue;
+        }
+        hasInconclusiveCandidates = true;
       }
+
+      return {
+        active: activeProcesses.sort((a, b) => a.pid - b.pid),
+        needsCpuDelta: hasInconclusiveCandidates,
+      };
+    };
+
+    let table = this.readProcessTable();
+    let result = evaluate(table);
+
+    // If candidate processes exist but none have proven active from the cached snapshot,
+    // sample deliberately: take a fresh baseline, wait ~200ms, take a fresh sample, and re-evaluate.
+    if (
+      result.active.length === 0 &&
+      result.needsCpuDelta &&
+      options.sampleDelayMs !== 0
+    ) {
+      const delayMs = options.sampleDelayMs ?? 200;
+      this.readProcessTable({ forceFresh: true });
+      this.syncSleep(delayMs);
+      table = this.readProcessTable({ forceFresh: true });
+      result = evaluate(table);
     }
 
-    return activeProcesses.sort((a, b) => a.pid - b.pid);
+    return result.active;
   }
 
   liveChildPids(id: string, options?: LiveChildCheckOptions): number[] {

@@ -1684,4 +1684,55 @@ describe('ChannelAgentRuntimeManager', () => {
       }
     }
   });
+
+  it('samples CPU deliberately when cached process table shows no delta (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let sampleCallCount = 0;
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => {
+        sampleCallCount++;
+        const cpuTicks = sampleCallCount >= 3 ? 25 : 10;
+        return [
+          {
+            pid: 96_001,
+            ppid: 1,
+            pgid: 96_001,
+            command: 'agent',
+            commandLine: 'agent',
+            rssBytes: 0,
+            state: 'S',
+          },
+          {
+            pid: 96_002,
+            ppid: 96_001,
+            pgid: 96_001,
+            command: 'worker',
+            commandLine: 'worker',
+            rssBytes: 0,
+            state: 'S',
+            cpuTicks,
+            ageMs: 60_000,
+          },
+        ];
+      },
+    });
+
+    const r1 = await manager.create({
+      id: 'deliberate-sample-runtime',
+      providerId: 'cursor',
+      profileActorId: 'agent-profile:cursor:default',
+      cwd: '/tmp',
+      displayName: 'Cursor',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [96_001];
+
+    const live = manager.liveChildProcesses(r1.id, {
+      turnStartedAt: Date.now() - 10_000,
+      sampleDelayMs: 10,
+    });
+    expect(live.map((p) => p.pid)).toEqual([96_002]);
+    expect(sampleCallCount).toBeGreaterThanOrEqual(3);
+  });
 });
