@@ -2181,6 +2181,7 @@ describe('channel-message-store async runs (#1391)', () => {
     const recovered = reopened.getAsyncRun(run.id)!;
     expect(recovered.state).toBe('completed');
     expect(recovered.deliveryContract?.contractPending).not.toBe(true);
+    expect(recovered.deliveryContract?.abandonedAt).toBeTruthy();
     expect(recovered.deliveryContract?.result).toMatchObject({
       met: false,
       unmet: [],
