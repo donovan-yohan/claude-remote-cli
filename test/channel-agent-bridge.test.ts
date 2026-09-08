@@ -1995,4 +1995,35 @@ describe('channel-agent-bridge lifecycle', () => {
       meta: { truncationReason: 'size-limit' },
     });
   });
+
+  it('dedupes re-emitted late assistant output using stable #late suffix (#1579 item 2)', () => {
+    const { store, hub } = makeStore();
+    const adapter = new MockProtocolAdapterV2();
+    bindSessionToChannel({
+      channelId: 'topic:late-dedupe',
+      agentFramework: 'claude',
+      adapter,
+      store,
+      hub,
+      isLateOutputTurn: (turnId) => turnId === 'turn-drained',
+    });
+
+    adapter.broadcastPatch(
+      assistantUpdated('s', 'turn-drained', 'msg-1', 'late reply text')
+    );
+    adapter.broadcastPatch(
+      assistantUpdated('s', 'turn-drained', 'msg-1', 'late reply text')
+    );
+
+    const messages = store.history('topic:late-dedupe');
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      body: { text: 'late reply text' },
+      source: {
+        runtimeId: 's',
+        turnId: 'turn-drained',
+        itemId: 'msg-1#late',
+      },
+    });
+  });
 });

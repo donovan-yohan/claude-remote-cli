@@ -356,7 +356,6 @@ export function bindSessionToChannel(
   let currentAttribution = input.initialAgentAttribution
     ? { ...input.initialAgentAttribution }
     : undefined;
-  let lateOutputCounter = 0;
   let closed = false;
 
   function itemSourceKey(
@@ -1201,8 +1200,7 @@ export function bindSessionToChannel(
     // routing from a turn Relay already cancelled (#1570).
     try {
       const canonicalItemId = canonicalAssistantItemId(patch.item);
-      lateOutputCounter += 1;
-      const lateItemId = `${canonicalItemId}#late-${lateOutputCounter}`;
+      const lateItemId = `${canonicalItemId}#late`;
       const parentMessageId = input.parentMessageIdForTurn?.(patch.turnId);
       const agentAttribution = attributionForTurn(patch.turnId);
       const asyncRun = input.asyncRunReferenceForTurn?.(patch.turnId);
