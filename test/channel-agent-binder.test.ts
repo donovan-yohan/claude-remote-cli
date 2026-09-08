@@ -1459,7 +1459,7 @@ class ScriptedAdapter extends BaseProtocolAdapterV2 {
 
   constructor(
     readonly agentType: string,
-    private readonly script: ScriptMode
+    public script: ScriptMode
   ) {
     super();
   }
@@ -6656,18 +6656,19 @@ describe('channel-agent-binder — lifecycle', () => {
     );
   });
 
-  it('re-enqueues a trigger when the runtime exits during baseline capture (#1578 review)', async () => {
+  it('re-enqueues the preflight trigger while dropping later queued sends on runtime exit (#1579)', async () => {
     const profiles = createAgentProfileStore(':memory:');
     cleanup.push(() => profiles.close());
     profiles.seedBuiltIns([{ id: 'mock' }]);
 
     const built: ScriptedAdapter[] = [];
+    let baselineCaptureStarted = false;
     let releaseGate!: (value?: void | PromiseLike<void>) => void;
     const gate = new Promise<void>((resolve) => {
       releaseGate = resolve;
     });
 
-    const { binder, store, sessions } = makeBinder({
+    const { binder, store, hub, sessions } = makeBinder({
       build: (agentType) => {
         const adapter = new ScriptedAdapter(agentType, {
           mode: 'reply',
@@ -6682,6 +6683,7 @@ describe('channel-agent-binder — lifecycle', () => {
       deliveryContractProbeFactory: () => ({
         git: {
           headSha: async () => {
+            baselineCaptureStarted = true;
             await gate;
             return { kind: 'ok', value: 'a'.repeat(40) };
           },
@@ -6692,6 +6694,11 @@ describe('channel-agent-binder — lifecycle', () => {
           hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
         },
       }),
+    });
+    const statuses: Array<Record<string, unknown>> = [];
+    binder.setStatusBroadcaster((_type, data) => {
+      if (data['agentId'] === builtInAgentProfileId('mock'))
+        statuses.push(data);
     });
 
     const mentions = parseMentions('@mock please ship', ['mock']);
@@ -6707,13 +6714,39 @@ describe('channel-agent-binder — lifecycle', () => {
     binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
 
     await waitFor(() => sessions.spawns() === 1);
+    await waitFor(() => baselineCaptureStarted);
+    const queued = post(store, binder, '@mock second', ['mock']);
+    await waitFor(() => statuses.at(-1)?.['queuedCount'] === 1);
     sessions.fireEnd(sessions.firstSessionId());
     releaseGate();
+
+    await waitFor(() =>
+      systemRows(store).some((row) =>
+        row.body.text.includes(
+          'runtime ended before delivering a queued message'
+        )
+      )
+    );
+    expect(
+      systemRows(store).filter((row) =>
+        row.body.text.includes(
+          'runtime ended before delivering a queued message'
+        )
+      )
+    ).toHaveLength(1);
+    const dropped = collectReceipts(hub, CH).filter(
+      (receipt) =>
+        receipt.messageId === queued.id &&
+        receipt.state === 'failed_runtime' &&
+        receipt.reasonCode === 'runtime_ended'
+    );
+    expect(dropped).toHaveLength(1);
 
     await binder.ensureBinding(CH, 'mock');
     await waitFor(() => sessions.spawns() === 2);
     await waitFor(() => built.length === 2 && built[1]!.sendCalls.length === 1);
     expect(built[1]!.sendInputs[0]!.content).toContain('@mock please ship');
+    expect(built[1]!.sendInputs[0]!.content).not.toContain('@mock second');
   });
 
   it('posts a restart-abandonment system row and attention event for cancelled contract runs (#1585)', async () => {
@@ -12867,5 +12900,131 @@ describe('channel-agent-binder — topic routing cwd (#1534)', () => {
     expect(
       systemRows(store).filter((m) => m.body.text.includes(WORKTREE))
     ).toHaveLength(1);
+  });
+
+  it('revives a drained run on late turn-completed even after a successor turn ran (#1579 item 3)', async () => {
+    let currentAdapter: ScriptedAdapter | null = null;
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => {
+        const adapter = new ScriptedAdapter(t, {
+          mode: 'stall',
+        });
+        currentAdapter = adapter;
+        return adapter;
+      },
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 10_000,
+      turnCeilingMs: 30,
+    });
+
+    // 1. First turn starts and gets force-drained by turn ceiling
+    const { run: run1 } = postWithAsyncRun(store, binder, '@mock first turn', [
+      'mock',
+    ]);
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = currentAdapter!;
+    await waitFor(() => adapter.sendCalls.length === 1);
+    const turn1Id = adapter.sendCalls[0]!;
+    adapter.broadcastPatch({
+      type: 'agent-item-started-v2',
+      sessionId: sessions.firstSessionId(),
+      timestamp: 't',
+      turnId: turn1Id,
+      item: { type: 'assistantMessage', id: 'drained-prose', text: '' },
+    });
+    adapter.broadcastPatch({
+      type: 'agent-item-delta-v2',
+      sessionId: sessions.firstSessionId(),
+      timestamp: 't',
+      turnId: turn1Id,
+      itemId: 'drained-prose',
+      delta: { text: 'partial before drain' },
+    });
+    await waitFor(
+      () =>
+        rows(store).some(
+          (message) =>
+            message.source?.turnId === turn1Id &&
+            message.body.text === 'partial before drain'
+        ),
+      4000
+    );
+
+    // Wait for ceiling drain
+    await waitFor(
+      () => systemRows(store).some((m) => m.body.text.includes('turn limit')),
+      4000
+    );
+    expect(store.getAsyncRun(run1.id)?.targets[0]?.state).toBe('cancelled');
+    const drainedRow = rows(store).find(
+      (message) => message.source?.turnId === turn1Id
+    );
+    expect(drainedRow).toMatchObject({
+      status: 'interrupted',
+      body: { text: 'partial before drain' },
+    });
+
+    // 2. Second turn (successor) starts and completes
+    adapter.script = { mode: 'reply', text: 'successor reply' };
+    post(store, binder, '@mock second turn', ['mock']);
+    await waitFor(() => agentReplies(store, 'mock').length === 1, 4000);
+
+    adapter.broadcastPatch({
+      type: 'agent-item-delta-v2',
+      sessionId: sessions.firstSessionId(),
+      timestamp: 't',
+      turnId: turn1Id,
+      itemId: 'drained-prose',
+      delta: { text: ' late delta must not mutate drained prose' },
+    });
+    expect(store.getMessage(drainedRow!.id)).toMatchObject({
+      status: 'interrupted',
+      body: { text: 'partial before drain' },
+    });
+    const lateCompletedPatch = {
+      type: 'agent-item-updated-v2' as const,
+      sessionId: sessions.firstSessionId(),
+      timestamp: 't',
+      turnId: turn1Id,
+      item: {
+        type: 'assistantMessage' as const,
+        id: 'late-only-prose',
+        text: 'late completed prose',
+        status: 'completed' as const,
+      },
+    };
+    adapter.broadcastPatch(lateCompletedPatch);
+
+    // 3. Late agent-turn-completed-v2 arrives for Turn 1
+    adapter.broadcastPatch({
+      type: 'agent-turn-completed-v2',
+      sessionId: sessions.firstSessionId(),
+      turnId: turn1Id,
+      status: 'completed',
+      timestamp: new Date().toISOString(),
+    });
+    adapter.broadcastPatch(lateCompletedPatch);
+
+    // 4. Verify Turn 1's run transitions from cancelled to completed
+    await waitFor(
+      () => store.getAsyncRun(run1.id)?.targets[0]?.state === 'completed',
+      4000
+    );
+    expect(store.getAsyncRun(run1.id)?.state).toBe('completed');
+    expect(
+      rows(store).filter(
+        (message) =>
+          message.source?.turnId === turn1Id &&
+          message.source?.itemId === 'late-only-prose#late'
+      )
+    ).toHaveLength(1);
+    expect(
+      rows(store).filter(
+        (message) =>
+          message.source?.turnId === turn1Id &&
+          message.source?.itemId === 'late-only-prose'
+      )
+    ).toHaveLength(0);
   });
 });

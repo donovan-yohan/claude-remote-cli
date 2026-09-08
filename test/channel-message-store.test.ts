@@ -14,6 +14,7 @@ import {
   buildChannelSearchMatchQuery,
   buildChannelThreadHistorySql,
   buildChannelThreadSummarySql,
+  buildGetLastPrincipalProseForRunIdSql,
   channelSearchPrefixRange,
   channelSearchUnavailableReason,
   createChannelMessageStore,
@@ -1239,6 +1240,45 @@ describe('channel-message-store schema migration', () => {
     const run = reopened.getAsyncRun(created.run.id);
     expect(run?.deliveryContract?.baseline).toEqual(baseline);
   });
+
+  it('stamps a follow-up decision without persisting a synthetic result (#1579)', () => {
+    const s = store();
+    const { run } = s.appendCompleteWithAsyncRun({
+      channelId: 'topic:followup-decision',
+      sender: HUMAN,
+      text: '@mock do the thing',
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    s.transitionAsyncRunTarget({
+      runId: run.id,
+      targetId: builtInAgentProfileId('mock'),
+      state: 'completed',
+    });
+    const pending = s.setAsyncRunDeliveryContractPending({
+      runId: run.id,
+      pending: true,
+    })!;
+
+    const stamped = s.stampAsyncRunDeliveryContractFollowupDecidedAt({
+      runId: run.id,
+      followupDecidedAt: '2026-09-08T00:00:00.000Z',
+    })!;
+
+    expect(stamped.deliveryContract?.followupDecidedAt).toBe(
+      '2026-09-08T00:00:00.000Z'
+    );
+    expect(stamped.deliveryContract?.result).toBeUndefined();
+    expect(stamped.deliveryContract?.contractPending).toBe(true);
+    expect(stamped.state).toBe(pending.state);
+    expect(
+      s.stampAsyncRunDeliveryContractFollowupDecidedAt({
+        runId: run.id,
+        followupDecidedAt: '2026-09-09T00:00:00.000Z',
+      })?.deliveryContract?.followupDecidedAt
+    ).toBe('2026-09-08T00:00:00.000Z');
+  });
 });
 
 describe('channel-message-store async-run migration (#1391)', () => {
@@ -2413,6 +2453,42 @@ describe('channel-message-store async runs (#1391)', () => {
         turnIds: [turnId],
       })?.body.text
     ).toBe('real prose');
+  });
+
+  it('plans getLastPrincipalProseForRunId using idx_chm_async_run_id (#1579 item 1)', () => {
+    const p = path.join(
+      os.tmpdir(),
+      `channel-store-async-run-plan-${Date.now()}-${Math.random().toString(36).slice(2)}.db`
+    );
+    cleanup.push(() => {
+      try {
+        fs.unlinkSync(p);
+      } catch {
+        /* ignore */
+      }
+    });
+    store(p);
+    const raw = new Database(p, { readonly: true });
+    cleanup.push(() => raw.close());
+
+    const planWithoutParts = raw
+      .prepare(
+        `EXPLAIN QUERY PLAN ${buildGetLastPrincipalProseForRunIdSql(false)}`
+      )
+      .all('topic:async', 'chrun:123') as Array<{ detail: string }>;
+    const planWithParts = raw
+      .prepare(
+        `EXPLAIN QUERY PLAN ${buildGetLastPrincipalProseForRunIdSql(true)}`
+      )
+      .all('topic:async', 'chrun:123') as Array<{ detail: string }>;
+
+    const detailsWithout = planWithoutParts.map((r) => r.detail).join('\n');
+    const detailsWith = planWithParts.map((r) => r.detail).join('\n');
+
+    expect(detailsWithout).toMatch(/USING INDEX idx_chm_async_run_id/);
+    expect(detailsWith).toMatch(/USING INDEX idx_chm_async_run_id/);
+    expect(detailsWithout).not.toContain('idx_chm_channel_seq');
+    expect(detailsWith).not.toContain('idx_chm_channel_seq');
   });
 });
 

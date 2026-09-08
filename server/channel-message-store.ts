@@ -751,6 +751,29 @@ export function buildChannelMessageSearchSql(channelIdCount: number): string {
           LIMIT ?`;
 }
 
+export function buildGetLastPrincipalProseForRunIdSql(
+  includeParts = false
+): string {
+  return `SELECT m.*,
+                 ${replyCountSql('m')} AS reply_count
+          FROM channel_messages m INDEXED BY idx_chm_async_run_id
+          WHERE m.channel_id = ?
+            AND m.meta_json IS NOT NULL
+            AND m.kind = 'message'
+            AND m.sender_kind = 'agent'
+            AND m.status = 'complete'
+            AND TRIM(m.body_text) != ''
+            AND json_extract(m.meta_json, '$.agentDetail') IS NULL
+            ${
+              includeParts
+                ? ''
+                : "AND json_extract(m.meta_json, '$.parts') IS NULL"
+            }
+            AND json_extract(m.meta_json, '$.asyncRun.runId') = ?
+          ORDER BY m.seq DESC
+          LIMIT 1`;
+}
+
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS channel_messages (
   id                TEXT PRIMARY KEY,
@@ -1543,6 +1566,11 @@ export interface ChannelMessageStore {
     childRunId?: ChannelAsyncRunId;
     abandonedAt?: string;
     followupDecidedAt?: string;
+  }): ChannelAsyncRun | null;
+  /** Stamp a follow-up decision without fabricating a delivery result. */
+  stampAsyncRunDeliveryContractFollowupDecidedAt(input: {
+    runId: ChannelAsyncRunId;
+    followupDecidedAt: string;
   }): ChannelAsyncRun | null;
   /** Mark a contract as pending final evaluation. */
   setAsyncRunDeliveryContractPending(input: {
@@ -3998,6 +4026,12 @@ export function createChannelMessageStore(
       ORDER BY m.seq ASC
       LIMIT @limit`
   );
+  const selectLastPrincipalProseWithoutParts = db.prepare(
+    buildGetLastPrincipalProseForRunIdSql(false)
+  );
+  const selectLastPrincipalProseWithParts = db.prepare(
+    buildGetLastPrincipalProseForRunIdSql(true)
+  );
   const mentionContextStatements = {
     channel: {
       boundary: db.prepare(buildChannelMentionContextBoundarySql('channel')),
@@ -4878,6 +4912,40 @@ export function createChannelMessageStore(
             SET state = ?, reason = ?, delivery_contract_json = ?, updated_at = ?
           WHERE id = ?`
       ).run(nextState, nextReason ?? null, JSON.stringify(next), now, run.id);
+      return asyncRunFromRow(selectAsyncRun.get(run.id) as AsyncRunRow);
+    }
+  );
+
+  const stampAsyncRunDeliveryContractFollowupDecidedAtImpl = db.transaction(
+    (input: {
+      runId: ChannelAsyncRunId;
+      followupDecidedAt: string;
+    }): ChannelAsyncRun | null => {
+      const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
+      if (!run) return null;
+      if (!run.delivery_contract_json) return asyncRunFromRow(run);
+
+      let contract: NonNullable<ChannelAsyncRun['deliveryContract']>;
+      try {
+        contract = JSON.parse(run.delivery_contract_json) as NonNullable<
+          ChannelAsyncRun['deliveryContract']
+        >;
+      } catch {
+        return asyncRunFromRow(run);
+      }
+      if (!contract || !Array.isArray(contract.expect))
+        return asyncRunFromRow(run);
+      if (contract.followupDecidedAt) return asyncRunFromRow(run);
+
+      const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+        ...contract,
+        followupDecidedAt: input.followupDecidedAt,
+      };
+      const now = nowIso();
+      db.prepare(
+        `UPDATE channel_async_runs SET delivery_contract_json = ?, updated_at = ?
+          WHERE id = ?`
+      ).run(JSON.stringify(next), now, run.id);
       return asyncRunFromRow(selectAsyncRun.get(run.id) as AsyncRunRow);
     }
   );
@@ -5830,6 +5898,10 @@ export function createChannelMessageStore(
       return finalizeAsyncRunDeliveryContractImpl(input);
     },
 
+    stampAsyncRunDeliveryContractFollowupDecidedAt(input) {
+      return stampAsyncRunDeliveryContractFollowupDecidedAtImpl(input);
+    },
+
     setAsyncRunDeliveryContractPending(input) {
       return setAsyncRunDeliveryContractPendingImpl(input);
     },
@@ -6273,27 +6345,12 @@ export function createChannelMessageStore(
 
     getLastPrincipalProseForRunId(input) {
       const includeParts = input.includeParts === true;
-      const row = db
-        .prepare(
-          `SELECT m.*,
-                  ${replyCountSql('m')} AS reply_count
-           FROM channel_messages m
-           WHERE m.channel_id = ?
-             AND m.kind = 'message'
-             AND m.sender_kind = 'agent'
-             AND m.status = 'complete'
-             AND TRIM(m.body_text) != ''
-             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
-             ${
-               includeParts
-                 ? ''
-                 : "AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)"
-             }
-             AND json_extract(m.meta_json, '$.asyncRun.runId') = ?
-           ORDER BY m.seq DESC
-           LIMIT 1`
-        )
-        .get(input.channelId, input.runId) as ChannelMessageRow | undefined;
+      const stmt = includeParts
+        ? selectLastPrincipalProseWithParts
+        : selectLastPrincipalProseWithoutParts;
+      const row = stmt.get(input.channelId, input.runId) as
+        | ChannelMessageRow
+        | undefined;
       return row ? rowToMessage(row) : null;
     },
 

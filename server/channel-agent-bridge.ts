@@ -308,6 +308,11 @@ export interface BindSessionToChannelInput {
    */
   isLateOutputTurn?: (turnId: string) => boolean;
   /**
+   * Registers the synchronous freeze boundary for a Relay force-drain. The
+   * binder invokes it before it publishes the drained run as terminal.
+   */
+  onDrainFreezeReady?: (freeze: (turnId: string) => void) => void;
+  /**
    * Invoked in `finalize()` after `completeStreamBroadcast` for `status ===
    * 'complete'` rows ONLY (#1167 §8). Bridge-authored replies bypass
    * `postToChannel`, so `onMessagePosted` never fires for them — this is the sole
@@ -356,7 +361,6 @@ export function bindSessionToChannel(
   let currentAttribution = input.initialAgentAttribution
     ? { ...input.initialAgentAttribution }
     : undefined;
-  let lateOutputCounter = 0;
   let closed = false;
 
   function itemSourceKey(
@@ -1132,6 +1136,7 @@ export function bindSessionToChannel(
     turnId: string | undefined,
     status: 'complete' | 'truncated' | 'interrupted' | 'failed'
   ): void {
+    if (turnId !== undefined && input.isLateOutputTurn?.(turnId)) return;
     for (const stream of streams.values()) {
       if (stream.state === 'released') continue;
       if (turnId !== undefined && stream.turnId !== turnId) continue;
@@ -1187,6 +1192,28 @@ export function bindSessionToChannel(
     }
   }
 
+  function freezeDrainedTurnStreams(turnId: string): void {
+    for (const stream of [...streams.values()]) {
+      if (stream.turnId === turnId && stream.state !== 'released') {
+        finalize(stream, 'interrupted', stream.text);
+      }
+    }
+    for (const stream of [...detailStreams.values()]) {
+      if (stream.turnId === turnId && stream.state !== 'released') {
+        finalizeDetail(stream, 'interrupted');
+      }
+    }
+    for (const [itemId, alias] of assistantItemAliases) {
+      if (alias.turnId === turnId) assistantItemAliases.delete(itemId);
+    }
+    for (const [itemId, streamKey] of detailItemAliases) {
+      if (streamKey.startsWith(`${turnId}\u0000`)) {
+        detailItemAliases.delete(itemId);
+      }
+    }
+    reportRetention();
+  }
+
   function persistLateAssistantOutput(
     patch: Extract<AgentPatchV2, { type: 'agent-item-updated-v2' }>
   ): boolean {
@@ -1201,8 +1228,7 @@ export function bindSessionToChannel(
     // routing from a turn Relay already cancelled (#1570).
     try {
       const canonicalItemId = canonicalAssistantItemId(patch.item);
-      lateOutputCounter += 1;
-      const lateItemId = `${canonicalItemId}#late-${lateOutputCounter}`;
+      const lateItemId = `${canonicalItemId}#late`;
       const parentMessageId = input.parentMessageIdForTurn?.(patch.turnId);
       const agentAttribution = attributionForTurn(patch.turnId);
       const asyncRun = input.asyncRunReferenceForTurn?.(patch.turnId);
@@ -1232,6 +1258,20 @@ export function bindSessionToChannel(
   }
 
   function handlePatch(patch: AgentPatchV2): void {
+    const patchTurn =
+      'turnId' in patch && typeof patch.turnId === 'string'
+        ? patch.turnId
+        : patch.type === 'agent-live-state-updated-v2'
+          ? (patch.live.activeTurnId ?? undefined)
+          : undefined;
+    if (patchTurn && input.isLateOutputTurn?.(patchTurn)) {
+      freezeDrainedTurnStreams(patchTurn);
+      if (patch.type === 'agent-item-updated-v2') {
+        persistLateAssistantOutput(patch);
+      }
+      return;
+    }
+
     switch (patch.type) {
       case 'agent-session-snapshot-v2': {
         applySessionConfig(patch.session.config, true);
@@ -1396,6 +1436,7 @@ export function bindSessionToChannel(
     }
   }
 
+  input.onDrainFreezeReady?.(freezeDrainedTurnStreams);
   const unlisten = adapter.onPatch(handlePatch);
 
   return () => {

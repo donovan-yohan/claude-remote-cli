@@ -29,6 +29,7 @@ workflow.
 - Durable mention delivery projection defaults unmapped provider failures to `refused_provider` (#1579).
 - Channel post responses return `queued` for non-refusal newest delivery receipts and serialize the authoritative re-read run state (#1579).
 - Channel store restart recovery now stamps `abandonedAt` on pending delivery contracts when finalized with `server-restarted` (#1579).
+- Drained streams freeze before waits expose them, re-emitted late completions stay idempotent, waits re-read revived runs, follow-up decision timestamps no longer fabricate empty delivery results, and runtime teardown reports queued sends displaced during baseline preflight (#1579).
 
 ### First-class Cursor CLI channel adapter over ACP (`@cursor`)
 

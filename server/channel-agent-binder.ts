@@ -585,6 +585,8 @@ export interface LiveBinding {
   activeTurnId: string | null;
   /** True while a queued turn is in pre-send probes (e.g. #1578 baseline capture). */
   sendPreflight: boolean;
+  /** Synchronous bridge boundary used before publishing a force-drained turn. */
+  freezeDrainedTurn: ((turnId: string) => void) | null;
   /** Immediate thread parent keyed by routed turn; retained past binder idle. */
   parentMessageIdByTurn: Map<string, string | null>;
   /** Exact accepted post that owns an async target turn (never provider-derived). */
@@ -2198,6 +2200,7 @@ export function createChannelAgentBinder(
     if (turnId === null) return;
     const adapter = binding.adapter;
     binding.drainedTurnIds.add(turnId);
+    binding.freezeDrainedTurn?.(turnId);
     suppressTurnPatches(binding, turnId);
     postSystemRow(binding.channelId, text, {
       parentMessageId: parentForTurn(binding, turnId),
@@ -2221,6 +2224,9 @@ export function createChannelAgentBinder(
     );
     for (const [id] of oldest.slice(0, binding.suppressedTurnIds.size - 64)) {
       binding.suppressedTurnIds.delete(id);
+      binding.drainedTurnIds.delete(id);
+      binding.requestMessageIdByTurn.delete(id);
+      binding.parentMessageIdByTurn.delete(id);
     }
   }
 
@@ -2263,6 +2269,7 @@ export function createChannelAgentBinder(
       status: 'idle',
       activeTurnId: null,
       sendPreflight: false,
+      freezeDrainedTurn: null,
       parentMessageIdByTurn: new Map(),
       requestMessageIdByTurn: new Map(),
       exactTurnTombstones: new Map(),
@@ -2392,6 +2399,9 @@ export function createChannelAgentBinder(
         : {}),
       parentMessageIdForTurn: (turnId) => parentForTurn(binding, turnId),
       isLateOutputTurn: (turnId) => binding.drainedTurnIds.has(turnId),
+      onDrainFreezeReady: (freeze) => {
+        binding.freezeDrainedTurn = freeze;
+      },
       asyncRunReferenceForTurn: (turnId) => {
         // Mirror the exact/fallback ancestry rules for the public run ref. A
         // late Hermes `turn-0` can only borrow a retained generation when it is
@@ -3758,8 +3768,16 @@ export function createChannelAgentBinder(
       binding.turnZeroFallbackUnsafe = true;
     }
     retainExactTurnTombstones(binding);
-    binding.parentMessageIdByTurn.clear();
-    binding.requestMessageIdByTurn.clear();
+    for (const [tId] of binding.parentMessageIdByTurn) {
+      if (!binding.drainedTurnIds.has(tId)) {
+        binding.parentMessageIdByTurn.delete(tId);
+      }
+    }
+    for (const [tId] of binding.requestMessageIdByTurn) {
+      if (!binding.drainedTurnIds.has(tId)) {
+        binding.requestMessageIdByTurn.delete(tId);
+      }
+    }
     binding.activeTurnId = turnId;
     binding.parentMessageIdByTurn.set(
       turnId,
@@ -4490,7 +4508,9 @@ export function createChannelAgentBinder(
         transitionAsyncRunTargetForRun(binding, patch.turnId, runId, state);
       }
     }
-    binding.drainedTurnIds.delete(patch.turnId);
+    // Preserve the force-drain marker and exact request mapping through bounded
+    // suppression retention: providers can replay a completed item after their
+    // terminal patch, and it must keep its stable #late source identity.
     return true;
   }
 
@@ -5269,9 +5289,8 @@ export function createChannelAgentBinder(
       )
         return;
       const followupDecidedAt = new Date(now()).toISOString();
-      const stamped = store.finalizeAsyncRunDeliveryContract({
+      const stamped = store.stampAsyncRunDeliveryContractFollowupDecidedAt({
         runId: run.id,
-        result: { met: false, unmet: [], unknown: [], evaluatedAt },
         followupDecidedAt,
       });
       if (stamped) hub.broadcastRunLifecycle(stamped);
@@ -6795,10 +6814,12 @@ export function createChannelAgentBinder(
     binding.patchUnlisten?.();
     disarmWatchdog(binding);
     disarmTurnCeiling(binding);
-    // No-op when `markDeadRuntimeIdle` already drained on the `disconnected`
-    // patch, so a death that fires both paths posts one row per trigger.
-    if (!preserveForPreflight) dropQueuedTurns(binding);
+    // The preflight trigger has already left the FIFO and will re-enqueue after
+    // its probe returns. Every later queued trigger must still receive its
+    // dropped-row notice before this dead binding reports idle.
+    dropQueuedTurns(binding);
     binding.adapter = null;
+    binding.freezeDrainedTurn = null;
     binding.unbind = null;
     binding.patchUnlisten = null;
     binding.activeTurnId = null;
