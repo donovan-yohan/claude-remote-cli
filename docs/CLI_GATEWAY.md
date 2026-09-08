@@ -210,11 +210,25 @@ item identifiers are optional diagnostics only and must never be parsed for
 correlation.
 
 The post envelope includes `mentions[]`, one entry per routing mention:
-`{ targetProfileId, state: "queued" | "refused_policy" | "refused_provider",
+`{ targetProfileId, state: "queued" | "refused_policy" | "refused_provider" | "unreachable_offline",
 reasonCode? }`. It reports refusals known before the HTTP response is written;
 accepted targets remain `queued` with the run id. Later delivery changes still
 arrive as `channel-delivery-receipt-v1` and run lifecycle frames through
 `channels subscribe`.
+
+Relay reuses a framework-availability probe for up to 5 seconds.
+Within that window, an unavailable profile is returned synchronously as
+`unreachable_offline`; a change in external availability can therefore take up
+to 5 seconds to appear in a new post response. This TTL is only for availability
+probing, never for delivery receipts or durable run targets.
+
+On a cold or expired availability cache, `channels.post` returns `queued` while
+Relay performs its asynchronous availability probe. An unavailable target or
+provider refusal found by that probe is reported later through run
+lifecycle/receipt events. `--fail-on-refused` uses its existing `channels wait`
+then `channels run get` follow-through for the provider-failure case.
+Availability-cache refusals are the only probe outcomes that can change the
+immediate post exit result.
 
 `--fail-on-refused` always prints the original JSON envelope. When `mentions[]`
 contains a synchronous policy or provider refusal, it prints the reason code to

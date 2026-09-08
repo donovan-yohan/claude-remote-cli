@@ -255,7 +255,8 @@ operator-facing lanes:
   structured code is carried separately as `providerFailureCode`.
 - **Run admission**: `channels.post` reports each addressed target in its
   synchronous `mentions[]` result with `state:"queued"`, `"refused_policy"`,
-  or `"refused_provider"`, plus a `reasonCode` for either refusal. The run id
+  `"refused_provider"`, or `"unreachable_offline"`, plus a `reasonCode` for
+  each refusal. The run id
   remains the correlation key for accepted asynchronous work; later outcomes
   continue through run lifecycle frames and `channel-delivery-receipt-v1`
   delivery receipts.
