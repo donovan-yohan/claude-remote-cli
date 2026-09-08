@@ -224,6 +224,18 @@ class StallingAdapter extends BaseProtocolAdapterV2 {
       status: 'interrupted',
     });
   }
+  failWithQuota(): void {
+    if (!this.live) throw new Error('no live turn to fail');
+    this.emitPatch({
+      type: 'agent-error-v2',
+      sessionId: this.sid,
+      timestamp: 't',
+      turnId: this.live,
+      message: 'usage limit reached',
+      failureCode: 'quota_exhausted',
+      retryAfter: '2999-01-01T00:00:00.000Z',
+    });
+  }
 }
 
 interface Harness {
@@ -506,6 +518,52 @@ describe('mention routing — end-to-end via the router', () => {
       h.store.getBinding(h.channelId, builtInAgentProfileId('mock'))
         ?.providerSession['lastDeliveredSeq']
     ).toBe(res.body.message.seq);
+  });
+
+  it('returns a cached provider refusal in the posting response', async () => {
+    const h = await harness(() => new StallingAdapter('mock'));
+    const url = `/channels/${encodeURIComponent(h.channelId)}/messages`;
+    await req({
+      port: h.port,
+      method: 'POST',
+      url,
+      body: { text: '@mock warm' },
+    });
+    await waitFor(() => h.adapters().length === 1);
+    (h.adapters()[0] as StallingAdapter).failWithQuota();
+    await waitFor(() =>
+      h.store
+        .history(h.channelId, { limit: 50 })
+        .some((message) => message.body.text.includes('quota_exhausted'))
+    );
+    const refused = await req<{
+      mentions: Array<{
+        targetProfileId: string;
+        state: string;
+        reasonCode?: string;
+      }>;
+    }>({
+      port: h.port,
+      method: 'POST',
+      url,
+      body: { text: '@mock retry', clientMessageId: 'provider-refusal' },
+    });
+    expect(refused.status).toBe(201);
+    expect(refused.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('mock'),
+        state: 'refused_provider',
+        reasonCode: 'provider_quota_exhausted',
+      },
+    ]);
+    const replay = await req<typeof refused.body>({
+      port: h.port,
+      method: 'POST',
+      url,
+      body: { text: '@mock retry', clientMessageId: 'provider-refusal' },
+    });
+    expect(replay.status).toBe(200);
+    expect(replay.body.mentions).toEqual(refused.body.mentions);
   });
 
   it('delivers a typed completion trigger after an agent @mention without fabricating an @mention row', async () => {
@@ -1039,7 +1097,15 @@ describe('mention routing — real scoped-actor auth composition (P2 #1180)', ()
       'x-relay-cli-command': 'channels.post',
     };
     const postOnce = (text: string) =>
-      req<{ message: ChannelMessage; run: ChannelAsyncRun }>({
+      req<{
+        message: ChannelMessage;
+        run: ChannelAsyncRun;
+        mentions: Array<{
+          targetProfileId: string;
+          state: string;
+          reasonCode?: string;
+        }>;
+      }>({
         port: h.port,
         method: 'POST',
         url: `/channels/${encodeURIComponent(h.channelId)}/messages`,
@@ -1054,6 +1120,10 @@ describe('mention routing — real scoped-actor auth composition (P2 #1180)', ()
       kind: 'agent',
       id: 'agent:orchestrator',
     });
+    expect(first.body.mentions).toEqual([
+      { targetProfileId: builtInAgentProfileId('mock'), state: 'queued' },
+    ]);
+    expect(first.body.run.id).toMatch(/^chrun:/);
     // Routing works through the real auth lane.
     await waitFor(() => agentReply(h.store, h.channelId).length >= 1);
     expect(agentReply(h.store, h.channelId)[0]!.sender.id).toBe(
@@ -1063,12 +1133,7 @@ describe('mention routing — real scoped-actor auth composition (P2 #1180)', ()
     // Brake accounting: further agent-sender posts count toward the cap. Posting
     // past MAX trips the pause row — a browser (human) sender never would, proving
     // the actor post is accounted as an agent turn end-to-end.
-    let pausedPost:
-      | {
-          status: number;
-          body: { message: ChannelMessage; run: ChannelAsyncRun };
-        }
-      | undefined;
+    let pausedPost: Awaited<ReturnType<typeof postOnce>> | undefined;
     for (let i = 1; i <= 4; i++) {
       const res = await postOnce(`@mock brief ${i}`);
       expect(res.status).toBe(201);
@@ -1089,6 +1154,22 @@ describe('mention routing — real scoped-actor auth composition (P2 #1180)', ()
           m.kind === 'system' && m.body.text.includes('Mention chain paused')
       );
     expect(paused).toHaveLength(1);
+    expect(pausedPost!.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('mock'),
+        state: 'refused_policy',
+        reasonCode: 'mention_chain_paused',
+      },
+    ]);
+    const alreadyPaused = await postOnce('@mock brief after pause');
+    expect(alreadyPaused.status).toBe(201);
+    expect(alreadyPaused.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('mock'),
+        state: 'refused_policy',
+        reasonCode: 'mention_chain_paused',
+      },
+    ]);
     // The router admitted this target atomically with the message before the
     // binder observed the cap. The brake must close that durable target, not
     // strand a client-visible queued run forever.
