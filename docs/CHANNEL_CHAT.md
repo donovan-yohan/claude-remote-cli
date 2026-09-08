@@ -674,11 +674,13 @@ bounded idempotency history while unresolved parent/child ancestry is preserved.
   still holds. A runtime with a live child process tree (e.g. running a test suite
   or build command) also counts as active (#1561): each watchdog tick queries
   the runtime's owned process root PIDs and defers drain while child processes
-  remain alive. A separate hard ceiling bounds one turn's total wall-clock. Both
-  drains interrupt the runtime through the adapter and post a system row before
-  terminalizing, so a run never reports a terminal state while its provider is
-  still working. Inactivity force-drain rows report the remaining turn ceiling
-  budget. Defaults are 5 min of silence and a 60 min ceiling, overridable with
+  remain alive (Linux-only; `readProcessTable` returns `[]` on other platforms,
+  and a hung child defers the idle silence budget until the hard turn ceiling).
+  A separate hard ceiling bounds one turn's total wall-clock. Both drains interrupt
+  the runtime through the adapter and post a system row before terminalizing, so
+  a run never reports a terminal state while its provider is still working.
+  Inactivity force-drain rows report the remaining turn ceiling budget. Defaults
+  are 5 min of silence and a 60 min ceiling, overridable with
   `RELAY_IDE_CHANNEL_TURN_IDLE_MS` / `RELAY_IDE_CHANNEL_TURN_CEILING_MS`.
 - A raw provider `idle` is not enough. Approval/waiting state keeps the edge
   pending until Relay's guarded terminal lifecycle observes a real boundary.
