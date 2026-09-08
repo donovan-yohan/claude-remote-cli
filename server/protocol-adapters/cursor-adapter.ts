@@ -98,6 +98,10 @@ const CURSOR_PROFILE: AcpHarnessProfile = {
   otherKindHeuristics: true,
   commandToolNames: CURSOR_COMMAND_TOOL_NAMES,
   fileToolNames: CURSOR_FILE_TOOL_NAMES,
+  persistentHelperPatterns: [
+    /(^|[/\s])code-mode-host(\s|$)/i,
+    /(^|[/\s])daemon-catalog-entry(\.js)?(\s|$)/i,
+  ],
   selectPermissionOptionId: ({ decision, options }) => {
     if (decision.kind === 'accept') {
       const targetKinds =

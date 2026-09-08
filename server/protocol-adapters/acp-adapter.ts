@@ -171,6 +171,11 @@ export interface AcpHarnessProfile {
   /** Native tool titles that should render as a file-change card. */
   fileToolNames?: ReadonlySet<string>;
   /**
+   * Harness-specific persistent helper process matchers (e.g. background hosts/daemons
+   * spawned by the harness that stay alive across turns).
+   */
+  persistentHelperPatterns?: readonly RegExp[];
+  /**
    * QUIRK hook: provider-specific failure classification for #1571.
    * Used for auth/quota phrases that are not shared across ACP harnesses.
    */
@@ -319,6 +324,10 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
   ownedProcessRootPids(): number[] {
     const pid = this.client?.pid;
     return typeof pid === 'number' && pid > 1 ? [pid] : [];
+  }
+
+  persistentHelperPatterns(): readonly RegExp[] {
+    return this.profile.persistentHelperPatterns ?? [];
   }
 
   async connect(config: AdapterConfig): Promise<void> {

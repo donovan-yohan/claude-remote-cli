@@ -127,6 +127,8 @@ export interface LiveChildCheckOptions {
   uptimeSeconds?: number;
   /** Override current epoch ms for deterministic testing. */
   nowMs?: number;
+  /** Optional custom regex matchers for persistent helper processes. */
+  helperPatterns?: readonly RegExp[];
 }
 
 export interface ChannelAgentRuntimeManagerOptions {
@@ -870,10 +872,18 @@ export class ChannelAgentRuntimeManager {
       const prevCpu = this.lastCpuTicksByPid.get(proc.pid);
       const hasCpuDelta = prevCpu !== undefined && currentCpu > prevCpu;
       const isStateActive = proc.state === 'R' || proc.state === 'D';
-      const isPersistentHelper = isPersistentHelperProcess(proc);
+      const helperPatterns =
+        options.helperPatterns ??
+        (typeof runtime.adapter.persistentHelperPatterns === 'function'
+          ? runtime.adapter.persistentHelperPatterns()
+          : []);
+      const isPersistentHelper = isPersistentHelperProcess(
+        proc,
+        helperPatterns
+      );
 
       if (isPersistentHelper) {
-        // Persistent helpers (tsserver, code-mode-host, chrome, daemon-catalog-entry, etc.)
+        // Persistent helpers (tsserver, language servers, harness hosts, etc.)
         // only count as evidence of work if they are actively running or consuming CPU.
         if (hasCpuDelta || isStateActive) activeProcesses.push(proc);
         continue;

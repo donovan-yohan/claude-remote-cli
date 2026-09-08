@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import {
   collectLanguageServerDiagnostics,
+  isPersistentHelperProcess,
   isZombieProcess,
   readProcessTable,
   readProcStat,
@@ -656,5 +657,94 @@ describe('process-tree session runtime reaping', () => {
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
+  });
+
+  describe('isPersistentHelperProcess', () => {
+    it('identifies language servers as helpers by default', () => {
+      expect(
+        isPersistentHelperProcess({
+          command: 'node',
+          commandLine: 'node /path/to/tsserver.js --stdio',
+        })
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess({
+          command: 'typescript-language-server',
+          commandLine: 'typescript-language-server --stdio',
+        })
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess({
+          command: 'pyright-langserver',
+          commandLine: 'pyright-langserver --stdio',
+        })
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess({
+          languageServerKind: 'tsserver',
+        })
+      ).toBe(true);
+    });
+
+    it('does not treat chrome/playwright browsers or unconfigured daemons as helpers by default', () => {
+      expect(
+        isPersistentHelperProcess({
+          command: 'chrome',
+          commandLine: '/opt/google/chrome/chrome --headless',
+        })
+      ).toBe(false);
+      expect(
+        isPersistentHelperProcess({
+          command: 'chromium',
+          commandLine: 'chromium --remote-debugging-port=9222',
+        })
+      ).toBe(false);
+      expect(
+        isPersistentHelperProcess({
+          command: 'code-mode-host',
+          commandLine: 'node code-mode-host.js',
+        })
+      ).toBe(false);
+      expect(
+        isPersistentHelperProcess({
+          command: 'airlock',
+          commandLine: 'airlock proxy',
+        })
+      ).toBe(false);
+    });
+
+    it('matches custom adapter-declared helper patterns when provided', () => {
+      const customPatterns = [
+        /(^|[/\s])code-mode-host(\s|$)/i,
+        /(^|[/\s])airlock(\s|$)/i,
+      ];
+      expect(
+        isPersistentHelperProcess(
+          {
+            command: 'code-mode-host',
+            commandLine: 'node code-mode-host.js',
+          },
+          customPatterns
+        )
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess(
+          {
+            command: 'airlock',
+            commandLine: 'airlock proxy',
+          },
+          customPatterns
+        )
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess(
+          {
+            command: 'vitest',
+            commandLine: 'npx vitest run',
+          },
+          customPatterns
+        )
+      ).toBe(false);
+    });
   });
 });

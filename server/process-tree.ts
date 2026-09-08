@@ -111,26 +111,27 @@ const LANGUAGE_SERVER_MATCHERS: Array<{
   { kind: 'pyright', pattern: /(^|[/\s])pyright-langserver(\s|$)/i },
 ];
 
-const PERSISTENT_HELPER_MATCHERS: RegExp[] = [
+const DEFAULT_PERSISTENT_HELPER_MATCHERS: readonly RegExp[] = [
   /(^|[/\s])tsserver\.js(\s|$)/i,
   /(^|[/\s])typescript-language-server(\s|$)/i,
   /(^|[/\s])pyright-langserver(\s|$)/i,
-  /(^|[/\s])code-mode-host(\s|$)/i,
-  /(^|[/\s])airlock(\s|$)/i,
-  /(^|[/\s])(chrome|chromium|google-chrome)(\s|$)/i,
-  /(^|[/\s])daemon-catalog-entry(\.js)?(\s|$)/i,
 ];
 
-export function isPersistentHelperProcess(candidate: {
-  command?: string;
-  commandLine?: string;
-  languageServerKind?: LanguageServerKind;
-}): boolean {
+export function isPersistentHelperProcess(
+  candidate: {
+    command?: string;
+    commandLine?: string;
+    languageServerKind?: LanguageServerKind;
+  },
+  customMatchers: readonly RegExp[] = []
+): boolean {
   if (candidate.languageServerKind) return true;
   const cmdLine = candidate.commandLine ?? '';
   const cmd = candidate.command ?? '';
-  return PERSISTENT_HELPER_MATCHERS.some(
-    (re) => re.test(cmdLine) || re.test(cmd)
+  return (
+    DEFAULT_PERSISTENT_HELPER_MATCHERS.some(
+      (re) => re.test(cmdLine) || re.test(cmd)
+    ) || customMatchers.some((re) => re.test(cmdLine) || re.test(cmd))
   );
 }
 
