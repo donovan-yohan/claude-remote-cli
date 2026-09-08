@@ -29,9 +29,14 @@ export interface DeliveryContractGitProbe {
   upstreamRefInfo?(): Promise<
     DeliveryContractProbeOutcome<{
       ref: string | null;
-      source: 'upstream' | 'originHead' | null;
+      source: 'upstream' | 'originHead' | 'tracking-other-branch' | null;
     }>
   >;
+  /** Remote branch sha lookup via git ls-remote (e.g. for tracking-other-branch). Optional. */
+  lsRemoteBranchSha?(
+    remote: string,
+    branch: string
+  ): Promise<DeliveryContractProbeOutcome<string | null>>;
   /** Full sha of the default upstream/base reference, or null if none. Optional. */
   upstreamSha?(): Promise<DeliveryContractProbeOutcome<string | null>>;
   /** Commit count of `base..head` (>=0). Optional for legacy probes. */
@@ -74,7 +79,11 @@ export interface EvaluateDeliveryContractInput {
   baseline?: {
     headSha: string;
     upstreamRef?: string | null;
-    upstreamRefSource?: 'upstream' | 'originHead' | null;
+    upstreamRefSource?:
+      | 'upstream'
+      | 'originHead'
+      | 'tracking-other-branch'
+      | null;
     upstreamSha: string | null;
     prNumber: number | null;
     prHeadSha: string | null;
@@ -215,8 +224,41 @@ export async function evaluateDeliveryContract(
           'push delta unavailable when upstream ref came from origin/HEAD fallback',
       };
     }
-    if (baseline.upstreamRefSource !== 'upstream') {
+    if (
+      baseline.upstreamRefSource !== 'upstream' &&
+      baseline.upstreamRefSource !== 'tracking-other-branch'
+    ) {
       return { kind: 'unknown', reason: 'upstream ref source unavailable' };
+    }
+    if (baseline.upstreamRefSource === 'tracking-other-branch') {
+      if (
+        typeof probes.git.currentBranch !== 'function' ||
+        typeof probes.git.lsRemoteBranchSha !== 'function'
+      ) {
+        return {
+          kind: 'unknown',
+          reason: 'git probes missing for push delta evaluation',
+        };
+      }
+      const branchOutcome = await probes.git.currentBranch();
+      if (branchOutcome.kind === 'unknown') return branchOutcome;
+      const branch = branchOutcome.value?.trim();
+      if (!branch) {
+        return { kind: 'unknown', reason: 'unable to resolve current branch' };
+      }
+      const remoteOutcome = await probes.git.lsRemoteBranchSha(
+        'origin',
+        branch
+      );
+      if (remoteOutcome.kind === 'unknown') return remoteOutcome;
+      const currentRemoteSha = remoteOutcome.value?.trim() || null;
+      if (!currentRemoteSha) {
+        return { kind: 'ok', value: false };
+      }
+      if (!baseline.upstreamSha) {
+        return { kind: 'ok', value: true };
+      }
+      return { kind: 'ok', value: currentRemoteSha !== baseline.upstreamSha };
     }
     if (!baseline.upstreamRef) {
       return { kind: 'unknown', reason: 'no upstream ref baseline available' };

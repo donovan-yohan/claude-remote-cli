@@ -5048,6 +5048,114 @@ describe('channel-agent-binder — lifecycle', () => {
     });
   });
 
+  it('captures upstreamRefSource=tracking-other-branch when upstream names a different branch (#1579)', async () => {
+    const dir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'binder-baseline-tracking-other-')
+    );
+    cleanup.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const repo = path.join(dir, 'repo');
+    const remote = path.join(dir, 'remote.git');
+    fs.mkdirSync(repo, { recursive: true });
+
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, stdio: 'pipe' }).toString('utf8').trim();
+
+    git(['init'], repo);
+    git(['config', 'user.email', 'test@example.com'], repo);
+    git(['config', 'user.name', 'Test'], repo);
+    fs.writeFileSync(path.join(repo, 'README.md'), 'hi\n');
+    git(['add', '.'], repo);
+    git(['commit', '-m', 'init'], repo);
+    git(['branch', '-M', 'nightly'], repo);
+    git(['init', '--bare', remote], dir);
+    git(['symbolic-ref', 'HEAD', 'refs/heads/nightly'], remote);
+    git(['remote', 'add', 'origin', remote], repo);
+    git(['push', '-u', 'origin', 'nightly'], repo);
+
+    // Cut a new branch tracking origin/nightly (branch name feat/x != nightly).
+    git(['checkout', '-b', 'feat/x', 'origin/nightly'], repo);
+
+    const headSha = git(['rev-parse', 'HEAD'], repo);
+    const upstreamRef = 'origin/nightly';
+
+    const topicStore = createWorkspaceTopicStore({ dbPath: ':memory:' });
+    cleanup.push(() => topicStore.close());
+    topicStore.create({
+      id: CH,
+      workspaceId: 'ws:local',
+      title: 'baseline-tracking-other',
+      routingDefaults: { cwd: repo },
+    });
+
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    let storeRef: ChannelMessageStore | null = null;
+    let runId: ChannelAsyncRunId | null = null;
+
+    class BaselineProbeAdapter extends ScriptedAdapter {
+      baselinesAtSend: Array<unknown> = [];
+      override async sendMessage(
+        input: AgentSendMessageInputV2
+      ): Promise<void> {
+        const run = runId && storeRef ? storeRef.getAsyncRun(runId) : null;
+        this.baselinesAtSend.push(run?.deliveryContract?.baseline);
+        return super.sendMessage(input);
+      }
+    }
+
+    const built: BaselineProbeAdapter[] = [];
+    const { binder, store, sessions } = makeBinder({
+      build: (agentType) => {
+        const adapter = new BaselineProbeAdapter(agentType, {
+          mode: 'reply',
+          text: 'ok',
+        });
+        built.push(adapter);
+        return adapter;
+      },
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      topicStore,
+    });
+    storeRef = store;
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['push'] },
+      meta: { deliveryContract: { expect: ['push'] } },
+    });
+    runId = posted.run.id;
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() => sessions.spawns() === 1);
+    await waitFor(() => built.length === 1 && built[0]!.sendCalls.length === 1);
+    expect(built[0]!.baselinesAtSend).toHaveLength(1);
+    expect(built[0]!.baselinesAtSend[0]).toMatchObject({
+      headSha,
+      cwd: repo,
+      upstreamRef,
+      upstreamRefSource: 'tracking-other-branch',
+      upstreamSha: null, // remote branch refs/heads/feat/x does not exist yet
+    });
+    expect(
+      store.getAsyncRun(posted.run.id)?.deliveryContract?.baseline
+    ).toMatchObject({
+      headSha,
+      cwd: repo,
+      upstreamRef,
+      upstreamRefSource: 'tracking-other-branch',
+      upstreamSha: null,
+    });
+  });
+
   it('records baseline: null when capture fails, but does not lose the post (#1578)', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'binder-baseline-fail-'));
     cleanup.push(() => fs.rmSync(dir, { recursive: true, force: true }));

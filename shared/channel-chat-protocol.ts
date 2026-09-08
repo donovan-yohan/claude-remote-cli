@@ -170,7 +170,11 @@ export interface ChannelAsyncRun {
       /** Resolved upstream ref name used for `upstreamSha` (best-effort). */
       upstreamRef?: string | null;
       /** How `upstreamRef` was resolved (e.g. @{u} vs origin/HEAD fallback). */
-      upstreamRefSource?: 'upstream' | 'originHead' | null;
+      upstreamRefSource?:
+        | 'upstream'
+        | 'originHead'
+        | 'tracking-other-branch'
+        | null;
       upstreamSha: string | null;
       prNumber: number | null;
       prHeadSha: string | null;

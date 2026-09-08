@@ -449,6 +449,156 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
     expect(result.unknown).toEqual([expect.objectContaining({ spec: 'push' })]);
   });
 
+  it('treats push as met when tracking-other-branch and remote ref is created on first push (#1579)', async () => {
+    const branch = 'feat/worktree-branch';
+    const remoteSha = 'c'.repeat(40);
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamRef: 'origin/nightly',
+          upstreamRefSource: 'tracking-other-branch',
+          upstreamSha: null, // Did not exist on remote at baseline
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: branch }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          lsRemoteBranchSha: async (remote, b) => ({
+            kind: 'ok',
+            value: remote === 'origin' && b === branch ? remoteSha : null,
+          }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result).toEqual({ met: true, unmet: [], unknown: [] });
+  });
+
+  it('treats push as met when tracking-other-branch and remote ref sha moved past baseline (#1579)', async () => {
+    const branch = 'feat/worktree-branch';
+    const baselineRemoteSha = 'a'.repeat(40);
+    const newRemoteSha = 'b'.repeat(40);
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamRef: 'origin/nightly',
+          upstreamRefSource: 'tracking-other-branch',
+          upstreamSha: baselineRemoteSha,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: branch }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          lsRemoteBranchSha: async (remote, b) => ({
+            kind: 'ok',
+            value: remote === 'origin' && b === branch ? newRemoteSha : null,
+          }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result).toEqual({ met: true, unmet: [], unknown: [] });
+  });
+
+  it('treats push as unmet when tracking-other-branch and no remote ref exists and no push occurred (#1579)', async () => {
+    const branch = 'feat/worktree-branch';
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamRef: 'origin/nightly',
+          upstreamRefSource: 'tracking-other-branch',
+          upstreamSha: null,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: branch }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          lsRemoteBranchSha: async () => ({ kind: 'ok', value: null }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result.met).toBe(false);
+    expect(result.unmet).toEqual(['push']);
+    expect(result.unknown).toEqual([]);
+  });
+
+  it('treats push as unmet when tracking-other-branch and remote ref sha did not move (#1579)', async () => {
+    const branch = 'feat/worktree-branch';
+    const remoteSha = 'a'.repeat(40);
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamRef: 'origin/nightly',
+          upstreamRefSource: 'tracking-other-branch',
+          upstreamSha: remoteSha,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: branch }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          lsRemoteBranchSha: async () => ({ kind: 'ok', value: remoteSha }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result.met).toBe(false);
+    expect(result.unmet).toEqual(['push']);
+    expect(result.unknown).toEqual([]);
+  });
+
   it('falls back to legacy semantics when baseline is null (#1578)', async () => {
     const result = await evaluateDeliveryContract(
       {
@@ -717,5 +867,118 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
           'push delta unavailable when upstream ref came from origin/HEAD fallback',
       },
     ]);
+  });
+
+  it('treats push as met when branch was cut tracking nightly and then pushed (real git; #1579)', async () => {
+    const root = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'relay-push-tracking-other-')
+    );
+    const remoteBare = path.join(root, 'remote.git');
+    const repo = path.join(root, 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+
+    execFileSync('git', ['init', '--bare', remoteBare]);
+    execFileSync('git', ['init'], { cwd: repo });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], {
+      cwd: repo,
+    });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo });
+    execFileSync('git', ['remote', 'add', 'origin', remoteBare], { cwd: repo });
+
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repo });
+    execFileSync('git', ['branch', '-M', 'nightly'], { cwd: repo });
+    execFileSync('git', ['push', '-u', 'origin', 'nightly'], { cwd: repo });
+
+    // Create a new branch tracking origin/nightly (like git worktree add -b feat/x origin/nightly).
+    execFileSync('git', ['checkout', '-b', 'feat/x', 'origin/nightly'], {
+      cwd: repo,
+    });
+
+    const baselineHeadSha = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: repo,
+      encoding: 'utf8',
+    }).trim();
+
+    // Prior to push, refs/heads/feat/x does not exist on origin.
+    const resultBeforePush = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: repo,
+        baseline: {
+          headSha: baselineHeadSha,
+          upstreamRef: 'origin/nightly',
+          upstreamRefSource: 'tracking-other-branch',
+          upstreamSha: null,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          lsRemoteBranchSha: async (remote, branch) => {
+            const out = execFileSync(
+              'git',
+              ['ls-remote', remote, `refs/heads/${branch}`],
+              { cwd: repo, encoding: 'utf8' }
+            ).trim();
+            const sha = out ? out.split(/\s+/)[0]?.trim() : null;
+            return { kind: 'ok', value: sha || null };
+          },
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(resultBeforePush.met).toBe(false);
+    expect(resultBeforePush.unmet).toEqual(['push']);
+
+    // Now commit and push to feat/x on origin.
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'b\n');
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    execFileSync('git', ['commit', '-m', 'work'], { cwd: repo });
+    execFileSync('git', ['push', 'origin', 'feat/x'], { cwd: repo });
+
+    const resultAfterPush = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: repo,
+        baseline: {
+          headSha: baselineHeadSha,
+          upstreamRef: 'origin/nightly',
+          upstreamRefSource: 'tracking-other-branch',
+          upstreamSha: null,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          lsRemoteBranchSha: async (remote, branch) => {
+            const out = execFileSync(
+              'git',
+              ['ls-remote', remote, `refs/heads/${branch}`],
+              { cwd: repo, encoding: 'utf8' }
+            ).trim();
+            const sha = out ? out.split(/\s+/)[0]?.trim() : null;
+            return { kind: 'ok', value: sha || null };
+          },
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(resultAfterPush).toEqual({ met: true, unmet: [], unknown: [] });
   });
 });

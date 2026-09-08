@@ -3454,7 +3454,7 @@ export function createChannelAgentBinder(
 
     const upstreamRefPromise = (async (): Promise<{
       ref: string | null;
-      source: 'upstream' | 'originHead' | null;
+      source: 'upstream' | 'originHead' | 'tracking-other-branch' | null;
     }> => {
       if (git?.upstreamRefInfo) {
         const outcome = await git.upstreamRefInfo();
@@ -3555,7 +3555,49 @@ export function createChannelAgentBinder(
       branchPromise,
     ]);
     const upstreamRefValue = upstreamRef.ref;
-    const upstreamRefSource = upstreamRef.source;
+    let upstreamRefSource = upstreamRef.source;
+    let effectiveUpstreamSha = upstreamSha;
+
+    if (
+      branch &&
+      upstreamRefValue &&
+      (upstreamRefSource === 'upstream' || upstreamRefSource === null)
+    ) {
+      const expectedOrigin = `origin/${branch}`;
+      const isSameBranch =
+        upstreamRefValue === expectedOrigin ||
+        upstreamRefValue === branch ||
+        upstreamRefValue.endsWith(`/${branch}`);
+      if (!isSameBranch) {
+        upstreamRefSource = 'tracking-other-branch';
+      }
+    }
+
+    if (upstreamRefSource === 'tracking-other-branch') {
+      if (branch) {
+        if (git?.lsRemoteBranchSha) {
+          const outcome = await git.lsRemoteBranchSha('origin', branch);
+          effectiveUpstreamSha =
+            outcome.kind === 'ok' && outcome.value ? outcome.value : null;
+        } else {
+          try {
+            const { stdout } = await execFileAsync(
+              'git',
+              ['ls-remote', 'origin', `refs/heads/${branch}`],
+              { cwd, timeout }
+            );
+            const line = stdout.trim().split('\n')[0]?.trim();
+            const sha = line ? line.split(/\s+/)[0]?.trim() : null;
+            effectiveUpstreamSha = sha || null;
+          } catch {
+            effectiveUpstreamSha = null;
+          }
+        }
+      } else {
+        effectiveUpstreamSha = null;
+      }
+    }
+
     if (!headSha) return null;
 
     let prNumber: number | null = null;
@@ -3587,7 +3629,7 @@ export function createChannelAgentBinder(
       headSha,
       upstreamRef: upstreamRefValue,
       upstreamRefSource,
-      upstreamSha,
+      upstreamSha: effectiveUpstreamSha,
       prNumber,
       prHeadSha,
       cwd,
@@ -4902,9 +4944,13 @@ export function createChannelAgentBinder(
       upstreamRefInfo: () => Promise<
         DeliveryContractProbeOutcome<{
           ref: string | null;
-          source: 'upstream' | 'originHead' | null;
+          source: 'upstream' | 'originHead' | 'tracking-other-branch' | null;
         }>
       >;
+      lsRemoteBranchSha?: (
+        remote: string,
+        branch: string
+      ) => Promise<DeliveryContractProbeOutcome<string | null>>;
       upstreamSha: () => Promise<DeliveryContractProbeOutcome<string | null>>;
       commitsBetween: (
         base: string,
@@ -5039,10 +5085,30 @@ export function createChannelAgentBinder(
       upstreamRefInfo: async (): Promise<
         DeliveryContractProbeOutcome<{
           ref: string | null;
-          source: 'upstream' | 'originHead' | null;
+          source: 'upstream' | 'originHead' | 'tracking-other-branch' | null;
         }>
       > => {
         return resolveDefaultBaseInfo();
+      },
+      lsRemoteBranchSha: async (
+        remote: string,
+        branch: string
+      ): Promise<DeliveryContractProbeOutcome<string | null>> => {
+        try {
+          const { stdout } = await execFileAsync(
+            'git',
+            ['ls-remote', remote, `refs/heads/${branch}`],
+            { cwd, timeout: 5000 }
+          );
+          const line = stdout.trim().split('\n')[0]?.trim();
+          if (!line) return { kind: 'ok', value: null };
+          const sha = line.split(/\s+/)[0]?.trim();
+          return { kind: 'ok', value: sha ? sha : null };
+        } catch (err) {
+          const reason = notGitRepoReason(err);
+          if (reason) return { kind: 'unknown', reason };
+          return { kind: 'unknown', reason: 'git ls-remote probe failed' };
+        }
       },
       upstreamRef: async (): Promise<
         DeliveryContractProbeOutcome<string | null>
