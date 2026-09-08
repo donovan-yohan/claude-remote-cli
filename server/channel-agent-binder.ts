@@ -5907,6 +5907,22 @@ export function createChannelAgentBinder(
             reasonCode: providerFailureReceiptReason(failure.code),
           });
         };
+        const rejectUnavailableTarget = (
+          target: MentionTarget,
+          reason: string | null
+        ) => {
+          releaseDeferredParent();
+          rejectAsyncTarget('rejected', 'target-unavailable');
+          const senderDisplayName =
+            profile.displayName || target.displayName || framework;
+          postUnavailableRow(
+            trigger.channelId,
+            profile.id,
+            `@${senderDisplayName} is not available in channels yet — ${reason ?? 'channel runtime unavailable.'}`,
+            parentForTrigger(trigger)
+          );
+          emitUnavailableReceipt(trigger, profile.id, 'runtime_unavailable');
+        };
         // `routeOne` runs synchronously through its first await. When the
         // target cache is warm, surface a classified provider refusal in that
         // same request rather than making the post response race discovery.
@@ -5914,10 +5930,15 @@ export function createChannelAgentBinder(
           targetsCache && now() - targetsCache.at < TARGETS_TTL_MS
             ? targetsCache.value.find((target) => target.id === framework)
             : undefined;
-        if (
-          cachedTarget &&
-          availabilityForProfile(profile, cachedTarget).available
-        ) {
+        if (cachedTarget) {
+          const cachedAvailability = availabilityForProfile(
+            profile,
+            cachedTarget
+          );
+          if (!cachedAvailability.available) {
+            rejectUnavailableTarget(cachedTarget, cachedAvailability.reason);
+            return;
+          }
           const failure = activeProviderFailure(profile, cachedTarget);
           if (failure) {
             refuseProviderFailure(cachedTarget, failure);
@@ -5964,17 +5985,7 @@ export function createChannelAgentBinder(
           }
         }
         if (!availability.available) {
-          releaseDeferredParent();
-          rejectAsyncTarget('rejected', 'target-unavailable');
-          const senderDisplayName =
-            profile.displayName || target.displayName || framework;
-          postUnavailableRow(
-            trigger.channelId,
-            profile.id,
-            `@${senderDisplayName} is not available in channels yet — ${availability.reason ?? 'channel runtime unavailable.'}`,
-            parentForTrigger(trigger)
-          );
-          emitUnavailableReceipt(trigger, profile.id, 'runtime_unavailable');
+          rejectUnavailableTarget(target, availability.reason);
           return;
         }
         // #1455: a routable mention IS an invite. Slice 2 routes it through the

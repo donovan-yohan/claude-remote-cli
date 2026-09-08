@@ -429,6 +429,18 @@ describe('CLI gateway contract', () => {
         ],
       })
     ).toBe(true);
+    expect(
+      schemaMatches(data, {
+        ...base,
+        mentions: [
+          {
+            targetProfileId: 'agent-profile:offline:default',
+            state: 'unreachable_offline',
+            reasonCode: 'runtime_unavailable',
+          },
+        ],
+      })
+    ).toBe(true);
     expect(schemaMatches(data, base)).toBe(false);
   });
 

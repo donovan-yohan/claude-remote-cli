@@ -3818,7 +3818,12 @@ const channelPostOutputDataSchema: RelayJsonSchema = {
           targetProfileId: stringSchema,
           state: {
             type: 'string',
-            enum: ['queued', 'refused_policy', 'refused_provider'],
+            enum: [
+              'queued',
+              'refused_policy',
+              'refused_provider',
+              'unreachable_offline',
+            ],
           },
           reasonCode: { type: 'string' },
         },
