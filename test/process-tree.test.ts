@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import {
   collectLanguageServerDiagnostics,
+  isZombieProcess,
   readProcessTable,
   redactCommandLine,
   scheduleRelayProcessTreeReap,
@@ -530,4 +531,49 @@ describe('process-tree session runtime reaping', () => {
       parent.stdout.destroy();
     }
   }, 15_000);
+
+  it('identifies zombie and dead process states', () => {
+    expect(isZombieProcess('Z')).toBe(true);
+    expect(isZombieProcess('z')).toBe(true);
+    expect(isZombieProcess('X')).toBe(true);
+    expect(isZombieProcess('x')).toBe(true);
+    expect(isZombieProcess('S')).toBe(false);
+    expect(isZombieProcess('R')).toBe(false);
+    expect(isZombieProcess(undefined)).toBe(false);
+  });
+
+  it('parses process state and cpu ticks from /proc stat', () => {
+    const tempDir = mkdtempSync(`${tmpdir()}/proc-stat-test-`);
+    try {
+      const pidDir = `${tempDir}/200`;
+      mkdirSync(pidDir, { recursive: true });
+      // /proc/<pid>/stat format with state 'Z', utime 15, stime 25, starttime 500
+      writeFileSync(
+        `${pidDir}/stat`,
+        '200 (zombie-worker) Z 100 100 1 0 0 0 0 0 0 0 15 25 0 0 20 0 1 0 500 1000 200'
+      );
+      writeFileSync(`${pidDir}/cmdline`, 'zombie-worker\0--arg\0');
+      writeFileSync(
+        `${pidDir}/status`,
+        'Name:\tzombie-worker\nVmRSS:\t100 kB\n'
+      );
+
+      const table = readProcessTable({ procRoot: tempDir });
+      expect(table).toHaveLength(1);
+      expect(table[0]).toMatchObject({
+        pid: 200,
+        ppid: 100,
+        pgid: 100,
+        state: 'Z',
+        command: 'zombie-worker',
+        utime: 15,
+        stime: 25,
+        cpuTicks: 40,
+        startTicks: 500,
+      });
+      expect(isZombieProcess(table[0]!.state)).toBe(true);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
