@@ -348,13 +348,17 @@ export class ChannelAgentRuntimeManager {
     string,
     { rootPids: number[]; processTable: ProcessInfo[] }
   >();
-  private readonly readProcessTable: () => ProcessInfo[];
+  private readonly rawReadProcessTable: () => ProcessInfo[];
+  private cachedProcessTable: {
+    table: ProcessInfo[];
+    timestamp: number;
+  } | null = null;
   private readonly scheduleProcessTreeReap: NonNullable<
     ChannelAgentRuntimeManagerOptions['scheduleProcessTreeReap']
   >;
 
   constructor(options: ChannelAgentRuntimeManagerOptions = {}) {
-    this.readProcessTable = options.readProcessTable ?? readProcessTable;
+    this.rawReadProcessTable = options.readProcessTable ?? readProcessTable;
     this.scheduleProcessTreeReap =
       options.scheduleProcessTreeReap ??
       ((input) => {
@@ -365,6 +369,20 @@ export class ChannelAgentRuntimeManager {
           verifyProcessTable: readProcessTable,
         });
       });
+  }
+
+  private readProcessTable(options?: { forceFresh?: boolean }): ProcessInfo[] {
+    const now = Date.now();
+    if (
+      !options?.forceFresh &&
+      this.cachedProcessTable &&
+      now - this.cachedProcessTable.timestamp < 250
+    ) {
+      return this.cachedProcessTable.table;
+    }
+    const table = this.rawReadProcessTable();
+    this.cachedProcessTable = { table, timestamp: now };
+    return table;
   }
 
   get(id: string): ChannelAgentRuntime | undefined {
@@ -823,7 +841,7 @@ export class ChannelAgentRuntimeManager {
   ): void {
     const rootPids = ownedProcessRootPids(runtime.adapter);
     if (rootPids.length === 0) return;
-    const processTable = this.readProcessTable();
+    const processTable = this.readProcessTable({ forceFresh: true });
     // An unexpected close retains the old detached-group leader id briefly.
     // Do not replace a useful pre-exit snapshot with an empty post-exit table,
     // but merge reparented members of that *same* group when the leader has

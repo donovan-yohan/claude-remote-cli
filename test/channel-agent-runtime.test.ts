@@ -1286,10 +1286,58 @@ describe('ChannelAgentRuntimeManager', () => {
 
     // When the child processes exit (only root remains):
     currentTable = [table[0]!, table[3]!];
+    await new Promise((resolve) => setTimeout(resolve, 260));
     expect(manager.hasLiveChildProcesses(runtime.id)).toBe(false);
     expect(manager.liveChildPids(runtime.id)).toEqual([]);
 
     // Unknown runtime:
     expect(manager.hasLiveChildProcesses('unknown-id')).toBe(false);
+  });
+
+  it('caches the process table across queries within the short TTL window (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let readCount = 0;
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => {
+        readCount += 1;
+        return [
+          {
+            pid: 80_001,
+            ppid: 1,
+            pgid: 80_001,
+            command: 'node',
+            commandLine: 'node server.js',
+            rssBytes: 100,
+          },
+          {
+            pid: 80_002,
+            ppid: 80_001,
+            pgid: 80_001,
+            command: 'npm',
+            commandLine: 'npm run test',
+            rssBytes: 50,
+          },
+        ];
+      },
+    });
+    const r1 = await manager.create({
+      id: 'r1',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:1',
+      cwd: '/tmp',
+      displayName: 'Agent 1',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [80_001];
+
+    expect(readCount).toBe(0);
+    expect(manager.hasLiveChildProcesses(r1.id)).toBe(true);
+    expect(readCount).toBe(1);
+
+    // Immediate second query shares cached process table
+    expect(manager.hasLiveChildProcesses(r1.id)).toBe(true);
+    expect(manager.liveChildPids(r1.id)).toEqual([80_002]);
+    expect(readCount).toBe(1);
   });
 });
