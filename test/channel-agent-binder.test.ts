@@ -6656,18 +6656,19 @@ describe('channel-agent-binder — lifecycle', () => {
     );
   });
 
-  it('re-enqueues a trigger when the runtime exits during baseline capture (#1578 review)', async () => {
+  it('re-enqueues the preflight trigger while dropping later queued sends on runtime exit (#1579)', async () => {
     const profiles = createAgentProfileStore(':memory:');
     cleanup.push(() => profiles.close());
     profiles.seedBuiltIns([{ id: 'mock' }]);
 
     const built: ScriptedAdapter[] = [];
+    let baselineCaptureStarted = false;
     let releaseGate!: (value?: void | PromiseLike<void>) => void;
     const gate = new Promise<void>((resolve) => {
       releaseGate = resolve;
     });
 
-    const { binder, store, sessions } = makeBinder({
+    const { binder, store, hub, sessions } = makeBinder({
       build: (agentType) => {
         const adapter = new ScriptedAdapter(agentType, {
           mode: 'reply',
@@ -6682,6 +6683,7 @@ describe('channel-agent-binder — lifecycle', () => {
       deliveryContractProbeFactory: () => ({
         git: {
           headSha: async () => {
+            baselineCaptureStarted = true;
             await gate;
             return { kind: 'ok', value: 'a'.repeat(40) };
           },
@@ -6692,6 +6694,11 @@ describe('channel-agent-binder — lifecycle', () => {
           hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
         },
       }),
+    });
+    const statuses: Array<Record<string, unknown>> = [];
+    binder.setStatusBroadcaster((_type, data) => {
+      if (data['agentId'] === builtInAgentProfileId('mock'))
+        statuses.push(data);
     });
 
     const mentions = parseMentions('@mock please ship', ['mock']);
@@ -6707,13 +6714,39 @@ describe('channel-agent-binder — lifecycle', () => {
     binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
 
     await waitFor(() => sessions.spawns() === 1);
+    await waitFor(() => baselineCaptureStarted);
+    const queued = post(store, binder, '@mock second', ['mock']);
+    await waitFor(() => statuses.at(-1)?.['queuedCount'] === 1);
     sessions.fireEnd(sessions.firstSessionId());
     releaseGate();
+
+    await waitFor(() =>
+      systemRows(store).some((row) =>
+        row.body.text.includes(
+          'runtime ended before delivering a queued message'
+        )
+      )
+    );
+    expect(
+      systemRows(store).filter((row) =>
+        row.body.text.includes(
+          'runtime ended before delivering a queued message'
+        )
+      )
+    ).toHaveLength(1);
+    const dropped = collectReceipts(hub, CH).filter(
+      (receipt) =>
+        receipt.messageId === queued.id &&
+        receipt.state === 'failed_runtime' &&
+        receipt.reasonCode === 'runtime_ended'
+    );
+    expect(dropped).toHaveLength(1);
 
     await binder.ensureBinding(CH, 'mock');
     await waitFor(() => sessions.spawns() === 2);
     await waitFor(() => built.length === 2 && built[1]!.sendCalls.length === 1);
     expect(built[1]!.sendInputs[0]!.content).toContain('@mock please ship');
+    expect(built[1]!.sendInputs[0]!.content).not.toContain('@mock second');
   });
 
   it('posts a restart-abandonment system row and attention event for cancelled contract runs (#1585)', async () => {

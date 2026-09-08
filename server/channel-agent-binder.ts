@@ -6814,9 +6814,10 @@ export function createChannelAgentBinder(
     binding.patchUnlisten?.();
     disarmWatchdog(binding);
     disarmTurnCeiling(binding);
-    // No-op when `markDeadRuntimeIdle` already drained on the `disconnected`
-    // patch, so a death that fires both paths posts one row per trigger.
-    if (!preserveForPreflight) dropQueuedTurns(binding);
+    // The preflight trigger has already left the FIFO and will re-enqueue after
+    // its probe returns. Every later queued trigger must still receive its
+    // dropped-row notice before this dead binding reports idle.
+    dropQueuedTurns(binding);
     binding.adapter = null;
     binding.freezeDrainedTurn = null;
     binding.unbind = null;
