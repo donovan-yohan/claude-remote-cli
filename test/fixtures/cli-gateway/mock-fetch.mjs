@@ -49,6 +49,37 @@ globalThis.fetch = async (url, init = {}) => {
     lastUsedAt: null,
     state: 'active',
   };
+  const synchronousRefusal = process.env.RELAY_TEST_CHANNELS_POST_SYNC_REFUSAL;
+  const synchronousTargetRefusal =
+    process.env.RELAY_TEST_CHANNELS_POST_SYNC_TARGET_REFUSAL;
+  const mentions = synchronousRefusal
+    ? [
+        {
+          targetProfileId: 'agent-profile:codex:default',
+          state: `refused_${synchronousRefusal}`,
+          reasonCode:
+            synchronousRefusal === 'policy'
+              ? 'mention_chain_paused'
+              : 'provider_quota_exhausted',
+        },
+      ]
+    : [{ targetProfileId: 'agent-profile:codex:default', state: 'queued' }];
+  const postTargets = synchronousTargetRefusal
+    ? [
+        {
+          targetId: 'agent-profile:codex:default',
+          state: `refused_${synchronousTargetRefusal}`,
+          reasonCode: 'provider_quota_exhausted',
+          updatedAt: '2026-08-12T00:00:00.000Z',
+        },
+      ]
+    : [
+        {
+          targetId: 'agent-profile:codex:default',
+          state: 'queued',
+          updatedAt: '2026-08-12T00:00:00.000Z',
+        },
+      ];
   const data = String(url).includes('/credential')
     ? { credential, token: 'relay-sac-v1.sac-0001.[REDACTED]' }
     : String(url).includes('/members')
@@ -106,6 +137,7 @@ globalThis.fetch = async (url, init = {}) => {
               : String(url).includes('/channels/')
                 ? {
                     message: { id: 'chm:test' },
+                    mentions: synchronousTargetRefusal ? [] : mentions,
                     run: {
                       id: 'chrun:test',
                       channelId: 'topic:test',
@@ -113,13 +145,7 @@ globalThis.fetch = async (url, init = {}) => {
                       requestMessageId: 'chm:test',
                       requesterId: 'actor:test',
                       state: 'submitted',
-                      targets: [
-                        {
-                          targetId: 'agent-profile:codex:default',
-                          state: 'queued',
-                          updatedAt: '2026-08-12T00:00:00.000Z',
-                        },
-                      ],
+                      targets: postTargets,
                       createdAt: '2026-08-12T00:00:00.000Z',
                       updatedAt: '2026-08-12T00:00:00.000Z',
                     },

@@ -328,6 +328,171 @@ describe('channels.post CLI gateway command', () => {
     }
   });
 
+  it.each([
+    ['policy', 'mention_chain_paused'],
+    ['provider', 'provider_quota_exhausted'],
+  ])(
+    'exits 2 from the synchronous %s refusal without run reads',
+    async (kind, reasonCode) => {
+      const captureDir = mkdtempSync(path.join(tmpdir(), 'relay-cli-fetch-'));
+      const capturePath = path.join(captureDir, 'request.json');
+      try {
+        const result = await new Promise<{ stdout: string; stderr: string }>(
+          (resolve, reject) => {
+            execFile(
+              process.execPath,
+              [
+                RELAY_BIN,
+                'v1',
+                'channels',
+                'post',
+                '--channel-id',
+                'product/main',
+                '--text',
+                'hi',
+                '--fail-on-refused',
+                '--json',
+              ],
+              {
+                encoding: 'utf8',
+                env: {
+                  ...process.env,
+                  RELAY_IDE_PORT: '4567',
+                  RELAY_IDE_ACTOR_TOKEN: 'relay-sac-v1.test-actor.[REDACTED]',
+                  RELAY_IDE_BROWSER_TOKEN: '',
+                  NODE_OPTIONS: `--import=${FETCH_PRELOAD}`,
+                  RELAY_TEST_FETCH_CAPTURE: capturePath,
+                  RELAY_TEST_CHANNELS_POST_SYNC_REFUSAL: kind,
+                },
+                timeout: 10_000,
+              },
+              (error, stdoutText, stderr) => {
+                if (!error) {
+                  reject(
+                    new Error(`CLI unexpectedly succeeded: ${stdoutText}`)
+                  );
+                  return;
+                }
+                if (String(error.code) !== '2') {
+                  reject(
+                    new Error(
+                      `expected exit code 2, got ${String(error.code)}: ${stderr || stdoutText}`
+                    )
+                  );
+                  return;
+                }
+                resolve({ stdout: stdoutText, stderr });
+              }
+            );
+          }
+        );
+        const envelope = JSON.parse(result.stdout) as Record<string, unknown>;
+        expect(envelope).toMatchObject({
+          ok: true,
+          command: 'channels.post',
+          data: { mentions: [{ state: `refused_${kind}`, reasonCode }] },
+        });
+        expect(result.stderr).toContain(reasonCode);
+        const request = JSON.parse(readFileSync(capturePath, 'utf8')) as Record<
+          string,
+          unknown
+        >;
+        expect(request['url']).toContain('/channels/product%2Fmain/messages');
+      } finally {
+        rmSync(captureDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it('does not fail a synchronous refusal when --fail-on-refused is absent', async () => {
+    const { envelope, request } = await runCli(
+      [
+        'v1',
+        'channels',
+        'post',
+        '--channel-id',
+        'product/main',
+        '--text',
+        'hi',
+        '--json',
+      ],
+      {
+        ...process.env,
+        RELAY_IDE_PORT: '4567',
+        RELAY_IDE_ACTOR_TOKEN: 'relay-sac-v1.test-actor.[REDACTED]',
+        RELAY_IDE_BROWSER_TOKEN: '',
+        RELAY_TEST_CHANNELS_POST_SYNC_REFUSAL: 'policy',
+      }
+    );
+    expect(envelope).toMatchObject({
+      ok: true,
+      command: 'channels.post',
+      data: {
+        mentions: [
+          { state: 'refused_policy', reasonCode: 'mention_chain_paused' },
+        ],
+      },
+    });
+    expect(request['url']).toContain('/channels/product%2Fmain/messages');
+  });
+
+  it('uses a refusal state already carried by run.targets without waiting', async () => {
+    const captureDir = mkdtempSync(path.join(tmpdir(), 'relay-cli-fetch-'));
+    const capturePath = path.join(captureDir, 'request.json');
+    try {
+      const result = await new Promise<{ stdout: string; stderr: string }>(
+        (resolve, reject) => {
+          execFile(
+            process.execPath,
+            [
+              RELAY_BIN,
+              'v1',
+              'channels',
+              'post',
+              '--channel-id',
+              'product/main',
+              '--text',
+              'hi',
+              '--fail-on-refused',
+              '--json',
+            ],
+            {
+              encoding: 'utf8',
+              env: {
+                ...process.env,
+                RELAY_IDE_PORT: '4567',
+                RELAY_IDE_ACTOR_TOKEN: 'relay-sac-v1.test-actor.[REDACTED]',
+                RELAY_IDE_BROWSER_TOKEN: '',
+                NODE_OPTIONS: `--import=${FETCH_PRELOAD}`,
+                RELAY_TEST_FETCH_CAPTURE: capturePath,
+                RELAY_TEST_CHANNELS_POST_SYNC_TARGET_REFUSAL: 'provider',
+              },
+              timeout: 10_000,
+            },
+            (error, stdout, stderr) => {
+              if (!error || String(error.code) !== '2') {
+                reject(new Error(`expected exit code 2: ${stderr || stdout}`));
+                return;
+              }
+              resolve({ stdout, stderr });
+            }
+          );
+        }
+      );
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        data: { mentions: [] },
+      });
+      expect(result.stderr).toContain('provider_quota_exhausted');
+      const request = JSON.parse(readFileSync(capturePath, 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      expect(request['url']).toContain('/channels/product%2Fmain/messages');
+    } finally {
+      rmSync(captureDir, { recursive: true, force: true });
+    }
+  });
+
   it('accepts repeatable --expect and forwards it as expect[]', async () => {
     const { envelope, request } = await runCli(
       [

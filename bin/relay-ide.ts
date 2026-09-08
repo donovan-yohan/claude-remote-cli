@@ -7127,6 +7127,30 @@ function hasProviderFailureRefusedTarget(targets: unknown): boolean {
   );
 }
 
+function synchronousRefusalReasonCodes(
+  mentions: unknown,
+  targets: unknown
+): string[] {
+  const reasonCodes = new Set<string>();
+  const addRefusal = (value: unknown) => {
+    if (typeof value !== 'object' || value === null) return;
+    const record = value as Record<string, unknown>;
+    const state = record['state'];
+    const reasonCode = record['reasonCode'];
+    if (state === 'refused_policy' || state === 'refused_provider') {
+      reasonCodes.add(
+        typeof reasonCode === 'string' && reasonCode
+          ? reasonCode
+          : String(state)
+      );
+      return;
+    }
+  };
+  if (Array.isArray(mentions)) mentions.forEach(addRefusal);
+  if (Array.isArray(targets)) targets.forEach(addRefusal);
+  return [...reasonCodes];
+}
+
 async function observeProviderFailureRefusal(
   channelId: string,
   runId: string
@@ -7282,25 +7306,32 @@ async function runGatewayChannelsPost(channelArgs: string[]): Promise<void> {
     typeof data['run'] === 'object' && data['run'] !== null
       ? (data['run'] as Record<string, unknown>)
       : null;
-  let refusedByProviderFailure = false;
-  if (failOnRefused && run && typeof run['id'] === 'string') {
+  const synchronousReasonCodes = synchronousRefusalReasonCodes(
+    data['mentions'],
+    run?.['targets']
+  );
+  let refused = false;
+  if (failOnRefused && synchronousReasonCodes.length > 0) {
+    refused = true;
+    console.error(
+      `channels post --fail-on-refused: synchronous refusal (${synchronousReasonCodes.join(', ')})`
+    );
+  }
+  if (failOnRefused && !refused && run && typeof run['id'] === 'string') {
     try {
       const observed = await observeProviderFailureRefusal(
         channelId,
         run['id']
       );
       if (observed.note) console.error(observed.note);
-      refusedByProviderFailure = observed.refused;
+      refused = observed.refused;
     } catch (err) {
       console.error(
         `channels post --fail-on-refused: cannot determine refusal (${String(err)})`
       );
     }
   }
-  printGatewayEnvelope(
-    gatewayOk('channels.post', result),
-    refusedByProviderFailure ? 2 : 0
-  );
+  printGatewayEnvelope(gatewayOk('channels.post', result), refused ? 2 : 0);
 }
 
 async function runGatewayChannelsList(channelArgs: string[]): Promise<void> {
