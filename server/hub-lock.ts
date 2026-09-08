@@ -200,7 +200,15 @@ export async function assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(
   configDir: string,
   opts: HubLivenessProbeConfig
 ): Promise<void> {
-  assertConfigDirNotOwnedByAnotherLiveHub(configDir);
+  const lock = readHubLock(configDir);
+  if (
+    lock &&
+    lock.hostname === os.hostname() &&
+    isPidAlive(lock.pid) &&
+    lock.pid !== process.pid
+  ) {
+    throw new HubConfigDirLockedError(configDir, lock);
+  }
   const live = await probeLiveHubHealth(configDir, opts);
   if (!live) return;
   throw new Error(

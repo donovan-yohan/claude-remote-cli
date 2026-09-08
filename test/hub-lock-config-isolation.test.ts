@@ -131,7 +131,7 @@ describe('hub.lock config-dir isolation (#1587)', () => {
             port: 3456,
             host: '127.0.0.1',
             startedAt: new Date().toISOString(),
-            hostname: 'test-host',
+            hostname: os.hostname(),
           },
           null,
           2
@@ -172,6 +172,85 @@ describe('hub.lock config-dir isolation (#1587)', () => {
     } finally {
       if (owner.exitCode === null && owner.signalCode === null)
         owner.kill('SIGKILL');
+    }
+  });
+
+  it('boots and takes over when a foreign dead lock exists and nothing is listening', async () => {
+    const home = makeTmpDir();
+    const configDir = path.join(home, '.config', 'relay-ide');
+    fs.mkdirSync(configDir, { recursive: true });
+
+    const lockPath = path.join(configDir, 'hub.lock');
+    fs.writeFileSync(
+      lockPath,
+      JSON.stringify(
+        {
+          pid: 999_999,
+          port: 54321,
+          host: '127.0.0.1',
+          startedAt: new Date().toISOString(),
+          hostname: 'some-foreign-host',
+        },
+        null,
+        2
+      ) + '\n',
+      'utf8'
+    );
+    const configPath = path.join(configDir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ port: 0, host: '127.0.0.1' }),
+      'utf8'
+    );
+
+    const child = spawn(
+      process.execPath,
+      [
+        SERVER_SCRIPT,
+        '--config',
+        configPath,
+        '--port',
+        '0',
+        '--host',
+        '127.0.0.1',
+      ],
+      {
+        env: {
+          ...process.env,
+          HOME: home,
+          XDG_CONFIG_HOME: path.join(home, '.config'),
+          RELAY_IDE_CONFIG: configPath,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }
+    );
+
+    try {
+      const listeningPort = await new Promise<number>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('server did not start within 10s'));
+        }, 10_000);
+        child.stdout?.on('data', (chunk: Buffer) => {
+          const match = chunk.toString().match(/listening on [\w.]+:(\d+)/);
+          if (match) {
+            clearTimeout(timeout);
+            resolve(Number(match[1]));
+          }
+        });
+        child.once('exit', (code) => {
+          clearTimeout(timeout);
+          reject(new Error(`server exited early with code ${code}`));
+        });
+      });
+
+      expect(listeningPort).toBeGreaterThan(0);
+      const newLock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+      expect(newLock.pid).toBe(child.pid);
+      expect(newLock.hostname).toBe(os.hostname());
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill('SIGKILL');
+      }
     }
   });
 });

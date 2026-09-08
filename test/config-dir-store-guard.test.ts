@@ -57,4 +57,33 @@ describe('config-dir store open guard (#1587)', () => {
       }
     }
   );
+
+  it.each(GUARDED_INITS)(
+    'refuses opening $name when a foreign-host hub.lock exists (sync guard blocks)',
+    ({ open }) => {
+      const configDir = fs.mkdtempSync(
+        path.join(os.tmpdir(), 'relay-config-guard-')
+      );
+      try {
+        fs.writeFileSync(
+          path.join(configDir, 'hub.lock'),
+          JSON.stringify(
+            {
+              pid: 999_999,
+              port: 3456,
+              host: '127.0.0.1',
+              startedAt: new Date().toISOString(),
+              hostname: 'some-foreign-host',
+            },
+            null,
+            2
+          ) + '\n',
+          'utf8'
+        );
+        expect(() => open(configDir)).toThrow(/hub\.lock/);
+      } finally {
+        fs.rmSync(configDir, { recursive: true, force: true });
+      }
+    }
+  );
 });

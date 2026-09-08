@@ -149,7 +149,7 @@ describe('hub liveness fallback when hub.lock missing (#1587)', () => {
     }
   });
 
-  it('refuses when a hub.lock from another hostname exists (sync guard blocks)', async () => {
+  it('refuses when a foreign hub.lock exists and a hub is listening on /health', async () => {
     const configDir = makeTmpDir();
     const server = http.createServer((req, res) => {
       if (req.url === '/health') {
@@ -169,7 +169,6 @@ describe('hub liveness fallback when hub.lock missing (#1587)', () => {
     try {
       const configPath = path.join(configDir, 'config.json');
       fs.writeFileSync(configPath, JSON.stringify({ port }), 'utf8');
-      // Foreign hostname: should not be trusted as "owned", so /health decides.
       fs.writeFileSync(
         path.join(configDir, 'hub.lock'),
         JSON.stringify(
@@ -185,15 +184,45 @@ describe('hub liveness fallback when hub.lock missing (#1587)', () => {
         ) + '\n',
         'utf8'
       );
-      await expect(
+      const refusalPromise =
         assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
           configPath,
           timeoutMs: 500,
-        })
-      ).rejects.toThrow(/hub\.lock/);
+        });
+      await expect(refusalPromise).rejects.toThrow(/foreign-host hub\.lock/);
+      await expect(refusalPromise).rejects.not.toThrow(/owned by a live hub/);
+      await expect(refusalPromise).rejects.not.toThrow(/Stop the owning hub/);
     } finally {
       server.close();
     }
+  });
+
+  it('passes when a foreign dead hub.lock exists and nothing is listening on /health', async () => {
+    const configDir = makeTmpDir();
+    const configPath = path.join(configDir, 'config.json');
+    fs.writeFileSync(configPath, JSON.stringify({ port: 54321 }), 'utf8');
+    fs.writeFileSync(
+      path.join(configDir, 'hub.lock'),
+      JSON.stringify(
+        {
+          pid: 999_999,
+          port: 54321,
+          host: '127.0.0.1',
+          startedAt: new Date().toISOString(),
+          hostname: 'some-other-host',
+        },
+        null,
+        2
+      ) + '\n',
+      'utf8'
+    );
+
+    await expect(
+      assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
+        configPath,
+        timeoutMs: 200,
+      })
+    ).resolves.toBeUndefined();
   });
 
   it('passes when no hub.lock exists and no /health listener answers', async () => {
