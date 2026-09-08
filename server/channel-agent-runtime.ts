@@ -33,6 +33,8 @@ import {
 import { createLogger } from './logger.js';
 import {
   descendantsOf,
+  isPersistentHelperProcess,
+  isZombieProcess,
   readProcessTable,
   scheduleRelayProcessTreeReap,
   summarizeOwnedProcessResources,
@@ -112,6 +114,17 @@ export interface ChannelAgentRuntimeResourceSummary {
   runtimeWithOwnedProcesses: number;
   processCount: number;
   totalRssBytes: number;
+}
+
+export interface LiveChildCheckOptions {
+  /** Timestamp in epoch ms of last recorded turn activity. */
+  lastActivityAt?: number;
+  /** Clock tick Hz for converting startTicks to seconds (defaults to 100). */
+  clockTickHz?: number;
+  /** System uptime in seconds (from /proc/uptime). */
+  uptimeSeconds?: number;
+  /** Override current epoch ms for deterministic testing. */
+  nowMs?: number;
 }
 
 export interface ChannelAgentRuntimeManagerOptions {
@@ -371,6 +384,9 @@ export class ChannelAgentRuntimeManager {
       });
   }
 
+  private lastCpuTicksByPid = new Map<number, number>();
+  private currentCpuTicksByPid = new Map<number, number>();
+
   private readProcessTable(options?: { forceFresh?: boolean }): ProcessInfo[] {
     const now = Date.now();
     if (
@@ -382,6 +398,10 @@ export class ChannelAgentRuntimeManager {
     }
     const table = this.rawReadProcessTable();
     this.cachedProcessTable = { table, timestamp: now };
+    this.lastCpuTicksByPid = new Map(this.currentCpuTicksByPid);
+    this.currentCpuTicksByPid = new Map(
+      table.map((p) => [p.pid, p.cpuTicks ?? 0])
+    );
     return table;
   }
 
@@ -811,28 +831,93 @@ export class ChannelAgentRuntimeManager {
     };
   }
 
-  liveChildPids(id: string): number[] {
+  liveChildProcesses(
+    id: string,
+    options: LiveChildCheckOptions = {}
+  ): ProcessInfo[] {
     const runtime = this.runtimes.get(id);
     if (!runtime) return [];
     const rootPids = ownedProcessRootPids(runtime.adapter);
     if (rootPids.length === 0) return [];
     const table = this.readProcessTable();
-    const childPids = new Set<number>();
+    const candidatePids = new Set<number>();
     for (const rootPid of rootPids) {
       for (const desc of descendantsOf(rootPid, table)) {
-        if (desc.pid !== rootPid) childPids.add(desc.pid);
+        if (desc.pid !== rootPid) candidatePids.add(desc.pid);
       }
       for (const proc of table) {
         if (proc.pgid === rootPid && proc.pid !== rootPid) {
-          childPids.add(proc.pid);
+          candidatePids.add(proc.pid);
         }
       }
     }
-    return Array.from(childPids).sort((a, b) => a - b);
+    if (candidatePids.size === 0) return [];
+
+    const now = options.nowMs ?? Date.now();
+    const activeProcesses: ProcessInfo[] = [];
+
+    for (const pid of candidatePids) {
+      const proc = table.find((p) => p.pid === pid);
+      if (!proc) continue;
+      // Skip dead/zombie processes (§7)
+      if (isZombieProcess(proc.state)) continue;
+
+      const currentCpu =
+        this.currentCpuTicksByPid.get(proc.pid) ?? proc.cpuTicks ?? 0;
+      const prevCpu = this.lastCpuTicksByPid.get(proc.pid);
+      const hasCpuDelta = prevCpu !== undefined && currentCpu > prevCpu;
+      const isPersistentHelper = isPersistentHelperProcess(proc);
+
+      if (isPersistentHelper) {
+        // Persistent helpers (tsserver, code-mode-host, chrome, daemon-catalog-entry, etc.)
+        // only count as evidence of work if they are actively consuming CPU.
+        if (hasCpuDelta) activeProcesses.push(proc);
+        continue;
+      }
+
+      // Non-helper child processes:
+      if (hasCpuDelta) {
+        activeProcesses.push(proc);
+        continue;
+      }
+
+      if (options.lastActivityAt !== undefined) {
+        let procStartMs: number | undefined;
+        if (proc.ageMs !== undefined) {
+          procStartMs = now - proc.ageMs;
+        } else if (
+          proc.startTicks !== undefined &&
+          options.uptimeSeconds !== undefined
+        ) {
+          const clockTickHz = options.clockTickHz ?? 100;
+          const startSeconds = proc.startTicks / clockTickHz;
+          const ageMs = Math.max(
+            0,
+            Math.round((options.uptimeSeconds - startSeconds) * 1000)
+          );
+          procStartMs = now - ageMs;
+        }
+        if (
+          procStartMs !== undefined &&
+          procStartMs >= options.lastActivityAt - 1000
+        ) {
+          activeProcesses.push(proc);
+          continue;
+        }
+      } else {
+        activeProcesses.push(proc);
+      }
+    }
+
+    return activeProcesses.sort((a, b) => a.pid - b.pid);
   }
 
-  hasLiveChildProcesses(id: string): boolean {
-    return this.liveChildPids(id).length > 0;
+  liveChildPids(id: string, options?: LiveChildCheckOptions): number[] {
+    return this.liveChildProcesses(id, options).map((proc) => proc.pid);
+  }
+
+  hasLiveChildProcesses(id: string, options?: LiveChildCheckOptions): boolean {
+    return this.liveChildProcesses(id, options).length > 0;
   }
 
   private captureOwnedProcessSnapshot(

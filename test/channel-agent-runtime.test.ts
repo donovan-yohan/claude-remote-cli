@@ -1340,4 +1340,140 @@ describe('ChannelAgentRuntimeManager', () => {
     expect(manager.liveChildPids(r1.id)).toEqual([80_002]);
     expect(readCount).toBe(1);
   });
+
+  it('ignores idle persistent helpers but recognizes busy children and new children (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let currentTable: ProcessInfo[] = [];
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => currentTable,
+    });
+    const r1 = await manager.create({
+      id: 'r1',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:1',
+      cwd: '/tmp',
+      displayName: 'Codex',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [90_001];
+
+    // Scenario 1: Persistent helpers running under root, but IDLE (no CPU delta, old start)
+    currentTable = [
+      {
+        pid: 90_001,
+        ppid: 1,
+        pgid: 90_001,
+        command: 'codex-app-server',
+        commandLine: 'codex-app-server',
+        rssBytes: 100,
+      },
+      {
+        pid: 90_002,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'node',
+        commandLine: 'node /opt/code-mode-host.js',
+        rssBytes: 50,
+        cpuTicks: 10,
+        ageMs: 60_000,
+      },
+      {
+        pid: 90_003,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'chrome',
+        commandLine: '/usr/bin/chrome --headless',
+        rssBytes: 200,
+        cpuTicks: 20,
+        ageMs: 60_000,
+      },
+      {
+        pid: 90_004,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'node',
+        commandLine: 'node /opt/daemon-catalog-entry.js',
+        rssBytes: 30,
+        cpuTicks: 5,
+        ageMs: 60_000,
+      },
+    ];
+
+    const turnActivityAt = 1_000_000;
+    // Query 1: Prime CPU baseline for idle helpers
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_010_000,
+      })
+    ).toBe(false);
+
+    // Query 2: Still idle (no CPU delta)
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_020_000,
+      })
+    ).toBe(false);
+    expect(
+      manager.liveChildPids(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_020_000,
+      })
+    ).toEqual([]);
+
+    // Scenario 2: A helper becomes busy (CPU delta: 10 -> 25)
+    currentTable = [
+      currentTable[0]!,
+      { ...currentTable[1]!, cpuTicks: 25 },
+      currentTable[2]!,
+      currentTable[3]!,
+    ];
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_030_000,
+      })
+    ).toBe(true);
+    expect(
+      manager.liveChildPids(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_030_000,
+      })
+    ).toEqual([90_002]);
+
+    // Scenario 3: A newly spawned child process (e.g. sleep or npm test, started after lastActivityAt)
+    currentTable = [
+      currentTable[0]!,
+      currentTable[1]!, // no more delta (stays 25)
+      currentTable[2]!,
+      currentTable[3]!,
+      {
+        pid: 90_005,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'sh',
+        commandLine: 'sh -c sleep 150',
+        rssBytes: 10,
+        cpuTicks: 1,
+        ageMs: 5_000, // started at nowMs - 5_000 = 1_035_000 > turnActivityAt
+      },
+    ];
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_040_000,
+      })
+    ).toBe(true);
+    expect(
+      manager.liveChildPids(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_040_000,
+      })
+    ).toEqual([90_005]);
+  });
 });
