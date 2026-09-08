@@ -751,6 +751,29 @@ export function buildChannelMessageSearchSql(channelIdCount: number): string {
           LIMIT ?`;
 }
 
+export function buildGetLastPrincipalProseForRunIdSql(
+  includeParts = false
+): string {
+  return `SELECT m.*,
+                 ${replyCountSql('m')} AS reply_count
+          FROM channel_messages m INDEXED BY idx_chm_async_run_id
+          WHERE m.channel_id = ?
+            AND m.meta_json IS NOT NULL
+            AND m.kind = 'message'
+            AND m.sender_kind = 'agent'
+            AND m.status = 'complete'
+            AND TRIM(m.body_text) != ''
+            AND json_extract(m.meta_json, '$.agentDetail') IS NULL
+            ${
+              includeParts
+                ? ''
+                : "AND json_extract(m.meta_json, '$.parts') IS NULL"
+            }
+            AND json_extract(m.meta_json, '$.asyncRun.runId') = ?
+          ORDER BY m.seq DESC
+          LIMIT 1`;
+}
+
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS channel_messages (
   id                TEXT PRIMARY KEY,
@@ -3998,6 +4021,12 @@ export function createChannelMessageStore(
       ORDER BY m.seq ASC
       LIMIT @limit`
   );
+  const selectLastPrincipalProseWithoutParts = db.prepare(
+    buildGetLastPrincipalProseForRunIdSql(false)
+  );
+  const selectLastPrincipalProseWithParts = db.prepare(
+    buildGetLastPrincipalProseForRunIdSql(true)
+  );
   const mentionContextStatements = {
     channel: {
       boundary: db.prepare(buildChannelMentionContextBoundarySql('channel')),
@@ -6273,27 +6302,12 @@ export function createChannelMessageStore(
 
     getLastPrincipalProseForRunId(input) {
       const includeParts = input.includeParts === true;
-      const row = db
-        .prepare(
-          `SELECT m.*,
-                  ${replyCountSql('m')} AS reply_count
-           FROM channel_messages m
-           WHERE m.channel_id = ?
-             AND m.kind = 'message'
-             AND m.sender_kind = 'agent'
-             AND m.status = 'complete'
-             AND TRIM(m.body_text) != ''
-             AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.agentDetail') IS NULL)
-             ${
-               includeParts
-                 ? ''
-                 : "AND (m.meta_json IS NULL OR json_extract(m.meta_json, '$.parts') IS NULL)"
-             }
-             AND json_extract(m.meta_json, '$.asyncRun.runId') = ?
-           ORDER BY m.seq DESC
-           LIMIT 1`
-        )
-        .get(input.channelId, input.runId) as ChannelMessageRow | undefined;
+      const stmt = includeParts
+        ? selectLastPrincipalProseWithParts
+        : selectLastPrincipalProseWithoutParts;
+      const row = stmt.get(input.channelId, input.runId) as
+        | ChannelMessageRow
+        | undefined;
       return row ? rowToMessage(row) : null;
     },
 

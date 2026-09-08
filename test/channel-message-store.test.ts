@@ -14,6 +14,7 @@ import {
   buildChannelSearchMatchQuery,
   buildChannelThreadHistorySql,
   buildChannelThreadSummarySql,
+  buildGetLastPrincipalProseForRunIdSql,
   channelSearchPrefixRange,
   channelSearchUnavailableReason,
   createChannelMessageStore,
@@ -2413,6 +2414,42 @@ describe('channel-message-store async runs (#1391)', () => {
         turnIds: [turnId],
       })?.body.text
     ).toBe('real prose');
+  });
+
+  it('plans getLastPrincipalProseForRunId using idx_chm_async_run_id (#1579 item 1)', () => {
+    const p = path.join(
+      os.tmpdir(),
+      `channel-store-async-run-plan-${Date.now()}-${Math.random().toString(36).slice(2)}.db`
+    );
+    cleanup.push(() => {
+      try {
+        fs.unlinkSync(p);
+      } catch {
+        /* ignore */
+      }
+    });
+    store(p);
+    const raw = new Database(p, { readonly: true });
+    cleanup.push(() => raw.close());
+
+    const planWithoutParts = raw
+      .prepare(
+        `EXPLAIN QUERY PLAN ${buildGetLastPrincipalProseForRunIdSql(false)}`
+      )
+      .all('topic:async', 'chrun:123') as Array<{ detail: string }>;
+    const planWithParts = raw
+      .prepare(
+        `EXPLAIN QUERY PLAN ${buildGetLastPrincipalProseForRunIdSql(true)}`
+      )
+      .all('topic:async', 'chrun:123') as Array<{ detail: string }>;
+
+    const detailsWithout = planWithoutParts.map((r) => r.detail).join('\n');
+    const detailsWith = planWithParts.map((r) => r.detail).join('\n');
+
+    expect(detailsWithout).toMatch(/USING INDEX idx_chm_async_run_id/);
+    expect(detailsWith).toMatch(/USING INDEX idx_chm_async_run_id/);
+    expect(detailsWithout).not.toContain('idx_chm_channel_seq');
+    expect(detailsWith).not.toContain('idx_chm_channel_seq');
   });
 });
 
