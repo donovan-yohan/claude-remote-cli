@@ -51,6 +51,7 @@ import type {
 import {
   CHANNEL_BINDING_YOLO_DEFAULT,
   ChannelAgentBusyError,
+  clearLsRemoteBaselineCacheForTesting,
   createChannelAgentBinder,
   MAX_CONSECUTIVE_AGENT_TURNS,
   type BinderRuntimes,
@@ -89,6 +90,7 @@ const CHANNEL_COMMAND_CONTRACTS: Array<[string, string]> = Object.entries(
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
+  clearLsRemoteBaselineCacheForTesting();
   while (cleanup.length > 0) cleanup.pop()?.();
 });
 
@@ -7215,6 +7217,123 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
       remote: 'upstream',
       branch: 'feat',
     });
+  });
+
+  it('caches ls-remote baseline queries per cwd, remote, branch (#1579 review item 7)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+    const lsRemoteCalls: Array<{ remote: string; branch: string }> = [];
+    let currentTime = 1_000_000;
+    const { binder, store } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      now: () => currentTime,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat' }),
+          headSha: async () => ({
+            kind: 'ok',
+            value: '1111111111111111111111111111111111111111',
+          }),
+          upstreamRef: async () => ({
+            kind: 'ok',
+            value: 'upstream/other-feat',
+          }),
+          upstreamSha: async () => ({
+            kind: 'ok',
+            value: '2222222222222222222222222222222222222222',
+          }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          commitsBetween: async () => ({ kind: 'ok', value: 0 }),
+          lsRemoteBranchSha: async (remote, branch) => {
+            lsRemoteCalls.push({ remote, branch });
+            return {
+              kind: 'ok',
+              value: '3333333333333333333333333333333333333333',
+            };
+          },
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+          getOpenPrForBranch: async () => ({ kind: 'ok', value: null }),
+        },
+      }),
+    });
+
+    const mentions = parseMentions('@mock please push', ['mock']);
+    const r1 = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please push 1',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['push'] },
+      meta: { deliveryContract: { expect: ['push'] } },
+    });
+    binder.handleMessagePosted(r1.message, r1.message.mentions ?? []);
+
+    await waitFor(() => {
+      const run = store.getAsyncRun(r1.run.id);
+      return (
+        Boolean(run?.state.startsWith('completed')) &&
+        Boolean(run?.deliveryContract?.baseline)
+      );
+    });
+    const baseline1Calls = lsRemoteCalls.length;
+    expect(baseline1Calls).toBeGreaterThanOrEqual(1);
+
+    // Turn 2 within 30s: baseline capture reuses cached ls-remote result
+    currentTime += 5_000;
+    const r2 = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please push 2',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['push'] },
+      meta: { deliveryContract: { expect: ['push'] } },
+    });
+    binder.handleMessagePosted(r2.message, r2.message.mentions ?? []);
+
+    await waitFor(() => {
+      const run = store.getAsyncRun(r2.run.id);
+      return (
+        Boolean(run?.state.startsWith('completed')) &&
+        Boolean(run?.deliveryContract?.baseline)
+      );
+    });
+    // Baseline capture for turn 2 did not trigger another ls-remote probe call during baseline
+    const run2 = store.getAsyncRun(r2.run.id)!;
+    expect(run2.deliveryContract?.baseline?.upstreamSha).toBe(
+      '3333333333333333333333333333333333333333'
+    );
+
+    // Advance past 30s TTL: should refresh
+    currentTime += 35_000;
+    const countBeforeExpiry = lsRemoteCalls.length;
+    const r3 = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please push 3',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['push'] },
+      meta: { deliveryContract: { expect: ['push'] } },
+    });
+    binder.handleMessagePosted(r3.message, r3.message.mentions ?? []);
+
+    await waitFor(() => {
+      const run = store.getAsyncRun(r3.run.id);
+      return (
+        Boolean(run?.state.startsWith('completed')) &&
+        Boolean(run?.deliveryContract?.baseline)
+      );
+    });
+    expect(lsRemoteCalls.length).toBeGreaterThan(countBeforeExpiry);
   });
 
   it('formats could not verify system rows and attention unmet payload with intent wording (#1579 review item 6)', async () => {

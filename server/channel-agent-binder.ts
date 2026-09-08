@@ -850,6 +850,17 @@ function bindingKeyPrefix(channelId: string): string {
   return `${channelId}\u0000`;
 }
 
+interface LsRemoteBaselineCacheEntry {
+  sha: string | null;
+  timestamp: number;
+}
+export const LS_REMOTE_BASELINE_CACHE_TTL_MS = 30_000;
+const lsRemoteBaselineCache = new Map<string, LsRemoteBaselineCacheEntry>();
+
+export function clearLsRemoteBaselineCacheForTesting(): void {
+  lsRemoteBaselineCache.clear();
+}
+
 export function createChannelAgentBinder(
   deps: ChannelAgentBinderDeps
 ): ChannelAgentBinder {
@@ -3582,10 +3593,22 @@ export function createChannelAgentBinder(
 
     if (upstreamRefSource === 'tracking-other-branch') {
       if (branch) {
-        if (git?.lsRemoteBranchSha) {
+        const cacheKey = `${cwd}::${remote}::${branch}`;
+        const cached = lsRemoteBaselineCache.get(cacheKey);
+        const nowMs = now();
+        if (
+          cached &&
+          nowMs - cached.timestamp < LS_REMOTE_BASELINE_CACHE_TTL_MS
+        ) {
+          effectiveUpstreamSha = cached.sha;
+        } else if (git?.lsRemoteBranchSha) {
           const outcome = await git.lsRemoteBranchSha(remote, branch);
           effectiveUpstreamSha =
             outcome.kind === 'ok' && outcome.value ? outcome.value : null;
+          lsRemoteBaselineCache.set(cacheKey, {
+            sha: effectiveUpstreamSha,
+            timestamp: nowMs,
+          });
         } else {
           try {
             const { stdout } = await execFileAsync(
@@ -3596,6 +3619,10 @@ export function createChannelAgentBinder(
             const line = stdout.trim().split('\n')[0]?.trim();
             const sha = line ? line.split(/\s+/)[0]?.trim() : null;
             effectiveUpstreamSha = sha || null;
+            lsRemoteBaselineCache.set(cacheKey, {
+              sha: effectiveUpstreamSha,
+              timestamp: nowMs,
+            });
           } catch {
             effectiveUpstreamSha = null;
           }
