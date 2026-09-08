@@ -2248,7 +2248,7 @@ describe('channel routes — gateway capability mapping', () => {
       });
     });
 
-    it('returns immediately when the run is terminal even if the final row is still streaming (#1570)', async () => {
+    it('waits briefly for the final assistant row to reach status=complete (#1570)', async () => {
       const h = await harness({ withAuth: true });
       const targetId = builtInAgentProfileId('codex');
       const { message: trigger, run } = h.store.appendCompleteWithAsyncRun({
@@ -2258,7 +2258,7 @@ describe('channel routes — gateway capability mapping', () => {
         targetIds: [targetId],
       });
       const turnId = channelTurnId(trigger.id, targetId);
-      h.store.beginStream({
+      const started = h.store.beginStream({
         channelId: h.channelId,
         sender: { kind: 'agent', id: targetId, providerId: 'codex' },
         source: { runtimeId: 'rt', turnId, itemId: 'item-final' },
@@ -2271,7 +2271,7 @@ describe('channel routes — gateway capability mapping', () => {
         state: 'completed',
       });
 
-      const res = await req<{
+      const pending = req<{
         run: { id: string; state: string };
         outcome: string;
         finalText: string;
@@ -2282,12 +2282,23 @@ describe('channel routes — gateway capability mapping', () => {
         url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=3000`,
         headers: { Authorization: 'Bearer test' },
       });
+      await new Promise<void>((resolve) => {
+        setTimeout(() => {
+          const completed = h.store.finalizeStream(started.id, {
+            text: 'final',
+            status: 'complete',
+          });
+          if (completed) h.hub.completeStreamBroadcast(completed);
+          resolve();
+        }, 25);
+      });
+      const res = await pending;
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         run: { id: run.id, state: 'completed' },
         outcome: 'completed',
-        finalText: '',
-        finalMessageSeq: null,
+        finalText: 'final',
+        finalMessageSeq: started.seq,
       });
     });
 

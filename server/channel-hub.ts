@@ -232,6 +232,10 @@ export interface ChannelHub {
   /** Fan out an operator deletion (tombstone) of a row (#1308 slice 1 item 4). */
   broadcastDeleted(message: ChannelMessage): void;
   onMessagePosted(handler: ChannelMessagePostedHandler): () => void;
+  /** Subscribe to run lifecycle broadcasts (in-process only). */
+  onRunLifecycle(handler: (run: ChannelAsyncRun) => void): () => void;
+  /** Subscribe to completed message broadcasts (in-process only). */
+  onMessageCompleted(handler: (message: ChannelMessage) => void): () => void;
   setBadgeBroadcaster(broadcaster: ChannelBadgeBroadcaster): void;
   channelExists(channelId: string): boolean;
   subscriberCount(channelId: string): number;
@@ -258,6 +262,8 @@ export function createChannelHub(options: ChannelHubOptions): ChannelHub {
   const subscribers = new Map<string, Set<Subscriber>>();
   const accumulators = new Map<string, Accumulator>();
   const postedHandlers = new Set<ChannelMessagePostedHandler>();
+  const runLifecycleHandlers = new Set<(run: ChannelAsyncRun) => void>();
+  const messageCompletedHandlers = new Set<(message: ChannelMessage) => void>();
   const deliveryReceiptRings = new Map<string, DeliveryReceiptRing>();
 
   function retainDeliveryReceipt(receipt: ChannelDeliveryReceiptV1): void {
@@ -839,6 +845,13 @@ export function createChannelHub(options: ChannelHubOptions): ChannelHub {
         run,
         ...extras,
       });
+      for (const handler of [...runLifecycleHandlers]) {
+        try {
+          handler(run);
+        } catch (err) {
+          logger.warn('onRunLifecycle handler error:', err);
+        }
+      }
     },
 
     broadcastDeliveryReceipt(receipt) {
@@ -947,6 +960,13 @@ export function createChannelHub(options: ChannelHubOptions): ChannelHub {
         message,
       });
       emitBadge(message.channelId);
+      for (const handler of [...messageCompletedHandlers]) {
+        try {
+          handler(message);
+        } catch (err) {
+          logger.warn('onMessageCompleted handler error:', err);
+        }
+      }
     },
 
     broadcastEdited(message) {
@@ -989,6 +1009,20 @@ export function createChannelHub(options: ChannelHubOptions): ChannelHub {
       postedHandlers.add(handler);
       return () => {
         postedHandlers.delete(handler);
+      };
+    },
+
+    onRunLifecycle(handler) {
+      runLifecycleHandlers.add(handler);
+      return () => {
+        runLifecycleHandlers.delete(handler);
+      };
+    },
+
+    onMessageCompleted(handler) {
+      messageCompletedHandlers.add(handler);
+      return () => {
+        messageCompletedHandlers.delete(handler);
       };
     },
 

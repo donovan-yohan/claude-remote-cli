@@ -2026,11 +2026,65 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     });
   }
 
-  function finalAssistantTextForTerminalRun(
+  function waitForFinalAssistantCompletion(input: {
+    hub: Pick<ChannelHub, 'onMessageCompleted'>;
+    runId: ChannelAsyncRunId;
+    deadlineMs: number;
+    signal: AbortSignal;
+  }): Promise<void> {
+    const { hub, runId, deadlineMs, signal } = input;
+    if (signal.aborted) return Promise.resolve();
+    if (deadlineMs <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, deadlineMs);
+      const unlisten = hub.onMessageCompleted((message) => {
+        const asyncRun = (message.meta as unknown as { asyncRun?: unknown })
+          ?.asyncRun as { runId?: string } | undefined;
+        const metaRunId =
+          typeof asyncRun?.runId === 'string'
+            ? (asyncRun.runId as ChannelAsyncRunId)
+            : null;
+        if (metaRunId !== runId) return;
+        clearTimeout(timer);
+        unlisten();
+        resolve();
+      });
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          unlisten();
+          resolve();
+        },
+        { once: true }
+      );
+    });
+  }
+
+  async function finalAssistantTextForTerminalRun(
     store: ChannelMessageStore,
-    run: ChannelAsyncRun
-  ): { finalText: string | null; finalMessageSeq: number | null } {
-    return finalAssistantTextForRun(store, run);
+    hub: Pick<ChannelHub, 'onMessageCompleted'>,
+    runId: ChannelAsyncRunId,
+    run: ChannelAsyncRun,
+    deadline: number,
+    signal: AbortSignal
+  ): Promise<{ finalText: string | null; finalMessageSeq: number | null }> {
+    let final = finalAssistantTextForRun(store, run);
+    if (final.finalMessageSeq !== null) return final;
+    if (!(run.state === 'completed' || run.state === 'completed_unmet'))
+      return final;
+    const graceDeadline = Math.min(deadline, Date.now() + 2000);
+    await waitForFinalAssistantCompletion({
+      hub,
+      runId,
+      deadlineMs: Math.max(0, graceDeadline - Date.now()),
+      signal,
+    });
+    const refreshed = store.getAsyncRun(runId);
+    if (!refreshed) return final;
+    if (!runTerminalState(refreshed.state)) return final;
+    final = finalAssistantTextForRun(store, refreshed);
+    return final;
   }
 
   async function respondWaitByRunId(
@@ -2112,7 +2166,14 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           await sleepWithAbort(50, signal);
           continue;
         }
-        const final = finalAssistantTextForTerminalRun(store, latest);
+        const final = await finalAssistantTextForTerminalRun(
+          store,
+          deps.hub,
+          runId,
+          latest,
+          deadline,
+          signal
+        );
         res.json(
           operatorClientPublicValue(req, {
             run: {
