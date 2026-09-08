@@ -162,6 +162,7 @@ describe('DshProtocolAdapter', () => {
     expect(launch.requirement).toEqual({ kind: 'command', command: 'dsh' });
     expect(clientFactoryOptions[0]?.command).toBe(launch.requirement.command);
     expect(clientFactoryOptions[0]?.args).toEqual(['--profile', 'acp']);
+    expect(clientFactoryOptions[0]?.args).not.toContain('--model');
     expect(clientFactoryOptions[0]?.cwd).toBe('/repo');
     const env = clientFactoryOptions[0]?.env ?? {};
     for (const key of launch.processEnvDenylist)

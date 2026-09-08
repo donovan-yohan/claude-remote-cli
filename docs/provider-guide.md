@@ -300,7 +300,10 @@ The adapter maps:
 - `session/request_permission` peer requests -> Relay approval cards with `allow-once`/`allow-always`/`reject-once` outcomes. `--yolo` does not suppress these on the ACP lane (probed 2026-09-02: the `--yolo` and no-flag requests are byte-identical), so `permissionMode: 'yolo'` auto-approves in the adapter — only ever with the `allow_once` option, and only when Cursor offers one. Every auto-grant is recorded as a debug-visibility `cursor` provider extension (`kind: 'permission_auto_approved'`) plus a hub log line. That extension lives in the agent session mechanics only -- `providerExtension` has no detail card, so the channel bridge does not mirror it to a durable channel row. With no `allow_once` on the wire the request falls through to a normal approval card. Reject decisions are symmetric: a one-time reject never widens to `reject_always`.
 - `cursor/ask_question` peer requests -> Relay question cards, answered with structured `{ questionId, selectedOptionIds }` selections
 - `cursor/create_plan` peer requests -> canonical Relay plan items, auto-accepted so execution proceeds without blocking
+- Provider extensions for `cursor/update_todos`, `cursor/task`, and `cursor/generate_image`
 - Command arguments pass root options (`--model <id>`, `--yolo`) before the `acp` subcommand. When the profile has no explicit model set, the Cursor adapter explicitly passes `--model auto` on every spawn rather than omitting `--model`. Omitting `--model` causes the Cursor CLI to inherit the last model persisted in `~/.cursor/cli-config.json` (`model.modelId`, `selectedModel`), which can silently drift to a pay-per-token model (e.g. `gpt-5.2`) after one-off manual CLI invocations on the host. Explicitly passing `--model auto` pins the spawn to Cursor's auto-selection unless an explicit model override is configured on the profile (#1590). The effective model is logged on spawn (`[acp-adapter] [cursor] spawn model=... args=...`) and recorded on the runtime.
+
+The `cursor-agent` executable is also available as a normal terminal launch, but that surface stays a generic PTY.
 
 ## Provider failure classification (#1571)
 
