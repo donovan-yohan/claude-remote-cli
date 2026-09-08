@@ -2281,6 +2281,24 @@ describe('channel routes — gateway capability mapping', () => {
         text: 'partial',
         meta: { asyncRun: { runId: run.id, targetId } },
       });
+      const tool = h.store.beginStream({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        source: { runtimeId: 'rt', turnId, itemId: 'tool-1' },
+        agentDetail: {
+          itemId: 'tool-1',
+          card: {
+            kind: 'output',
+            title: 'echo hi',
+            status: 'completed',
+            language: 'bash',
+            command: 'echo hi',
+            content: 'hi\n',
+            sizeBytes: 3,
+          },
+        },
+        meta: { asyncRun: { runId: run.id, targetId } },
+      });
       h.store.transitionAsyncRunTarget({
         runId: run.id,
         targetId,
@@ -2300,13 +2318,20 @@ describe('channel routes — gateway capability mapping', () => {
       });
       await new Promise<void>((resolve) => {
         setTimeout(() => {
+          const toolCompleted = h.store.finalizeStream(tool.id, {
+            text: '',
+            status: 'complete',
+          });
+          if (toolCompleted) h.hub.completeStreamBroadcast(toolCompleted);
+        }, 25);
+        setTimeout(() => {
           const completed = h.store.finalizeStream(started.id, {
             text: 'final',
             status: 'complete',
           });
           if (completed) h.hub.completeStreamBroadcast(completed);
           resolve();
-        }, 25);
+        }, 50);
       });
       const res = await pending;
       expect(res.status).toBe(200);

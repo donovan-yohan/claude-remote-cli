@@ -2077,16 +2077,23 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     if (!(run.state === 'completed' || run.state === 'completed_unmet'))
       return final;
     const graceDeadline = Math.min(deadline, Date.now() + 2000);
-    await waitForFinalAssistantCompletion({
-      hub,
-      runId,
-      deadlineMs: Math.max(0, graceDeadline - Date.now()),
-      signal,
-    });
-    const refreshed = store.getAsyncRun(runId);
-    if (!refreshed) return final;
-    if (!runTerminalState(refreshed.state)) return final;
-    final = finalAssistantTextForRun(store, refreshed);
+    while (
+      signal.aborted === false &&
+      final.finalMessageSeq === null &&
+      Date.now() < graceDeadline
+    ) {
+      await waitForFinalAssistantCompletion({
+        hub,
+        runId,
+        deadlineMs: Math.max(0, graceDeadline - Date.now()),
+        signal,
+      });
+      if (signal.aborted) return final;
+      const refreshed = store.getAsyncRun(runId);
+      if (!refreshed) return final;
+      if (!runTerminalState(refreshed.state)) return final;
+      final = finalAssistantTextForRun(store, refreshed);
+    }
     return final;
   }
 
