@@ -4838,12 +4838,13 @@ describe('channel-agent-binder — lifecycle', () => {
     await waitFor(() => sessions.spawns() === 1);
     await waitFor(() => built.length === 1 && built[0]!.sendCalls.length === 1);
     expect(built[0]!.baselinesAtSend).toHaveLength(1);
-    expect(built[0]!.baselinesAtSend[0]).toMatchObject({ headSha });
+    expect(built[0]!.baselinesAtSend[0]).toMatchObject({ headSha, cwd: repo });
     // Baseline is captured in the routing cwd, not the process cwd.
     expect(
       store.getAsyncRun(posted.run.id)?.deliveryContract?.baseline
     ).toMatchObject({
       headSha,
+      cwd: repo,
     });
   });
 

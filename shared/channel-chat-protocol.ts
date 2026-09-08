@@ -107,6 +107,8 @@ export interface ChannelAsyncRun {
       upstreamSha: string | null;
       prNumber: number | null;
       prHeadSha: string | null;
+      /** Absolute routing cwd used when the baseline was captured. */
+      cwd?: string;
       capturedAt: string;
     } | null;
     /**

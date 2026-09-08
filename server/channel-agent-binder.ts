@@ -3498,6 +3498,7 @@ export function createChannelAgentBinder(
       upstreamSha,
       prNumber,
       prHeadSha,
+      cwd,
       capturedAt: new Date(now()).toISOString(),
     };
   }
@@ -3515,9 +3516,13 @@ export function createChannelAgentBinder(
     const runtime = binding.runtimeId
       ? deps.runtimes.get(binding.runtimeId)
       : undefined;
+    const routing =
+      deps.topicStore?.get(binding.channelId)?.routingDefaults ?? {};
     const cwd =
       runtime?.cwd ??
-      deps.topicStore?.get(binding.channelId)?.routingDefaults.cwd ??
+      routing.cwd ??
+      routing.worktreePath ??
+      routing.repoPath ??
       os.homedir();
 
     let baseline: Exclude<
@@ -5461,9 +5466,13 @@ export function createChannelAgentBinder(
       const runtime = binding.runtimeId
         ? deps.runtimes.get(binding.runtimeId)
         : undefined;
+      const routing =
+        deps.topicStore?.get(binding.channelId)?.routingDefaults ?? {};
       const cwd =
         runtime?.cwd ??
-        deps.topicStore?.get(binding.channelId)?.routingDefaults.cwd ??
+        routing.cwd ??
+        routing.worktreePath ??
+        routing.repoPath ??
         os.homedir();
       const { finalText, finalAssistantTextIsClosing } =
         resolveFinalAssistantTextForContract({

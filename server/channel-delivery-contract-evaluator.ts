@@ -65,6 +65,7 @@ export interface EvaluateDeliveryContractInput {
     upstreamSha: string | null;
     prNumber: number | null;
     prHeadSha: string | null;
+    cwd?: string;
     capturedAt: string;
   } | null;
   /** Final assistant message text for this run/turn. */
@@ -148,6 +149,12 @@ export async function evaluateDeliveryContract(
   async function evalCommit(): Promise<DeliveryContractProbeOutcome<boolean>> {
     const baseline = input.baseline;
     if (baseline) {
+      if (baseline.cwd && baseline.cwd !== input.cwd) {
+        return {
+          kind: 'unknown',
+          reason: 'baseline captured in a different cwd',
+        };
+      }
       if (
         typeof probes.git.headSha !== 'function' ||
         typeof probes.git.commitsBetween !== 'function'
@@ -178,6 +185,12 @@ export async function evaluateDeliveryContract(
     const baseline = input.baseline;
     if (!baseline) {
       return { kind: 'unknown', reason: 'baseline unavailable' };
+    }
+    if (baseline.cwd && baseline.cwd !== input.cwd) {
+      return {
+        kind: 'unknown',
+        reason: 'baseline captured in a different cwd',
+      };
     }
     if (!baseline.upstreamRef) {
       return { kind: 'unknown', reason: 'no upstream ref baseline available' };
@@ -247,6 +260,12 @@ export async function evaluateDeliveryContract(
     if (resolvedBranch.kind === 'unknown') return resolvedBranch;
 
     const baseline = input.baseline;
+    if (baseline?.cwd && baseline.cwd !== input.cwd) {
+      return {
+        kind: 'unknown',
+        reason: 'baseline captured in a different cwd',
+      };
+    }
     if (
       baseline &&
       typeof probes.pr.getOpenPrForBranch === 'function' &&
