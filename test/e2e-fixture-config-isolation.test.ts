@@ -223,6 +223,21 @@ describe('findFixtureConfigIsolationViolation (#1214)', () => {
       })
     ).toContain('inside the shared Relay config root');
   });
+
+  it('still refuses home config when TMPDIR is set to home dir', () => {
+    expect(
+      findFixtureConfigIsolationViolation({
+        explicitConfigPath: path.join(
+          home,
+          '.config',
+          'relay-ide',
+          'config.json'
+        ),
+        env: { TMPDIR: home },
+        homedir: home,
+      })
+    ).toContain('inside the shared Relay config root');
+  });
 });
 
 describe('e2e harness config resolution (#1214)', () => {

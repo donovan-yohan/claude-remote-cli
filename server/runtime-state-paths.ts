@@ -226,14 +226,22 @@ export function findFixtureConfigIsolationViolation(
  * (`test/e2e/isolated-config.ts`). Paths under a directory with this prefix
  * are never treated as a shared hub root by shape.
  */
-export const E2E_CONFIG_DIR_BASENAME_PREFIX = 'relay-ide-e2e-';
+export const E2E_CONFIG_DIR_PREFIX = 'relay-ide-e2e-';
+
+const RUN_SCOPED_MKDTEMP_PREFIXES = [
+  E2E_CONFIG_DIR_PREFIX,
+  'relay-hub-lock-',
+  'relay-hub-liveness-',
+  'relay-config-guard-',
+  'relay-e2e-isolation-',
+  'relay-test-',
+  'relay-dev-mode-',
+];
 
 function isRunScopedConfigPath(resolved: string): boolean {
-  if (isInside(os.tmpdir(), resolved)) return true;
   return resolved
     .split(path.sep)
-    .some(
-      (segment) =>
-        segment.startsWith(E2E_CONFIG_DIR_BASENAME_PREFIX) && segment.length > 0
+    .some((segment) =>
+      RUN_SCOPED_MKDTEMP_PREFIXES.some((prefix) => segment.startsWith(prefix))
     );
 }
