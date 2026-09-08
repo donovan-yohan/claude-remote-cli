@@ -99,6 +99,8 @@ export interface ChannelAgentRuntime {
   lastActivity: string;
   adapter: ProtocolAdapterV2;
   providerSession: Record<string, string>;
+  /** Effective model for the bound runtime. */
+  model?: string | undefined;
   /** Last authoritative adapter config, reduced to durable row attribution. */
   agentAttribution?: ChannelAgentAttribution | undefined;
 }
@@ -552,6 +554,7 @@ export class ChannelAgentRuntimeManager {
         ? { effort: params.extra['effort'] }
         : {}),
     });
+    const initialModel = params.model ?? initialAgentAttribution?.model;
     const now = new Date().toISOString();
     const runtime: ChannelAgentRuntime = {
       id,
@@ -574,6 +577,7 @@ export class ChannelAgentRuntimeManager {
       lastActivity: now,
       adapter,
       providerSession: {},
+      ...(initialModel ? { model: initialModel } : {}),
       ...(initialAgentAttribution
         ? { agentAttribution: initialAgentAttribution }
         : {}),
@@ -590,6 +594,9 @@ export class ChannelAgentRuntimeManager {
         patch,
         runtime.agentAttribution
       );
+      if (runtime.agentAttribution?.model) {
+        runtime.model = runtime.agentAttribution.model;
+      }
       if (providerSession) {
         runtime.providerSession = {
           ...runtime.providerSession,

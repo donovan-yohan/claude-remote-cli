@@ -194,6 +194,7 @@ export interface AcpHarnessProfile {
   clientInfo?: { name: string; version: string };
   clientCapabilities?: Record<string, unknown>;
   resumeStrategy?: 'resume' | 'load' | 'none' | 'auto';
+  defaultModel?: string;
   modelArgs?: (model: string) => string[];
   permissionPolicy?: (permissionMode: string | undefined) => {
     yoloAutoApprove?: boolean;
@@ -322,6 +323,10 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
         ? this.profile.command(config)
         : this.profile.command;
     const args = this.buildLaunchArgs(config);
+    const effectiveModel = config.model ?? this.profile.defaultModel;
+    logger.info(
+      `[${this.agentType}] spawn model=${effectiveModel ?? 'none'} args=${args.join(' ')}`
+    );
     const client = this.clientFactory({
       command,
       args,
@@ -441,8 +446,9 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
 
   private buildLaunchArgs(config: AdapterConfig): string[] {
     const args: string[] = [];
-    if (config.model && this.profile.modelArgs) {
-      args.push(...this.profile.modelArgs(config.model));
+    const effectiveModel = config.model ?? this.profile.defaultModel;
+    if (effectiveModel && this.profile.modelArgs) {
+      args.push(...this.profile.modelArgs(effectiveModel));
     }
     if (config.permissionMode === 'yolo') {
       const policy = this.profile.permissionPolicy?.(config.permissionMode);
@@ -1567,6 +1573,7 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
     if (!this.config) return;
     const sessionKey =
       this.profile.providerSessionKey ?? `${this.agentType}SessionId`;
+    const effectiveModel = this.config.model ?? this.profile.defaultModel;
     this.emitPatch({
       type: 'agent-session-snapshot-v2',
       sessionId: this.sessionId,
@@ -1579,6 +1586,12 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
         providerSession: this.providerSessionId
           ? { [sessionKey]: this.providerSessionId }
           : {},
+        config: {
+          ...(effectiveModel ? { model: effectiveModel } : {}),
+          ...(this.config.permissionMode
+            ? { permissionMode: this.config.permissionMode }
+            : {}),
+        },
       }),
     });
     if (this.resumeFallbackReason) {

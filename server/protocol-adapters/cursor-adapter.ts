@@ -85,6 +85,7 @@ const CURSOR_PROFILE: AcpHarnessProfile = {
   authMethodId: 'cursor_login',
   clientInfo: { name: 'relay-ide', version: '0.1.0' },
   resumeStrategy: 'load',
+  defaultModel: 'auto',
   firstUpdateTimeoutMs: 120_000,
   modelArgs: (model) => ['--model', model],
   permissionPolicy: () => ({

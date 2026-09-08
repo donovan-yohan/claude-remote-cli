@@ -304,6 +304,7 @@ export interface ChannelAgentRosterEntry {
   binding: {
     runtimeId: string;
     status: ChannelAgentStatus;
+    model?: string;
     /**
      * Posts waiting to trigger this binding's NEXT turn (#1308 slice 4). Zero
      * whenever nothing is queued or the runtime is only durably recorded (no
@@ -468,6 +469,7 @@ export interface ChannelAgentBinder {
     reason: string | null;
     since?: string;
     retryAfter?: string;
+    model?: string;
   }>;
   /** #1571: operator reset of a profile’s provider-failure state. */
   resetAgentProfileProviderFailure(profileActorId: string): Promise<{
@@ -6960,6 +6962,8 @@ export function createChannelAgentBinder(
             command.dispatch === 'relay-control' &&
             (!binding || binding.adapter?.executeControlCommand !== undefined)
         );
+        const model =
+          runtime?.model ?? runtime?.agentAttribution?.model ?? profile.model;
         return {
           id: profile.id,
           displayName: await rosterDisplayName(profile),
@@ -6983,6 +6987,7 @@ export function createChannelAgentBinder(
             ? {
                 runtimeId,
                 status: binding?.status ?? 'idle',
+                ...(model ? { model } : {}),
                 queuedCount: binding?.queue.length ?? 0,
                 steeringCount:
                   (binding?.steeringAcceptedCount ?? 0) +
@@ -7338,10 +7343,21 @@ export function createChannelAgentBinder(
     reason: string | null;
     since?: string;
     retryAfter?: string;
+    model?: string;
   }> {
     const profile = profileForActorId(profileActorId);
     if (!profile) {
       return { available: false, reason: 'agent profile not found' };
+    }
+    let boundModel: string | undefined;
+    for (const binding of live.values()) {
+      if (binding.profileActorId === profileActorId && binding.runtimeId) {
+        const runtime = deps.runtimes.get(binding.runtimeId);
+        if (runtime?.model || runtime?.agentAttribution?.model) {
+          boundModel = runtime.model ?? runtime.agentAttribution?.model;
+          break;
+        }
+      }
     }
     const target = await resolveTarget(profile.providerId);
     const failure = activeProviderFailure(profile, target);
@@ -7352,10 +7368,15 @@ export function createChannelAgentBinder(
         reason: failure.providerMessage ?? null,
         since: failure.since,
         ...(failure.retryAfter ? { retryAfter: failure.retryAfter } : {}),
+        ...(boundModel ? { model: boundModel } : {}),
       };
     }
     const availability = availabilityForProfile(profile, target);
-    return { available: availability.available, reason: availability.reason };
+    return {
+      available: availability.available,
+      reason: availability.reason,
+      ...(boundModel ? { model: boundModel } : {}),
+    };
   }
 
   async function resetAgentProfileProviderFailure(

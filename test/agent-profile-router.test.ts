@@ -549,4 +549,39 @@ describe('agent profile router: write-only hermes api key', () => {
     });
     expect(store.getGatewaySecret(id)).toBe(SECRET);
   });
+
+  it('projects bound runtime model from binder agentProfileStatus onto profile list', async () => {
+    const customApp = express();
+    customApp.use(express.json());
+    customApp.use(
+      createAgentProfileRouter({
+        store,
+        listConfiguredFrameworks: () =>
+          configuredFrameworkIds.map((id) => ({ id })),
+        requireAuth: (_req, _res, next) => next(),
+        binder: {
+          agentProfileStatus: async (profileId: string) => {
+            if (profileId === 'agent-profile:claude:default') {
+              return { available: true, reason: null, model: 'auto' };
+            }
+            return { available: true, reason: null };
+          },
+        } as any,
+      })
+    );
+    const customServer: http.Server = await new Promise((resolve) => {
+      const s = customApp.listen(0, '127.0.0.1', () => resolve(s));
+    });
+    try {
+      const port = (customServer.address() as any).port;
+      const res = await fetch(`http://127.0.0.1:${port}/agent-profiles`);
+      const body = (await res.json()) as any;
+      const claude = body.profiles.find(
+        (p: any) => p.id === 'agent-profile:claude:default'
+      );
+      expect(claude?.model).toBe('auto');
+    } finally {
+      customServer.close();
+    }
+  });
 });

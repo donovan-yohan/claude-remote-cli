@@ -163,7 +163,7 @@ describe('CursorProtocolAdapter', () => {
     await h.adapter.connect(config);
     expect(h.clientFactoryOptions[0]).toMatchObject({
       command: 'cursor-agent',
-      args: ['acp'],
+      args: ['--model', 'auto', 'acp'],
       cwd: '/repo',
     });
     expect(h.start).toHaveBeenCalledWith({
@@ -187,6 +187,7 @@ describe('CursorProtocolAdapter', () => {
       session: {
         provider: 'cursor',
         providerSession: { cursorSessionId: SESSION_ID },
+        config: { model: 'auto' },
       },
     });
   });
@@ -261,6 +262,24 @@ describe('CursorProtocolAdapter', () => {
       '--model',
       'claude-3-5-sonnet',
       '--yolo',
+      'acp',
+    ]);
+  });
+
+  it('spawn args contain --model auto when profile model is unset, and --model <x> only when set', async () => {
+    const hDefault = harness();
+    await hDefault.adapter.connect(config);
+    expect(hDefault.clientFactoryOptions[0]?.args).toEqual([
+      '--model',
+      'auto',
+      'acp',
+    ]);
+
+    const hExplicit = harness();
+    await hExplicit.adapter.connect({ ...config, model: 'gpt-4o' });
+    expect(hExplicit.clientFactoryOptions[0]?.args).toEqual([
+      '--model',
+      'gpt-4o',
       'acp',
     ]);
   });
