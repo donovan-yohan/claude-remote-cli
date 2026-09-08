@@ -12,6 +12,7 @@ import {
   type DeliveryContractPrProbe,
   type DeliveryContractProbeOutcome,
 } from './channel-delivery-contract-evaluator.js';
+import { formatDeliveryContractUnmetIntents } from '../shared/channel-delivery-contract.js';
 import {
   buildMentionContextPacketEnvelope,
   PACKET_MAX_ROWS,
@@ -5294,12 +5295,11 @@ export function createChannelAgentBinder(
     }
 
     const depth = contract?.followupDepth ?? 0;
+    const unmetIntents = formatDeliveryContractUnmetIntents(evaluation.unmet);
     if (depth >= deliveryContractMaxFollowups) {
       postSystemRow(
         binding.channelId,
-        `Contract still unmet after ${deliveryContractMaxFollowups} follow-ups: ${evaluation.unmet.join(
-          ', '
-        )}`,
+        `Contract still unmet after ${deliveryContractMaxFollowups} follow-ups: ${unmetIntents}`,
         { parentMessageId }
       );
       const abandoned = store.finalizeAsyncRunDeliveryContract({
@@ -5378,8 +5378,8 @@ export function createChannelAgentBinder(
         if (newRows !== null) parts.push(`new_rows=${newRows}`);
         if (parts.length === 0) return '';
         return parentRunId
-          ? ` Since last follow-up: ${parts.join(', ')}.`
-          : ` At follow-up: ${parts.join(', ')}.`;
+          ? `Since last follow-up: ${parts.join(', ')}.`
+          : `At follow-up: ${parts.join(', ')}.`;
       } catch {
         return '';
       }
@@ -5396,9 +5396,10 @@ export function createChannelAgentBinder(
     delete (nextContract as { result?: unknown }).result;
     delete (nextContract as { followupPostedAt?: unknown }).followupPostedAt;
 
-    const followupText = `Turn ended with contract unmet: ${evaluation.unmet.join(
-      ', '
-    )}.${sinceText} @${binding.displayName} finish it.`;
+    const requestMsg = store.getMessage(run.requestMessageId);
+    const requestSeq = requestMsg?.seq ?? 0;
+    const sinceSegment = sinceText ? ` ${sinceText}` : '';
+    const followupText = `The brief at seq ${requestSeq} is not delivered: ${unmetIntents}.${sinceSegment} @${binding.displayName} continue from where you stopped.`;
     const childRunId = postDeliveryContractFollowupTrigger({
       channelId: binding.channelId,
       text: followupText,
@@ -5410,9 +5411,7 @@ export function createChannelAgentBinder(
     if (!childRunId) {
       postSystemRow(
         binding.channelId,
-        `Delivery contract follow-up could not be posted; abandoning: ${evaluation.unmet.join(
-          ', '
-        )}`,
+        `Delivery contract follow-up could not be posted; abandoning: ${unmetIntents}`,
         { parentMessageId }
       );
       const updated = store.finalizeAsyncRunDeliveryContract({
@@ -5763,7 +5762,7 @@ export function createChannelAgentBinder(
 
       postSystemRow(
         binding.channelId,
-        `Delivery contract unmet: ${evaluation.unmet.join(', ')}`,
+        `Delivery contract unmet: ${formatDeliveryContractUnmetIntents(evaluation.unmet)}`,
         { parentMessageId }
       );
 

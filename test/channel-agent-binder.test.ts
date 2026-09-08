@@ -5250,13 +5250,13 @@ describe('channel-agent-binder — lifecycle', () => {
       await waitFor(() =>
         systemRows(store).some(
           (m) =>
-            m.body.text.includes('Turn ended with contract unmet') &&
+            m.body.text.includes('is not delivered:') &&
             !routedFollowups.has(m.id)
         )
       );
       const next = systemRows(store).find(
         (m) =>
-          m.body.text.includes('Turn ended with contract unmet') &&
+          m.body.text.includes('is not delivered:') &&
           !routedFollowups.has(m.id)
       )!;
       routedFollowups.add(next.id);
@@ -5300,9 +5300,7 @@ describe('channel-agent-binder — lifecycle', () => {
 
     const sys = systemRows(store).map((m) => m.body.text);
     expect(sys.some((t) => t.includes('Delivery contract unmet'))).toBe(true);
-    expect(
-      sys.filter((t) => t.includes('Turn ended with contract unmet'))
-    ).toHaveLength(2);
+    expect(sys.filter((t) => t.includes('is not delivered:'))).toHaveLength(2);
     expect(
       sys.some((t) => t.includes('At follow-up:') && t.includes('ahead=0'))
     ).toBe(true);
@@ -6165,13 +6163,13 @@ describe('channel-agent-binder — lifecycle', () => {
       await waitFor(() =>
         systemRows(store).some(
           (m) =>
-            m.body.text.includes('Turn ended with contract unmet') &&
+            m.body.text.includes('is not delivered:') &&
             !routedFollowups.has(m.id)
         )
       );
       const next = systemRows(store).find(
         (m) =>
-          m.body.text.includes('Turn ended with contract unmet') &&
+          m.body.text.includes('is not delivered:') &&
           !routedFollowups.has(m.id)
       )!;
       routedFollowups.add(next.id);
@@ -6207,9 +6205,7 @@ describe('channel-agent-binder — lifecycle', () => {
     expect(runs[2]!.deliveryContract?.followupPostedAt).toBeFalsy();
 
     const sys = systemRows(store).map((m) => m.body.text);
-    expect(
-      sys.filter((t) => t.includes('Turn ended with contract unmet'))
-    ).toHaveLength(2);
+    expect(sys.filter((t) => t.includes('is not delivered:'))).toHaveLength(2);
     expect(sys.some((t) => t.includes('Contract still unmet after'))).toBe(
       false
     );
@@ -6358,9 +6354,7 @@ describe('channel-agent-binder — lifecycle', () => {
     expect(
       sys.some((t) => t.includes('Delivery contract could not verify'))
     ).toBe(true);
-    expect(sys.some((t) => t.includes('Turn ended with contract unmet'))).toBe(
-      false
-    );
+    expect(sys.some((t) => t.includes('is not delivered:'))).toBe(false);
   });
 
   it('keeps a run completed and does not follow-up when the delivery contract is met (#1569)', async () => {
@@ -6410,9 +6404,7 @@ describe('channel-agent-binder — lifecycle', () => {
     expect(run.deliveryContract?.followupPostedAt).toBeFalsy();
     const sys = systemRows(store).map((m) => m.body.text);
     expect(sys.some((t) => t.includes('Delivery contract unmet'))).toBe(false);
-    expect(sys.some((t) => t.includes('Turn ended with contract unmet'))).toBe(
-      false
-    );
+    expect(sys.some((t) => t.includes('is not delivered:'))).toBe(false);
   });
 
   it('does not consume a MAX_CONSECUTIVE_AGENT_TURNS slot when routing the follow-up (#1569)', async () => {
@@ -6451,9 +6443,7 @@ describe('channel-agent-binder — lifecycle', () => {
     binder.handleMessagePosted(result.message, result.message.mentions ?? []);
 
     await waitFor(() =>
-      systemRows(store).some((m) =>
-        m.body.text.includes('Turn ended with contract unmet')
-      )
+      systemRows(store).some((m) => m.body.text.includes('is not delivered:'))
     );
 
     const baseline = agentReplies(store, 'mock').length;
@@ -6650,7 +6640,7 @@ describe('channel-agent-binder — lifecycle', () => {
 
     await waitFor(() => deferred.sendInputs.length === 2);
     const followups = systemRows(store).filter((m) =>
-      m.body.text.includes('Turn ended with contract unmet')
+      m.body.text.includes('is not delivered:')
     );
     expect(followups).toHaveLength(1);
 
@@ -6927,12 +6917,10 @@ describe('channel-agent-binder — lifecycle', () => {
     binder.handleMessagePosted(result.message, result.message.mentions ?? []);
 
     await waitFor(() =>
-      systemRows(store).some((m) =>
-        m.body.text.includes('Turn ended with contract unmet')
-      )
+      systemRows(store).some((m) => m.body.text.includes('is not delivered:'))
     );
     const followup = systemRows(store).find((m) =>
-      m.body.text.includes('Turn ended with contract unmet')
+      m.body.text.includes('is not delivered:')
     )!;
     const followupRun = store.getAsyncRunForRequestMessage(followup.id);
     expect(followupRun).not.toBeNull();
@@ -7002,12 +6990,10 @@ describe('channel-agent-binder — lifecycle', () => {
     binder.handleMessagePosted(result.message, result.message.mentions ?? []);
 
     await waitFor(() =>
-      systemRows(store).some((m) =>
-        m.body.text.includes('Turn ended with contract unmet')
-      )
+      systemRows(store).some((m) => m.body.text.includes('is not delivered:'))
     );
     const followup = systemRows(store).find((m) =>
-      m.body.text.includes('Turn ended with contract unmet')
+      m.body.text.includes('is not delivered:')
     )!;
     const followupRun = store.getAsyncRunForRequestMessage(followup.id);
     expect(followupRun).not.toBeNull();

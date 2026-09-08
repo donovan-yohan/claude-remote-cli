@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ChannelDeliveryContractParseError,
+  deliveryContractUnmetIntent,
+  formatDeliveryContractUnmetIntents,
   parseChannelDeliveryContract,
   parseChannelDeliveryExpectation,
 } from '../shared/channel-delivery-contract.js';
@@ -980,5 +982,43 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
       }
     );
     expect(resultAfterPush).toEqual({ met: true, unmet: [], unknown: [] });
+  });
+});
+
+describe('delivery contract unmet intent phrasing (#1579 item 3)', () => {
+  it('maps each expectation kind to pure intent wording without file paths or regexes', () => {
+    expect(deliveryContractUnmetIntent('commit')).toBe('no new commit');
+    expect(deliveryContractUnmetIntent('push')).toBe(
+      'nothing pushed to the branch'
+    );
+    expect(deliveryContractUnmetIntent('pr')).toBe(
+      'no pull request opened/updated for this branch'
+    );
+    expect(deliveryContractUnmetIntent('pr:feat/1579-something')).toBe(
+      'no pull request opened/updated for this branch'
+    );
+    expect(
+      deliveryContractUnmetIntent('file:artifacts/reports/summary.json')
+    ).toBe('expected artifact missing');
+    expect(deliveryContractUnmetIntent('text:^COMPLETED.*$')).toBe(
+      'no closing message'
+    );
+    expect(deliveryContractUnmetIntent('unknown_spec')).toBe(
+      'unmet delivery expectation'
+    );
+  });
+
+  it('formats multiple unmet intents into a comma-separated list', () => {
+    expect(
+      formatDeliveryContractUnmetIntents([
+        'pr:feat/x',
+        'push',
+        'commit',
+        'file:docs/README.md',
+        'text:DONE',
+      ])
+    ).toBe(
+      'no pull request opened/updated for this branch, nothing pushed to the branch, no new commit, expected artifact missing, no closing message'
+    );
   });
 });
