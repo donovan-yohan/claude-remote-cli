@@ -15,6 +15,7 @@ import {
   initialChannelReducerState,
   isChannelEventV1,
   parseMentions,
+  projectDurableMentionDelivery,
   type ChannelDeliveryReceiptV1,
   type ChannelEventV1,
   type ChannelAsyncRun,
@@ -1323,5 +1324,104 @@ describe('search snippet segmentation (#1308 slice 2 item 1)', () => {
 
   it('returns nothing for an empty snippet', () => {
     expect(parseChannelSearchSnippet('')).toEqual([]);
+  });
+});
+
+describe('projectDurableMentionDelivery (#1579 item 5)', () => {
+  it('maps known provider failures to refused_provider with appropriate reasonCode', () => {
+    expect(
+      projectDurableMentionDelivery({
+        state: 'refused',
+        reason: 'provider-failure:quota_exhausted',
+      })
+    ).toEqual({
+      state: 'refused_provider',
+      reasonCode: 'provider_quota_exhausted',
+    });
+    expect(
+      projectDurableMentionDelivery({
+        state: 'refused',
+        reason: 'provider-failure:auth_required',
+      })
+    ).toEqual({
+      state: 'refused_provider',
+      reasonCode: 'provider_auth_required',
+    });
+    expect(
+      projectDurableMentionDelivery({
+        state: 'refused',
+        reason: 'provider-failure:binary_missing',
+      })
+    ).toEqual({
+      state: 'refused_provider',
+      reasonCode: 'provider_binary_missing',
+    });
+    expect(
+      projectDurableMentionDelivery({
+        state: 'refused',
+        reason: 'provider-failure:unknown',
+      })
+    ).toEqual({
+      state: 'refused_provider',
+      reasonCode: 'provider_unknown_failure',
+    });
+  });
+
+  it('defaults unmapped provider-failure reasons to refused_provider (#1579 item 5)', () => {
+    expect(
+      projectDurableMentionDelivery({
+        state: 'refused',
+        reason: 'provider-failure:some_new_code',
+      })
+    ).toEqual({
+      state: 'refused_provider',
+    });
+  });
+
+  it('maps non-provider refusals to refused_policy', () => {
+    expect(
+      projectDurableMentionDelivery({
+        state: 'refused',
+        reason: 'some-policy-reason',
+      })
+    ).toEqual({
+      state: 'refused_policy',
+    });
+  });
+
+  it('maps rejected states correctly', () => {
+    expect(
+      projectDurableMentionDelivery({
+        state: 'rejected',
+        reason: 'mention-chain-paused',
+      })
+    ).toEqual({
+      state: 'refused_policy',
+      reasonCode: 'mention_chain_paused',
+    });
+    expect(
+      projectDurableMentionDelivery({
+        state: 'rejected',
+        reason: 'target-unavailable',
+      })
+    ).toEqual({
+      state: 'unreachable_offline',
+      reasonCode: 'runtime_unavailable',
+    });
+    expect(
+      projectDurableMentionDelivery({
+        state: 'rejected',
+        reason: 'target-binding-failed',
+      })
+    ).toEqual({
+      state: 'refused_policy',
+      reasonCode: 'binding_failed',
+    });
+  });
+
+  it('returns null for non-terminal states', () => {
+    expect(projectDurableMentionDelivery({ state: 'queued' })).toBeNull();
+    expect(projectDurableMentionDelivery({ state: 'working' })).toBeNull();
+    expect(projectDurableMentionDelivery({ state: 'completed' })).toBeNull();
   });
 });

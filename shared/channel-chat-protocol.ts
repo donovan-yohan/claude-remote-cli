@@ -125,6 +125,9 @@ export function projectDurableMentionDelivery(
           reasonCode: 'provider_unknown_failure',
         };
       default:
+        if (target.reason?.startsWith('provider-failure:')) {
+          return { state: 'refused_provider' };
+        }
         return { state: 'refused_policy' };
     }
   }
