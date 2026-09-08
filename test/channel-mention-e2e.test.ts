@@ -547,6 +547,8 @@ describe('mention routing — end-to-end via the router', () => {
         .some((message) => message.body.text.includes('quota_exhausted'))
     );
     const refused = await req<{
+      message: ChannelMessage;
+      run: ChannelAsyncRun;
       mentions: Array<{
         targetProfileId: string;
         state: string;
@@ -559,6 +561,14 @@ describe('mention routing — end-to-end via the router', () => {
       body: { text: '@mock retry', clientMessageId: 'provider-refusal' },
     });
     expect(refused.status).toBe(201);
+    expect(refused.body.run.state).toBe('rejected');
+    expect(refused.body.run.targets).toEqual([
+      expect.objectContaining({
+        targetId: builtInAgentProfileId('mock'),
+        state: 'refused',
+        reason: 'provider-failure:quota_exhausted',
+      }),
+    ]);
     expect(refused.body.mentions).toEqual([
       {
         targetProfileId: builtInAgentProfileId('mock'),
@@ -573,6 +583,14 @@ describe('mention routing — end-to-end via the router', () => {
       body: { text: '@mock retry', clientMessageId: 'provider-refusal' },
     });
     expect(replay.status).toBe(200);
+    expect(replay.body.run.state).toBe('rejected');
+    expect(replay.body.run.targets).toEqual([
+      expect.objectContaining({
+        targetId: builtInAgentProfileId('mock'),
+        state: 'refused',
+        reason: 'provider-failure:quota_exhausted',
+      }),
+    ]);
     expect(replay.body.mentions).toEqual(refused.body.mentions);
   });
 
