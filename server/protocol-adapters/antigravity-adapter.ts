@@ -54,9 +54,9 @@ export function parseAntigravityRetryAfterIso(
   if (!message || typeof message !== 'string') return undefined;
 
   // Match relative duration expressions like:
-  // "Resets in 2h30m51s", "resets in 45m", "try again in 3 hours", "resets in 1h 30m 10s"
+  // "Resets in 2h30m51s", "resets in 45m", "try again in 3 hours", "in 3 hours", "resets in 1h 30m 10s"
   const relMatch =
-    /(?:resets?\s+in|retry\s+(?:after|in)|try\s+again\s+in|available\s+in|refills?\s+in)\s+((?:(?:\d+\s*(?:d(?:ays?)?|h(?:(?:ou)?rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?))\s*)+)/i.exec(
+    /\b(?:resets?\s+in|retry\s+(?:after|in)|try\s+again\s+in|available\s+in|refills?\s+in|in)\s+((?:(?:\d+\s*(?:d(?:ays?)?|h(?:(?:ou)?rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?))\s*)+)/i.exec(
       message
     );
 

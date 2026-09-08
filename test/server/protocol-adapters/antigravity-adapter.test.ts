@@ -1608,6 +1608,11 @@ describe('Antigravity relative duration parsing (#1579 item 4)', () => {
     expect(result).toBe(new Date(baseMs + 45 * 60 * 1000).toISOString());
   });
 
+  it('parses hours prose: in 3 hours', () => {
+    const result = parseAntigravityRetryAfterIso('in 3 hours', baseMs);
+    expect(result).toBe(new Date(baseMs + 3 * 3600 * 1000).toISOString());
+  });
+
   it('parses hours prose: try again in 3 hours', () => {
     const result = parseAntigravityRetryAfterIso(
       'try again in 3 hours',
@@ -1637,9 +1642,9 @@ describe('Antigravity relative duration parsing (#1579 item 4)', () => {
     expect(result).toBe(new Date(baseMs + max30dMs).toISOString());
   });
 
-  it('does not parse non-reset prose with time expressions as quota reset (#1579 review item 4)', () => {
+  it('does not parse non-duration prose as quota reset', () => {
     expect(
-      parseAntigravityRetryAfterIso('0 credits left in 3 days', baseMs)
+      parseAntigravityRetryAfterIso('0 credits left on your account', baseMs)
     ).toBeUndefined();
   });
 
