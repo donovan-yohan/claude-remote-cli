@@ -16,6 +16,29 @@ export interface DeliveryContractGitProbe {
   currentBranch(): Promise<DeliveryContractProbeOutcome<string | null>>;
   /** Ahead count of HEAD vs an upstream/base reference (>=0). */
   aheadCount(): Promise<DeliveryContractProbeOutcome<number>>;
+  /** Full sha of HEAD, or null if detached/unborn/unknown. Optional for legacy probes. */
+  headSha?(): Promise<DeliveryContractProbeOutcome<string | null>>;
+  /** Resolved upstream/base ref name for delta evaluation (#1578). Optional. */
+  upstreamRef?(): Promise<DeliveryContractProbeOutcome<string | null>>;
+  /**
+   * Resolved upstream/base ref name plus provenance for delta evaluation (#1578).
+   *
+   * `source: 'upstream'` means it came from `@{u}`; `'originHead'` means it fell
+   * back to `origin/HEAD` (explicitly unverifiable for `push`).
+   */
+  upstreamRefInfo?(): Promise<
+    DeliveryContractProbeOutcome<{
+      ref: string | null;
+      source: 'upstream' | 'originHead' | null;
+    }>
+  >;
+  /** Full sha of the default upstream/base reference, or null if none. Optional. */
+  upstreamSha?(): Promise<DeliveryContractProbeOutcome<string | null>>;
+  /** Commit count of `base..head` (>=0). Optional for legacy probes. */
+  commitsBetween?(
+    base: string,
+    head: string
+  ): Promise<DeliveryContractProbeOutcome<number>>;
 }
 
 export interface DeliveryContractPrProbe {
@@ -23,6 +46,16 @@ export interface DeliveryContractPrProbe {
   hasOpenPrForBranch(
     branch: string
   ): Promise<DeliveryContractProbeOutcome<boolean>>;
+  /**
+   * Open PR details for delta evaluation (#1578). Optional: when absent the
+   * evaluator falls back to the legacy boolean semantics.
+   */
+  getOpenPrForBranch?(branch: string): Promise<
+    DeliveryContractProbeOutcome<{
+      number: number;
+      headSha: string | null;
+    } | null>
+  >;
 }
 
 export interface DeliveryContractFsProbe {
@@ -34,6 +67,20 @@ export interface EvaluateDeliveryContractInput {
   expect: readonly string[];
   /** Routing cwd for file existence and default git context. */
   cwd: string;
+  /**
+   * #1578: post-time baseline for delta semantics (commit/pr/push). When null
+   * or undefined, legacy absolute semantics apply.
+   */
+  baseline?: {
+    headSha: string;
+    upstreamRef?: string | null;
+    upstreamRefSource?: 'upstream' | 'originHead' | null;
+    upstreamSha: string | null;
+    prNumber: number | null;
+    prHeadSha: string | null;
+    cwd?: string;
+    capturedAt: string;
+  } | null;
   /** Final assistant message text for this run/turn. */
   finalAssistantText: string;
   /**
@@ -112,15 +159,178 @@ export async function evaluateDeliveryContract(
   }
   return { met: unmet.length === 0 && unknown.length === 0, unmet, unknown };
 
+  async function evalCommit(): Promise<DeliveryContractProbeOutcome<boolean>> {
+    const baseline = input.baseline;
+    if (baseline) {
+      if (baseline.cwd && baseline.cwd !== input.cwd) {
+        return {
+          kind: 'unknown',
+          reason: 'baseline captured in a different cwd',
+        };
+      }
+      if (
+        typeof probes.git.headSha !== 'function' ||
+        typeof probes.git.commitsBetween !== 'function'
+      ) {
+        return {
+          kind: 'unknown',
+          reason: 'git probes missing for commit delta evaluation',
+        };
+      }
+      const head = await probes.git.headSha();
+      if (head.kind === 'unknown') return head;
+      const headSha = typeof head.value === 'string' ? head.value.trim() : '';
+      if (!headSha) {
+        return { kind: 'unknown', reason: 'unable to resolve HEAD sha' };
+      }
+      const delta = await probes.git.commitsBetween(baseline.headSha, headSha);
+      if (delta.kind === 'unknown') return delta;
+      const n = delta.value;
+      return { kind: 'ok', value: Number.isFinite(n) && n >= 1 };
+    }
+    const ahead = await probes.git.aheadCount();
+    if (ahead.kind === 'unknown') return ahead;
+    const n = ahead.value;
+    return { kind: 'ok', value: Number.isFinite(n) && n >= 1 };
+  }
+
+  async function evalPush(): Promise<DeliveryContractProbeOutcome<boolean>> {
+    const baseline = input.baseline;
+    if (!baseline) {
+      return { kind: 'unknown', reason: 'baseline unavailable' };
+    }
+    if (baseline.cwd && baseline.cwd !== input.cwd) {
+      return {
+        kind: 'unknown',
+        reason: 'baseline captured in a different cwd',
+      };
+    }
+    if (baseline.upstreamRefSource === undefined) {
+      return { kind: 'unknown', reason: 'upstream ref source unavailable' };
+    }
+    if (baseline.upstreamRefSource === 'originHead') {
+      return {
+        kind: 'unknown',
+        reason:
+          'push delta unavailable when upstream ref came from origin/HEAD fallback',
+      };
+    }
+    if (baseline.upstreamRefSource !== 'upstream') {
+      return { kind: 'unknown', reason: 'upstream ref source unavailable' };
+    }
+    if (!baseline.upstreamRef) {
+      return { kind: 'unknown', reason: 'no upstream ref baseline available' };
+    }
+    if (!baseline.upstreamSha) {
+      return { kind: 'unknown', reason: 'no upstream baseline available' };
+    }
+    if (
+      typeof probes.git.upstreamRef !== 'function' ||
+      typeof probes.git.upstreamSha !== 'function' ||
+      typeof probes.git.commitsBetween !== 'function'
+    ) {
+      return {
+        kind: 'unknown',
+        reason: 'git probes missing for push delta evaluation',
+      };
+    }
+    const currentRef = await probes.git.upstreamRef();
+    if (currentRef.kind === 'unknown') return currentRef;
+    if (!currentRef.value) {
+      return {
+        kind: 'unknown',
+        reason: 'no upstream/base reference available',
+      };
+    }
+    if (currentRef.value !== baseline.upstreamRef) {
+      return {
+        kind: 'unknown',
+        reason: `upstream ref changed (${baseline.upstreamRef} -> ${currentRef.value})`,
+      };
+    }
+    const current = await probes.git.upstreamSha();
+    if (current.kind === 'unknown') return current;
+    if (!current.value) {
+      return {
+        kind: 'unknown',
+        reason: 'no upstream/base reference available',
+      };
+    }
+    const delta = await probes.git.commitsBetween(
+      baseline.upstreamSha,
+      current.value
+    );
+    if (delta.kind === 'unknown') return delta;
+    const n = delta.value;
+    return { kind: 'ok', value: Number.isFinite(n) && n >= 1 };
+  }
+
+  async function resolvePrBranch(
+    expectation: Extract<ChannelDeliveryExpectation, { kind: 'pr' }>
+  ): Promise<DeliveryContractProbeOutcome<string>> {
+    const branch = expectation.branch;
+    if (branch && branch.trim()) return { kind: 'ok', value: branch.trim() };
+    const current = await probes.git.currentBranch();
+    if (current.kind === 'unknown') return current;
+    const resolved = current.value ?? '';
+    if (!resolved.trim()) {
+      return { kind: 'unknown', reason: 'unable to resolve current branch' };
+    }
+    return { kind: 'ok', value: resolved.trim() };
+  }
+
+  async function evalPr(
+    expectation: Extract<ChannelDeliveryExpectation, { kind: 'pr' }>
+  ): Promise<DeliveryContractProbeOutcome<boolean>> {
+    const resolvedBranch = await resolvePrBranch(expectation);
+    if (resolvedBranch.kind === 'unknown') return resolvedBranch;
+
+    const baseline = input.baseline;
+    if (baseline?.cwd && baseline.cwd !== input.cwd) {
+      return {
+        kind: 'unknown',
+        reason: 'baseline captured in a different cwd',
+      };
+    }
+    if (
+      baseline &&
+      typeof probes.pr.getOpenPrForBranch === 'function' &&
+      typeof probes.git.commitsBetween === 'function'
+    ) {
+      const pr = await probes.pr.getOpenPrForBranch(resolvedBranch.value);
+      if (pr.kind === 'unknown') return pr;
+      if (!pr.value) return { kind: 'ok', value: false };
+      if (baseline.prNumber === null) return { kind: 'ok', value: true };
+      if (baseline.prNumber !== pr.value.number)
+        return { kind: 'ok', value: true };
+      if (!baseline.prHeadSha || !pr.value.headSha) {
+        return {
+          kind: 'unknown',
+          reason: 'unable to resolve PR head sha for delta evaluation',
+        };
+      }
+      const delta = await probes.git.commitsBetween(
+        baseline.prHeadSha,
+        pr.value.headSha
+      );
+      if (delta.kind === 'unknown') return delta;
+      const n = delta.value;
+      return { kind: 'ok', value: Number.isFinite(n) && n >= 1 };
+    }
+
+    // Legacy semantics: any open PR is sufficient.
+    return probes.pr.hasOpenPrForBranch(resolvedBranch.value);
+  }
+
   async function evaluateOne(
     expectation: ChannelDeliveryExpectation
   ): Promise<DeliveryContractProbeOutcome<boolean>> {
     switch (expectation.kind) {
       case 'commit': {
-        const ahead = await probes.git.aheadCount();
-        if (ahead.kind === 'unknown') return ahead;
-        const n = ahead.value;
-        return { kind: 'ok', value: Number.isFinite(n) && n >= 1 };
+        return evalCommit();
+      }
+      case 'push': {
+        return evalPush();
       }
       case 'file': {
         return fsProbe.exists(expectation.path);
@@ -137,20 +347,7 @@ export async function evaluateDeliveryContract(
         return { kind: 'ok', value: result.matched };
       }
       case 'pr': {
-        const branch = expectation.branch;
-        if (branch && branch.trim()) {
-          return probes.pr.hasOpenPrForBranch(branch.trim());
-        }
-        const current = await probes.git.currentBranch();
-        if (current.kind === 'unknown') return current;
-        const resolved = current.value ?? '';
-        if (!resolved.trim()) {
-          return {
-            kind: 'unknown',
-            reason: 'unable to resolve current branch',
-          };
-        }
-        return probes.pr.hasOpenPrForBranch(resolved.trim());
+        return evalPr(expectation);
       }
       default: {
         const _exhaustive: never = expectation;

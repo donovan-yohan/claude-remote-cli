@@ -95,6 +95,31 @@ export interface ChannelAsyncRun {
   deliveryContract?: {
     expect: string[];
     /**
+     * #1578: repo-state baseline captured when the post was accepted (best-effort).
+     *
+     * `null` means capture failed and delta evaluation falls back to legacy
+     * absolute semantics (documented in #1578).
+     */
+    baseline?: {
+      headSha: string;
+      /** Resolved upstream ref name used for `upstreamSha` (best-effort). */
+      upstreamRef?: string | null;
+      /** How `upstreamRef` was resolved (e.g. @{u} vs origin/HEAD fallback). */
+      upstreamRefSource?: 'upstream' | 'originHead' | null;
+      upstreamSha: string | null;
+      prNumber: number | null;
+      prHeadSha: string | null;
+      /** Absolute routing cwd used when the baseline was captured. */
+      cwd?: string;
+      capturedAt: string;
+    } | null;
+    /**
+     * True when the run is terminal but the contract result has not been
+     * finalized yet (e.g. repo probes still pending). Consumers should treat
+     * the contract as pending and re-read the run for its final result.
+     */
+    contractPending?: boolean;
+    /**
      * #1585: follow-up chain depth for delivery-contract followups.
      * 0 for the original post; follow-up turns increment by 1.
      */
@@ -114,6 +139,11 @@ export interface ChannelAsyncRun {
      * chain (e.g. max follow-up depth reached).
      */
     abandonedAt?: string;
+    /**
+     * #1585: timestamp at which Relay decided whether to post a follow-up trigger.
+     * Present even when no follow-up was posted (e.g. paused by brake).
+     */
+    followupDecidedAt?: string;
     result?: {
       met: boolean;
       unmet: string[];
@@ -123,6 +153,12 @@ export interface ChannelAsyncRun {
        * never count as unmet and must not force `completed_unmet`.
        */
       unknown?: Array<{ spec: string; reason: string }>;
+      /**
+       * #1578: human-readable one-line delta summary for contract debugging.
+       * Present only when the contract is unmet and Relay can compute it from
+       * the baseline and available probes.
+       */
+      deltaSummary?: string;
       evaluatedAt: string;
     };
     followupPostedAt?: string;

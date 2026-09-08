@@ -3715,10 +3715,43 @@ const channelAsyncRunSchema: RelayJsonSchema = {
       additionalProperties: true,
       properties: {
         expect: { type: 'array', items: stringSchema },
+        baseline: {
+          oneOf: [
+            { type: 'null' },
+            {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                headSha: stringSchema,
+                upstreamRef: nullableStringSchema,
+                upstreamRefSource: {
+                  oneOf: [
+                    { type: 'null' },
+                    { type: 'string', enum: ['upstream', 'originHead'] },
+                  ],
+                },
+                upstreamSha: nullableStringSchema,
+                prNumber: { oneOf: [{ type: 'null' }, { type: 'integer' }] },
+                prHeadSha: nullableStringSchema,
+                cwd: stringSchema,
+                capturedAt: { type: 'string', format: 'date-time' },
+              },
+              required: [
+                'headSha',
+                'upstreamSha',
+                'prNumber',
+                'prHeadSha',
+                'capturedAt',
+              ],
+            },
+          ],
+        },
+        contractPending: booleanSchema,
         followupDepth: { type: 'integer', minimum: 0 },
         parentRunId: stringSchema,
         childRunId: stringSchema,
         abandonedAt: stringSchema,
+        followupDecidedAt: { type: 'string', format: 'date-time' },
         result: {
           oneOf: [
             { type: 'null' },
@@ -3741,6 +3774,7 @@ const channelAsyncRunSchema: RelayJsonSchema = {
                   },
                 },
                 evaluatedAt: { type: 'string', format: 'date-time' },
+                deltaSummary: stringSchema,
               },
               required: ['met', 'unmet', 'evaluatedAt'],
             },
@@ -3859,6 +3893,7 @@ const channelRunWaitOutputDataSchema: RelayJsonSchema = {
             id: stringSchema,
             state: channelAsyncRunStateSchema,
             reason: stringSchema,
+            contractPending: booleanSchema,
           },
           required: ['id', 'state'],
         },
@@ -3878,6 +3913,32 @@ const channelRunWaitOutputDataSchema: RelayJsonSchema = {
           properties: {
             met: booleanSchema,
             unmet: { type: 'array', items: stringSchema },
+            baseline: {
+              oneOf: [
+                { type: 'null' },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
+                    headSha: stringSchema,
+                    upstreamSha: nullableStringSchema,
+                    prNumber: {
+                      oneOf: [{ type: 'null' }, { type: 'integer' }],
+                    },
+                    prHeadSha: nullableStringSchema,
+                    capturedAt: stringSchema,
+                  },
+                  required: [
+                    'headSha',
+                    'upstreamSha',
+                    'prNumber',
+                    'prHeadSha',
+                    'capturedAt',
+                  ],
+                },
+              ],
+            },
+            deltaSummary: stringSchema,
           },
         },
       ],

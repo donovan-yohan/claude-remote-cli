@@ -1597,8 +1597,14 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     if (!contract?.result) return null;
     return {
       ...contract.result,
+      ...(Object.prototype.hasOwnProperty.call(contract, 'baseline')
+        ? { baseline: contract.baseline }
+        : {}),
       ...(contract.followupPostedAt
         ? { followupPostedAt: contract.followupPostedAt }
+        : {}),
+      ...(contract.followupDecidedAt
+        ? { followupDecidedAt: contract.followupDecidedAt }
         : {}),
     };
   }
@@ -2023,33 +2029,240 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     });
   }
 
-  function terminalStateCarriesPrincipalProse(
-    state: ChannelAsyncRun['state']
-  ): boolean {
-    return state === 'completed' || state === 'completed_unmet';
+  function waitForFinalAssistantCompletion(input: {
+    hub: Pick<ChannelHub, 'onMessageCompleted'>;
+    runId: ChannelAsyncRunId;
+    deadlineMs: number;
+    signal: AbortSignal;
+  }): Promise<void> {
+    const { hub, runId, deadlineMs, signal } = input;
+    if (signal.aborted) return Promise.resolve();
+    if (deadlineMs <= 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, deadlineMs);
+      const unlisten = hub.onMessageCompleted((message) => {
+        const asyncRun = (message.meta as unknown as { asyncRun?: unknown })
+          ?.asyncRun as { runId?: string } | undefined;
+        const metaRunId =
+          typeof asyncRun?.runId === 'string'
+            ? (asyncRun.runId as ChannelAsyncRunId)
+            : null;
+        if (metaRunId !== runId) return;
+        clearTimeout(timer);
+        unlisten();
+        resolve();
+      });
+      signal.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          unlisten();
+          resolve();
+        },
+        { once: true }
+      );
+    });
   }
 
   async function finalAssistantTextForTerminalRun(
     store: ChannelMessageStore,
+    hub: Pick<ChannelHub, 'onMessageCompleted'>,
     runId: ChannelAsyncRunId,
     run: ChannelAsyncRun,
     deadline: number,
-    graceMs: number,
     signal: AbortSignal
   ): Promise<{ finalText: string | null; finalMessageSeq: number | null }> {
     let final = finalAssistantTextForRun(store, run);
     if (final.finalMessageSeq !== null) return final;
-    if (!terminalStateCarriesPrincipalProse(run.state)) return final;
-    const graceDeadline = Math.min(deadline, Date.now() + graceMs);
-    while (Date.now() < graceDeadline && !signal.aborted) {
-      await sleepWithAbort(50, signal);
+    if (!(run.state === 'completed' || run.state === 'completed_unmet'))
+      return final;
+    const graceDeadline = Math.min(deadline, Date.now() + 2000);
+    while (
+      signal.aborted === false &&
+      final.finalMessageSeq === null &&
+      Date.now() < graceDeadline
+    ) {
+      await waitForFinalAssistantCompletion({
+        hub,
+        runId,
+        deadlineMs: Math.max(0, graceDeadline - Date.now()),
+        signal,
+      });
+      if (signal.aborted) return final;
       const refreshed = store.getAsyncRun(runId);
-      if (!refreshed) break;
-      if (!runTerminalState(refreshed.state)) continue;
+      if (!refreshed) return final;
+      if (!runTerminalState(refreshed.state)) return final;
       final = finalAssistantTextForRun(store, refreshed);
-      if (final.finalMessageSeq !== null) break;
     }
     return final;
+  }
+
+  function waitRunView(run: ChannelAsyncRun): Record<string, unknown> {
+    return {
+      id: run.id,
+      state: run.state,
+      ...(run.reason ? { reason: run.reason } : {}),
+      ...(run.deliveryContract?.contractPending
+        ? { contractPending: true }
+        : {}),
+    };
+  }
+
+  async function sendTerminalWaitResponse(input: {
+    req: Request;
+    res: Response;
+    store: ChannelMessageStore;
+    hub: Pick<ChannelHub, 'onMessageCompleted'>;
+    runId: ChannelAsyncRunId;
+    run: ChannelAsyncRun;
+    deadline: number;
+    signal: AbortSignal;
+  }): Promise<void> {
+    const final = await finalAssistantTextForTerminalRun(
+      input.store,
+      input.hub,
+      input.runId,
+      input.run,
+      input.deadline,
+      input.signal
+    );
+    input.res.json(
+      operatorClientPublicValue(input.req, {
+        run: waitRunView(input.run),
+        outcome: input.run.state,
+        finalText: final.finalText ?? '',
+        finalMessageSeq: final.finalMessageSeq ?? null,
+        contract: contractSummaryForRun(input.run),
+      })
+    );
+  }
+
+  async function waitForWaitableRun(input: {
+    store: ChannelMessageStore;
+    hub: Pick<ChannelHub, 'onRunLifecycle'>;
+    initial: ChannelAsyncRun;
+    timeoutMs: number;
+    maxFollowupRunsToVisit: number;
+    signal: AbortSignal;
+  }): Promise<{
+    timedOut: boolean;
+    runId: ChannelAsyncRunId;
+    run: ChannelAsyncRun | null;
+  }> {
+    const { store, hub, initial, timeoutMs, maxFollowupRunsToVisit, signal } =
+      input;
+    const deadline = Date.now() + timeoutMs;
+    const serverRestartCancelGraceMs = 2000;
+    let serverRestartCancelledAt: number | null = null;
+    let hop = 0;
+    let runId: ChannelAsyncRunId = initial.id;
+    let hopWaitUntil: number | null = null;
+    let hopWaitRunId: ChannelAsyncRunId | null = null;
+
+    const shouldWaitForFollowupChild = (
+      run: ChannelAsyncRun,
+      childRunId: ChannelAsyncRunId | null
+    ): boolean => {
+      if (run.state !== 'completed_unmet') return false;
+      if (!run.deliveryContract?.result) return false;
+      if (run.deliveryContract.result.met !== false) return false;
+      if (childRunId) return false;
+      if (run.deliveryContract.abandonedAt) return false;
+      if (run.deliveryContract.followupDecidedAt) return false;
+      if (run.deliveryContract.contractPending) return false;
+      return hop + 1 < maxFollowupRunsToVisit;
+    };
+
+    const waitForLifecycle = async (
+      runId: ChannelAsyncRunId,
+      maxMs: number
+    ): Promise<void> => {
+      if (signal.aborted) return;
+      const cap = Math.max(0, Math.min(1000, maxMs));
+      if (cap === 0) return;
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, cap);
+        const unlisten = hub.onRunLifecycle((run) => {
+          if (run.id !== runId) return;
+          clearTimeout(timer);
+          unlisten();
+          resolve();
+        });
+        signal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            unlisten();
+            resolve();
+          },
+          { once: true }
+        );
+      });
+    };
+
+    while (Date.now() < deadline && !signal.aborted) {
+      const latest = store.getAsyncRun(runId);
+      if (!latest) break;
+      if (latest.channelId !== initial.channelId) break;
+
+      if (
+        latest.state === 'cancelled' &&
+        latest.reason === 'server-restarted'
+      ) {
+        if (serverRestartCancelledAt === null)
+          serverRestartCancelledAt = Date.now();
+        if (
+          Date.now() - serverRestartCancelledAt <
+          serverRestartCancelGraceMs
+        ) {
+          await waitForLifecycle(runId, deadline - Date.now());
+          continue;
+        }
+      } else {
+        serverRestartCancelledAt = null;
+      }
+
+      if (!runTerminalState(latest.state)) {
+        await waitForLifecycle(runId, deadline - Date.now());
+        continue;
+      }
+
+      const childRunId =
+        typeof latest.deliveryContract?.childRunId === 'string'
+          ? (latest.deliveryContract.childRunId as ChannelAsyncRunId)
+          : null;
+      if (
+        childRunId &&
+        childRunId !== latest.id &&
+        hop + 1 < maxFollowupRunsToVisit
+      ) {
+        hop += 1;
+        runId = childRunId;
+        serverRestartCancelledAt = null;
+        await sleepWithAbort(0, signal);
+        continue;
+      }
+
+      if (shouldWaitForFollowupChild(latest, childRunId)) {
+        const hopWaitMs = Math.min(2000, timeoutMs);
+        if (hopWaitRunId !== latest.id || hopWaitUntil === null) {
+          hopWaitRunId = latest.id;
+          hopWaitUntil = Date.now() + hopWaitMs;
+        }
+        if (Date.now() < hopWaitUntil) {
+          await waitForLifecycle(
+            runId,
+            Math.min(deadline - Date.now(), hopWaitUntil - Date.now())
+          );
+          continue;
+        }
+      }
+
+      return { timedOut: false, runId, run: latest };
+    }
+
+    const latest = store.getAsyncRun(runId);
+    return { timedOut: true, runId, run: latest ?? null };
   }
 
   async function respondWaitByRunId(
@@ -2070,88 +2283,44 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     if (denyNonMemberChannel(req, res, deps.store, initial.channelId)) return;
     if (!requirePersistedChannelById(res, initial.channelId)) return;
 
-    const deadline = Date.now() + input.timeoutMs;
-    const serverRestartCancelGraceMs = 2000;
-    const terminalFinalizationGraceMs = 2000;
-    let serverRestartCancelledAt: number | null = null;
     const configuredMaxFollowups = deps.deliveryContractMaxFollowups ?? 3;
     const maxFollowupRunsToVisit =
       Number.isSafeInteger(configuredMaxFollowups) &&
       configuredMaxFollowups >= 0
         ? configuredMaxFollowups + 1
         : 4;
-    let hop = 0; // edges traversed
-    let runId: ChannelAsyncRunId = input.runId;
-    while (Date.now() < deadline && !signal.aborted) {
-      const latest = store.getAsyncRun(runId);
-      if (!latest) break;
-      if (latest.channelId !== initial.channelId) break;
-      if (
-        latest.state === 'cancelled' &&
-        latest.reason === 'server-restarted'
-      ) {
-        if (serverRestartCancelledAt === null)
-          serverRestartCancelledAt = Date.now();
-        if (
-          Date.now() - serverRestartCancelledAt <
-          serverRestartCancelGraceMs
-        ) {
-          await sleepWithAbort(50, signal);
-          continue;
-        }
-      } else {
-        serverRestartCancelledAt = null;
-      }
-      if (runTerminalState(latest.state)) {
-        const childRunId =
-          typeof latest.deliveryContract?.childRunId === 'string'
-            ? (latest.deliveryContract.childRunId as ChannelAsyncRunId)
-            : null;
-        if (
-          childRunId &&
-          childRunId !== latest.id &&
-          hop + 1 < maxFollowupRunsToVisit
-        ) {
-          hop += 1;
-          runId = childRunId;
-          serverRestartCancelledAt = null;
-          await sleepWithAbort(0, signal);
-          continue;
-        }
-        const final = await finalAssistantTextForTerminalRun(
-          store,
-          runId,
-          latest,
-          deadline,
-          terminalFinalizationGraceMs,
-          signal
-        );
-        res.json(
-          operatorClientPublicValue(req, {
-            run: {
-              id: latest.id,
-              state: latest.state,
-              ...(latest.reason ? { reason: latest.reason } : {}),
-            },
-            outcome: latest.state,
-            finalText: final.finalText ?? '',
-            finalMessageSeq: final.finalMessageSeq ?? null,
-            contract: contractSummaryForRun(latest),
-          })
-        );
-        return;
-      }
-      await sleepWithAbort(50, signal);
-    }
+    const waited = await waitForWaitableRun({
+      store,
+      hub: deps.hub,
+      initial,
+      timeoutMs: input.timeoutMs,
+      maxFollowupRunsToVisit,
+      signal,
+    });
     if (signal.aborted) return;
-    const latest = store.getAsyncRun(runId);
+    if (waited.run && runTerminalState(waited.run.state)) {
+      await sendTerminalWaitResponse({
+        req,
+        res,
+        store,
+        hub: deps.hub,
+        runId: waited.runId,
+        run: waited.run,
+        deadline: waited.timedOut ? Date.now() : Date.now() + input.timeoutMs,
+        signal,
+      });
+      return;
+    }
     res.json(
       operatorClientPublicValue(req, {
-        run: latest
+        run: waited.run
           ? {
-              id: latest.id,
-              state: latest.state,
-              ...(latest.reason ? { reason: latest.reason } : {}),
+              id: waited.run.id,
+              state: waited.run.state,
+              ...(waited.run.reason ? { reason: waited.run.reason } : {}),
+              ...(waited.run.deliveryContract?.contractPending
+                ? { contractPending: true }
+                : {}),
             }
           : {
               id: initial.id,
@@ -2161,7 +2330,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         outcome: 'timeout',
         finalText: '',
         finalMessageSeq: null,
-        contract: latest ? contractSummaryForRun(latest) : null,
+        contract: waited.run ? contractSummaryForRun(waited.run) : null,
       })
     );
   }

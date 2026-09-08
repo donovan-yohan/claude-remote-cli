@@ -885,6 +885,8 @@ export interface PrInfo {
   url: string;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   headRefName: string;
+  /** Full commit sha for the PR head (when available). */
+  headSha?: string;
   baseRefName: string;
   isDraft: boolean;
   reviewDecision: string | null;

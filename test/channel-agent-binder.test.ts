@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import Database from 'better-sqlite3';
 import express from 'express';
@@ -4753,6 +4754,283 @@ describe('channel-agent-binder — lifecycle', () => {
     });
   });
 
+  it('captures a delivery-contract baseline in the routing cwd before the runtime accepts input (#1578)', async () => {
+    const dir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'binder-baseline-capture-')
+    );
+    cleanup.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const repo = path.join(dir, 'repo');
+    const remote = path.join(dir, 'remote.git');
+    fs.mkdirSync(repo, { recursive: true });
+
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, stdio: 'pipe' }).toString('utf8').trim();
+
+    git(['init'], repo);
+    git(['config', 'user.email', 'test@example.com'], repo);
+    git(['config', 'user.name', 'Test'], repo);
+    fs.writeFileSync(path.join(repo, 'README.md'), 'hi\n');
+    git(['add', '.'], repo);
+    git(['commit', '-m', 'init'], repo);
+    git(['branch', '-M', 'nightly'], repo);
+    git(['init', '--bare', remote], dir);
+    git(['remote', 'add', 'origin', remote], repo);
+    git(['push', '-u', 'origin', 'nightly'], repo);
+    const headSha = git(['rev-parse', 'HEAD'], repo);
+    const upstreamRef = git(
+      ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+      repo
+    );
+
+    const topicStore = createWorkspaceTopicStore({ dbPath: ':memory:' });
+    cleanup.push(() => topicStore.close());
+    topicStore.create({
+      id: CH,
+      workspaceId: 'ws:local',
+      title: 'baseline',
+      routingDefaults: { cwd: repo },
+    });
+
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    let storeRef: ChannelMessageStore | null = null;
+    let runId: ChannelAsyncRunId | null = null;
+
+    class BaselineProbeAdapter extends ScriptedAdapter {
+      baselinesAtSend: Array<unknown> = [];
+      override async sendMessage(
+        input: AgentSendMessageInputV2
+      ): Promise<void> {
+        const run = runId && storeRef ? storeRef.getAsyncRun(runId) : null;
+        this.baselinesAtSend.push(run?.deliveryContract?.baseline);
+        return super.sendMessage(input);
+      }
+    }
+
+    const built: BaselineProbeAdapter[] = [];
+    const { binder, store, sessions } = makeBinder({
+      build: (agentType) => {
+        const adapter = new BaselineProbeAdapter(agentType, {
+          mode: 'reply',
+          text: 'ok',
+        });
+        built.push(adapter);
+        return adapter;
+      },
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      topicStore,
+    });
+    storeRef = store;
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    runId = posted.run.id;
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() => sessions.spawns() === 1);
+    await waitFor(() => built.length === 1 && built[0]!.sendCalls.length === 1);
+    expect(built[0]!.baselinesAtSend).toHaveLength(1);
+    expect(built[0]!.baselinesAtSend[0]).toMatchObject({
+      headSha,
+      cwd: repo,
+      upstreamRef,
+      upstreamRefSource: 'upstream',
+    });
+    // Baseline is captured in the routing cwd, not the process cwd.
+    expect(
+      store.getAsyncRun(posted.run.id)?.deliveryContract?.baseline
+    ).toMatchObject({
+      headSha,
+      cwd: repo,
+      upstreamRef,
+      upstreamRefSource: 'upstream',
+    });
+  });
+
+  it('captures upstreamRefSource=originHead when no upstream is configured (#1578 rr3)', async () => {
+    const dir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'binder-baseline-origin-head-')
+    );
+    cleanup.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const repo = path.join(dir, 'repo');
+    const remote = path.join(dir, 'remote.git');
+    fs.mkdirSync(repo, { recursive: true });
+
+    const git = (args: string[], cwd: string) =>
+      execFileSync('git', args, { cwd, stdio: 'pipe' }).toString('utf8').trim();
+
+    git(['init'], repo);
+    git(['config', 'user.email', 'test@example.com'], repo);
+    git(['config', 'user.name', 'Test'], repo);
+    fs.writeFileSync(path.join(repo, 'README.md'), 'hi\n');
+    git(['add', '.'], repo);
+    git(['commit', '-m', 'init'], repo);
+    git(['branch', '-M', 'nightly'], repo);
+    git(['init', '--bare', remote], dir);
+    // Set the remote HEAD to nightly so origin/HEAD exists after fetch.
+    git(['symbolic-ref', 'HEAD', 'refs/heads/nightly'], remote);
+    git(['remote', 'add', 'origin', remote], repo);
+    // Push WITHOUT -u so @{u} is missing, forcing the origin/HEAD fallback.
+    git(['push', 'origin', 'nightly'], repo);
+    git(['fetch', 'origin'], repo);
+    // Ensure the `refs/remotes/origin/HEAD` symbolic ref exists for the probe
+    // fallback (mirrors the shape a `git clone` produces).
+    git(
+      [
+        'symbolic-ref',
+        'refs/remotes/origin/HEAD',
+        'refs/remotes/origin/nightly',
+      ],
+      repo
+    );
+
+    const headSha = git(['rev-parse', 'HEAD'], repo);
+    const originHead = git(['symbolic-ref', 'refs/remotes/origin/HEAD'], repo);
+    expect(originHead).toBe('refs/remotes/origin/nightly');
+    const upstreamRef = 'origin/nightly';
+
+    const topicStore = createWorkspaceTopicStore({ dbPath: ':memory:' });
+    cleanup.push(() => topicStore.close());
+    topicStore.create({
+      id: CH,
+      workspaceId: 'ws:local',
+      title: 'baseline-origin-head',
+      routingDefaults: { cwd: repo },
+    });
+
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    let storeRef: ChannelMessageStore | null = null;
+    let runId: ChannelAsyncRunId | null = null;
+
+    class BaselineProbeAdapter extends ScriptedAdapter {
+      baselinesAtSend: Array<unknown> = [];
+      override async sendMessage(
+        input: AgentSendMessageInputV2
+      ): Promise<void> {
+        const run = runId && storeRef ? storeRef.getAsyncRun(runId) : null;
+        this.baselinesAtSend.push(run?.deliveryContract?.baseline);
+        return super.sendMessage(input);
+      }
+    }
+
+    const built: BaselineProbeAdapter[] = [];
+    const { binder, store, sessions } = makeBinder({
+      build: (agentType) => {
+        const adapter = new BaselineProbeAdapter(agentType, {
+          mode: 'reply',
+          text: 'ok',
+        });
+        built.push(adapter);
+        return adapter;
+      },
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      topicStore,
+    });
+    storeRef = store;
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['push'] },
+      meta: { deliveryContract: { expect: ['push'] } },
+    });
+    runId = posted.run.id;
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() => sessions.spawns() === 1);
+    await waitFor(() => built.length === 1 && built[0]!.sendCalls.length === 1);
+    expect(built[0]!.baselinesAtSend).toHaveLength(1);
+    expect(built[0]!.baselinesAtSend[0]).toMatchObject({
+      headSha,
+      cwd: repo,
+      upstreamRef,
+      upstreamRefSource: 'originHead',
+    });
+    expect(
+      store.getAsyncRun(posted.run.id)?.deliveryContract?.baseline
+    ).toMatchObject({
+      headSha,
+      cwd: repo,
+      upstreamRef,
+      upstreamRefSource: 'originHead',
+    });
+  });
+
+  it('records baseline: null when capture fails, but does not lose the post (#1578)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'binder-baseline-fail-'));
+    cleanup.push(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+    const topicStore = createWorkspaceTopicStore({ dbPath: ':memory:' });
+    cleanup.push(() => topicStore.close());
+    topicStore.create({
+      id: CH,
+      workspaceId: 'ws:local',
+      title: 'baseline-fail',
+      routingDefaults: { cwd: dir },
+    });
+
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    const built: ScriptedAdapter[] = [];
+    const { binder, store, sessions } = makeBinder({
+      build: (agentType) => {
+        const adapter = new ScriptedAdapter(agentType, {
+          mode: 'reply',
+          text: 'ok',
+        });
+        built.push(adapter);
+        return adapter;
+      },
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      topicStore,
+    });
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() => sessions.spawns() === 1);
+    await waitFor(() => built.length === 1 && built[0]!.sendCalls.length === 1);
+    const run = store.getAsyncRun(posted.run.id)!;
+    expect(
+      Object.prototype.hasOwnProperty.call(run.deliveryContract!, 'baseline')
+    ).toBe(true);
+    expect(run.deliveryContract?.baseline).toBe(null);
+  });
+
   it('chains delivery-contract follow-ups up to the max, then abandons (#1585)', async () => {
     const profiles = createAgentProfileStore(':memory:');
     cleanup.push(() => profiles.close());
@@ -4852,6 +5130,67 @@ describe('channel-agent-binder — lifecycle', () => {
     expect(
       sys.some((t) => t.includes('Contract still unmet after 2 follow-ups'))
     ).toBe(true);
+  });
+
+  it('memoizes git/pr probes so deltaSummary does not re-run evaluation probes (#1578 review)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    let headShaCalls = 0;
+    let commitsBetweenCalls = 0;
+
+    const { binder, store } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          headSha: async () => {
+            headShaCalls += 1;
+            return { kind: 'ok', value: 'a'.repeat(40) };
+          },
+          commitsBetween: async () => {
+            commitsBetweenCalls += 1;
+            return { kind: 'ok', value: 0 };
+          },
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const mentions = parseMentions('@mock please ship', ['mock']);
+    const result = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: {
+        expect: ['commit'],
+        baseline: {
+          headSha: 'a'.repeat(40),
+          upstreamSha: null,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+      },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(result.message, result.message.mentions ?? []);
+
+    await waitFor(
+      () => store.getAsyncRun(result.run.id)?.state === 'completed_unmet'
+    );
+    expect(headShaCalls).toBe(1);
+    expect(commitsBetweenCalls).toBe(1);
   });
 
   it('broadcasts abandonedAt in the terminal run lifecycle frame (#1585)', async () => {
@@ -6113,7 +6452,16 @@ describe('channel-agent-binder — lifecycle', () => {
       text: '@mock please ship',
       mentions,
       targetIds: [builtInAgentProfileId('mock')],
-      deliveryContract: { expect: ['pr:feat/x'] },
+      deliveryContract: {
+        expect: ['pr:feat/x'],
+        baseline: {
+          headSha: 'a'.repeat(40),
+          upstreamSha: 'b'.repeat(40),
+          prNumber: 123,
+          prHeadSha: 'c'.repeat(40),
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+      },
       meta: { deliveryContract: { expect: ['pr:feat/x'] } },
     });
     hub.broadcastCreated(result.message, result.message.mentions ?? []);
@@ -6134,6 +6482,69 @@ describe('channel-agent-binder — lifecycle', () => {
     );
     expect(child?.deliveryContract?.followupDepth).toBe(1);
     expect(child?.deliveryContract?.parentRunId).toBe(parent.id);
+    expect(child?.deliveryContract?.baseline).toEqual(
+      parent.deliveryContract?.baseline
+    );
+  });
+
+  it('re-enqueues a trigger when the runtime exits during baseline capture (#1578 review)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    const built: ScriptedAdapter[] = [];
+    let releaseGate!: (value?: void | PromiseLike<void>) => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+
+    const { binder, store, sessions } = makeBinder({
+      build: (agentType) => {
+        const adapter = new ScriptedAdapter(agentType, {
+          mode: 'reply',
+          text: 'done',
+        });
+        built.push(adapter);
+        return adapter;
+      },
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          headSha: async () => {
+            await gate;
+            return { kind: 'ok', value: 'a'.repeat(40) };
+          },
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const mentions = parseMentions('@mock please ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() => sessions.spawns() === 1);
+    sessions.fireEnd(sessions.firstSessionId());
+    releaseGate();
+
+    await binder.ensureBinding(CH, 'mock');
+    await waitFor(() => sessions.spawns() === 2);
+    await waitFor(() => built.length === 2 && built[1]!.sendCalls.length === 1);
+    expect(built[1]!.sendInputs[0]!.content).toContain('@mock please ship');
   });
 
   it('posts a restart-abandonment system row and attention event for cancelled contract runs (#1585)', async () => {
@@ -6500,6 +6911,73 @@ describe('channel-agent-binder — lifecycle', () => {
     } finally {
       process.off('unhandledRejection', handler);
     }
+  });
+});
+
+describe('channel-agent-binder — delivery-contract terminal transitions', () => {
+  it('finalizes contract as unknown when routing rejects a target as unavailable (#1578 review)', async () => {
+    const { binder, store } = makeBinder({
+      build: (agentType) => new ScriptedAdapter(agentType, { mode: 'stall' }),
+      targets: [],
+      mentionTargets: async () => [],
+      knownProviderIds: ['mock'],
+    });
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() => store.getAsyncRun(posted.run.id)?.state === 'rejected');
+    const run = store.getAsyncRun(posted.run.id)!;
+    expect(run.deliveryContract?.result).toMatchObject({
+      met: false,
+      unmet: [],
+      unknown: [expect.objectContaining({ spec: 'commit' })],
+    });
+  });
+
+  it('finalizes contract as unknown when a contract turn is cancelled (#1578 review)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    const { binder, store } = makeBinder({
+      build: (agentType) => new ScriptedAdapter(agentType, { mode: 'stall' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      turnCeilingMs: 10,
+    });
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(
+      () => store.getAsyncRun(posted.run.id)?.state === 'cancelled'
+    );
+    const run = store.getAsyncRun(posted.run.id)!;
+    expect(run.deliveryContract?.result).toMatchObject({
+      met: false,
+      unmet: [],
+      unknown: [expect.objectContaining({ spec: 'commit' })],
+    });
   });
 });
 

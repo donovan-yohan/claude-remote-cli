@@ -75,7 +75,10 @@ import {
 //    catch-up window, and thread parent stays valid. Nothing in this file may
 //    ever issue `DELETE FROM channel_messages` for an operator action.
 
-const SCHEMA_VERSION = 23;
+// v24: delivery-contract baseline persistence (#1578). No SQL shape change —
+// the baseline is additive inside `delivery_contract_json` — but schema_version
+// still advances so hubs can reason about persisted run semantics.
+const SCHEMA_VERSION = 24;
 const ASYNC_RUN_SETTLED_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const logger = createLogger('channel-message-store');
 export const CHANNEL_HISTORY_DEFAULT_LIMIT = 50;
@@ -1538,6 +1541,19 @@ export interface ChannelMessageStore {
     followupPostedAt?: string;
     childRunId?: ChannelAsyncRunId;
     abandonedAt?: string;
+    followupDecidedAt?: string;
+  }): ChannelAsyncRun | null;
+  /** Mark a contract as pending final evaluation. */
+  setAsyncRunDeliveryContractPending(input: {
+    runId: ChannelAsyncRunId;
+    pending: boolean;
+  }): ChannelAsyncRun | null;
+  /** Persist the post-time baseline used for delta evaluation (#1578). */
+  setAsyncRunDeliveryContractBaseline(input: {
+    runId: ChannelAsyncRunId;
+    baseline: NonNullable<
+      NonNullable<ChannelAsyncRun['deliveryContract']>['baseline']
+    > | null;
   }): ChannelAsyncRun | null;
   beginStream(input: BeginStreamInput): ChannelMessage;
   updateStreamText(id: string, text: string): ChannelMessage | null;
@@ -3736,6 +3752,13 @@ function runSchemaMigrations(db: Database.Database): void {
       db.prepare('UPDATE schema_version SET version = 23').run();
     })();
   }
+  if (current < 24) {
+    db.transaction(() => {
+      // #1578: delivery-contract probe baselines are stored additively inside
+      // `delivery_contract_json`. No table rebuild required.
+      db.prepare('UPDATE schema_version SET version = 24').run();
+    })();
+  }
 }
 
 export function initChannelMessageStore(
@@ -4793,6 +4816,7 @@ export function createChannelMessageStore(
       followupPostedAt?: string;
       childRunId?: ChannelAsyncRunId;
       abandonedAt?: string;
+      followupDecidedAt?: string;
     }): ChannelAsyncRun | null => {
       const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
       if (!run) return null;
@@ -4811,6 +4835,7 @@ export function createChannelMessageStore(
 
       const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
         ...contract,
+        contractPending: false,
         // Keep an existing result if one is already recorded.
         ...(contract.result
           ? { result: contract.result }
@@ -4823,6 +4848,9 @@ export function createChannelMessageStore(
           : {}),
         ...(input.abandonedAt && !contract.abandonedAt
           ? { abandonedAt: input.abandonedAt }
+          : {}),
+        ...(input.followupDecidedAt && !contract.followupDecidedAt
+          ? { followupDecidedAt: input.followupDecidedAt }
           : {}),
       };
 
@@ -4849,7 +4877,134 @@ export function createChannelMessageStore(
     }
   );
 
+  const setAsyncRunDeliveryContractPendingImpl = db.transaction(
+    (input: {
+      runId: ChannelAsyncRunId;
+      pending: boolean;
+    }): ChannelAsyncRun | null => {
+      const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
+      if (!run) return null;
+      if (!run.delivery_contract_json) return asyncRunFromRow(run);
+
+      let contract: NonNullable<ChannelAsyncRun['deliveryContract']>;
+      try {
+        contract = JSON.parse(run.delivery_contract_json) as NonNullable<
+          ChannelAsyncRun['deliveryContract']
+        >;
+      } catch {
+        return asyncRunFromRow(run);
+      }
+      if (!contract || !Array.isArray(contract.expect))
+        return asyncRunFromRow(run);
+      if (contract.contractPending === input.pending)
+        return asyncRunFromRow(run);
+
+      const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+        ...contract,
+        contractPending: input.pending,
+      };
+      const now = nowIso();
+      db.prepare(
+        `UPDATE channel_async_runs SET delivery_contract_json = ?, updated_at = ?
+          WHERE id = ?`
+      ).run(JSON.stringify(next), now, run.id);
+      return asyncRunFromRow(selectAsyncRun.get(run.id) as AsyncRunRow);
+    }
+  );
+
+  const setAsyncRunDeliveryContractBaselineImpl = db.transaction(
+    (input: {
+      runId: ChannelAsyncRunId;
+      baseline: NonNullable<
+        NonNullable<ChannelAsyncRun['deliveryContract']>['baseline']
+      > | null;
+    }): ChannelAsyncRun | null => {
+      const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
+      if (!run) return null;
+      if (!run.delivery_contract_json) return asyncRunFromRow(run);
+
+      let contract: NonNullable<ChannelAsyncRun['deliveryContract']>;
+      try {
+        contract = JSON.parse(run.delivery_contract_json) as NonNullable<
+          ChannelAsyncRun['deliveryContract']
+        >;
+      } catch {
+        return asyncRunFromRow(run);
+      }
+      if (!contract || !Array.isArray(contract.expect))
+        return asyncRunFromRow(run);
+      // Idempotent: once baseline is present (including explicit null), never
+      // overwrite it. Capture is best-effort and should not be retried mid-run.
+      if (Object.prototype.hasOwnProperty.call(contract, 'baseline')) {
+        return asyncRunFromRow(run);
+      }
+      const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+        ...contract,
+        baseline: input.baseline,
+      };
+      const now = nowIso();
+      db.prepare(
+        `UPDATE channel_async_runs
+            SET delivery_contract_json = ?, updated_at = ?
+          WHERE id = ?`
+      ).run(JSON.stringify(next), now, run.id);
+      return asyncRunFromRow(selectAsyncRun.get(run.id) as AsyncRunRow);
+    }
+  );
+
   const recoverAsyncRunsImpl = db.transaction((): ChannelAsyncRun[] => {
+    const now = nowIso();
+    const recoverPendingTerminalRuns = () => {
+      const pending = db
+        .prepare(
+          `SELECT * FROM channel_async_runs
+             WHERE state IN ('completed','completed_unmet','failed','cancelled','rejected')
+               AND delivery_contract_json IS NOT NULL
+               AND json_extract(delivery_contract_json, '$.contractPending') = 1`
+        )
+        .all() as AsyncRunRow[];
+      if (pending.length === 0) return;
+      const updateRunContract = db.prepare(
+        `UPDATE channel_async_runs
+            SET delivery_contract_json = ?, updated_at = ?
+          WHERE id = ?`
+      );
+      for (const row of pending) {
+        try {
+          const contract = JSON.parse(row.delivery_contract_json ?? 'null') as
+            | NonNullable<ChannelAsyncRun['deliveryContract']>
+            | null
+            | undefined;
+          if (
+            contract &&
+            Array.isArray(contract.expect) &&
+            contract.expect.length > 0 &&
+            contract.contractPending === true &&
+            !contract.result
+          ) {
+            const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+              ...contract,
+              contractPending: false,
+              result: {
+                met: false,
+                unmet: [],
+                unknown: contract.expect.map((spec) => ({
+                  spec,
+                  reason: 'server-restarted',
+                })),
+                evaluatedAt: now,
+              },
+            };
+            updateRunContract.run(JSON.stringify(next), now, row.id);
+          }
+        } catch {
+          /* ignore invalid json */
+        }
+      }
+    };
+
+    recoverPendingTerminalRuns();
+
     const rows = db
       .prepare(
         `SELECT * FROM channel_async_runs
@@ -4857,7 +5012,6 @@ export function createChannelMessageStore(
       )
       .all() as AsyncRunRow[];
     if (rows.length === 0) return [];
-    const now = nowIso();
     const cancelTarget = db.prepare(
       `UPDATE channel_async_run_targets
           SET state = 'cancelled', reason = 'server-restarted', updated_at = ?,
@@ -5668,6 +5822,14 @@ export function createChannelMessageStore(
 
     finalizeAsyncRunDeliveryContract(input) {
       return finalizeAsyncRunDeliveryContractImpl(input);
+    },
+
+    setAsyncRunDeliveryContractPending(input) {
+      return setAsyncRunDeliveryContractPendingImpl(input);
+    },
+
+    setAsyncRunDeliveryContractBaseline(input) {
+      return setAsyncRunDeliveryContractBaselineImpl(input);
     },
 
     beginStream(input) {

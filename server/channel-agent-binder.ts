@@ -8,6 +8,8 @@ import { bindSessionToChannel } from './channel-agent-bridge.js';
 import { getPrForBranchResult } from './gh.js';
 import {
   evaluateDeliveryContract,
+  type DeliveryContractGitProbe,
+  type DeliveryContractPrProbe,
   type DeliveryContractProbeOutcome,
 } from './channel-delivery-contract-evaluator.js';
 import {
@@ -568,6 +570,8 @@ export interface LiveBinding {
   patchUnlisten: (() => void) | null;
   status: ChannelAgentStatus;
   activeTurnId: string | null;
+  /** True while a queued turn is in pre-send probes (e.g. #1578 baseline capture). */
+  sendPreflight: boolean;
   /** Immediate thread parent keyed by routed turn; retained past binder idle. */
   parentMessageIdByTurn: Map<string, string | null>;
   /** Exact accepted post that owns an async target turn (never provider-derived). */
@@ -2200,6 +2204,7 @@ export function createChannelAgentBinder(
       patchUnlisten: null,
       status: 'idle',
       activeTurnId: null,
+      sendPreflight: false,
       parentMessageIdByTurn: new Map(),
       requestMessageIdByTurn: new Map(),
       exactTurnTombstones: new Map(),
@@ -3223,6 +3228,7 @@ export function createChannelAgentBinder(
    */
   function pump(binding: LiveBinding): void {
     if (binding.activeTurnId !== null) return;
+    if (binding.sendPreflight) return;
     if (!binding.adapter) return;
     const head = binding.queue[0];
     if (!head) return;
@@ -3358,57 +3364,292 @@ export function createChannelAgentBinder(
     };
   }
 
-  function sendTurn(
-    binding: LiveBinding,
-    trigger: ChannelMessage,
-    completionCallback?: ChannelCompletionCallbackEdge,
-    callbackEdgeRequest?: CallbackEdgeRequest
-  ): void {
-    const adapter = binding.adapter;
-    if (!adapter) return;
-    const turnId = completionCallback
-      ? completionCallbackTurnId(completionCallback, binding.profileActorId)
-      : channelTurnId(trigger.id, binding.profileActorId);
-    // Build the packet BEFORE mutating any binding state: buildPacket does
-    // synchronous SQLite work (getBinding/mentionContext) that can throw. If it did so
-    // AFTER activeTurnId was set (and before the watchdog armed), the binding
-    // wedged 'turn-active' forever with no in-flight turn — the queue filled and
-    // every later mention dropped. On a throw we surface a row and keep draining.
-    let packet: ResolvedMentionContextPacket;
-    try {
-      packet = completionCallback
-        ? buildCompletionCallbackPacket(binding, trigger, completionCallback)
-        : buildPacket(binding, trigger);
-    } catch (err) {
-      logger.warn('channel binder packet build failed:', err);
-      postSystemRow(
-        binding.channelId,
-        `@${binding.displayName} could not build the message context: ${errText(err)}`,
-        { parentMessageId: parentForTrigger(trigger) }
-      );
-      if (completionCallback) {
-        try {
-          store.releaseDeliveredCompletionCallback(completionCallback.id);
-          drainCompletionCallbacks(COMPLETION_CALLBACK_RETRY_MS, [
-            completionCallback,
-          ]);
-        } catch (releaseErr) {
-          logger.warn(
-            'channel completion callback packet-failure release failed:',
-            releaseErr
-          );
+  async function captureDeliveryContractBaseline(input: {
+    cwd: string;
+    probe?: Parameters<typeof evaluateDeliveryContract>[1];
+  }): Promise<Exclude<
+    NonNullable<NonNullable<ChannelAsyncRun['deliveryContract']>['baseline']>,
+    null
+  > | null> {
+    const cwd = input.cwd;
+    const timeout = 5000;
+    const probe = input.probe;
+    const git = probe?.git;
+    const pr = probe?.pr;
+
+    const headShaPromise = (async (): Promise<string | null> => {
+      if (git?.headSha) {
+        const outcome = await git.headSha();
+        if (outcome.kind !== 'ok') return null;
+        const sha = String(outcome.value ?? '').trim();
+        return sha ? sha : null;
+      }
+      try {
+        const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+          cwd,
+          timeout,
+        });
+        const sha = stdout.trim();
+        return sha ? sha : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const upstreamRefPromise = (async (): Promise<{
+      ref: string | null;
+      source: 'upstream' | 'originHead' | null;
+    }> => {
+      if (git?.upstreamRefInfo) {
+        const outcome = await git.upstreamRefInfo();
+        if (outcome.kind !== 'ok') return { ref: null, source: null };
+        const ref = String(outcome.value?.ref ?? '').trim();
+        const source = outcome.value?.source ?? null;
+        return { ref: ref ? ref : null, source };
+      }
+      if (git?.upstreamRef) {
+        const outcome = await git.upstreamRef();
+        if (outcome.kind !== 'ok') return { ref: null, source: null };
+        const ref = String(outcome.value ?? '').trim();
+        return { ref: ref ? ref : null, source: null };
+      }
+      // Fallback: best-effort ref discovery.
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+          { cwd, timeout }
+        );
+        const ref = stdout.trim();
+        return { ref: ref ? ref : null, source: 'upstream' };
+      } catch {
+        /* no upstream */
+      }
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['symbolic-ref', 'refs/remotes/origin/HEAD'],
+          { cwd, timeout }
+        );
+        const ref = stdout.trim();
+        const prefix = 'refs/remotes/origin/';
+        return ref.startsWith(prefix)
+          ? { ref: `origin/${ref.slice(prefix.length)}`, source: 'originHead' }
+          : { ref: null, source: null };
+      } catch {
+        return { ref: null, source: null };
+      }
+    })();
+
+    const upstreamShaPromise = (async (): Promise<string | null> => {
+      if (git?.upstreamSha) {
+        const outcome = await git.upstreamSha();
+        if (outcome.kind !== 'ok') return null;
+        const sha = String(outcome.value ?? '').trim();
+        return sha ? sha : null;
+      }
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['rev-parse', '--verify', '@{u}'],
+          { cwd, timeout }
+        );
+        const sha = stdout.trim();
+        return sha ? sha : null;
+      } catch {
+        /* fall through */
+      }
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['rev-parse', '--verify', 'origin/HEAD'],
+          { cwd, timeout }
+        );
+        const sha = stdout.trim();
+        return sha ? sha : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const branchPromise = (async (): Promise<string | null> => {
+      if (git?.currentBranch) {
+        const outcome = await git.currentBranch();
+        if (outcome.kind !== 'ok') return null;
+        const name = String(outcome.value ?? '').trim();
+        return name ? name : null;
+      }
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['symbolic-ref', '--quiet', '--short', 'HEAD'],
+          { cwd, timeout }
+        );
+        const name = stdout.trim();
+        return name ? name : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    const [headSha, upstreamRef, upstreamSha, branch] = await Promise.all([
+      headShaPromise,
+      upstreamRefPromise,
+      upstreamShaPromise,
+      branchPromise,
+    ]);
+    const upstreamRefValue = upstreamRef.ref;
+    const upstreamRefSource = upstreamRef.source;
+    if (!headSha) return null;
+
+    let prNumber: number | null = null;
+    let prHeadSha: string | null = null;
+    if (branch) {
+      if (pr?.getOpenPrForBranch) {
+        const outcome = await pr.getOpenPrForBranch(branch);
+        if (outcome.kind === 'ok' && outcome.value) {
+          prNumber = outcome.value.number;
+          prHeadSha = outcome.value.headSha ?? null;
+        }
+      } else {
+        type ExecLike = (
+          file: string,
+          args: string[],
+          options: { cwd: string; timeout?: number }
+        ) => Promise<{ stdout: string; stderr: string }>;
+        const result = await getPrForBranchResult(cwd, branch, {
+          exec: execFileAsync as unknown as ExecLike,
+        });
+        if (result.kind === 'ok' && result.pr && result.pr.state === 'OPEN') {
+          prNumber = result.pr.number;
+          prHeadSha = result.pr.headSha ?? null;
         }
       }
-      pump(binding); // activeTurnId is still null — keep the queue draining
+    }
+
+    return {
+      headSha,
+      upstreamRef: upstreamRefValue,
+      upstreamRefSource,
+      upstreamSha,
+      prNumber,
+      prHeadSha,
+      cwd,
+      capturedAt: new Date(now()).toISOString(),
+    };
+  }
+
+  async function ensureDeliveryContractBaselineForTrigger(
+    binding: LiveBinding,
+    trigger: ChannelMessage
+  ): Promise<void> {
+    const asyncRun = store.getAsyncRunForRequestMessage(trigger.id);
+    const contract = asyncRun?.deliveryContract;
+    const expect = contract?.expect ?? [];
+    if (!asyncRun || expect.length === 0 || !contract) return;
+    if (Object.prototype.hasOwnProperty.call(contract, 'baseline')) return;
+
+    const runtime = binding.runtimeId
+      ? deps.runtimes.get(binding.runtimeId)
+      : undefined;
+    const routing =
+      deps.topicStore?.get(binding.channelId)?.routingDefaults ?? {};
+    const cwd =
+      runtime?.cwd ??
+      routing.cwd ??
+      routing.worktreePath ??
+      routing.repoPath ??
+      os.homedir();
+
+    let baseline: Exclude<
+      NonNullable<NonNullable<ChannelAsyncRun['deliveryContract']>['baseline']>,
+      null
+    > | null = null;
+    try {
+      const probe = deps.deliveryContractProbeFactory
+        ? deps.deliveryContractProbeFactory({ cwd })
+        : createDefaultDeliveryContractProbe({ cwd });
+      baseline = await captureDeliveryContractBaseline({ cwd, probe });
+    } catch (err) {
+      logger.debug?.(
+        'channel binder delivery-contract baseline capture failed: %s',
+        errText(err)
+      );
+    }
+    try {
+      const updated = store.setAsyncRunDeliveryContractBaseline({
+        runId: asyncRun.id,
+        baseline,
+      });
+      if (updated) hub.broadcastRunLifecycle(updated);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function reenqueueTriggerAfterBaselineBail(
+    binding: LiveBinding,
+    trigger: ChannelMessage
+  ): Promise<void> {
+    const mentions = (trigger.mentions ?? []).map((m) => m.raw).filter(Boolean);
+    const mentionText =
+      mentions.length > 0 ? mentions.join(' ') : '(no mentions)';
+
+    const key = bindingKey(
+      binding.channelId,
+      binding.profileActorId,
+      binding.threadId
+    );
+    const current = live.get(key);
+    if (current) {
+      enqueueTurn(current, trigger, undefined, true);
+      if (!closed) pump(current);
       return;
     }
+
+    const profile = deps.agentProfileStore
+      ? deps.agentProfileStore.get(binding.profileActorId)
+      : defaultProfileForProvider(binding.framework);
+    if (!profile) {
+      postSystemRow(
+        binding.channelId,
+        `Dropped mention ${mentionText} — runtime exited during baseline capture.`,
+        { parentMessageId: parentForTrigger(trigger) ?? undefined }
+      );
+      return;
+    }
+
+    // Do not respawn a runtime from this failure handler (#1578 review). Any
+    // subsequent routing/binding admission will pick up the durable trigger.
+    postSystemRow(
+      binding.channelId,
+      `Dropped mention ${mentionText} — runtime binding unavailable after baseline capture.`,
+      { parentMessageId: parentForTrigger(trigger) ?? undefined }
+    );
+  }
+
+  function startTurn(input: {
+    binding: LiveBinding;
+    adapter: ProtocolAdapterV2;
+    trigger: ChannelMessage;
+    packet: ResolvedMentionContextPacket;
+    turnId: string;
+    completionCallback?: ChannelCompletionCallbackEdge;
+    callbackEdgeRequest?: CallbackEdgeRequest;
+  }): void {
+    const {
+      binding,
+      adapter,
+      trigger,
+      packet,
+      turnId,
+      completionCallback,
+      callbackEdgeRequest,
+    } = input;
     // Retained parents exist solely for output that opens shortly after a bare
     // idle finalized its turn. Once a successor starts, the old association is
     // no longer safe for a turn-0 fallback and must not accumulate forever.
     if (binding.parentMessageIdByTurn.size > 0) {
-      // A successor started while its predecessor was retained after bare idle.
-      // Future anonymous turn-0 patches cannot be assigned to either generation
-      // safely; exact turn ids continue to work.
       binding.turnZeroFallbackUnsafe = true;
     }
     retainExactTurnTombstones(binding);
@@ -3463,6 +3704,122 @@ export function createChannelAgentBinder(
       completionCallback,
       callbackEdgeRequest
     );
+  }
+
+  function sendTurn(
+    binding: LiveBinding,
+    trigger: ChannelMessage,
+    completionCallback?: ChannelCompletionCallbackEdge,
+    callbackEdgeRequest?: CallbackEdgeRequest
+  ): void {
+    const adapter = binding.adapter;
+    if (!adapter) return;
+
+    const turnId = completionCallback
+      ? completionCallbackTurnId(completionCallback, binding.profileActorId)
+      : channelTurnId(trigger.id, binding.profileActorId);
+
+    // Build the packet BEFORE mutating any binding state: buildPacket does
+    // synchronous SQLite work (getBinding/mentionContext) that can throw. If it did so
+    // AFTER activeTurnId was set (and before the watchdog armed), the binding
+    // wedged 'turn-active' forever with no in-flight turn — the queue filled and
+    // every later mention dropped. On a throw we surface a row and keep draining.
+    let packet: ResolvedMentionContextPacket;
+    try {
+      packet = completionCallback
+        ? buildCompletionCallbackPacket(binding, trigger, completionCallback)
+        : buildPacket(binding, trigger);
+    } catch (err) {
+      logger.warn('channel binder packet build failed:', err);
+      postSystemRow(
+        binding.channelId,
+        `@${binding.displayName} could not build the message context: ${errText(err)}`,
+        { parentMessageId: parentForTrigger(trigger) }
+      );
+      if (completionCallback) {
+        try {
+          store.releaseDeliveredCompletionCallback(completionCallback.id);
+          drainCompletionCallbacks(COMPLETION_CALLBACK_RETRY_MS, [
+            completionCallback,
+          ]);
+        } catch (releaseErr) {
+          logger.warn(
+            'channel completion callback packet-failure release failed:',
+            releaseErr
+          );
+        }
+      }
+      pump(binding); // activeTurnId is still null — keep the queue draining
+      return;
+    }
+
+    const needsBaselineCapture = (() => {
+      if (completionCallback) return false;
+      const asyncRun = store.getAsyncRunForRequestMessage(trigger.id);
+      const contract = asyncRun?.deliveryContract;
+      const expect = contract?.expect ?? [];
+      return (
+        Boolean(asyncRun) &&
+        Boolean(contract) &&
+        expect.length > 0 &&
+        !Object.prototype.hasOwnProperty.call(contract, 'baseline')
+      );
+    })();
+
+    // Fast path: no baseline capture needed. Stay synchronous so binder lifecycle
+    // tests and queue draining remain tick-free.
+    if (!needsBaselineCapture) {
+      startTurn({
+        binding,
+        adapter,
+        trigger,
+        packet,
+        turnId,
+        ...(completionCallback ? { completionCallback } : {}),
+        ...(callbackEdgeRequest ? { callbackEdgeRequest } : {}),
+      });
+      return;
+    }
+
+    if (binding.sendPreflight) return;
+    binding.sendPreflight = true;
+
+    void (async () => {
+      // #1578: capture delivery-contract baseline BEFORE the runtime accepts input,
+      // so delta evaluation is against post-time state rather than absolute state.
+      if (!completionCallback) {
+        await ensureDeliveryContractBaselineForTrigger(binding, trigger);
+      }
+
+      binding.sendPreflight = false;
+      if (closed) {
+        enqueueTurn(binding, trigger, undefined, true);
+        pump(binding);
+        return;
+      }
+      if (binding.activeTurnId !== null) {
+        enqueueTurn(binding, trigger, undefined, true);
+        pump(binding);
+        return;
+      }
+      if (!binding.adapter) {
+        await reenqueueTriggerAfterBaselineBail(binding, trigger);
+        return;
+      }
+      startTurn({
+        binding,
+        adapter: binding.adapter,
+        trigger,
+        packet,
+        turnId,
+        ...(completionCallback ? { completionCallback } : {}),
+        ...(callbackEdgeRequest ? { callbackEdgeRequest } : {}),
+      });
+    })().catch((err) => {
+      binding.sendPreflight = false;
+      logger.warn('channel binder sendTurn preflight failed:', errText(err));
+      pump(binding);
+    });
   }
 
   function deliver(
@@ -4337,22 +4694,12 @@ export function createChannelAgentBinder(
       ...options,
     });
     if (changed) {
-      hub.broadcastRunLifecycle(changed);
-      if (
-        changed.state === 'completed' &&
-        changed.deliveryContract?.expect?.length
-      ) {
-        void evaluateDeliveryContractForCompletedRun(
-          binding,
-          turnId,
-          changed
-        ).catch((err) => {
-          logger.warn(
-            'channel binder delivery-contract evaluation failed:',
-            err instanceof Error ? err.message : String(err)
-          );
-        });
-      }
+      const updated = handleTerminalDeliveryContract({
+        binding,
+        turnId,
+        run: changed,
+      });
+      hub.broadcastRunLifecycle(updated ?? changed);
     }
   }
 
@@ -4374,23 +4721,79 @@ export function createChannelAgentBinder(
       ...options,
     });
     if (changed) {
-      hub.broadcastRunLifecycle(changed);
-      if (
-        changed.state === 'completed' &&
-        changed.deliveryContract?.expect?.length
-      ) {
-        void evaluateDeliveryContractForCompletedRun(
-          binding,
-          turnId,
-          changed
-        ).catch((err) => {
-          logger.warn(
-            'channel binder delivery-contract evaluation failed:',
-            err instanceof Error ? err.message : String(err)
-          );
-        });
-      }
+      const updated = handleTerminalDeliveryContract({
+        binding,
+        turnId,
+        run: changed,
+      });
+      hub.broadcastRunLifecycle(updated ?? changed);
     }
+  }
+
+  function handleTerminalDeliveryContract(input: {
+    binding: LiveBinding | null;
+    turnId: string;
+    run: ChannelAsyncRun;
+  }): ChannelAsyncRun | null {
+    const contract = input.run.deliveryContract;
+    const expect = contract?.expect ?? [];
+    if (!expect.length) return null;
+    if (contract?.result) return null;
+    const terminal = [
+      'completed',
+      'completed_unmet',
+      'failed',
+      'cancelled',
+      'rejected',
+    ].includes(input.run.state);
+    if (!terminal) return null;
+
+    if (input.run.state === 'completed') {
+      if (!input.binding) {
+        const evaluatedAt = new Date(now()).toISOString();
+        const unknown = expect.map((spec) => ({
+          spec,
+          reason: 'missing binding for completed contract evaluation',
+        }));
+        return (
+          store.finalizeAsyncRunDeliveryContract({
+            runId: input.run.id,
+            result: { met: false, unmet: [], unknown, evaluatedAt },
+          }) ?? null
+        );
+      }
+      // Mark pending immediately so `channels wait` can return without blocking.
+      const pending =
+        store.setAsyncRunDeliveryContractPending({
+          runId: input.run.id,
+          pending: true,
+        }) ?? null;
+      void evaluateDeliveryContractForCompletedRun(
+        input.binding,
+        input.turnId,
+        pending ?? input.run
+      ).catch((err) => {
+        logger.warn(
+          'channel binder delivery-contract evaluation failed:',
+          err instanceof Error ? err.message : String(err)
+        );
+      });
+      return pending;
+    }
+
+    // Non-completed terminal states: finalize immediately as unknown.
+    const evaluatedAt = new Date(now()).toISOString();
+    const reason = input.run.reason ?? input.run.state;
+    const unknown = expect.map((spec) => ({
+      spec,
+      reason: `run ended ${input.run.state}: ${reason}`,
+    }));
+    return (
+      store.finalizeAsyncRunDeliveryContract({
+        runId: input.run.id,
+        result: { met: false, unmet: [], unknown, evaluatedAt },
+      }) ?? null
+    );
   }
 
   function resolveFinalAssistantTextForContract(input: {
@@ -4432,14 +4835,78 @@ export function createChannelAgentBinder(
     git: {
       currentBranch: () => Promise<DeliveryContractProbeOutcome<string | null>>;
       aheadCount: () => Promise<DeliveryContractProbeOutcome<number>>;
+      headSha: () => Promise<DeliveryContractProbeOutcome<string | null>>;
+      upstreamRef: () => Promise<DeliveryContractProbeOutcome<string | null>>;
+      upstreamRefInfo: () => Promise<
+        DeliveryContractProbeOutcome<{
+          ref: string | null;
+          source: 'upstream' | 'originHead' | null;
+        }>
+      >;
+      upstreamSha: () => Promise<DeliveryContractProbeOutcome<string | null>>;
+      commitsBetween: (
+        base: string,
+        head: string
+      ) => Promise<DeliveryContractProbeOutcome<number>>;
     };
     pr: {
       hasOpenPrForBranch: (
         branch: string
       ) => Promise<DeliveryContractProbeOutcome<boolean>>;
+      getOpenPrForBranch: (branch: string) => Promise<
+        DeliveryContractProbeOutcome<{
+          number: number;
+          headSha: string | null;
+        } | null>
+      >;
     };
   } {
     const cwd = input.cwd;
+    const resolveDefaultBaseInfo = async (): Promise<
+      DeliveryContractProbeOutcome<{
+        ref: string | null;
+        source: 'upstream' | 'originHead' | null;
+      }>
+    > => {
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+          { cwd, timeout: 5000 }
+        );
+        const upstream = stdout.trim();
+        if (upstream)
+          return { kind: 'ok', value: { ref: upstream, source: 'upstream' } };
+      } catch (err) {
+        const reason = notGitRepoReason(err);
+        if (reason) return { kind: 'unknown', reason };
+        /* no upstream */
+      }
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['symbolic-ref', 'refs/remotes/origin/HEAD'],
+          { cwd, timeout: 5000 }
+        );
+        const ref = stdout.trim();
+        const prefix = 'refs/remotes/origin/';
+        if (ref.startsWith(prefix)) {
+          return {
+            kind: 'ok',
+            value: {
+              ref: `origin/${ref.slice(prefix.length)}`,
+              source: 'originHead',
+            },
+          };
+        }
+      } catch (err) {
+        const reason = notGitRepoReason(err);
+        if (reason) return { kind: 'unknown', reason };
+        /* no origin/HEAD */
+      }
+      return { kind: 'ok', value: { ref: null, source: null } };
+    };
+
     const gitProbe = {
       currentBranch: async (): Promise<
         DeliveryContractProbeOutcome<string | null>
@@ -4460,47 +4927,9 @@ export function createChannelAgentBinder(
         }
       },
       aheadCount: async (): Promise<DeliveryContractProbeOutcome<number>> => {
-        const resolveDefaultBase = async (): Promise<
-          DeliveryContractProbeOutcome<string | null>
-        > => {
-          try {
-            const { stdout } = await execFileAsync(
-              'git',
-              ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
-              { cwd, timeout: 5000 }
-            );
-            const upstream = stdout.trim();
-            if (upstream) return { kind: 'ok', value: upstream };
-          } catch (err) {
-            const reason = notGitRepoReason(err);
-            if (reason) return { kind: 'unknown', reason };
-            /* no upstream */
-          }
-          try {
-            const { stdout } = await execFileAsync(
-              'git',
-              ['symbolic-ref', 'refs/remotes/origin/HEAD'],
-              { cwd, timeout: 5000 }
-            );
-            const ref = stdout.trim();
-            const prefix = 'refs/remotes/origin/';
-            if (ref.startsWith(prefix)) {
-              return {
-                kind: 'ok',
-                value: `origin/${ref.slice(prefix.length)}`,
-              };
-            }
-          } catch (err) {
-            const reason = notGitRepoReason(err);
-            if (reason) return { kind: 'unknown', reason };
-            /* no origin/HEAD */
-          }
-          return { kind: 'ok', value: null };
-        };
-
-        const base = await resolveDefaultBase();
+        const base = await resolveDefaultBaseInfo();
         if (base.kind === 'unknown') return base;
-        if (!base.value) {
+        if (!base.value.ref) {
           return {
             kind: 'unknown',
             reason: 'no upstream or origin/HEAD to compare against',
@@ -4509,7 +4938,7 @@ export function createChannelAgentBinder(
         try {
           const { stdout } = await execFileAsync(
             'git',
-            ['rev-list', '--count', `${base.value}..HEAD`],
+            ['rev-list', '--count', `${base.value.ref}..HEAD`],
             { cwd, timeout: 5000 }
           );
           const n = Number(stdout.trim());
@@ -4529,9 +4958,118 @@ export function createChannelAgentBinder(
           };
         }
       },
+      headSha: async (): Promise<
+        DeliveryContractProbeOutcome<string | null>
+      > => {
+        try {
+          const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+            cwd,
+            timeout: 5000,
+          });
+          const sha = stdout.trim();
+          return { kind: 'ok', value: sha ? sha : null };
+        } catch (err) {
+          const reason = notGitRepoReason(err);
+          if (reason) return { kind: 'unknown', reason };
+          return { kind: 'unknown', reason: 'git head-sha probe failed' };
+        }
+      },
+      upstreamRefInfo: async (): Promise<
+        DeliveryContractProbeOutcome<{
+          ref: string | null;
+          source: 'upstream' | 'originHead' | null;
+        }>
+      > => {
+        return resolveDefaultBaseInfo();
+      },
+      upstreamRef: async (): Promise<
+        DeliveryContractProbeOutcome<string | null>
+      > => {
+        const base = await resolveDefaultBaseInfo();
+        if (base.kind === 'unknown') return base;
+        return { kind: 'ok', value: base.value.ref };
+      },
+      upstreamSha: async (): Promise<
+        DeliveryContractProbeOutcome<string | null>
+      > => {
+        const base = await resolveDefaultBaseInfo();
+        if (base.kind === 'unknown') return base;
+        if (!base.value.ref) return { kind: 'ok', value: null };
+        try {
+          const { stdout } = await execFileAsync(
+            'git',
+            ['rev-parse', '--verify', base.value.ref],
+            { cwd, timeout: 5000 }
+          );
+          const sha = stdout.trim();
+          return { kind: 'ok', value: sha ? sha : null };
+        } catch (err) {
+          const reason = notGitRepoReason(err);
+          if (reason) return { kind: 'unknown', reason };
+          return { kind: 'unknown', reason: 'git upstream-sha probe failed' };
+        }
+      },
+      commitsBetween: async (
+        base: string,
+        head: string
+      ): Promise<DeliveryContractProbeOutcome<number>> => {
+        if (!base.trim() || !head.trim()) {
+          return {
+            kind: 'unknown',
+            reason: 'git commits-between probe needs shas',
+          };
+        }
+        try {
+          const { stdout } = await execFileAsync(
+            'git',
+            ['rev-list', '--count', `${base}..${head}`],
+            { cwd, timeout: 5000 }
+          );
+          const n = Number(stdout.trim());
+          if (!Number.isFinite(n) || n < 0) {
+            return {
+              kind: 'unknown',
+              reason: 'git commits-between probe returned an invalid count',
+            };
+          }
+          return { kind: 'ok', value: n };
+        } catch (err) {
+          const reason = notGitRepoReason(err);
+          if (reason) return { kind: 'unknown', reason };
+          return {
+            kind: 'unknown',
+            reason: 'git commits-between probe failed',
+          };
+        }
+      },
     };
 
     const prProbe = {
+      getOpenPrForBranch: async (
+        branch: string
+      ): Promise<
+        DeliveryContractProbeOutcome<{
+          number: number;
+          headSha: string | null;
+        } | null>
+      > => {
+        type ExecLike = (
+          file: string,
+          args: string[],
+          options: { cwd: string; timeout?: number }
+        ) => Promise<{ stdout: string; stderr: string }>;
+        const pr = await getPrForBranchResult(cwd, branch, {
+          exec: execFileAsync as unknown as ExecLike,
+        });
+        if (pr.kind === 'unknown')
+          return { kind: 'unknown', reason: pr.reason };
+        if (!pr.pr || pr.pr.state !== 'OPEN')
+          return { kind: 'ok', value: null };
+        return {
+          kind: 'ok',
+          value: { number: pr.pr.number, headSha: pr.pr.headSha ?? null },
+        };
+      },
       hasOpenPrForBranch: async (
         branch: string
       ): Promise<DeliveryContractProbeOutcome<boolean>> => {
@@ -4555,6 +5093,458 @@ export function createChannelAgentBinder(
     return { git: gitProbe, pr: prProbe };
   }
 
+  async function maybePostDeliveryContractFollowup(input: {
+    binding: LiveBinding;
+    run: import('../shared/channel-chat-protocol.js').ChannelAsyncRun;
+    updatedRun:
+      | import('../shared/channel-chat-protocol.js').ChannelAsyncRun
+      | null;
+    evaluation: {
+      met: boolean;
+      unmet: string[];
+      unknown: Array<{ spec: string; reason: string }>;
+    };
+    evaluatedAt: string;
+    deliveryProbe: {
+      git: {
+        aheadCount: () => Promise<DeliveryContractProbeOutcome<number>>;
+      };
+    };
+    cwd: string;
+    runtime?: { repoPath?: string };
+    parentMessageId: string | null;
+  }): Promise<void> {
+    const {
+      binding,
+      run,
+      updatedRun,
+      evaluation,
+      evaluatedAt,
+      deliveryProbe,
+      cwd,
+      runtime,
+    } = input;
+    const parentMessageId = input.parentMessageId ?? undefined;
+
+    const contract = updatedRun?.deliveryContract ?? run.deliveryContract;
+    const stampFollowupDecidedAt = (): void => {
+      if (
+        typeof contract?.followupDecidedAt === 'string' &&
+        contract.followupDecidedAt
+      )
+        return;
+      const followupDecidedAt = new Date(now()).toISOString();
+      const stamped = store.finalizeAsyncRunDeliveryContract({
+        runId: run.id,
+        result: { met: false, unmet: [], unknown: [], evaluatedAt },
+        followupDecidedAt,
+      });
+      if (stamped) hub.broadcastRunLifecycle(stamped);
+    };
+    const alreadyFollowedUp = Boolean(contract?.followupPostedAt);
+    if (alreadyFollowedUp) {
+      stampFollowupDecidedAt();
+      return;
+    }
+
+    const scopeKey = conversationScopeKey(binding.channelId, run.threadId);
+    const brakeState = consecutiveAgentTurns.get(scopeKey);
+    if (brakeState?.paused) {
+      postSystemRow(
+        binding.channelId,
+        `Mention chain paused — ${brakeState.count} agent turns without a human.`,
+        { parentMessageId }
+      );
+      stampFollowupDecidedAt();
+      return;
+    }
+
+    // #1585: allow operator to disable follow-up chaining entirely.
+    if (deliveryContractMaxFollowups === 0) {
+      stampFollowupDecidedAt();
+      return;
+    }
+
+    const depth = contract?.followupDepth ?? 0;
+    if (depth >= deliveryContractMaxFollowups) {
+      postSystemRow(
+        binding.channelId,
+        `Contract still unmet after ${deliveryContractMaxFollowups} follow-ups: ${evaluation.unmet.join(
+          ', '
+        )}`,
+        { parentMessageId }
+      );
+      const abandoned = store.finalizeAsyncRunDeliveryContract({
+        runId: run.id,
+        result: {
+          met: evaluation.met,
+          unmet: evaluation.unmet,
+          unknown: evaluation.unknown,
+          evaluatedAt,
+        },
+        abandonedAt: new Date(now()).toISOString(),
+      });
+      if (abandoned) hub.broadcastRunLifecycle(abandoned);
+      deps.events?.publish({
+        topic: 'attention',
+        type: 'delivery-contract.abandoned',
+        ...(runtime?.repoPath ? { repoPath: runtime.repoPath } : {}),
+        payload: {
+          channelId: binding.channelId,
+          runId: run.id,
+          targetProfileId: binding.profileActorId,
+          unmet: evaluation.unmet,
+          followupDepth: depth,
+          maxFollowups: deliveryContractMaxFollowups,
+        },
+      });
+      stampFollowupDecidedAt();
+      return;
+    }
+
+    const sinceText = await (async (): Promise<string> => {
+      const parentRunId =
+        typeof contract?.parentRunId === 'string' ? contract.parentRunId : null;
+      try {
+        let headSha: string | null = null;
+        try {
+          headSha = (
+            await execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
+              cwd,
+              timeout: 5000,
+            })
+          ).stdout.trim();
+        } catch {
+          headSha = null;
+        }
+        let ahead: number | null = null;
+        try {
+          const outcome = await deliveryProbe.git.aheadCount();
+          if (outcome.kind === 'ok' && Number.isFinite(outcome.value)) {
+            ahead = outcome.value;
+          }
+        } catch {
+          ahead = null;
+        }
+        let newRows: number | null = null;
+        if (parentRunId) {
+          try {
+            const parentFinal = store.getLastPrincipalProseForRunId({
+              channelId: binding.channelId,
+              runId: parentRunId as ChannelAsyncRunId,
+            });
+            const currentFinal = store.getLastPrincipalProseForRunId({
+              channelId: binding.channelId,
+              runId: run.id,
+            });
+            if (parentFinal && currentFinal) {
+              newRows = Math.max(0, currentFinal.seq - parentFinal.seq);
+            }
+          } catch {
+            /* best-effort */
+          }
+        }
+        const parts: string[] = [];
+        if (headSha) parts.push(`head=${headSha}`);
+        if (ahead !== null) parts.push(`ahead=${ahead}`);
+        if (newRows !== null) parts.push(`new_rows=${newRows}`);
+        if (parts.length === 0) return '';
+        return parentRunId
+          ? ` Since last follow-up: ${parts.join(', ')}.`
+          : ` At follow-up: ${parts.join(', ')}.`;
+      } catch {
+        return '';
+      }
+    })();
+
+    const expect = run.deliveryContract?.expect ?? [];
+    const nextContract: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+      ...(contract ? { ...contract } : { expect }),
+      followupDepth: depth + 1,
+      parentRunId: run.id,
+    };
+    // #1578: follow-ups inherit the ORIGINAL baseline so the chain measures
+    // progress since the operator's post.
+    delete (nextContract as { result?: unknown }).result;
+    delete (nextContract as { followupPostedAt?: unknown }).followupPostedAt;
+
+    const followupText = `Turn ended with contract unmet: ${evaluation.unmet.join(
+      ', '
+    )}.${sinceText} @${binding.displayName} finish it.`;
+    const childRunId = postDeliveryContractFollowupTrigger({
+      channelId: binding.channelId,
+      text: followupText,
+      targetProfileId: binding.profileActorId,
+      deliveryContract: nextContract,
+      ...(parentMessageId ? { parentMessageId } : {}),
+      runId: run.id,
+    });
+    if (!childRunId) {
+      postSystemRow(
+        binding.channelId,
+        `Delivery contract follow-up could not be posted; abandoning: ${evaluation.unmet.join(
+          ', '
+        )}`,
+        { parentMessageId }
+      );
+      const updated = store.finalizeAsyncRunDeliveryContract({
+        runId: run.id,
+        result: {
+          met: evaluation.met,
+          unmet: evaluation.unmet,
+          unknown: evaluation.unknown,
+          evaluatedAt,
+        },
+        abandonedAt: new Date(now()).toISOString(),
+      });
+      if (updated) hub.broadcastRunLifecycle(updated);
+      deps.events?.publish({
+        topic: 'attention',
+        type: 'delivery-contract.abandoned',
+        ...(runtime?.repoPath ? { repoPath: runtime.repoPath } : {}),
+        payload: {
+          channelId: binding.channelId,
+          runId: run.id,
+          targetProfileId: binding.profileActorId,
+          unmet: evaluation.unmet,
+          followupDepth: depth,
+          maxFollowups: deliveryContractMaxFollowups,
+        },
+      });
+      return;
+    }
+
+    const followupPostedAt = new Date(now()).toISOString();
+    const withFollowup = store.finalizeAsyncRunDeliveryContract({
+      runId: run.id,
+      result: {
+        met: evaluation.met,
+        unmet: evaluation.unmet,
+        unknown: evaluation.unknown,
+        evaluatedAt,
+      },
+      followupPostedAt,
+      childRunId,
+    });
+    if (withFollowup) hub.broadcastRunLifecycle(withFollowup);
+  }
+
+  function shortSha(sha: string | null | undefined): string | null {
+    const trimmed = typeof sha === 'string' ? sha.trim() : '';
+    return trimmed.length >= 7 ? trimmed.slice(0, 7) : trimmed || null;
+  }
+
+  function memoizeDeliveryContractProbe(input: {
+    git: DeliveryContractGitProbe;
+    pr: DeliveryContractPrProbe;
+  }): { git: DeliveryContractGitProbe; pr: DeliveryContractPrProbe } {
+    const memo0 = <T>(fn: () => Promise<T>): (() => Promise<T>) => {
+      let promise: Promise<T> | null = null;
+      return () => {
+        promise ??= fn();
+        return promise;
+      };
+    };
+    const memo1 = <A, T>(
+      fn: (arg: A) => Promise<T>,
+      key: (arg: A) => string
+    ): ((arg: A) => Promise<T>) => {
+      const cache = new Map<string, Promise<T>>();
+      return (arg) => {
+        const k = key(arg);
+        const existing = cache.get(k);
+        if (existing) return existing;
+        const promise = fn(arg);
+        cache.set(k, promise);
+        return promise;
+      };
+    };
+    const memo2 = <A, B, T>(
+      fn: (a: A, b: B) => Promise<T>,
+      key: (a: A, b: B) => string
+    ): ((a: A, b: B) => Promise<T>) => {
+      const cache = new Map<string, Promise<T>>();
+      return (a, b) => {
+        const k = key(a, b);
+        const existing = cache.get(k);
+        if (existing) return existing;
+        const promise = fn(a, b);
+        cache.set(k, promise);
+        return promise;
+      };
+    };
+
+    return {
+      git: {
+        ...input.git,
+        ...(input.git.currentBranch
+          ? { currentBranch: memo0(() => input.git.currentBranch()) }
+          : {}),
+        ...(input.git.aheadCount
+          ? { aheadCount: memo0(() => input.git.aheadCount()) }
+          : {}),
+        ...(input.git.headSha
+          ? { headSha: memo0(() => input.git.headSha!()) }
+          : {}),
+        ...(input.git.upstreamRef
+          ? { upstreamRef: memo0(() => input.git.upstreamRef!()) }
+          : {}),
+        ...(input.git.upstreamSha
+          ? { upstreamSha: memo0(() => input.git.upstreamSha!()) }
+          : {}),
+        ...(input.git.commitsBetween
+          ? {
+              commitsBetween: memo2(
+                (base, head) => input.git.commitsBetween!(base, head),
+                (base, head) => `${base}\u0000${head}`
+              ),
+            }
+          : {}),
+      },
+      pr: {
+        ...input.pr,
+        ...(input.pr.hasOpenPrForBranch
+          ? {
+              hasOpenPrForBranch: memo1(
+                (branch) => input.pr.hasOpenPrForBranch(branch),
+                (branch) => branch.trim()
+              ),
+            }
+          : {}),
+        ...(input.pr.getOpenPrForBranch
+          ? {
+              getOpenPrForBranch: memo1(
+                (branch) => input.pr.getOpenPrForBranch!(branch),
+                (branch) => branch.trim()
+              ),
+            }
+          : {}),
+      },
+    };
+  }
+
+  async function computeDeliveryContractDeltaSummary(input: {
+    unmet: string[];
+    baseline:
+      | NonNullable<
+          NonNullable<ChannelAsyncRun['deliveryContract']>['baseline']
+        >
+      | null
+      | undefined;
+    probe: { git: DeliveryContractGitProbe; pr: DeliveryContractPrProbe };
+  }): Promise<string | undefined> {
+    const baseline = input.baseline;
+    if (baseline === undefined) return undefined;
+    if (baseline === null)
+      return 'baseline unavailable; evaluated with legacy semantics';
+    // TypeScript does not keep the null-check narrowing through nested async
+    // helper closures.
+    const baselineOk = baseline as NonNullable<typeof baseline>;
+
+    const wantsCommit = input.unmet.includes('commit');
+    const wantsPush = input.unmet.includes('push');
+    const wantsPr = input.unmet.some(
+      (spec) => spec === 'pr' || spec.startsWith('pr:')
+    );
+    if (!wantsCommit && !wantsPush && !wantsPr) return undefined;
+
+    const parts: string[] = [];
+
+    async function tryCommitDelta(): Promise<string | null> {
+      if (!wantsCommit) return null;
+      if (!input.probe.git.headSha || !input.probe.git.commitsBetween)
+        return null;
+      const head = await input.probe.git.headSha().catch(() => null);
+      const headSha =
+        head && head.kind === 'ok' && head.value ? head.value : null;
+      if (!headSha) return null;
+      const delta = await input.probe.git
+        .commitsBetween(baselineOk.headSha, headSha)
+        .catch(() => null);
+      if (!delta || delta.kind !== 'ok') return null;
+      const base = shortSha(baselineOk.headSha) ?? 'unknown';
+      return delta.value === 0
+        ? `head unchanged since baseline ${base}`
+        : `head advanced by ${delta.value} commit(s) since baseline ${base}`;
+    }
+
+    async function tryPushDelta(): Promise<string | null> {
+      if (!wantsPush) return null;
+      if (!baselineOk.upstreamRef) return 'baseline upstream ref unavailable';
+      if (!baselineOk.upstreamSha) return 'baseline upstream unavailable';
+      if (
+        !input.probe.git.upstreamRef ||
+        !input.probe.git.upstreamSha ||
+        !input.probe.git.commitsBetween
+      )
+        return null;
+      const ref = await input.probe.git.upstreamRef().catch(() => null);
+      const upstreamRef =
+        ref && ref.kind === 'ok' && ref.value ? ref.value : null;
+      if (!upstreamRef) return null;
+      if (upstreamRef !== baselineOk.upstreamRef) {
+        return `upstream ref changed (${baselineOk.upstreamRef} -> ${upstreamRef})`;
+      }
+      const upstream = await input.probe.git.upstreamSha().catch(() => null);
+      const upstreamSha =
+        upstream && upstream.kind === 'ok' && upstream.value
+          ? upstream.value
+          : null;
+      if (!upstreamSha) return null;
+      const delta = await input.probe.git
+        .commitsBetween(baselineOk.upstreamSha, upstreamSha)
+        .catch(() => null);
+      if (!delta || delta.kind !== 'ok') return null;
+      const base = shortSha(baselineOk.upstreamSha) ?? 'unknown';
+      return delta.value === 0
+        ? `upstream unchanged since baseline ${base}`
+        : `upstream advanced by ${delta.value} commit(s) since baseline ${base}`;
+    }
+
+    async function tryPrDelta(): Promise<string | null> {
+      if (!wantsPr) return null;
+      if (!input.probe.pr.getOpenPrForBranch) return null;
+      if (!input.probe.git.commitsBetween) return null;
+      const branch = await input.probe.git.currentBranch().catch(() => null);
+      const branchName =
+        branch && branch.kind === 'ok' && branch.value ? branch.value : null;
+      if (!branchName) return null;
+      const pr = await input.probe.pr
+        .getOpenPrForBranch(branchName)
+        .catch(() => null);
+      if (!pr || pr.kind !== 'ok') return null;
+      if (!pr.value) return 'no open PR for branch';
+
+      if (baselineOk.prNumber === null) {
+        return `open PR #${pr.value.number} existed but baseline had no prNumber`;
+      }
+      if (pr.value.number !== baselineOk.prNumber) {
+        return `different PR open (#${pr.value.number}); baseline was #${baselineOk.prNumber}`;
+      }
+      if (!baselineOk.prHeadSha || !pr.value.headSha)
+        return 'pr head unavailable';
+      const delta = await input.probe.git
+        .commitsBetween(baselineOk.prHeadSha, pr.value.headSha)
+        .catch(() => null);
+      if (!delta || delta.kind !== 'ok') return null;
+      const base = shortSha(baselineOk.prHeadSha) ?? 'unknown';
+      return delta.value === 0
+        ? `pr head unchanged since baseline ${base}`
+        : `pr head advanced by ${delta.value} commit(s) since baseline ${base}`;
+    }
+
+    const [commitDelta, pushDelta, prDelta] = await Promise.all([
+      tryCommitDelta(),
+      tryPushDelta(),
+      tryPrDelta(),
+    ]);
+    if (commitDelta) parts.push(commitDelta);
+    if (pushDelta) parts.push(pushDelta);
+    if (prDelta) parts.push(prDelta);
+
+    return parts.length ? parts.join('; ') : undefined;
+  }
+
   async function evaluateDeliveryContractForCompletedRun(
     binding: LiveBinding,
     turnId: string,
@@ -4569,9 +5559,13 @@ export function createChannelAgentBinder(
       const runtime = binding.runtimeId
         ? deps.runtimes.get(binding.runtimeId)
         : undefined;
+      const routing =
+        deps.topicStore?.get(binding.channelId)?.routingDefaults ?? {};
       const cwd =
         runtime?.cwd ??
-        deps.topicStore?.get(binding.channelId)?.routingDefaults.cwd ??
+        routing.cwd ??
+        routing.worktreePath ??
+        routing.repoPath ??
         os.homedir();
       const { finalText, finalAssistantTextIsClosing } =
         resolveFinalAssistantTextForContract({
@@ -4583,6 +5577,7 @@ export function createChannelAgentBinder(
       const deliveryProbe = deps.deliveryContractProbeFactory
         ? deps.deliveryContractProbeFactory({ cwd })
         : createDefaultDeliveryContractProbe({ cwd });
+      const memoizedProbe = memoizeDeliveryContractProbe(deliveryProbe);
 
       const evaluation = await evaluateDeliveryContract(
         finalAssistantTextIsClosing === undefined
@@ -4590,22 +5585,34 @@ export function createChannelAgentBinder(
               expect,
               cwd,
               finalAssistantText: finalText,
+              ...(run.deliveryContract?.baseline !== undefined
+                ? { baseline: run.deliveryContract.baseline }
+                : {}),
             }
           : {
               expect,
               cwd,
               finalAssistantText: finalText,
               finalAssistantTextIsClosing,
+              ...(run.deliveryContract?.baseline !== undefined
+                ? { baseline: run.deliveryContract.baseline }
+                : {}),
             },
-        deliveryProbe
+        memoizedProbe
       );
       const evaluatedAt = new Date(now()).toISOString();
+      const deltaSummary = await computeDeliveryContractDeltaSummary({
+        unmet: evaluation.unmet,
+        baseline: run.deliveryContract?.baseline,
+        probe: memoizedProbe,
+      });
       const updated = store.finalizeAsyncRunDeliveryContract({
         runId: run.id,
         result: {
           met: evaluation.met,
           unmet: evaluation.unmet,
           unknown: evaluation.unknown,
+          ...(deltaSummary ? { deltaSummary } : {}),
           evaluatedAt,
         },
       });
@@ -4644,188 +5651,19 @@ export function createChannelAgentBinder(
           unmet: evaluation.unmet,
         },
       });
-
-      const contract = updated?.deliveryContract ?? run.deliveryContract;
-      const alreadyFollowedUp = Boolean(contract?.followupPostedAt);
-      if (alreadyFollowedUp) return;
-
-      const scopeKey = conversationScopeKey(binding.channelId, run.threadId);
-      const brakeState = consecutiveAgentTurns.get(scopeKey);
-      if (brakeState?.paused) {
-        postSystemRow(
-          binding.channelId,
-          `Mention chain paused — ${brakeState.count} agent turns without a human.`,
-          { parentMessageId }
-        );
-        return;
-      }
-
-      // #1585: allow operator to disable follow-up chaining entirely.
-      if (deliveryContractMaxFollowups === 0) return;
-
-      const depth = contract?.followupDepth ?? 0;
-      if (depth >= deliveryContractMaxFollowups) {
-        postSystemRow(
-          binding.channelId,
-          `Contract still unmet after ${deliveryContractMaxFollowups} follow-ups: ${evaluation.unmet.join(
-            ', '
-          )}`,
-          { parentMessageId }
-        );
-        const abandoned = store.finalizeAsyncRunDeliveryContract({
-          runId: run.id,
-          result: {
-            met: evaluation.met,
-            unmet: evaluation.unmet,
-            unknown: evaluation.unknown,
-            evaluatedAt,
-          },
-          abandonedAt: new Date(now()).toISOString(),
-        });
-        if (abandoned) hub.broadcastRunLifecycle(abandoned);
-        deps.events?.publish({
-          topic: 'attention',
-          type: 'delivery-contract.abandoned',
-          ...(runtime?.repoPath ? { repoPath: runtime.repoPath } : {}),
-          payload: {
-            channelId: binding.channelId,
-            runId: run.id,
-            targetProfileId: binding.profileActorId,
-            unmet: evaluation.unmet,
-            followupDepth: depth,
-            maxFollowups: deliveryContractMaxFollowups,
-          },
-        });
-        return;
-      }
-
-      const sinceText = await (async (): Promise<string> => {
-        const parentRunId =
-          typeof contract?.parentRunId === 'string'
-            ? contract.parentRunId
-            : null;
-        try {
-          let headSha: string | null = null;
-          try {
-            headSha = (
-              await execFileAsync('git', ['rev-parse', '--short', 'HEAD'], {
-                cwd,
-                timeout: 5000,
-              })
-            ).stdout.trim();
-          } catch {
-            headSha = null;
-          }
-          let ahead: number | null = null;
-          try {
-            const outcome = await deliveryProbe.git.aheadCount();
-            if (outcome.kind === 'ok' && Number.isFinite(outcome.value)) {
-              ahead = outcome.value;
-            }
-          } catch {
-            ahead = null;
-          }
-          let newRows: number | null = null;
-          if (parentRunId) {
-            try {
-              const parentFinal = store.getLastPrincipalProseForRunId({
-                channelId: binding.channelId,
-                runId: parentRunId as ChannelAsyncRunId,
-              });
-              const currentFinal = store.getLastPrincipalProseForRunId({
-                channelId: binding.channelId,
-                runId: run.id,
-              });
-              if (parentFinal && currentFinal) {
-                newRows = Math.max(0, currentFinal.seq - parentFinal.seq);
-              }
-            } catch {
-              /* best-effort */
-            }
-          }
-          const parts: string[] = [];
-          if (headSha) parts.push(`head=${headSha}`);
-          if (ahead !== null) parts.push(`ahead=${ahead}`);
-          if (newRows !== null) parts.push(`new_rows=${newRows}`);
-          if (parts.length === 0) return '';
-          return parentRunId
-            ? ` Since last follow-up: ${parts.join(', ')}.`
-            : ` At follow-up: ${parts.join(', ')}.`;
-        } catch {
-          return '';
-        }
-      })();
-
-      const nextContract: NonNullable<ChannelAsyncRun['deliveryContract']> = {
-        ...(contract ? { ...contract } : { expect }),
-        followupDepth: depth + 1,
-        parentRunId: run.id,
-      };
-      delete (nextContract as { result?: unknown }).result;
-      delete (nextContract as { followupPostedAt?: unknown }).followupPostedAt;
-
-      const followupText = `Turn ended with contract unmet: ${evaluation.unmet.join(
-        ', '
-      )}.${sinceText} @${binding.displayName} finish it.`;
-      const childRunId = postDeliveryContractFollowupTrigger({
-        channelId: binding.channelId,
-        text: followupText,
-        targetProfileId: binding.profileActorId,
-        deliveryContract: nextContract,
-        ...(parentMessageId ? { parentMessageId } : {}),
-        runId: run.id,
+      await maybePostDeliveryContractFollowup({
+        binding,
+        run,
+        updatedRun: updated ?? null,
+        evaluation,
+        evaluatedAt,
+        deliveryProbe: memoizedProbe,
+        cwd,
+        ...(runtime?.repoPath
+          ? { runtime: { repoPath: runtime.repoPath } }
+          : {}),
+        parentMessageId: parentMessageId ?? null,
       });
-      if (!childRunId) {
-        // #1585: if we failed to create the follow-up row/run, do not silently
-        // terminate the chain by stamping followupPostedAt. Treat this as an
-        // abandonment terminus and record it durably.
-        postSystemRow(
-          binding.channelId,
-          `Delivery contract follow-up could not be posted; abandoning: ${evaluation.unmet.join(
-            ', '
-          )}`,
-          { parentMessageId }
-        );
-        const updated = store.finalizeAsyncRunDeliveryContract({
-          runId: run.id,
-          result: {
-            met: evaluation.met,
-            unmet: evaluation.unmet,
-            unknown: evaluation.unknown,
-            evaluatedAt,
-          },
-          abandonedAt: new Date(now()).toISOString(),
-        });
-        if (updated) hub.broadcastRunLifecycle(updated);
-        deps.events?.publish({
-          topic: 'attention',
-          type: 'delivery-contract.abandoned',
-          ...(runtime?.repoPath ? { repoPath: runtime.repoPath } : {}),
-          payload: {
-            channelId: binding.channelId,
-            runId: run.id,
-            targetProfileId: binding.profileActorId,
-            unmet: evaluation.unmet,
-            followupDepth: depth,
-            maxFollowups: deliveryContractMaxFollowups,
-          },
-        });
-        return;
-      }
-
-      const followupPostedAt = new Date(now()).toISOString();
-      const withFollowup = store.finalizeAsyncRunDeliveryContract({
-        runId: run.id,
-        result: {
-          met: evaluation.met,
-          unmet: evaluation.unmet,
-          unknown: evaluation.unknown,
-          evaluatedAt,
-        },
-        followupPostedAt,
-        childRunId,
-      });
-      if (withFollowup) hub.broadcastRunLifecycle(withFollowup);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const expect = run.deliveryContract?.expect ?? [];
@@ -4975,7 +5813,15 @@ export function createChannelAgentBinder(
             state,
             reason,
           });
-          if (changed) hub.broadcastRunLifecycle(changed);
+          if (changed) {
+            const turnId = channelTurnId(trigger.id, profile.id);
+            const updated = handleTerminalDeliveryContract({
+              binding: null,
+              turnId,
+              run: changed,
+            });
+            hub.broadcastRunLifecycle(updated ?? changed);
+          }
         };
         const framework = profile.providerId;
         const target = await resolveTarget(framework);
@@ -5147,7 +5993,15 @@ export function createChannelAgentBinder(
             state: 'failed',
             reason: 'target-routing-failed',
           });
-          if (changed) hub.broadcastRunLifecycle(changed);
+          if (changed) {
+            const turnId = channelTurnId(trigger.id, profile.id);
+            const updated = handleTerminalDeliveryContract({
+              binding: null,
+              turnId,
+              run: changed,
+            });
+            hub.broadcastRunLifecycle(updated ?? changed);
+          }
         }
         logger.warn('channel binder route failed:', err);
       }
@@ -5266,7 +6120,15 @@ export function createChannelAgentBinder(
           state: 'rejected',
           reason,
         });
-        if (changed) hub.broadcastRunLifecycle(changed);
+        if (changed) {
+          const turnId = channelTurnId(message.id, profile.id);
+          const updated = handleTerminalDeliveryContract({
+            binding: null,
+            turnId,
+            run: changed,
+          });
+          hub.broadcastRunLifecycle(updated ?? changed);
+        }
       }
     };
     const sourceRuntime = message.source?.runtimeId
@@ -5412,7 +6274,15 @@ export function createChannelAgentBinder(
           state: 'rejected',
           reason,
         });
-        if (changed) hub.broadcastRunLifecycle(changed);
+        if (changed) {
+          const turnId = channelTurnId(message.id, targetProfileId);
+          const updated = handleTerminalDeliveryContract({
+            binding: null,
+            turnId,
+            run: changed,
+          });
+          hub.broadcastRunLifecycle(updated ?? changed);
+        }
       }
 
       // Narrow exception (#1569): one binder-authored system row can request a
@@ -5724,6 +6594,7 @@ export function createChannelAgentBinder(
    * disarmed while `waitingOn !== null` and unarmed once a turn is over).
    */
   function releaseBinding(key: string, binding: LiveBinding): void {
+    const preserveForPreflight = binding.sendPreflight;
     if (binding.activeTurnId !== null) {
       const activeTurnId = binding.activeTurnId;
       if (!releaseUnacceptedCompletionCallbackTurn(binding, activeTurnId)) {
@@ -5742,7 +6613,7 @@ export function createChannelAgentBinder(
     disarmTurnCeiling(binding);
     // No-op when `markDeadRuntimeIdle` already drained on the `disconnected`
     // patch, so a death that fires both paths posts one row per trigger.
-    dropQueuedTurns(binding);
+    if (!preserveForPreflight) dropQueuedTurns(binding);
     binding.adapter = null;
     binding.unbind = null;
     binding.patchUnlisten = null;
@@ -5764,7 +6635,7 @@ export function createChannelAgentBinder(
     // The binding may already have BEEN idle, so the dropped queue needs its
     // own emit — otherwise the chip keeps a count for a dead runtime.
     emitAgentStatus(binding);
-    live.delete(key);
+    if (!preserveForPreflight) live.delete(key);
     try {
       store.upsertBinding({
         channelId: binding.channelId,
@@ -5776,6 +6647,7 @@ export function createChannelAgentBinder(
     } catch (err) {
       logger.warn('channel binder unbind persist failed:', err);
     }
+    if (preserveForPreflight) binding.sendPreflight = false;
   }
 
   function handleRuntimeEnd(runtimeId: string): void {
