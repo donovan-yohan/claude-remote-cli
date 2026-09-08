@@ -541,6 +541,7 @@ const operatorClientCredentialRegistry =
 
 type ServerEntrypointArgs = {
   help: boolean;
+  version: boolean;
   configPath: string | null;
   port: number | null;
   host: string | null;
@@ -548,6 +549,7 @@ type ServerEntrypointArgs = {
 
 function parseServerEntrypointArgs(argv: string[]): ServerEntrypointArgs {
   let help = false;
+  let version = false;
   let configPath: string | null = null;
   let port: number | null = null;
   let host: string | null = null;
@@ -556,6 +558,10 @@ function parseServerEntrypointArgs(argv: string[]): ServerEntrypointArgs {
     const arg = argv[i] ?? '';
     if (arg === '--help' || arg === '-h') {
       help = true;
+      continue;
+    }
+    if (arg === '--version' || arg === '-v') {
+      version = true;
       continue;
     }
     if (arg === '--config') {
@@ -591,6 +597,9 @@ function parseServerEntrypointArgs(argv: string[]): ServerEntrypointArgs {
       host = arg.slice('--host='.length);
       continue;
     }
+    if (arg.startsWith('-')) {
+      throw new Error(`Unknown flag: ${arg}`);
+    }
   }
 
   if (port !== null && (!Number.isFinite(port) || port < 0)) {
@@ -598,7 +607,7 @@ function parseServerEntrypointArgs(argv: string[]): ServerEntrypointArgs {
       `--port must be a non-negative integer; got ${String(port)}`
     );
   }
-  return { help, configPath, port, host };
+  return { help, version, configPath, port, host };
 }
 
 function printServerEntrypointHelp(): void {
@@ -625,6 +634,11 @@ function printServerEntrypointHelp(): void {
   );
 }
 
+function printServerEntrypointVersion(): void {
+  // eslint-disable-next-line no-console
+  console.log(getCurrentVersion());
+}
+
 let entryArgs: ServerEntrypointArgs;
 try {
   entryArgs = parseServerEntrypointArgs(process.argv.slice(2));
@@ -634,6 +648,14 @@ try {
   // eslint-disable-next-line no-console
   console.error('Run with --help for usage.');
   process.exit(1);
+}
+if (entryArgs.help) {
+  printServerEntrypointHelp();
+  process.exit(0);
+}
+if (entryArgs.version) {
+  printServerEntrypointVersion();
+  process.exit(0);
 }
 
 // When run via the CLI bin or the dev runner, RELAY_IDE_CONFIG is set
@@ -674,27 +696,6 @@ if (
     sourceLaunchConfig.legacyConfigPath,
     CONFIG_PATH
   );
-}
-
-// #1587: treat `--help` as a potentially hazardous invocation too. Resolve the
-// effective configDir and refuse if it is owned by another live hub (but do not
-// open any SQLite store).
-if (entryArgs.help) {
-  try {
-    const configDir = getConfigDir(CONFIG_PATH);
-    const fallbackPort =
-      entryArgs.port ?? nonNegativeIntegerEnv('RELAY_IDE_PORT') ?? 3456;
-    await assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
-      configPath: path.join(configDir, 'config.json'),
-      fallbackPort,
-      timeoutMs: 500,
-    });
-  } catch (err) {
-    logger.error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  }
-  printServerEntrypointHelp();
-  process.exit(0);
 }
 
 const DEFAULT_GITHUB_CLIENT_ID = 'Ov23lilheF3LelYSo0bu';
