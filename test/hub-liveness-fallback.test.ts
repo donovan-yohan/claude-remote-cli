@@ -149,6 +149,53 @@ describe('hub liveness fallback when hub.lock missing (#1587)', () => {
     }
   });
 
+  it('ignores a hub.lock from another hostname and falls back to /health', async () => {
+    const configDir = makeTmpDir();
+    const server = http.createServer((req, res) => {
+      if (req.url === '/health') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
+    const addr = server.address();
+    if (!addr || typeof addr === 'string') throw new Error('expected tcp addr');
+    const port = addr.port;
+    try {
+      const configPath = path.join(configDir, 'config.json');
+      fs.writeFileSync(configPath, JSON.stringify({ port }), 'utf8');
+      // Foreign hostname: should not be trusted as "owned", so /health decides.
+      fs.writeFileSync(
+        path.join(configDir, 'hub.lock'),
+        JSON.stringify(
+          {
+            pid: 12345,
+            port,
+            host: '127.0.0.1',
+            startedAt: new Date().toISOString(),
+            hostname: 'some-other-host',
+          },
+          null,
+          2
+        ) + '\n',
+        'utf8'
+      );
+      await expect(
+        assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
+          configPath,
+          timeoutMs: 500,
+        })
+      ).rejects.toThrow(/hub is listening on/);
+    } finally {
+      server.close();
+    }
+  });
+
   it('passes when no hub.lock exists and no /health listener answers', async () => {
     const configDir = makeTmpDir();
     const configPath = path.join(configDir, 'config.json');
