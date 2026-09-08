@@ -39,7 +39,9 @@ import {
 import type {
   ChannelAgentRuntime,
   CreateChannelAgentRuntimeParams,
+  LiveChildCheckOptions,
 } from './channel-agent-runtime.js';
+import type { ProcessInfo } from './process-tree.js';
 import { providerResumeId } from './channel-agent-runtime.js';
 import {
   DEFAULT_ORCHESTRATOR_PROVIDER_ID,
@@ -350,7 +352,11 @@ export interface BinderRuntimes {
   get(id: string): ChannelAgentRuntime | undefined;
   destroy(id: string): Promise<void>;
   onRuntimeEnd(cb: (runtimeId: string) => void): () => void;
-  hasLiveChildProcesses?(id: string): boolean;
+  liveChildProcesses?(
+    id: string,
+    options?: LiveChildCheckOptions
+  ): ProcessInfo[];
+  hasLiveChildProcesses?(id: string, options?: LiveChildCheckOptions): boolean;
 }
 
 export interface ChannelAgentBinderDeps {
@@ -2055,13 +2061,26 @@ export function createChannelAgentBinder(
         scheduleWatchdog(binding, watchdogMs);
         return;
       }
-      if (
-        binding.runtimeId &&
-        deps.runtimes.hasLiveChildProcesses?.(binding.runtimeId)
-      ) {
+      const liveChildren =
+        binding.runtimeId && deps.runtimes.liveChildProcesses
+          ? deps.runtimes.liveChildProcesses(binding.runtimeId, {
+              lastActivityAt: binding.lastActivityAt,
+            })
+          : [];
+      const hasLiveChildren =
+        liveChildren.length > 0 ||
+        (binding.runtimeId && !deps.runtimes.liveChildProcesses
+          ? Boolean(
+              deps.runtimes.hasLiveChildProcesses?.(binding.runtimeId, {
+                lastActivityAt: binding.lastActivityAt,
+              })
+            )
+          : false);
+      if (hasLiveChildren) {
         // The runtime has a live child process tree (e.g. `npm test`, `npm run check`)
         // running under it (#1561). A runtime waiting on long child commands is active,
-        // not stuck: refresh the silence budget and re-arm; the hard ceiling still bounds a runaway.
+        // not stuck: re-arm for another silence window without advancing lastActivityAt;
+        // the hard ceiling still bounds a runaway.
         logger.debug(
           'channel binder watchdog deferred to live child process tree',
           {
@@ -2069,9 +2088,12 @@ export function createChannelAgentBinder(
             framework: binding.framework,
             turnId: binding.activeTurnId,
             runtimeId: binding.runtimeId,
+            liveChildCount: liveChildren.length,
+            liveChildCommands: liveChildren
+              .slice(0, 3)
+              .map((p) => p.commandLine || p.command),
           }
         );
-        binding.lastActivityAt = now();
         scheduleWatchdog(binding, watchdogMs);
         return;
       }

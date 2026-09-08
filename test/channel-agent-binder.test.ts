@@ -2664,6 +2664,21 @@ function makeSessions(
         if (i >= 0) endCbs.splice(i, 1);
       };
     },
+    liveChildProcesses(id) {
+      if (liveChildProcessRuntimes.has(id)) {
+        return [
+          {
+            pid: 1234,
+            ppid: 1000,
+            pgid: 1000,
+            command: 'npm',
+            commandLine: 'npm test',
+            rssBytes: 1024,
+          },
+        ];
+      }
+      return [];
+    },
     hasLiveChildProcesses(id) {
       return liveChildProcessRuntimes.has(id);
     },
