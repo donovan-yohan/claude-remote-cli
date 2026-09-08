@@ -22,7 +22,7 @@ workflow.
 
 #### Fixed
 
-- `channels wait` in `--channel-id` mode now follows child run hops through continuation chains to observe the terminal outcome of follow-ups (#1579).
+- `channels wait` in `--channel-id` mode now follows child run hops through continuation chains to observe the terminal outcome of follow-ups, preserves negative inspection caching, and caps pending delivery-contract probe wait in `waitForWaitableRun` (#1579).
 - Delivery contract evaluation for `push` predicates now checks against the configured upstream tracking remote ref rather than assuming identical branch names when tracking branches differ (#1579).
 - Follow-up retry briefs and abandonment rows now articulate intent-level unmet delivery contracts rather than low-level spec syntax (#1579).
 - Antigravity adapter now parses relative reset durations (e.g. `in 54m 32s`) from quota errors into ISO timestamps on `agent-error-v2` (#1579).
