@@ -45,13 +45,81 @@ import { createLogger } from '../logger.js';
 
 const logger = createLogger('antigravity-adapter');
 
-function classifyAntigravityProviderFailure(
-  message: string
-): { failureCode: ProviderFailureCode; providerMessage: string } | null {
+export function parseAntigravityRetryAfterIso(
+  message: string,
+  nowMs: number = Date.now()
+): string | undefined {
+  if (!message || typeof message !== 'string') return undefined;
+
+  // Match relative duration expressions like:
+  // "Resets in 2h30m51s", "resets in 45m", "in 3 hours", "resets in 1h 30m 10s"
+  const relMatch =
+    /(?:resets?\s+in|retry\s+after|try\s+again\s+in|\bin)\s+((?:(?:\d+\s*(?:d(?:ays?)?|h(?:(?:ou)?rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?))\s*)+)/i.exec(
+      message
+    );
+
+  if (relMatch && relMatch[1]) {
+    const raw = relMatch[1];
+    let totalMs = 0;
+    let matchedAny = false;
+
+    const dayMatch =
+      /(\d+)\s*(?:days?|d)\b/i.exec(raw) ?? /(\d+)\s*d/i.exec(raw);
+    if (dayMatch && dayMatch[1]) {
+      totalMs += parseInt(dayMatch[1], 10) * 86_400_000;
+      matchedAny = true;
+    }
+
+    const hourMatch =
+      /(\d+)\s*(?:hours?|hrs?|h)\b/i.exec(raw) ?? /(\d+)\s*h/i.exec(raw);
+    if (hourMatch && hourMatch[1]) {
+      totalMs += parseInt(hourMatch[1], 10) * 3_600_000;
+      matchedAny = true;
+    }
+
+    const minMatch =
+      /(\d+)\s*(?:minutes?|mins?|m)\b/i.exec(raw) ?? /(\d+)\s*m/i.exec(raw);
+    if (minMatch && minMatch[1]) {
+      totalMs += parseInt(minMatch[1], 10) * 60_000;
+      matchedAny = true;
+    }
+
+    const secMatch =
+      /(\d+)\s*(?:seconds?|secs?|s)\b/i.exec(raw) ?? /(\d+)\s*s/i.exec(raw);
+    if (secMatch && secMatch[1]) {
+      totalMs += parseInt(secMatch[1], 10) * 1_000;
+      matchedAny = true;
+    }
+
+    if (matchedAny && totalMs > 0) {
+      return new Date(nowMs + totalMs).toISOString();
+    }
+  }
+
+  return undefined;
+}
+
+export function classifyAntigravityProviderFailure(
+  message: string,
+  nowMs: number = Date.now()
+): {
+  failureCode: ProviderFailureCode;
+  providerMessage: string;
+  retryAfter?: string;
+} | null {
   const lower = message.toLowerCase();
   // Anchor on the known quota phrase from #1571.
-  if (lower.includes('individual quota reached')) {
-    return { failureCode: 'quota_exhausted', providerMessage: message };
+  if (
+    lower.includes('individual quota reached') ||
+    lower.includes('quota reached') ||
+    lower.includes('quota exceeded')
+  ) {
+    const retryAfter = parseAntigravityRetryAfterIso(message, nowMs);
+    return {
+      failureCode: 'quota_exhausted',
+      providerMessage: message,
+      ...(retryAfter ? { retryAfter } : {}),
+    };
   }
   const binary = classifyBinaryMissingFailure(message);
   if (binary) return binary;
@@ -749,6 +817,7 @@ export class AntigravityProtocolAdapter
         emitErrorPatch(this.patchSink, message, null, {
           ...(failure ? { failureCode: failure.failureCode } : {}),
           ...(failure ? { providerMessage: failure.providerMessage } : {}),
+          ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
         });
         reject(new Error(message));
       };
@@ -789,6 +858,7 @@ export class AntigravityProtocolAdapter
         message,
         ...(failure ? { failureCode: failure.failureCode } : {}),
         ...(failure ? { providerMessage: failure.providerMessage } : {}),
+        ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
       });
       this.completeTurn('failed', message);
     }
@@ -1551,6 +1621,7 @@ export class AntigravityProtocolAdapter
     emitErrorPatch(this.patchSink, message, this.activeTurnId, {
       ...(failure ? { failureCode: failure.failureCode } : {}),
       ...(failure ? { providerMessage: failure.providerMessage } : {}),
+      ...(failure?.retryAfter ? { retryAfter: failure.retryAfter } : {}),
     });
   }
 
