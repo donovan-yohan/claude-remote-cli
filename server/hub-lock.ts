@@ -147,22 +147,41 @@ export async function probeLiveHubHealth(
   }
 
   const configured = readConfiguredPort(opts.configPath);
-  const port = opts.fallbackPort ?? configured.port;
-  const url = `http://127.0.0.1:${port}/health`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
-  try {
-    const res = await fetch(url, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-    if (res.ok) return { port };
-    return null;
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
+  // Probe the deduped union of {effective port, config.json port} so a
+  // checkout run passing `--port <other>` against a shared config dir still
+  // refuses if a live hub answers on the config port (#1587).
+  const candidatePorts: number[] = [];
+  if (
+    typeof opts.fallbackPort === 'number' &&
+    Number.isFinite(opts.fallbackPort) &&
+    opts.fallbackPort > 0
+  ) {
+    candidatePorts.push(opts.fallbackPort);
   }
+  if (configured.fromConfig && !candidatePorts.includes(configured.port)) {
+    candidatePorts.push(configured.port);
+  }
+  if (candidatePorts.length === 0) {
+    candidatePorts.push(configured.port);
+  }
+
+  for (const port of candidatePorts) {
+    const url = `http://127.0.0.1:${port}/health`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      if (res.ok) return { port };
+    } catch {
+      // Connection refused or aborted; try next candidate.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return null;
 }
 
 function describeHubLockAbsence(configDir: string): string {

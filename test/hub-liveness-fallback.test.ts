@@ -302,7 +302,7 @@ describe('hub liveness fallback when hub.lock missing (#1587)', () => {
     expect(Date.now() - start).toBeLessThan(2000);
   });
 
-  it('prefers fallbackPort over config.json when provided (flag/env > config)', async () => {
+  it('probes flag/fallback port when provided and refuses if it answers', async () => {
     const configDir = makeTmpDir();
 
     const answering = http.createServer((req, res) => {
@@ -336,7 +336,47 @@ describe('hub liveness fallback when hub.lock missing (#1587)', () => {
           fallbackPort: listenerPort,
           timeoutMs: 200,
         })
-      ).rejects.toThrow(/hub is listening on/);
+      ).rejects.toThrow(new RegExp(`:${listenerPort}`));
+    } finally {
+      answering.close();
+    }
+  });
+
+  it('probes config.json port even when fallbackPort is overridden and refuses if config port answers', async () => {
+    const configDir = makeTmpDir();
+
+    const answering = http.createServer((req, res) => {
+      if (req.url === '/health') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) =>
+      answering.listen(0, '127.0.0.1', resolve)
+    );
+    const addr = answering.address();
+    if (!addr || typeof addr === 'string') throw new Error('expected tcp addr');
+    const listenerPort = addr.port;
+
+    // Config points to listenerPort; fallbackPort points to an unused port.
+    const configPath = path.join(configDir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ port: listenerPort, host: '127.0.0.1' }),
+      'utf8'
+    );
+
+    try {
+      await expect(
+        assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
+          configPath,
+          fallbackPort: listenerPort + 1,
+          timeoutMs: 200,
+        })
+      ).rejects.toThrow(new RegExp(`:${listenerPort}`));
     } finally {
       answering.close();
     }
