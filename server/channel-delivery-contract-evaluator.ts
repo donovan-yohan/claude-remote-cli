@@ -18,6 +18,8 @@ export interface DeliveryContractGitProbe {
   aheadCount(): Promise<DeliveryContractProbeOutcome<number>>;
   /** Full sha of HEAD, or null if detached/unborn/unknown. Optional for legacy probes. */
   headSha?(): Promise<DeliveryContractProbeOutcome<string | null>>;
+  /** Resolved upstream/base ref name for delta evaluation (#1578). Optional. */
+  upstreamRef?(): Promise<DeliveryContractProbeOutcome<string | null>>;
   /** Full sha of the default upstream/base reference, or null if none. Optional. */
   upstreamSha?(): Promise<DeliveryContractProbeOutcome<string | null>>;
   /** Commit count of `base..head` (>=0). Optional for legacy probes. */
@@ -36,9 +38,7 @@ export interface DeliveryContractPrProbe {
    * Open PR details for delta evaluation (#1578). Optional: when absent the
    * evaluator falls back to the legacy boolean semantics.
    */
-  getOpenPrForBranch?(
-    branch: string
-  ): Promise<
+  getOpenPrForBranch?(branch: string): Promise<
     DeliveryContractProbeOutcome<{
       number: number;
       headSha: string | null;
@@ -61,6 +61,7 @@ export interface EvaluateDeliveryContractInput {
    */
   baseline?: {
     headSha: string;
+    upstreamRef?: string | null;
     upstreamSha: string | null;
     prNumber: number | null;
     prHeadSha: string | null;
@@ -175,16 +176,34 @@ export async function evaluateDeliveryContract(
     if (!baseline) {
       return { kind: 'unknown', reason: 'baseline unavailable' };
     }
+    if (!baseline.upstreamRef) {
+      return { kind: 'unknown', reason: 'no upstream ref baseline available' };
+    }
     if (!baseline.upstreamSha) {
       return { kind: 'unknown', reason: 'no upstream baseline available' };
     }
     if (
+      typeof probes.git.upstreamRef !== 'function' ||
       typeof probes.git.upstreamSha !== 'function' ||
       typeof probes.git.commitsBetween !== 'function'
     ) {
       return {
         kind: 'unknown',
         reason: 'git probes missing for push delta evaluation',
+      };
+    }
+    const currentRef = await probes.git.upstreamRef();
+    if (currentRef.kind === 'unknown') return currentRef;
+    if (!currentRef.value) {
+      return {
+        kind: 'unknown',
+        reason: 'no upstream/base reference available',
+      };
+    }
+    if (currentRef.value !== baseline.upstreamRef) {
+      return {
+        kind: 'unknown',
+        reason: `upstream ref changed (${baseline.upstreamRef} -> ${currentRef.value})`,
       };
     }
     const current = await probes.git.upstreamSha();

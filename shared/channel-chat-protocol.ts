@@ -102,6 +102,8 @@ export interface ChannelAsyncRun {
      */
     baseline?: {
       headSha: string;
+      /** Resolved upstream ref name used for `upstreamSha` (best-effort). */
+      upstreamRef?: string | null;
       upstreamSha: string | null;
       prNumber: number | null;
       prHeadSha: string | null;

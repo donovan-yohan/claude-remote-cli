@@ -3393,6 +3393,15 @@ export function createChannelAgentBinder(
     }
     if (!headSha) return null;
 
+    let upstreamRef: string | null = null;
+    if (git?.upstreamRef) {
+      const outcome = await git.upstreamRef();
+      if (outcome.kind === 'ok') {
+        const ref = String(outcome.value ?? '').trim();
+        upstreamRef = ref ? ref : null;
+      }
+    }
+
     const upstreamSha: string | null = await (async () => {
       if (git?.upstreamSha) {
         const outcome = await git.upstreamSha();
@@ -3407,6 +3416,19 @@ export function createChannelAgentBinder(
           { cwd, timeout }
         );
         const sha = stdout.trim();
+        if (!upstreamRef) {
+          try {
+            const { stdout: refStdout } = await execFileAsync(
+              'git',
+              ['rev-parse', '--abbrev-ref', '@{u}'],
+              { cwd, timeout }
+            );
+            const ref = refStdout.trim();
+            upstreamRef = ref ? ref : null;
+          } catch {
+            /* ignore */
+          }
+        }
         return sha ? sha : null;
       } catch {
         /* fall through */
@@ -3418,6 +3440,7 @@ export function createChannelAgentBinder(
           { cwd, timeout }
         );
         const sha = stdout.trim();
+        if (!upstreamRef) upstreamRef = 'origin/HEAD';
         return sha ? sha : null;
       } catch {
         return null;
@@ -3471,6 +3494,7 @@ export function createChannelAgentBinder(
 
     return {
       headSha,
+      upstreamRef,
       upstreamSha,
       prNumber,
       prHeadSha,
@@ -4781,6 +4805,7 @@ export function createChannelAgentBinder(
       currentBranch: () => Promise<DeliveryContractProbeOutcome<string | null>>;
       aheadCount: () => Promise<DeliveryContractProbeOutcome<number>>;
       headSha: () => Promise<DeliveryContractProbeOutcome<string | null>>;
+      upstreamRef: () => Promise<DeliveryContractProbeOutcome<string | null>>;
       upstreamSha: () => Promise<DeliveryContractProbeOutcome<string | null>>;
       commitsBetween: (
         base: string,
@@ -4904,6 +4929,11 @@ export function createChannelAgentBinder(
           if (reason) return { kind: 'unknown', reason };
           return { kind: 'unknown', reason: 'git head-sha probe failed' };
         }
+      },
+      upstreamRef: async (): Promise<
+        DeliveryContractProbeOutcome<string | null>
+      > => {
+        return resolveDefaultBase();
       },
       upstreamSha: async (): Promise<
         DeliveryContractProbeOutcome<string | null>
@@ -5275,9 +5305,21 @@ export function createChannelAgentBinder(
 
     async function tryPushDelta(): Promise<string | null> {
       if (!wantsPush) return null;
+      if (!baselineOk.upstreamRef) return 'baseline upstream ref unavailable';
       if (!baselineOk.upstreamSha) return 'baseline upstream unavailable';
-      if (!input.probe.git.upstreamSha || !input.probe.git.commitsBetween)
+      if (
+        !input.probe.git.upstreamRef ||
+        !input.probe.git.upstreamSha ||
+        !input.probe.git.commitsBetween
+      )
         return null;
+      const ref = await input.probe.git.upstreamRef().catch(() => null);
+      const upstreamRef =
+        ref && ref.kind === 'ok' && ref.value ? ref.value : null;
+      if (!upstreamRef) return null;
+      if (upstreamRef !== baselineOk.upstreamRef) {
+        return `upstream ref changed (${baselineOk.upstreamRef} -> ${upstreamRef})`;
+      }
       const upstream = await input.probe.git.upstreamSha().catch(() => null);
       const upstreamSha =
         upstream && upstream.kind === 'ok' && upstream.value

@@ -3723,6 +3723,7 @@ const channelAsyncRunSchema: RelayJsonSchema = {
               additionalProperties: false,
               properties: {
                 headSha: stringSchema,
+                upstreamRef: nullableStringSchema,
                 upstreamSha: nullableStringSchema,
                 prNumber: { oneOf: [{ type: 'null' }, { type: 'integer' }] },
                 prHeadSha: nullableStringSchema,
