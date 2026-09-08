@@ -161,4 +161,65 @@ describe('hub liveness fallback when hub.lock missing (#1587)', () => {
       })
     ).resolves.toBeUndefined();
   });
+
+  it('uses fallbackPort when config.json is missing', async () => {
+    const configDir = makeTmpDir();
+    const server = http.createServer((req, res) => {
+      if (req.url === '/health') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
+    const addr = server.address();
+    if (!addr || typeof addr === 'string') throw new Error('expected tcp addr');
+    const port = addr.port;
+    try {
+      const missingConfigPath = path.join(configDir, 'config.json');
+      await expect(
+        assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
+          configPath: missingConfigPath,
+          fallbackPort: port,
+          timeoutMs: 500,
+        })
+      ).rejects.toThrow(/hub is listening on/);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('does not refuse on an unrelated listener when fallbackPort points elsewhere', async () => {
+    const configDir = makeTmpDir();
+    const server = http.createServer((req, res) => {
+      if (req.url === '/health') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
+    const addr = server.address();
+    if (!addr || typeof addr === 'string') throw new Error('expected tcp addr');
+    try {
+      const missingConfigPath = path.join(configDir, 'config.json');
+      await expect(
+        assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
+          configPath: missingConfigPath,
+          fallbackPort: addr.port + 1,
+          timeoutMs: 200,
+        })
+      ).resolves.toBeUndefined();
+    } finally {
+      server.close();
+    }
+  });
 });

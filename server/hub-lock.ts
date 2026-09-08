@@ -99,21 +99,29 @@ type HubLivenessProbeConfig = {
   /** Abort the probe after this many ms. */
   timeoutMs: number;
   /**
-   * Effective port this process intends to use. When provided, it overrides
-   * the port read from the config file (flag > env > config > default).
+   * Effective port this process intends to use (flag > env > config > default).
+   *
+   * Used only when the config file cannot be read, to avoid probing a hardcoded
+   * default that could be unrelated to this config dir.
    */
-  port?: number | undefined;
+  fallbackPort?: number | undefined;
 };
 
-function readConfiguredPortOrDefault(configPath: string): number {
+function readConfiguredPort(configPath: string): {
+  port: number;
+  fromConfig: boolean;
+} {
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
       port?: unknown;
     };
     const port = parsed?.port;
-    return typeof port === 'number' && Number.isFinite(port) ? port : 3456;
+    if (typeof port === 'number' && Number.isFinite(port)) {
+      return { port, fromConfig: true };
+    }
+    return { port: 3456, fromConfig: true };
   } catch {
-    return 3456;
+    return { port: 3456, fromConfig: false };
   }
 }
 
@@ -131,7 +139,10 @@ export async function probeLiveHubHealth(
     return null;
   }
 
-  const port = opts.port ?? readConfiguredPortOrDefault(opts.configPath);
+  const configured = readConfiguredPort(opts.configPath);
+  const port = configured.fromConfig
+    ? configured.port
+    : (opts.fallbackPort ?? configured.port);
   const url = `http://127.0.0.1:${port}/health`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs);

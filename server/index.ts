@@ -682,8 +682,11 @@ if (
 if (entryArgs.help) {
   try {
     const configDir = getConfigDir(CONFIG_PATH);
+    const fallbackPort =
+      entryArgs.port ?? nonNegativeIntegerEnv('RELAY_IDE_PORT') ?? 3456;
     await assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
       configPath: path.join(configDir, 'config.json'),
+      fallbackPort,
       timeoutMs: 500,
     });
   } catch (err) {
@@ -1777,6 +1780,7 @@ async function main(): Promise<void> {
   // probe /health on the configured port and refuse before opening persistence.
   await assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
     configPath: CONFIG_PATH,
+    fallbackPort: startupConfig.port,
     timeoutMs: 500,
   });
 
