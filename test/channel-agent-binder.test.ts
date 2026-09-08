@@ -1459,7 +1459,7 @@ class ScriptedAdapter extends BaseProtocolAdapterV2 {
 
   constructor(
     readonly agentType: string,
-    private readonly script: ScriptMode
+    public script: ScriptMode
   ) {
     super();
   }
@@ -12867,5 +12867,59 @@ describe('channel-agent-binder — topic routing cwd (#1534)', () => {
     expect(
       systemRows(store).filter((m) => m.body.text.includes(WORKTREE))
     ).toHaveLength(1);
+  });
+
+  it('revives a drained run on late turn-completed even after a successor turn ran (#1579 item 3)', async () => {
+    let currentAdapter: ScriptedAdapter | null = null;
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => {
+        const adapter = new ScriptedAdapter(t, {
+          mode: 'stall',
+        });
+        currentAdapter = adapter;
+        return adapter;
+      },
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 10_000,
+      turnCeilingMs: 30,
+    });
+
+    // 1. First turn starts and gets force-drained by turn ceiling
+    const { run: run1 } = postWithAsyncRun(store, binder, '@mock first turn', [
+      'mock',
+    ]);
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = currentAdapter!;
+    await waitFor(() => adapter.sendCalls.length === 1);
+    const turn1Id = adapter.sendCalls[0]!;
+
+    // Wait for ceiling drain
+    await waitFor(
+      () => systemRows(store).some((m) => m.body.text.includes('turn limit')),
+      4000
+    );
+    expect(store.getAsyncRun(run1.id)?.targets[0]?.state).toBe('cancelled');
+
+    // 2. Second turn (successor) starts and completes
+    adapter.script = { mode: 'reply', text: 'successor reply' };
+    post(store, binder, '@mock second turn', ['mock']);
+    await waitFor(() => agentReplies(store, 'mock').length === 1, 4000);
+
+    // 3. Late agent-turn-completed-v2 arrives for Turn 1
+    adapter.broadcastPatch({
+      type: 'agent-turn-completed-v2',
+      sessionId: sessions.firstSessionId(),
+      turnId: turn1Id,
+      status: 'completed',
+      timestamp: new Date().toISOString(),
+    });
+
+    // 4. Verify Turn 1's run transitions from cancelled to completed
+    await waitFor(
+      () => store.getAsyncRun(run1.id)?.targets[0]?.state === 'completed',
+      4000
+    );
+    expect(store.getAsyncRun(run1.id)?.state).toBe('completed');
   });
 });

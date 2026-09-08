@@ -3758,8 +3758,16 @@ export function createChannelAgentBinder(
       binding.turnZeroFallbackUnsafe = true;
     }
     retainExactTurnTombstones(binding);
-    binding.parentMessageIdByTurn.clear();
-    binding.requestMessageIdByTurn.clear();
+    for (const [tId] of binding.parentMessageIdByTurn) {
+      if (!binding.drainedTurnIds.has(tId)) {
+        binding.parentMessageIdByTurn.delete(tId);
+      }
+    }
+    for (const [tId] of binding.requestMessageIdByTurn) {
+      if (!binding.drainedTurnIds.has(tId)) {
+        binding.requestMessageIdByTurn.delete(tId);
+      }
+    }
     binding.activeTurnId = turnId;
     binding.parentMessageIdByTurn.set(
       turnId,
@@ -4491,6 +4499,8 @@ export function createChannelAgentBinder(
       }
     }
     binding.drainedTurnIds.delete(patch.turnId);
+    binding.requestMessageIdByTurn.delete(patch.turnId);
+    binding.parentMessageIdByTurn.delete(patch.turnId);
     return true;
   }
 
