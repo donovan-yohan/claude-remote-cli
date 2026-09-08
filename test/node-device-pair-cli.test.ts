@@ -22,29 +22,43 @@ function json(res: http.ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-async function fakeHub(handler: Handler): Promise<{ url: string; close: () => Promise<void> }> {
+async function fakeHub(
+  handler: Handler
+): Promise<{ url: string; close: () => Promise<void> }> {
   const server = http.createServer(handler);
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('fake hub did not bind');
+  if (!address || typeof address === 'string')
+    throw new Error('fake hub did not bind');
   return {
     url: `http://127.0.0.1:${address.port}`,
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
 }
 
-async function runCli(args: string[], env: Record<string, string> = {}): Promise<CliResult> {
+async function runCli(
+  args: string[],
+  env: Record<string, string> = {}
+): Promise<CliResult> {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-node-pair-cli-'));
   return await new Promise<CliResult>((resolve, reject) => {
     const child = spawn(process.execPath, ['dist/bin/relay-ide.js', ...args], {
       cwd: process.cwd(),
-      env: {
-        ...process.env,
-        HOME: home,
-        RELAY_IDE_NODE_PAIR_POLL_INTERVAL_MS: '100',
-        ...env,
-      },
+      env: (() => {
+        const merged = {
+          ...process.env,
+          HOME: home,
+          // #1587: vitest harness pins XDG_CONFIG_HOME/RELAY_IDE_CONFIG for isolation.
+          // This CLI suite isolates via a fresh HOME, so ensure XDG follows HOME
+          // and do not inherit RELAY_IDE_CONFIG into the child.
+          XDG_CONFIG_HOME: path.join(home, '.config'),
+          RELAY_IDE_NODE_PAIR_POLL_INTERVAL_MS: '100',
+          ...env,
+        } as Record<string, string | undefined>;
+        if (!('RELAY_IDE_CONFIG' in env)) delete merged.RELAY_IDE_CONFIG;
+        return merged;
+      })(),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
@@ -72,7 +86,9 @@ async function runCli(args: string[], env: Record<string, string> = {}): Promise
   });
 }
 
-function baseRequest(state: 'pending' | 'approved' | 'denied' | 'expired' = 'pending') {
+function baseRequest(
+  state: 'pending' | 'approved' | 'denied' | 'expired' = 'pending'
+) {
   return {
     requestId: 'req-1',
     deviceCode: 'ABCD-EFGH',
@@ -92,7 +108,14 @@ function expectNoSecrets(output: string): void {
 }
 
 afterEach(async () => {
-  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))));
+  await Promise.all(
+    servers
+      .splice(0)
+      .map(
+        (server) =>
+          new Promise<void>((resolve) => server.close(() => resolve()))
+      )
+  );
 });
 
 describe('relay-ide node pair CLI device-code pairing', () => {
@@ -101,10 +124,16 @@ describe('relay-ide node pair CLI device-code pairing', () => {
     let heartbeatAuthorization: string | undefined;
     const hub = await fakeHub((req, res) => {
       if (req.method === 'POST' && req.url === '/hub/pairing/requests') {
-        json(res, 200, { request: baseRequest('pending'), statusToken: 'pstat_SUPER_SECRET' });
+        json(res, 200, {
+          request: baseRequest('pending'),
+          statusToken: 'pstat_SUPER_SECRET',
+        });
         return;
       }
-      if (req.method === 'POST' && req.url === '/hub/pairing/requests/req-1/status') {
+      if (
+        req.method === 'POST' &&
+        req.url === '/hub/pairing/requests/req-1/status'
+      ) {
         polls += 1;
         json(res, 200, {
           request: baseRequest(polls === 1 ? 'pending' : 'approved'),
@@ -137,15 +166,28 @@ describe('relay-ide node pair CLI device-code pairing', () => {
     expect(output).toContain('"event":"pairing-requested"');
     expect(output).toContain('"event":"paired"');
     expectNoSecrets(output);
-    const credentialPath = path.join(result.home, '.config', 'relay-ide', 'node-credential.json');
-    expect(JSON.parse(fs.readFileSync(credentialPath, 'utf8'))).toMatchObject({ nodeId: 'node-1', credentialId: 'cred-1' });
+    const credentialPath = path.join(
+      result.home,
+      '.config',
+      'relay-ide',
+      'node-credential.json'
+    );
+    expect(JSON.parse(fs.readFileSync(credentialPath, 'utf8'))).toMatchObject({
+      nodeId: 'node-1',
+      credentialId: 'cred-1',
+    });
     expect(fs.statSync(credentialPath).mode & 0o777).toBe(0o600);
   });
 
   it('treats denied as a terminal state without leaking the status token', async () => {
     const hub = await fakeHub((req, res) => {
-      if (req.url === '/hub/pairing/requests') json(res, 200, { request: baseRequest('pending'), statusToken: 'pstat_SUPER_SECRET' });
-      else if (req.url === '/hub/pairing/requests/req-1/status') json(res, 200, { request: baseRequest('denied') });
+      if (req.url === '/hub/pairing/requests')
+        json(res, 200, {
+          request: baseRequest('pending'),
+          statusToken: 'pstat_SUPER_SECRET',
+        });
+      else if (req.url === '/hub/pairing/requests/req-1/status')
+        json(res, 200, { request: baseRequest('denied') });
       else json(res, 404, {});
     });
     const result = await runCli(['node', 'pair', hub.url, '--json']);
@@ -156,8 +198,13 @@ describe('relay-ide node pair CLI device-code pairing', () => {
 
   it('treats expired as a terminal state', async () => {
     const hub = await fakeHub((req, res) => {
-      if (req.url === '/hub/pairing/requests') json(res, 200, { request: baseRequest('pending'), statusToken: 'pstat_SUPER_SECRET' });
-      else if (req.url === '/hub/pairing/requests/req-1/status') json(res, 200, { request: baseRequest('expired') });
+      if (req.url === '/hub/pairing/requests')
+        json(res, 200, {
+          request: baseRequest('pending'),
+          statusToken: 'pstat_SUPER_SECRET',
+        });
+      else if (req.url === '/hub/pairing/requests/req-1/status')
+        json(res, 200, { request: baseRequest('expired') });
       else json(res, 404, {});
     });
     const result = await runCli(['node', 'pair', hub.url, '--json']);
@@ -168,7 +215,11 @@ describe('relay-ide node pair CLI device-code pairing', () => {
 
   it('fails fast on malformed terminal status responses', async () => {
     const hub = await fakeHub((req, res) => {
-      if (req.url === '/hub/pairing/requests') json(res, 200, { request: baseRequest('pending'), statusToken: 'pstat_SUPER_SECRET' });
+      if (req.url === '/hub/pairing/requests')
+        json(res, 200, {
+          request: baseRequest('pending'),
+          statusToken: 'pstat_SUPER_SECRET',
+        });
       else if (req.url === '/hub/pairing/requests/req-1/status') {
         res.statusCode = 200;
         res.end('not json');
@@ -184,7 +235,10 @@ describe('relay-ide node pair CLI device-code pairing', () => {
     let polls = 0;
     const hub = await fakeHub((req, res) => {
       if (req.url === '/hub/pairing/requests') {
-        json(res, 200, { request: baseRequest('pending'), statusToken: 'pstat_SUPER_SECRET' });
+        json(res, 200, {
+          request: baseRequest('pending'),
+          statusToken: 'pstat_SUPER_SECRET',
+        });
         return;
       }
       if (req.url === '/hub/pairing/requests/req-1/status') {
@@ -195,7 +249,11 @@ describe('relay-ide node pair CLI device-code pairing', () => {
         }
         json(res, 200, {
           request: baseRequest('approved'),
-          credential: { token: 'node_SECRET_TOKEN', nodeId: 'node-1', credentialId: 'cred-1' },
+          credential: {
+            token: 'node_SECRET_TOKEN',
+            nodeId: 'node-1',
+            credentialId: 'cred-1',
+          },
         });
         return;
       }
@@ -213,19 +271,31 @@ describe('relay-ide node pair CLI device-code pairing', () => {
 
   it('fails fast when approved lacks a valid credential payload', async () => {
     const hub = await fakeHub((req, res) => {
-      if (req.url === '/hub/pairing/requests') json(res, 200, { request: baseRequest('pending'), statusToken: 'pstat_SUPER_SECRET' });
-      else if (req.url === '/hub/pairing/requests/req-1/status') json(res, 200, { request: baseRequest('approved') });
+      if (req.url === '/hub/pairing/requests')
+        json(res, 200, {
+          request: baseRequest('pending'),
+          statusToken: 'pstat_SUPER_SECRET',
+        });
+      else if (req.url === '/hub/pairing/requests/req-1/status')
+        json(res, 200, { request: baseRequest('approved') });
       else json(res, 404, {});
     });
     const result = await runCli(['node', 'pair', hub.url, '--json']);
     expect(result.code).toBe(1);
     expect(result.stdout).toContain('PAIRING_PROTOCOL_ERROR');
-    expect(result.stdout).toContain('approved pairing without a valid node credential');
+    expect(result.stdout).toContain(
+      'approved pairing without a valid node credential'
+    );
     expectNoSecrets(`${result.stdout}${result.stderr}`);
   });
 
   it('rejects userinfo hub URLs before request construction and redacts credentials/query secrets', async () => {
-    const result = await runCli(['node', 'pair', 'http://user:pass@127.0.0.1:9/?apiToken=shhh', '--json']);
+    const result = await runCli([
+      'node',
+      'pair',
+      'http://user:pass@127.0.0.1:9/?apiToken=shhh',
+      '--json',
+    ]);
     expect(result.code).toBe(1);
     const output = `${result.stdout}${result.stderr}`;
     expect(output).toContain('INVALID_HUB_URL');
@@ -244,7 +314,11 @@ describe('relay-ide node pair CLI device-code pairing', () => {
       if (req.method === 'POST' && req.url === '/hub/pairing/exchange') {
         sawExchange = true;
         json(res, 200, {
-          credential: { token: 'node_SECRET_TOKEN', nodeId: 'node-legacy', credentialId: 'cred-legacy' },
+          credential: {
+            token: 'node_SECRET_TOKEN',
+            nodeId: 'node-legacy',
+            credentialId: 'cred-legacy',
+          },
           node: { displayName: 'legacy-node' },
         });
         return;
@@ -255,12 +329,24 @@ describe('relay-ide node pair CLI device-code pairing', () => {
       }
       json(res, 404, {});
     });
-    const result = await runCli(['node', 'pair', '--hub', hub.url, '--pair-token', 'pair_SUPER_SECRET']);
+    const result = await runCli([
+      'node',
+      'pair',
+      '--hub',
+      hub.url,
+      '--pair-token',
+      'pair_SUPER_SECRET',
+    ]);
     expect(result.code).toBe(0);
     expect(sawExchange).toBe(true);
     expect(sawDeviceRequest).toBe(false);
     expectNoSecrets(`${result.stdout}${result.stderr}`);
-    const credentialPath = path.join(result.home, '.config', 'relay-ide', 'node-credential.json');
+    const credentialPath = path.join(
+      result.home,
+      '.config',
+      'relay-ide',
+      'node-credential.json'
+    );
     expect(fs.statSync(credentialPath).mode & 0o777).toBe(0o600);
   });
 });

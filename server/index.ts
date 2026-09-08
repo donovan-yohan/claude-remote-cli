@@ -32,6 +32,13 @@ import {
   findFixtureConfigIsolationViolation,
   resolveSourceLaunchConfigPath,
 } from './runtime-state-paths.js';
+import {
+  acquireHubLockOrThrow,
+  assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub,
+  HubConfigDirLockedError,
+  releaseHubLockBestEffort,
+  updateHubLockBestEffort,
+} from './hub-lock.js';
 import * as auth from './auth.js';
 import * as sessions from './sessions.js';
 import {
@@ -532,6 +539,126 @@ function applyCliGatewayActorMaxTtl(config: Config): void {
 const operatorClientCredentialRegistry =
   createOperatorClientCredentialRegistry();
 
+type ServerEntrypointArgs = {
+  help: boolean;
+  version: boolean;
+  configPath: string | null;
+  port: number | null;
+  host: string | null;
+};
+
+function parseServerEntrypointArgs(argv: string[]): ServerEntrypointArgs {
+  let help = false;
+  let version = false;
+  let configPath: string | null = null;
+  let port: number | null = null;
+  let host: string | null = null;
+
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] ?? '';
+    if (arg === '--help' || arg === '-h') {
+      help = true;
+      continue;
+    }
+    if (arg === '--version' || arg === '-v') {
+      version = true;
+      continue;
+    }
+    if (arg === '--config') {
+      const next = argv[i + 1];
+      if (!next) throw new Error('--config requires a path');
+      configPath = next;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--config=')) {
+      configPath = arg.slice('--config='.length);
+      continue;
+    }
+    if (arg === '--port') {
+      const next = argv[i + 1];
+      if (!next) throw new Error('--port requires a number');
+      port = Number.parseInt(next, 10);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--port=')) {
+      port = Number.parseInt(arg.slice('--port='.length), 10);
+      continue;
+    }
+    if (arg === '--host') {
+      const next = argv[i + 1];
+      if (!next) throw new Error('--host requires a value');
+      host = next;
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith('--host=')) {
+      host = arg.slice('--host='.length);
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      throw new Error(`Unknown flag: ${arg}`);
+    }
+    throw new Error(`Unexpected argument: ${arg}`);
+  }
+
+  if (port !== null && (!Number.isFinite(port) || port < 0)) {
+    throw new Error(
+      `--port must be a non-negative integer; got ${String(port)}`
+    );
+  }
+  return { help, version, configPath, port, host };
+}
+
+function printServerEntrypointHelp(): void {
+  // #1587: `dist/server/index.js` is a direct server entrypoint, not the CLI.
+  // It must never boot the hub or open any runtime store when `--help` is passed.
+  // Keep this help text dependency-free so it can run before config resolution.
+  // eslint-disable-next-line no-console
+  console.log(
+    [
+      'Relay hub server entrypoint',
+      '',
+      'Usage:',
+      '  node dist/server/index.js [--config <path>] [--port <n>] [--host <addr>]',
+      '',
+      'Options:',
+      '  --help, -h         Show this help and exit',
+      '  --config <path>    Path to config.json (pins config dir + all runtime SQLite beside it)',
+      '  --port <n>         Override listening port (same as RELAY_IDE_PORT)',
+      '  --host <addr>      Override listening host (same as RELAY_IDE_HOST)',
+      '',
+      'Notes:',
+      '  - If another live hub owns a config dir, this process will refuse to open its channel store. (#1587)',
+    ].join('\n')
+  );
+}
+
+function printServerEntrypointVersion(): void {
+  // eslint-disable-next-line no-console
+  console.log(getCurrentVersion());
+}
+
+let entryArgs: ServerEntrypointArgs;
+try {
+  entryArgs = parseServerEntrypointArgs(process.argv.slice(2));
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.error(err instanceof Error ? err.message : String(err));
+  // eslint-disable-next-line no-console
+  console.error('Run with --help for usage.');
+  process.exit(1);
+}
+if (entryArgs.help) {
+  printServerEntrypointHelp();
+  process.exit(0);
+}
+if (entryArgs.version) {
+  printServerEntrypointVersion();
+  process.exit(0);
+}
+
 // When run via the CLI bin or the dev runner, RELAY_IDE_CONFIG is set
 // explicitly. When run directly from source (e.g. `node dist/server/index.js`),
 // default the config — and therefore every runtime SQLite store beside it — to
@@ -549,7 +676,7 @@ const sourceLaunchConfig = resolveSourceLaunchConfigPath(
 // read or any runtime directory is created.
 if (process.env[E2E_FIXTURE_ENV_VAR] === '1') {
   const isolationViolation = findFixtureConfigIsolationViolation({
-    explicitConfigPath: process.env.RELAY_IDE_CONFIG,
+    explicitConfigPath: entryArgs.configPath ?? process.env.RELAY_IDE_CONFIG,
   });
   if (isolationViolation) {
     logger.error(isolationViolation);
@@ -557,8 +684,14 @@ if (process.env[E2E_FIXTURE_ENV_VAR] === '1') {
   }
 }
 const CONFIG_PATH =
-  process.env.RELAY_IDE_CONFIG || sourceLaunchConfig.configPath;
-if (!process.env.RELAY_IDE_CONFIG && sourceLaunchConfig.legacyConfigPath) {
+  entryArgs.configPath ??
+  process.env.RELAY_IDE_CONFIG ??
+  sourceLaunchConfig.configPath;
+if (
+  !entryArgs.configPath &&
+  !process.env.RELAY_IDE_CONFIG &&
+  sourceLaunchConfig.legacyConfigPath
+) {
   logger.warn(
     'Ignoring legacy repo-root config %s; runtime state now lives at %s. Move the old file there or set RELAY_IDE_CONFIG to keep using it (#961).',
     sourceLaunchConfig.legacyConfigPath,
@@ -1508,7 +1641,7 @@ async function main(): Promise<void> {
   // Ignore SIGHUP: keep server alive if controlling terminal disconnects.
   setupProcessSignalHandlers();
 
-  ensureMetaDir(CONFIG_PATH);
+  const configDir = getConfigDir(CONFIG_PATH);
 
   async function reconcilePortsForRepo(repoPath: string): Promise<void> {
     const allocator = getAllocatorOrNull();
@@ -1632,14 +1765,51 @@ async function main(): Promise<void> {
     startupConfig = loadConfig(CONFIG_PATH);
   } catch (_) {
     startupConfig = { ...DEFAULTS } as Config;
-    saveConfig(CONFIG_PATH, startupConfig);
+    // Save only after this process owns the config dir (lock acquired below).
   }
 
-  // CLI flag overrides
-  if (process.env.RELAY_IDE_PORT)
-    startupConfig.port = parseInt(process.env.RELAY_IDE_PORT, 10);
+  // Startup overrides (environment, then server-entrypoint flags).
+  if (process.env.RELAY_IDE_PORT) {
+    const parsed = parseInt(process.env.RELAY_IDE_PORT, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) startupConfig.port = parsed;
+  }
   if (process.env.RELAY_IDE_HOST)
     startupConfig.host = process.env.RELAY_IDE_HOST;
+  if (entryArgs.port !== null) startupConfig.port = entryArgs.port;
+  if (entryArgs.host !== null) startupConfig.host = entryArgs.host;
+
+  // #1587 liveness fallback: when hub.lock is absent (older deployed hub),
+  // probe /health on the configured port and refuse before opening persistence.
+  await assertConfigDirNotOwnedByAnotherLiveHubOrListeningHub(configDir, {
+    configPath: CONFIG_PATH,
+    fallbackPort: startupConfig.port,
+    timeoutMs: 500,
+  });
+
+  // #1587: claim ownership of the config dir before any SQLite store is opened.
+  acquireHubLockOrThrow(configDir, {
+    port: startupConfig.port,
+    host: startupConfig.host,
+  });
+  process.on('exit', () => {
+    releaseHubLockBestEffort(configDir);
+  });
+  updateHubLockBestEffort(configDir, {
+    port: startupConfig.port,
+    host: startupConfig.host,
+  });
+
+  ensureMetaDir(CONFIG_PATH);
+  // Write the default config only once we own the directory.
+  try {
+    // loadConfig already succeeded above in the common case; this is the "fresh boot"
+    // lane where no config existed on disk.
+    if (!fs.existsSync(CONFIG_PATH)) {
+      saveConfig(CONFIG_PATH, startupConfig);
+    }
+  } catch {
+    // keep going; a later config load will fall back to defaults and log
+  }
 
   // #1435: size the scoped actor registry from config before any route can
   // mint credentials (default 30 days for `relay-ide login` device tokens).
@@ -1647,7 +1817,6 @@ async function main(): Promise<void> {
 
   push.ensureVapidKeys(startupConfig, CONFIG_PATH, saveConfig);
 
-  const configDir = getConfigDir(CONFIG_PATH);
   initializeRuntimeDirectories(configDir);
   // Finalize all SQLite persistence before building long-lived services. A
   // failed store throws here by default, before a scheduler or listener can
@@ -1720,6 +1889,19 @@ async function main(): Promise<void> {
   );
   const channelMessageStore =
     persistenceState.get<ChannelMessageStore>('channel-messages');
+  // #1587: restart recovery must be explicit and owned by the hub process that
+  // holds the config-dir lock. Any other handle opening the DB must not cancel
+  // live runs (and must refuse entirely when another hub owns the directory).
+  if (channelMessageStore) {
+    try {
+      channelMessageStore.recoverAsyncRuns();
+    } catch (err) {
+      logger.warn(
+        'Channel async-run recovery failed:',
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
   const hubNodeRegistry = createAuditedHubNodeRegistry(
     configDir,
     securityAuditLog
@@ -6914,6 +7096,7 @@ async function main(): Promise<void> {
     channelAttachmentStore?.close();
     scopedActorCredentialStore?.close();
     closeInterventionLog();
+    releaseHubLockBestEffort(configDir);
     for (const s of localRelayNode.sessions.list()) {
       try {
         sessions.detachForRestart(s.id);
@@ -6980,6 +7163,10 @@ async function main(): Promise<void> {
     server.listen(startupConfig.port, startupConfig.host, () => {
       const addr = server.address() as import('node:net').AddressInfo;
       logger.info(`relay-ide listening on ${startupConfig.host}:${addr.port}`);
+      updateHubLockBestEffort(configDir, {
+        port: addr.port,
+        host: startupConfig.host,
+      });
       // #1467: publish the host-local CLI trust token once the real port is
       // known. Never log the token value — only its path/credential id.
       //
@@ -7060,6 +7247,8 @@ function nonNegativeIntegerEnv(name: string): number | undefined {
 
 main().catch((err) => {
   if (err instanceof PersistenceStartupError) {
+    logger.error(err.message);
+  } else if (err instanceof HubConfigDirLockedError) {
     logger.error(err.message);
   } else {
     logger.error('Unhandled fatal error:', err);

@@ -66,12 +66,25 @@ function runCli(
   stderr: string;
 }> {
   return new Promise((resolve) => {
+    const merged = { ...process.env, ...env } as Record<
+      string,
+      string | undefined
+    >;
+    // #1587: vitest harness pins XDG_CONFIG_HOME/RELAY_IDE_CONFIG for isolation.
+    // These CLI tests isolate via a temp HOME, so child CLI env must be pinned
+    // to that HOME's config root (and must not inherit RELAY_IDE_CONFIG).
+    if (env.HOME) {
+      if (!('XDG_CONFIG_HOME' in env)) {
+        merged.XDG_CONFIG_HOME = path.join(env.HOME, '.config');
+      }
+      if (!('RELAY_IDE_CONFIG' in env)) delete merged.RELAY_IDE_CONFIG;
+    }
     execFile(
       process.execPath,
       [RELAY_BIN, ...args],
       {
         encoding: 'utf8',
-        env: { ...process.env, ...env },
+        env: merged,
         timeout: 10_000,
       },
       (error, stdout, stderr) => {

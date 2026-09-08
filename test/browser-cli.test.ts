@@ -16,6 +16,23 @@ type CapturedGatewayRequest = {
   body?: Record<string, unknown>;
 };
 
+function buildChildEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const xdgDir = path.join(tmpDir, 'xdg');
+  const configPath = path.join(tmpDir, 'config', 'config.json');
+  fs.mkdirSync(xdgDir, { recursive: true });
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: process.env.PATH,
+    XDG_CONFIG_HOME: xdgDir,
+    RELAY_IDE_CONFIG: configPath,
+    ...overrides,
+  };
+  delete env.RELAY_IDE_ACTOR_TOKEN;
+  delete env.RELAY_IDE_OPERATOR_CLIENT_TOKEN;
+  return env;
+}
+
 async function listen(server: http.Server): Promise<number> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -35,11 +52,17 @@ async function execNode(
   args: string[],
   env: NodeJS.ProcessEnv
 ): Promise<string> {
+  const childEnv: NodeJS.ProcessEnv = {
+    ...env,
+    XDG_CONFIG_HOME: env.XDG_CONFIG_HOME ?? path.join(tmpDir, 'xdg'),
+    RELAY_IDE_CONFIG:
+      env.RELAY_IDE_CONFIG ?? path.join(tmpDir, 'config', 'config.json'),
+  };
   return await new Promise<string>((resolve, reject) => {
     execFile(
       'node',
       args,
-      { encoding: 'utf-8', env, timeout: 10_000 },
+      { encoding: 'utf-8', env: childEnv, timeout: 10_000 },
       (error, stdout) => {
         if (error) reject(error);
         else resolve(stdout);
@@ -56,11 +79,17 @@ async function execNodeFailure(
   stdout: string;
   stderr: string;
 }> {
+  const childEnv: NodeJS.ProcessEnv = {
+    ...env,
+    XDG_CONFIG_HOME: env.XDG_CONFIG_HOME ?? path.join(tmpDir, 'xdg'),
+    RELAY_IDE_CONFIG:
+      env.RELAY_IDE_CONFIG ?? path.join(tmpDir, 'config', 'config.json'),
+  };
   return await new Promise((resolve, reject) => {
     execFile(
       'node',
       args,
-      { encoding: 'utf-8', env, timeout: 10_000 },
+      { encoding: 'utf-8', env: childEnv, timeout: 10_000 },
       (error, stdout, stderr) => {
         if (!error) {
           reject(new Error(`expected command to fail: node ${args.join(' ')}`));
@@ -96,7 +125,10 @@ test('browser command with no args prints usage and exits 1', () => {
   try {
     execFileSync('node', ['dist/bin/relay-ide.js', 'browser'], {
       encoding: 'utf-8',
-      env: { ...process.env, PATH: process.env.PATH },
+      env: buildChildEnv({
+        XDG_CONFIG_HOME: path.join(tmpDir, 'xdg'),
+        RELAY_IDE_CONFIG: path.join(tmpDir, 'config', 'config.json'),
+      }),
     });
     throw new Error('Should have exited with code 1');
   } catch (err) {
@@ -113,7 +145,10 @@ test('browser --help shows usage and exits 0', () => {
       ['dist/bin/relay-ide.js', 'browser', '--help'],
       {
         encoding: 'utf-8',
-        env: { ...process.env, PATH: process.env.PATH },
+        env: buildChildEnv({
+          XDG_CONFIG_HOME: path.join(tmpDir, 'xdg'),
+          RELAY_IDE_CONFIG: path.join(tmpDir, 'config', 'config.json'),
+        }),
       }
     );
     expect(output.includes('Usage') || output.includes('browser')).toBe(true);
@@ -132,12 +167,12 @@ test('browser command fails gracefully when server is not running', () => {
       ['dist/bin/relay-ide.js', 'browser', path.join(tmpDir, 'test.html')],
       {
         encoding: 'utf-8',
-        env: {
-          ...process.env,
+        env: buildChildEnv({
           RELAY_IDE_PORT: '19999',
           RELAY_IDE_BROWSER_TOKEN: 'test-token',
-          PATH: process.env.PATH,
-        },
+          XDG_CONFIG_HOME: path.join(tmpDir, 'xdg'),
+          RELAY_IDE_CONFIG: path.join(tmpDir, 'config', 'config.json'),
+        }),
       }
     );
     throw new Error('Should have exited with error');
@@ -159,12 +194,12 @@ test('browser command fails when token not set', () => {
       ['dist/bin/relay-ide.js', 'browser', path.join(tmpDir, 'test.html')],
       {
         encoding: 'utf-8',
-        env: {
-          ...process.env,
+        env: buildChildEnv({
           RELAY_IDE_PORT: '19999',
           RELAY_IDE_BROWSER_TOKEN: '', // empty token
-          PATH: process.env.PATH,
-        },
+          XDG_CONFIG_HOME: path.join(tmpDir, 'xdg'),
+          RELAY_IDE_CONFIG: path.join(tmpDir, 'config', 'config.json'),
+        }),
       }
     );
     throw new Error('Should have exited with error');
@@ -214,12 +249,10 @@ test('v1 gateway commands use scoped bearer auth and the v1 marker header', asyn
   });
   const port = await listen(server);
   try {
-    const env = {
-      ...process.env,
+    const env = buildChildEnv({
       RELAY_IDE_PORT: String(port),
       RELAY_IDE_BROWSER_TOKEN: 'scoped-token',
-      PATH: process.env.PATH,
-    };
+    });
     await execNode(
       ['dist/bin/relay-ide.js', 'v1', 'sessions', 'list', '--json'],
       env
@@ -310,12 +343,10 @@ test('v1 workspace-topics search preserves array scope and update accepts body i
   });
   const port = await listen(server);
   try {
-    const env = {
-      ...process.env,
+    const env = buildChildEnv({
       RELAY_IDE_PORT: String(port),
       RELAY_IDE_BROWSER_TOKEN: 'scoped-token',
-      PATH: process.env.PATH,
-    };
+    });
     await execNode(
       [
         'dist/bin/relay-ide.js',
@@ -399,12 +430,10 @@ test('v1 files.read preserves its command envelope when session lookup fails', a
   });
   const port = await listen(server);
   try {
-    const env = {
-      ...process.env,
+    const env = buildChildEnv({
       RELAY_IDE_PORT: String(port),
       RELAY_IDE_BROWSER_TOKEN: 'scoped-token',
-      PATH: process.env.PATH,
-    };
+    });
     const failure = await execNodeFailure(
       [
         'dist/bin/relay-ide.js',
@@ -589,12 +618,10 @@ test('v1 gateway smoke lists node, creates/attaches, reads files, and detaches w
   });
   const port = await listen(server);
   try {
-    const env = {
-      ...process.env,
+    const env = buildChildEnv({
       RELAY_IDE_PORT: String(port),
       RELAY_IDE_BROWSER_TOKEN: 'scoped-token',
-      PATH: process.env.PATH,
-    };
+    });
     const nodes = parseEnvelope<{ nodes: unknown[] }>(
       await execNode(
         ['dist/bin/relay-ide.js', 'v1', 'nodes', 'list', '--json'],
@@ -812,12 +839,10 @@ test('v1 gateway smoke lists node, creates/attaches, reads files, and detaches w
 });
 
 test('v1 gateway sessions input rejects missing and mixed input sources before attach', async () => {
-  const env = {
-    ...process.env,
+  const env = buildChildEnv({
     RELAY_IDE_PORT: '19999',
     RELAY_IDE_BROWSER_TOKEN: 'scoped-token',
-    PATH: process.env.PATH,
-  };
+  });
 
   for (const args of [
     [
@@ -911,12 +936,10 @@ test('v1 gateway session stream and input use routed PTY websocket', async () =>
   });
   const port = await listen(server);
   try {
-    const env = {
-      ...process.env,
+    const env = buildChildEnv({
       RELAY_IDE_PORT: String(port),
       RELAY_IDE_BROWSER_TOKEN: 'scoped-token',
-      PATH: process.env.PATH,
-    };
+    });
     const streamStdout = await execNode(
       [
         'dist/bin/relay-ide.js',
@@ -1036,12 +1059,10 @@ test('v1 files.write argv parsing: --mode and --file produce correct request bod
   });
   const port = await listen(server);
   try {
-    const env = {
-      ...process.env,
+    const env = buildChildEnv({
       RELAY_IDE_PORT: String(port),
       RELAY_IDE_BROWSER_TOKEN: 'scoped-token',
-      PATH: process.env.PATH,
-    };
+    });
     const result = parseEnvelope<{ operation: string; bytesWritten: number }>(
       await execNode(
         [
@@ -1085,12 +1106,10 @@ test('v1 files.write size cap: oversized file exits non-zero before HTTP', async
   // 1 MB + 1 byte
   fs.writeFileSync(oversizedFile, Buffer.alloc(1024 * 1024 + 1, 0x61));
 
-  const env = {
-    ...process.env,
+  const env = buildChildEnv({
     RELAY_IDE_PORT: '19999',
     RELAY_IDE_BROWSER_TOKEN: 'scoped-token',
-    PATH: process.env.PATH,
-  };
+  });
 
   const failure = await execNodeFailure(
     [

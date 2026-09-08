@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import Database from 'better-sqlite3';
 
+import { assertConfigDirNotOwnedByAnotherLiveHub } from './hub-lock.js';
 import { createLogger } from './logger.js';
 import {
   AGENT_PROFILE_ID_PREFIX,
@@ -3767,9 +3768,6 @@ export function initChannelMessageStore(
   const store = createChannelMessageStore(
     path.join(configDir, 'channel-chat.db')
   );
-  // Only the hub owner observes a restart. Additional handles must not cancel
-  // work which is still live in the owner process.
-  store.recoverAsyncRuns();
   return store;
 }
 
@@ -3810,6 +3808,13 @@ export function createChannelMessageStore(
   dbPath: string,
   options: ChannelMessageStoreOptions = {}
 ): ChannelMessageStore {
+  if (path.basename(dbPath) === 'channel-chat.db') {
+    // #1587: prevent a stray checkout/dev/test process from opening the live
+    // hub's channel store and running restart recovery (which cancels runs and
+    // emits "Relay restarted" rows). Guard on the ownership lock the hub writes
+    // at `<configDir>/hub.lock` before any db open.
+    assertConfigDirNotOwnedByAnotherLiveHub(path.dirname(dbPath));
+  }
   const db = new Database(dbPath);
   try {
     db.pragma('journal_mode = WAL');

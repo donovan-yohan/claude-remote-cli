@@ -1,6 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import Database from 'better-sqlite3';
+
+import { assertConfigDirSafeForDbPath } from './open-config-dir-database.js';
 import {
   normalizeSecurityAuditEntry,
   verifySecurityAuditEntryHash,
@@ -253,6 +255,7 @@ export class SecurityAuditLog {
 }
 
 export function createSecurityAuditLog(dbPath: string): SecurityAuditLog {
+  assertConfigDirSafeForDbPath(dbPath);
   return new SecurityAuditLog(dbPath);
 }
 
@@ -262,6 +265,9 @@ export function verifySecurityAuditLog(
   if (!fs.existsSync(dbPath)) {
     return { ok: true, entriesVerified: 0, lastHash: null };
   }
+  // #1587: read-only verification must not require exclusive hub ownership —
+  // operators need to verify a live config dir's audit chain without stopping
+  // the hub. createSecurityAuditLog (write path) still asserts the guard.
   let db: Database.Database | undefined;
   try {
     db = new Database(dbPath, { readonly: true, fileMustExist: true });

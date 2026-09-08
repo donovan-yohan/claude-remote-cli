@@ -125,6 +125,50 @@ runtime DBs into a repo checkout by default** (#961):
 worktree gets its own isolated state and two same-named worktrees never collide.
 (`$XDG_CONFIG_HOME` replaces `~/.config` when set.)
 
+### Config precedence and hub ownership lock (#1587)
+
+Config location is resolved in this order:
+
+- `--config <path>`
+- `RELAY_IDE_CONFIG`
+- `$XDG_CONFIG_HOME/relay-ide/…` (absolute `XDG_CONFIG_HOME` only)
+- `~/.config/relay-ide/…`
+
+To prevent accidental cross-talk between a checkout-run instance and an already
+running deployed hub, the hub writes `<configDir>/hub.lock` at boot and removes
+it on clean shutdown. Any other process that would open the channel store
+(`channel-chat.db`) refuses while the owning PID is alive.
+
+During upgrades, a deployed hub may still be running a build that predates
+`hub.lock`. In that case, a from-checkout `node dist/server/index.js` (or even
+`--help`) still must not open the live store: when no valid `hub.lock` exists,
+Relay reads `<configDir>/config.json` for the port (default `3456`) and probes
+`http://127.0.0.1:<port>/health` with a 500 ms timeout; if a hub answers, the
+process refuses before opening any persistence.
+
+#### Ownership marker (not auth)
+
+`hub.lock` is **not** an authentication credential and there is no separate
+"boot token." It is only an ownership marker used to prevent accidental
+config-dir store opens.
+
+Separate startup credentials (for example a scoped browser/CLI bearer minted
+into the config dir) are unrelated: the lock exists so another process can
+refuse _before_ it opens any config-dir databases, not to grant access.
+
+#### SIGKILL and stale locks
+
+If the hub is terminated with `SIGKILL`/`kill -9`, shutdown handlers do not run,
+so `<configDir>/hub.lock` can be left behind. This is expected:
+
+- A subsequent boot treats a lock as authoritative only when the recorded PID
+  is alive **and** the hostname matches.
+- If the PID is dead, the lock is considered stale and the next boot replaces
+  it.
+
+If you ever see a refusal that names a PID you believe is stale, verify that
+PID is not a running Relay hub before deleting `hub.lock` manually.
+
 ### Inspect
 
 ```bash

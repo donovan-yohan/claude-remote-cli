@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import type {
@@ -167,7 +168,30 @@ export function saveConfig(configPath: string, config: Config): void {
 }
 
 export function getConfigDir(configPath: string): string {
-  return path.dirname(configPath);
+  const dir = path.dirname(configPath);
+  if (process.env['RELAY_IDE_TEST_GUARD'] === '1') {
+    const realHome = process.env['RELAY_IDE_TEST_REAL_HOME'] || os.homedir();
+    const roots: string[] = [path.join(realHome, '.config', 'relay-ide')];
+    const realXdg = process.env['RELAY_IDE_TEST_REAL_XDG_CONFIG_HOME']?.trim();
+    if (realXdg && path.isAbsolute(realXdg)) {
+      roots.push(path.join(realXdg, 'relay-ide'));
+    }
+    const resolved = path.resolve(dir);
+    const match = roots.find((root) => {
+      const rel = path.relative(path.resolve(root), resolved);
+      return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    });
+    if (match) {
+      throw new Error(
+        [
+          `RELAY_IDE_TEST_GUARD=1 refused to resolve configDir inside the host's shared Relay config root: ${resolved}`,
+          `shared root: ${match}`,
+          `Set RELAY_IDE_CONFIG and/or XDG_CONFIG_HOME to a run-scoped temp dir before importing server modules. (#1587)`,
+        ].join('\n')
+      );
+    }
+  }
+  return dir;
 }
 
 function metaDir(configPath: string): string {

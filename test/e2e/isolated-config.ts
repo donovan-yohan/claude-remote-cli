@@ -21,12 +21,12 @@ import path from 'node:path';
 
 import {
   CONFIG_PATH_ENV_VAR,
+  E2E_CONFIG_DIR_PREFIX,
   E2E_FIXTURE_ENV_VAR,
   findFixtureConfigIsolationViolation,
 } from '../../server/runtime-state-paths.js';
 
-/** Prefix for per-run config dirs, so stray ones are identifiable in tmp. */
-export const E2E_CONFIG_DIR_PREFIX = 'relay-ide-e2e-';
+export { E2E_CONFIG_DIR_PREFIX };
 
 /** Age past which an abandoned run's config dir is swept on the next mint. */
 export const STALE_E2E_CONFIG_DIR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -156,7 +156,10 @@ export function resolveE2eConfig(
 ): E2eConfigResolution {
   const inherited = env[CONFIG_PATH_ENV_VAR]?.trim();
   if (!inherited) {
-    return { configPath: createIsolatedE2eConfigPath(env, tmpRoot), minted: true };
+    return {
+      configPath: createIsolatedE2eConfigPath(env, tmpRoot),
+      minted: true,
+    };
   }
   const configPath = path.resolve(inherited);
   assertIsolated(configPath, env);

@@ -19,6 +19,10 @@ const __dirname = path.dirname(__filename);
 
 const SERVICE_LABEL = 'com.relay-ide';
 const HOME = process.env.HOME || process.env.USERPROFILE || '~';
+// Intentionally hardcoded: the installed service owns the stable production
+// config dir under ~/.config/relay-ide regardless of XDG overrides, so a
+// from-source or fixture run with XDG set cannot collide with it accidentally.
+// Hub/CLI entrypoints that honor XDG must treat this root as shared/off-limits.
 const CONFIG_DIR = path.join(HOME, '.config', 'relay-ide');
 const SYSTEMD_UNIT_NAME = 'relay-ide.service';
 const SERVICE_PROBE_TIMEOUT_MS = 2_000;
