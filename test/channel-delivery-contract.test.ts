@@ -299,6 +299,7 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
         baseline: {
           headSha: 'd'.repeat(40),
           upstreamRef,
+          upstreamRefSource: 'upstream',
           upstreamSha: baselineUpstream,
           prNumber: null,
           prHeadSha: null,
@@ -340,6 +341,7 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
         baseline: {
           headSha: 'd'.repeat(40),
           upstreamRef,
+          upstreamRefSource: 'upstream',
           upstreamSha: baselineUpstream,
           prNumber: null,
           prHeadSha: null,
@@ -378,6 +380,7 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
         baseline: {
           headSha: 'd'.repeat(40),
           upstreamRef: 'origin/HEAD',
+          upstreamRefSource: 'upstream',
           upstreamSha: baselineUpstream,
           prNumber: null,
           prHeadSha: null,

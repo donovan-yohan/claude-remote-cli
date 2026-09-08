@@ -205,6 +205,9 @@ export async function evaluateDeliveryContract(
         reason: 'baseline captured in a different cwd',
       };
     }
+    if (baseline.upstreamRefSource === undefined) {
+      return { kind: 'unknown', reason: 'upstream ref source unavailable' };
+    }
     if (baseline.upstreamRefSource === 'originHead') {
       return {
         kind: 'unknown',
@@ -212,10 +215,7 @@ export async function evaluateDeliveryContract(
           'push delta unavailable when upstream ref came from origin/HEAD fallback',
       };
     }
-    if (
-      baseline.upstreamRefSource !== undefined &&
-      baseline.upstreamRefSource !== 'upstream'
-    ) {
+    if (baseline.upstreamRefSource !== 'upstream') {
       return { kind: 'unknown', reason: 'upstream ref source unavailable' };
     }
     if (!baseline.upstreamRef) {
