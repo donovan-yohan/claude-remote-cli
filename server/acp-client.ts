@@ -92,6 +92,8 @@ export class AcpClient extends EventEmitter {
   private detachDrainListener: (() => void) | null = null;
   private readonly stderrTail: string[] = [];
   private startTicks: number | undefined;
+  /** A Linux detached child owns a process group only when it is its leader. */
+  private detachedGroupLeader = false;
 
   constructor(private readonly options: AcpClientOptions) {
     super();
@@ -152,8 +154,15 @@ export class AcpClient extends EventEmitter {
       ...(process.platform === 'linux' ? { detached: true } : {}),
     });
     this.child = child;
+    this.startTicks = undefined;
+    this.detachedGroupLeader = false;
     if (child.pid) {
-      this.startTicks = readProcStat(child.pid)?.startTicks;
+      const stat = readProcStat(child.pid);
+      this.startTicks = stat?.startTicks;
+      // Detached spawn normally creates a new group, but do not signal -pid
+      // unless /proc confirms this child is still that group's leader.
+      this.detachedGroupLeader =
+        process.platform === 'linux' && stat?.pgid === child.pid;
     }
     this.framer.reset();
     this.stderrTail.length = 0;
@@ -336,9 +345,10 @@ export class AcpClient extends EventEmitter {
       }
       if (await waitForClose(timeoutMs)) return;
       try {
-        if (child.pid) {
-          signalProcessGroup(child.pid, 'SIGTERM', this.startTicks);
-        } else {
+        const groupSignalState = this.groupSignalState(child);
+        if (groupSignalState === 'group') {
+          signalProcessGroup(child.pid!, 'SIGTERM', this.startTicks);
+        } else if (groupSignalState === 'fallback') {
           child.kill('SIGTERM');
         }
       } catch {
@@ -346,9 +356,9 @@ export class AcpClient extends EventEmitter {
       }
       if (await waitForClose(timeoutMs)) return;
       try {
-        if (child.pid) {
-          signalProcessGroup(child.pid, 'SIGKILL', this.startTicks);
-        } else {
+        if (this.groupSignalState(child) === 'group') {
+          signalProcessGroup(child.pid!, 'SIGKILL', this.startTicks);
+        } else if (!this.detachedGroupLeader) {
           child.kill('SIGKILL');
         }
       } catch {
@@ -358,6 +368,21 @@ export class AcpClient extends EventEmitter {
     } finally {
       child.removeListener('close', onClose);
     }
+  }
+
+  /**
+   * A PID can be recycled after spawn. Once the initial /proc identity no
+   * longer matches, skip that rung entirely: falling back to child.kill would
+   * risk signaling the unrelated replacement process.
+   */
+  private groupSignalState(
+    child: ChildProcess
+  ): 'group' | 'fallback' | 'unsafe' {
+    if (!child.pid || !this.detachedGroupLeader) return 'fallback';
+    const stat = readProcStat(child.pid);
+    return stat?.pgid === child.pid && stat.startTicks === this.startTicks
+      ? 'group'
+      : 'unsafe';
   }
 
   private consume(chunk: Buffer | string): void {

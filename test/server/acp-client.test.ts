@@ -4,8 +4,26 @@
  * Everything runs against a fake subprocess (`makeHarness`) — no real install,
  * no network. The wire shapes asserted here are transcribed from real ACP captures.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ChildProcess } from 'node:child_process';
+
+const mockFs = vi.hoisted(() => ({
+  procStat: undefined as string | undefined,
+}));
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    readFileSync: (...args: Parameters<typeof actual.readFileSync>) => {
+      if (String(args[0]) === '/proc/4242/stat' && mockFs.procStat) {
+        return mockFs.procStat;
+      }
+      return actual.readFileSync(...args);
+    },
+  };
+});
+
 import { AcpClient } from '../../server/acp-client.js';
 import { makeHarness } from './protocol-adapters/support/claude-child-double.js';
 
@@ -59,6 +77,13 @@ const INITIALIZE_RESULT = {
   authMethods: [],
 };
 
+function procStat(pgid: number, startTicks: number, command = 'proc'): string {
+  return `4242 (${command}) S 1 ${pgid} ${Array.from(
+    { length: 16 },
+    () => '0'
+  ).join(' ')} ${startTicks}`;
+}
+
 async function completeStart(
   harness: Harness,
   client: AcpClient
@@ -74,6 +99,10 @@ async function completeStart(
 }
 
 describe('AcpClient', () => {
+  beforeEach(() => {
+    mockFs.procStat = undefined;
+  });
+
   it('start spawns the ACP server and resolves on the correlated initialize', async () => {
     const harness = makeHarness();
     const client = makeClient(harness, { command: 'agent', args: ['acp'] });
@@ -312,9 +341,49 @@ describe('AcpClient', () => {
     await client.stop();
   });
 
+  it('signals a validated detached process group with SIGTERM then SIGKILL', async () => {
+    if (process.platform !== 'linux') return;
+    const harness = makeHarness();
+    harness.setNextChildOptions({ closeOnStdinEnd: false });
+    mockFs.procStat = procStat(4242, 1234, 'proc-leader');
+    const kill = vi.spyOn(process, 'kill').mockReturnValue(true);
+    const client = makeClient(harness, { stopTimeoutMs: 10 });
+    await completeStart(harness, client);
+    const child = harness.latest().child;
+    try {
+      await client.stop();
+      expect(kill.mock.calls).toEqual([
+        [-4242, 'SIGTERM'],
+        [-4242, 'SIGKILL'],
+      ]);
+      expect(child.kill).not.toHaveBeenCalled();
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it('does not fall back to the child PID when a group leader PID was reused', async () => {
+    if (process.platform !== 'linux') return;
+    const harness = makeHarness();
+    harness.setNextChildOptions({ closeOnStdinEnd: false });
+    mockFs.procStat = procStat(4242, 1234, 'proc-leader');
+    const kill = vi.spyOn(process, 'kill').mockReturnValue(true);
+    const client = makeClient(harness, { stopTimeoutMs: 10 });
+    await completeStart(harness, client);
+    mockFs.procStat = procStat(4242, 9999, 'reused-pid');
+    try {
+      await client.stop();
+      expect(kill).not.toHaveBeenCalled();
+      expect(harness.latest().child.kill).not.toHaveBeenCalled();
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
   it('stop ends stdin, then SIGTERM, then SIGKILL', async () => {
     const harness = makeHarness();
     harness.setNextChildOptions({ closeOnStdinEnd: false });
+    mockFs.procStat = procStat(7, 1234, 'not-group-leader');
     const client = makeClient(harness, { stopTimeoutMs: 10 });
     await completeStart(harness, client);
     const child = harness.latest().child;
@@ -347,6 +416,7 @@ describe('AcpClient', () => {
   it('stops the child and rethrows when the readiness barrier fails', async () => {
     const harness = makeHarness();
     harness.setNextChildOptions({ closeOnStdinEnd: false });
+    mockFs.procStat = procStat(7, 1234, 'not-group-leader');
     const client = makeClient(harness, { readinessTimeoutMs: 20 });
     await expect(client.start(INITIALIZE)).rejects.toThrow(
       'ACP initialize timed out after 20ms'

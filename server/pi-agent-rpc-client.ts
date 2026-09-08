@@ -43,6 +43,8 @@ export class PiAgentRpcClient extends EventEmitter {
   private detachChildListeners: (() => void) | null = null;
   private detachDrainListener: (() => void) | null = null;
   private startTicks: number | undefined;
+  /** A Linux detached child owns a process group only when it is its leader. */
+  private detachedGroupLeader = false;
 
   constructor(private readonly options: PiAgentRpcClientOptions = {}) {
     super();
@@ -100,8 +102,13 @@ export class PiAgentRpcClient extends EventEmitter {
       }
     );
     this.child = child;
+    this.startTicks = undefined;
+    this.detachedGroupLeader = false;
     if (child.pid) {
-      this.startTicks = readProcStat(child.pid)?.startTicks;
+      const stat = readProcStat(child.pid);
+      this.startTicks = stat?.startTicks;
+      this.detachedGroupLeader =
+        process.platform === 'linux' && stat?.pgid === child.pid;
     }
     this.framer.reset();
     const onStdoutData = (chunk: Buffer | string) => this.consume(chunk);
@@ -232,7 +239,7 @@ export class PiAgentRpcClient extends EventEmitter {
 
     try {
       try {
-        if (child.pid) {
+        if (child.pid && this.detachedGroupLeader) {
           signalProcessGroup(child.pid, 'SIGTERM', this.startTicks);
         } else {
           child.kill('SIGTERM');
@@ -242,7 +249,7 @@ export class PiAgentRpcClient extends EventEmitter {
       }
       if (await waitForClose(timeoutMs)) return;
       try {
-        if (child.pid) {
+        if (child.pid && this.detachedGroupLeader) {
           signalProcessGroup(child.pid, 'SIGKILL', this.startTicks);
         } else {
           child.kill('SIGKILL');
