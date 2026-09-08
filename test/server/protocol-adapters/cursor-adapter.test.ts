@@ -1271,7 +1271,7 @@ describe('CursorProtocolAdapter', () => {
       rawInput: { command: 'sleep 100' },
     });
 
-    // Settle with tool timeout stopReason
+    // Settle with tool timeout stopReason (accepted shape for Cursor / dsh ACP tool timeouts)
     h.settlePrompt('tool_timeout: 30');
     await send;
 

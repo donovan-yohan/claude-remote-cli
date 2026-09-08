@@ -7,6 +7,7 @@ import type { AdapterConfig } from '../../../server/protocol-adapter-v2.js';
 import {
   AcpProtocolAdapter,
   ACP_PROTOCOL_VERSION,
+  stopReasonMessage,
   type AcpHarnessProfile,
 } from '../../../server/protocol-adapters/acp-adapter.js';
 
@@ -624,5 +625,54 @@ describe('AcpProtocolAdapter (base)', () => {
 
     await h.adapter.disconnect();
     expect(h.adapter.ownedProcessRootPids()).toEqual([]);
+  });
+
+  describe('stopReasonMessage', () => {
+    it('formats turn timeout when no tool is open', () => {
+      expect(stopReasonMessage('cursor', 'timeout: 30', false)).toBe(
+        'turn timed out after 30 s'
+      );
+      expect(stopReasonMessage('cursor', 'timed out after 45 s', false)).toBe(
+        'turn timed out after 45 s'
+      );
+      expect(stopReasonMessage('cursor', 'timeout', false)).toBe(
+        'turn timed out'
+      );
+    });
+
+    it('formats tool timeout when a tool is open or tool is in stopReason', () => {
+      expect(stopReasonMessage('cursor', 'timeout: 30', true)).toBe(
+        'tool call timed out after 30 s'
+      );
+      expect(stopReasonMessage('cursor', 'tool_timeout: 30', false)).toBe(
+        'tool call timed out after 30 s'
+      );
+      expect(stopReasonMessage('cursor', 'tool_timeout', false)).toBe(
+        'tool call timed out'
+      );
+    });
+
+    it('does not match unanchored phrases as timeouts', () => {
+      expect(
+        stopReasonMessage(
+          'cursor',
+          'some custom reason with timed out in middle'
+        )
+      ).toBe(
+        'cursor ended the turn: some custom reason with timed out in middle'
+      );
+    });
+
+    it('formats standard turn termination stop reasons', () => {
+      expect(stopReasonMessage('cursor', 'max_tokens')).toBe(
+        'cursor hit its output-token limit'
+      );
+      expect(stopReasonMessage('cursor', 'max_turn_requests')).toBe(
+        'cursor hit its per-turn request limit'
+      );
+      expect(stopReasonMessage('cursor', 'refusal')).toBe(
+        'cursor refused this request'
+      );
+    });
   });
 });

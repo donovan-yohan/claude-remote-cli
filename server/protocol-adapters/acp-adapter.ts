@@ -689,7 +689,14 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
     } else if (stopReason === 'end_turn') {
       this.completeTurn('completed');
     } else {
-      const message = stopReasonMessage(this.agentType, stopReason);
+      const hasOpenTool = Array.from(this.items.values()).some(
+        (item) => item.status === 'running'
+      );
+      const message = stopReasonMessage(
+        this.agentType,
+        stopReason,
+        hasOpenTool
+      );
       this.emitError(message);
       this.completeTurn('failed', message);
     }
@@ -1663,7 +1670,8 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
 
 export function stopReasonMessage(
   agentType: string,
-  stopReason: string
+  stopReason: string,
+  hasOpenTool = false
 ): string {
   if (stopReason === 'max_tokens')
     return `${agentType} hit its output-token limit`;
@@ -1672,13 +1680,19 @@ export function stopReasonMessage(
   if (stopReason === 'refusal') return `${agentType} refused this request`;
   const timeoutMatch =
     /^(?:tool_?)?timeout(?::?\s*(\d+)\s*s?)?$/i.exec(stopReason) ||
-    /tool.*timeout.*?(\d+)\s*s?/i.exec(stopReason) ||
-    /timed?\s*out.*?(?:after\s*)?(\d+)\s*s?/i.exec(stopReason);
+    /^(?:tool(?:_call)?\s+)?timed?\s*out(?:\s+after\s+(\d+)\s*s?)?$/i.exec(
+      stopReason
+    ) ||
+    /^(?:turn\s+)?timed?\s*out(?:\s+after\s+(\d+)\s*s?)?$/i.exec(stopReason);
   if (timeoutMatch) {
     const seconds = timeoutMatch[1];
-    return seconds
-      ? `tool call timed out after ${seconds} s`
-      : 'tool call timed out';
+    const isTool = /^tool/i.test(stopReason) || hasOpenTool;
+    if (isTool) {
+      return seconds
+        ? `tool call timed out after ${seconds} s`
+        : 'tool call timed out';
+    }
+    return seconds ? `turn timed out after ${seconds} s` : 'turn timed out';
   }
   return `${agentType} ended the turn: ${stopReason}`;
 }
