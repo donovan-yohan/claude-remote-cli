@@ -117,6 +117,8 @@ export interface ChannelAgentRuntimeResourceSummary {
 }
 
 export interface LiveChildCheckOptions {
+  /** Timestamp in epoch ms when the current turn started. */
+  turnStartedAt?: number;
   /** Timestamp in epoch ms of last recorded turn activity. */
   lastActivityAt?: number;
   /** Clock tick Hz for converting startTicks to seconds (defaults to 100). */
@@ -855,6 +857,7 @@ export class ChannelAgentRuntimeManager {
 
     const now = options.nowMs ?? Date.now();
     const activeProcesses: ProcessInfo[] = [];
+    const turnStart = options.turnStartedAt ?? options.lastActivityAt;
 
     for (const pid of candidatePids) {
       const proc = table.find((p) => p.pid === pid);
@@ -866,22 +869,23 @@ export class ChannelAgentRuntimeManager {
         this.currentCpuTicksByPid.get(proc.pid) ?? proc.cpuTicks ?? 0;
       const prevCpu = this.lastCpuTicksByPid.get(proc.pid);
       const hasCpuDelta = prevCpu !== undefined && currentCpu > prevCpu;
+      const isStateActive = proc.state === 'R' || proc.state === 'D';
       const isPersistentHelper = isPersistentHelperProcess(proc);
 
       if (isPersistentHelper) {
         // Persistent helpers (tsserver, code-mode-host, chrome, daemon-catalog-entry, etc.)
-        // only count as evidence of work if they are actively consuming CPU.
-        if (hasCpuDelta) activeProcesses.push(proc);
+        // only count as evidence of work if they are actively running or consuming CPU.
+        if (hasCpuDelta || isStateActive) activeProcesses.push(proc);
         continue;
       }
 
       // Non-helper child processes:
-      if (hasCpuDelta) {
+      if (hasCpuDelta || isStateActive) {
         activeProcesses.push(proc);
         continue;
       }
 
-      if (options.lastActivityAt !== undefined) {
+      if (turnStart !== undefined) {
         let procStartMs: number | undefined;
         if (proc.ageMs !== undefined) {
           procStartMs = now - proc.ageMs;
@@ -897,10 +901,7 @@ export class ChannelAgentRuntimeManager {
           );
           procStartMs = now - ageMs;
         }
-        if (
-          procStartMs !== undefined &&
-          procStartMs >= options.lastActivityAt - 1000
-        ) {
+        if (procStartMs !== undefined && procStartMs >= turnStart - 1000) {
           activeProcesses.push(proc);
           continue;
         }

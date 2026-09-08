@@ -1522,6 +1522,94 @@ describe('ChannelAgentRuntimeManager', () => {
     ).toEqual([90_005]);
   });
 
+  it('recognizes sleeping child process started before lastActivityAt but after turnStartedAt (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let currentTable: ProcessInfo[] = [];
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => currentTable,
+    });
+    const r1 = await manager.create({
+      id: 'r1',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:1',
+      cwd: '/tmp',
+      displayName: 'Codex',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [90_001];
+
+    // Root process + a sleeping child (state 'S') spawned early in the turn
+    // (turnStartedAt: 1_000_000, child started at 1_005_000, lastActivityAt: 1_010_000, nowMs: 1_070_000)
+    currentTable = [
+      {
+        pid: 90_001,
+        ppid: 1,
+        pgid: 90_001,
+        command: 'codex-app-server',
+        commandLine: 'codex-app-server',
+        rssBytes: 100,
+      },
+      {
+        pid: 90_002,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'sleep',
+        commandLine: 'sleep 150',
+        state: 'S',
+        rssBytes: 10,
+        cpuTicks: 1,
+        ageMs: 65_000, // nowMs(1_070_000) - 65_000 = 1_005_000 (after turnStartedAt 1_000_000, before lastActivityAt 1_010_000)
+      },
+    ];
+
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        turnStartedAt: 1_000_000,
+        lastActivityAt: 1_010_000,
+        nowMs: 1_070_000,
+      })
+    ).toBe(true);
+    expect(
+      manager.liveChildPids(r1.id, {
+        turnStartedAt: 1_000_000,
+        lastActivityAt: 1_010_000,
+        nowMs: 1_070_000,
+      })
+    ).toEqual([90_002]);
+
+    // Also test process in state 'R' (Running) or 'D' (Uninterruptible sleep) counts as active even without turnStartedAt
+    currentTable = [
+      {
+        pid: 90_001,
+        ppid: 1,
+        pgid: 90_001,
+        command: 'codex-app-server',
+        commandLine: 'codex-app-server',
+        rssBytes: 100,
+      },
+      {
+        pid: 90_003,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'git',
+        commandLine: 'git push',
+        state: 'D',
+        rssBytes: 10,
+        cpuTicks: 1,
+        ageMs: 120_000, // older than turn
+      },
+    ];
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        turnStartedAt: 1_000_000,
+        lastActivityAt: 1_010_000,
+        nowMs: 1_070_000,
+      })
+    ).toBe(true);
+  });
+
   it('detects reparented grandchild processes with ppid 1 and pgid root (#1561)', async () => {
     const { ChannelAgentRuntimeManager } = await runtimeModule();
     const table: ProcessInfo[] = [

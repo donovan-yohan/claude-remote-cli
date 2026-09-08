@@ -2064,6 +2064,7 @@ export function createChannelAgentBinder(
       const liveChildren =
         binding.runtimeId && deps.runtimes.liveChildProcesses
           ? deps.runtimes.liveChildProcesses(binding.runtimeId, {
+              turnStartedAt: binding.turnStartedAt,
               lastActivityAt: binding.lastActivityAt,
             })
           : [];
@@ -2072,6 +2073,7 @@ export function createChannelAgentBinder(
         (binding.runtimeId && !deps.runtimes.liveChildProcesses
           ? Boolean(
               deps.runtimes.hasLiveChildProcesses?.(binding.runtimeId, {
+                turnStartedAt: binding.turnStartedAt,
                 lastActivityAt: binding.lastActivityAt,
               })
             )
