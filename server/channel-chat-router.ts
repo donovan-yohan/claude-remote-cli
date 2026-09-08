@@ -2259,7 +2259,10 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         serverRestartCancelledAt = null;
       }
 
-      if (!runTerminalState(latest.state)) {
+      if (
+        !runTerminalState(latest.state) ||
+        latest.deliveryContract?.contractPending === true
+      ) {
         await waitForLifecycle(runId, deadline - Date.now());
         continue;
       }
