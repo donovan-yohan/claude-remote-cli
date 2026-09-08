@@ -422,8 +422,8 @@ are removed with their channels during orphan cleanup.
 If a run reaches a terminal state with `deliveryContract.contractPending: true`
 (for example, the server restarts mid-evaluation), restart recovery clears the
 pending flag by finalizing an `unknown` contract result with
-`reason: "server-restarted"`, so consumers never spin on a pending contract
-indefinitely after a restart.
+`reason: "server-restarted"` and stamps `abandonedAt`, so consumers never spin
+on a pending contract indefinitely after a restart.
 
 ### Read state and unread
 

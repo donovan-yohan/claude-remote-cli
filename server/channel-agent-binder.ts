@@ -13,6 +13,10 @@ import {
   type DeliveryContractProbeOutcome,
 } from './channel-delivery-contract-evaluator.js';
 import {
+  deliveryContractUnmetIntent,
+  formatDeliveryContractUnmetIntents,
+} from '../shared/channel-delivery-contract.js';
+import {
   buildMentionContextPacketEnvelope,
   PACKET_MAX_ROWS,
   resolveMentionContextPacket,
@@ -3454,7 +3458,7 @@ export function createChannelAgentBinder(
 
     const upstreamRefPromise = (async (): Promise<{
       ref: string | null;
-      source: 'upstream' | 'originHead' | null;
+      source: 'upstream' | 'originHead' | 'tracking-other-branch' | null;
     }> => {
       if (git?.upstreamRefInfo) {
         const outcome = await git.upstreamRefInfo();
@@ -3467,7 +3471,7 @@ export function createChannelAgentBinder(
         const outcome = await git.upstreamRef();
         if (outcome.kind !== 'ok') return { ref: null, source: null };
         const ref = String(outcome.value ?? '').trim();
-        return { ref: ref ? ref : null, source: null };
+        return { ref: ref ? ref : null, source: 'upstream' };
       }
       // Fallback: best-effort ref discovery.
       try {
@@ -3555,7 +3559,52 @@ export function createChannelAgentBinder(
       branchPromise,
     ]);
     const upstreamRefValue = upstreamRef.ref;
-    const upstreamRefSource = upstreamRef.source;
+    let upstreamRefSource = upstreamRef.source;
+    let effectiveUpstreamSha = upstreamSha;
+    const remote = upstreamRefValue
+      ? upstreamRefValue.split('/')[0] || 'origin'
+      : 'origin';
+
+    if (
+      branch &&
+      upstreamRefValue &&
+      (upstreamRefSource === 'upstream' || upstreamRefSource === null)
+    ) {
+      const expectedOrigin = `${remote}/${branch}`;
+      const isSameBranch =
+        upstreamRefValue === expectedOrigin || upstreamRefValue === branch;
+      if (!isSameBranch) {
+        upstreamRefSource = 'tracking-other-branch';
+      } else if (upstreamRefSource === null) {
+        upstreamRefSource = 'upstream';
+      }
+    }
+
+    if (upstreamRefSource === 'tracking-other-branch') {
+      if (branch) {
+        if (git?.lsRemoteBranchSha) {
+          const outcome = await git.lsRemoteBranchSha(remote, branch);
+          effectiveUpstreamSha =
+            outcome.kind === 'ok' && outcome.value ? outcome.value : null;
+        } else {
+          try {
+            const { stdout } = await execFileAsync(
+              'git',
+              ['ls-remote', remote, `refs/heads/${branch}`],
+              { cwd, timeout }
+            );
+            const line = stdout.trim().split('\n')[0]?.trim();
+            const sha = line ? line.split(/\s+/)[0]?.trim() : null;
+            effectiveUpstreamSha = sha || null;
+          } catch {
+            effectiveUpstreamSha = null;
+          }
+        }
+      } else {
+        effectiveUpstreamSha = null;
+      }
+    }
+
     if (!headSha) return null;
 
     let prNumber: number | null = null;
@@ -3587,7 +3636,7 @@ export function createChannelAgentBinder(
       headSha,
       upstreamRef: upstreamRefValue,
       upstreamRefSource,
-      upstreamSha,
+      upstreamSha: effectiveUpstreamSha,
       prNumber,
       prHeadSha,
       cwd,
@@ -4902,9 +4951,13 @@ export function createChannelAgentBinder(
       upstreamRefInfo: () => Promise<
         DeliveryContractProbeOutcome<{
           ref: string | null;
-          source: 'upstream' | 'originHead' | null;
+          source: 'upstream' | 'originHead' | 'tracking-other-branch' | null;
         }>
       >;
+      lsRemoteBranchSha?: (
+        remote: string,
+        branch: string
+      ) => Promise<DeliveryContractProbeOutcome<string | null>>;
       upstreamSha: () => Promise<DeliveryContractProbeOutcome<string | null>>;
       commitsBetween: (
         base: string,
@@ -5039,10 +5092,30 @@ export function createChannelAgentBinder(
       upstreamRefInfo: async (): Promise<
         DeliveryContractProbeOutcome<{
           ref: string | null;
-          source: 'upstream' | 'originHead' | null;
+          source: 'upstream' | 'originHead' | 'tracking-other-branch' | null;
         }>
       > => {
         return resolveDefaultBaseInfo();
+      },
+      lsRemoteBranchSha: async (
+        remote: string,
+        branch: string
+      ): Promise<DeliveryContractProbeOutcome<string | null>> => {
+        try {
+          const { stdout } = await execFileAsync(
+            'git',
+            ['ls-remote', remote, `refs/heads/${branch}`],
+            { cwd, timeout: 5000 }
+          );
+          const line = stdout.trim().split('\n')[0]?.trim();
+          if (!line) return { kind: 'ok', value: null };
+          const sha = line.split(/\s+/)[0]?.trim();
+          return { kind: 'ok', value: sha ? sha : null };
+        } catch (err) {
+          const reason = notGitRepoReason(err);
+          if (reason) return { kind: 'unknown', reason };
+          return { kind: 'unknown', reason: 'git ls-remote probe failed' };
+        }
       },
       upstreamRef: async (): Promise<
         DeliveryContractProbeOutcome<string | null>
@@ -5228,12 +5301,11 @@ export function createChannelAgentBinder(
     }
 
     const depth = contract?.followupDepth ?? 0;
+    const unmetIntents = formatDeliveryContractUnmetIntents(evaluation.unmet);
     if (depth >= deliveryContractMaxFollowups) {
       postSystemRow(
         binding.channelId,
-        `Contract still unmet after ${deliveryContractMaxFollowups} follow-ups: ${evaluation.unmet.join(
-          ', '
-        )}`,
+        `Contract still unmet after ${deliveryContractMaxFollowups} follow-ups: ${unmetIntents}`,
         { parentMessageId }
       );
       const abandoned = store.finalizeAsyncRunDeliveryContract({
@@ -5312,8 +5384,8 @@ export function createChannelAgentBinder(
         if (newRows !== null) parts.push(`new_rows=${newRows}`);
         if (parts.length === 0) return '';
         return parentRunId
-          ? ` Since last follow-up: ${parts.join(', ')}.`
-          : ` At follow-up: ${parts.join(', ')}.`;
+          ? `Since last follow-up: ${parts.join(', ')}.`
+          : `At follow-up: ${parts.join(', ')}.`;
       } catch {
         return '';
       }
@@ -5330,9 +5402,10 @@ export function createChannelAgentBinder(
     delete (nextContract as { result?: unknown }).result;
     delete (nextContract as { followupPostedAt?: unknown }).followupPostedAt;
 
-    const followupText = `Turn ended with contract unmet: ${evaluation.unmet.join(
-      ', '
-    )}.${sinceText} @${binding.displayName} finish it.`;
+    const requestMsg = store.getMessage(run.requestMessageId);
+    const requestSeq = requestMsg?.seq ?? 0;
+    const sinceSegment = sinceText ? ` ${sinceText}` : '';
+    const followupText = `The brief at seq ${requestSeq} is not delivered: ${unmetIntents}.${sinceSegment} @${binding.displayName} continue from where you stopped.`;
     const childRunId = postDeliveryContractFollowupTrigger({
       channelId: binding.channelId,
       text: followupText,
@@ -5344,9 +5417,7 @@ export function createChannelAgentBinder(
     if (!childRunId) {
       postSystemRow(
         binding.channelId,
-        `Delivery contract follow-up could not be posted; abandoning: ${evaluation.unmet.join(
-          ', '
-        )}`,
+        `Delivery contract follow-up could not be posted; abandoning: ${unmetIntents}`,
         { parentMessageId }
       );
       const updated = store.finalizeAsyncRunDeliveryContract({
@@ -5459,6 +5530,15 @@ export function createChannelAgentBinder(
               commitsBetween: memo2(
                 (base, head) => input.git.commitsBetween!(base, head),
                 (base, head) => `${base}\u0000${head}`
+              ),
+            }
+          : {}),
+        ...(input.git.lsRemoteBranchSha
+          ? {
+              lsRemoteBranchSha: memo2(
+                (remote, branch) =>
+                  input.git.lsRemoteBranchSha!(remote, branch),
+                (remote, branch) => `${remote}\u0000${branch}`
               ),
             }
           : {}),
@@ -5686,7 +5766,7 @@ export function createChannelAgentBinder(
         postSystemRow(
           binding.channelId,
           `Delivery contract could not verify: ${evaluation.unknown
-            .map((u) => `${u.spec}: ${u.reason}`)
+            .map((u) => `${deliveryContractUnmetIntent(u.spec)}: ${u.reason}`)
             .join(', ')}`,
           { parentMessageId }
         );
@@ -5697,7 +5777,7 @@ export function createChannelAgentBinder(
 
       postSystemRow(
         binding.channelId,
-        `Delivery contract unmet: ${evaluation.unmet.join(', ')}`,
+        `Delivery contract unmet: ${formatDeliveryContractUnmetIntents(evaluation.unmet)}`,
         { parentMessageId }
       );
 
@@ -5710,7 +5790,7 @@ export function createChannelAgentBinder(
           channelId: binding.channelId,
           runId: run.id,
           targetProfileId: binding.profileActorId,
-          unmet: evaluation.unmet,
+          unmet: evaluation.unmet.map(deliveryContractUnmetIntent),
         },
       });
       await maybePostDeliveryContractFollowup({
@@ -5748,7 +5828,7 @@ export function createChannelAgentBinder(
       postSystemRow(
         binding.channelId,
         `Delivery contract could not verify: ${unknown
-          .map((u) => `${u.spec}: ${u.reason}`)
+          .map((u) => `${deliveryContractUnmetIntent(u.spec)}: ${u.reason}`)
           .join(', ')}`,
         { parentMessageId }
       );

@@ -1476,21 +1476,18 @@ function postMentionDeliveries(
       limit: 1,
     })[0];
     if (receipt) {
-      const projected =
+      if (
         receipt.state === 'refused_policy' ||
         receipt.state === 'refused_provider' ||
         receipt.state === 'unreachable_offline'
-          ? {
-              state: receipt.state,
-              ...(receipt.reasonCode ? { reasonCode: receipt.reasonCode } : {}),
-            }
-          : null;
-      if (projected) {
+      ) {
         return {
           targetProfileId,
-          ...projected,
+          state: receipt.state,
+          ...(receipt.reasonCode ? { reasonCode: receipt.reasonCode } : {}),
         };
       }
+      return { targetProfileId, state: 'queued' };
     }
     const durable = projectDurableMentionDelivery(target);
     if (durable) return { targetProfileId, ...durable };
@@ -2198,6 +2195,8 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     let runId: ChannelAsyncRunId = initial.id;
     let hopWaitUntil: number | null = null;
     let hopWaitRunId: ChannelAsyncRunId | null = null;
+    let pendingWaitUntil: number | null = null;
+    let pendingWaitRunId: ChannelAsyncRunId | null = null;
 
     const shouldWaitForFollowupChild = (
       run: ChannelAsyncRun,
@@ -2265,6 +2264,22 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       if (!runTerminalState(latest.state)) {
         await waitForLifecycle(runId, deadline - Date.now());
         continue;
+      }
+
+      if (latest.deliveryContract?.contractPending === true) {
+        const pendingWaitMs = Math.min(2000, timeoutMs);
+        if (pendingWaitRunId !== latest.id || pendingWaitUntil === null) {
+          pendingWaitRunId = latest.id;
+          pendingWaitUntil = Date.now() + pendingWaitMs;
+        }
+        if (Date.now() < pendingWaitUntil) {
+          await waitForLifecycle(
+            runId,
+            Math.min(deadline - Date.now(), pendingWaitUntil - Date.now())
+          );
+          continue;
+        }
+        return { timedOut: false, runId, run: latest };
       }
 
       const childRunId =
@@ -2396,6 +2411,13 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       { state: ChannelAsyncRun['state']; finalMessageSeq: number | null }
     >();
 
+    const configuredMaxFollowups = deps.deliveryContractMaxFollowups ?? 3;
+    const maxFollowupRunsToVisit =
+      Number.isSafeInteger(configuredMaxFollowups) &&
+      configuredMaxFollowups >= 0
+        ? configuredMaxFollowups + 1
+        : 4;
+
     // TS control-flow analysis does not reliably narrow this closure-mutated
     // candidate across the subscription + poll loop; keep the surface typed at
     // the response boundary.
@@ -2403,8 +2425,23 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     let best: any = null;
 
     async function considerCandidate(
-      candidate: ChannelAsyncRun
+      rawCandidate: ChannelAsyncRun
     ): Promise<void> {
+      let candidate = rawCandidate;
+      let hops = 0;
+      while (
+        candidate.deliveryContract?.childRunId &&
+        candidate.deliveryContract.childRunId !== candidate.id &&
+        hops < maxFollowupRunsToVisit
+      ) {
+        const child = store.getAsyncRun(
+          candidate.deliveryContract.childRunId as ChannelAsyncRunId
+        );
+        if (!child) break;
+        candidate = child;
+        hops += 1;
+      }
+
       if (
         candidate.state === 'cancelled' &&
         candidate.reason === 'server-restarted'
@@ -2539,6 +2576,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         }
         if (best) break;
         const remaining = Math.max(0, deadline - Date.now());
+        if (remaining <= 0) break;
         await Promise.race([
           donePromise,
           sleepWithAbort(Math.min(1000, remaining), signal),
@@ -2553,11 +2591,7 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     if (best) {
       res.json(
         operatorClientPublicValue(req, {
-          run: {
-            id: best.run.id,
-            state: best.run.state,
-            ...(best.run.reason ? { reason: best.run.reason } : {}),
-          },
+          run: waitRunView(best.run),
           outcome: best.run.state,
           finalText: best.finalText,
           finalMessageSeq: best.finalMessageSeq ?? null,
@@ -3410,17 +3444,18 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       if (result.replayed && steering) {
         deps.binder?.steerExisting(result.message, steering);
       }
+      const authoritativeRun = store.getAsyncRun(result.run.id) ?? result.run;
       res.status(result.replayed ? 200 : 201).json(
         operatorClientPublicValue(req, {
           message: result.message,
-          run: result.run,
+          run: authoritativeRun,
           // Routing is asynchronous. Read the durable run again so an
           // admission refusal settled during this request is reflected even
           // though `postToChannel` returned its transaction snapshot.
           mentions: postMentionDeliveries(
             deps.hub,
             result.message,
-            store.getAsyncRun(result.run.id) ?? result.run
+            authoritativeRun
           ),
         })
       );

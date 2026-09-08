@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AntigravityProtocolAdapter } from '../../../server/protocol-adapters/antigravity-adapter.js';
+import {
+  AntigravityProtocolAdapter,
+  classifyAntigravityProviderFailure,
+  parseAntigravityRetryAfterIso,
+} from '../../../server/protocol-adapters/antigravity-adapter.js';
 import { AdapterProcessRegistry } from '../../../server/protocol-adapters/adapter-utils.js';
 import { CHANNEL_ADAPTER_LAUNCH_CONTRACTS } from '../../../server/protocol-adapters/index.js';
 import {
@@ -1552,5 +1556,128 @@ describe('AntigravityProtocolAdapter', () => {
     expect((small as any).item.payload.message).toBe(
       'Individual quota reached.'
     );
+  });
+
+  it('propagates retryAfter on agent-error-v2 when error includes relative reset duration (#1579 item 4)', async () => {
+    const { adapter, spawns, patches } = harness();
+    await connect(adapter, spawns);
+
+    const child = spawns[0]!.child;
+    await adapter.sendMessage({ turnId: 't1', content: 'quota-test' });
+
+    child.serverWrite({
+      event: 'result',
+      result: {
+        conversation_id: 'a53994f2-9dbe-4977-8bed-96343b8f7a47',
+        status: 'ERROR',
+        response: '',
+        error: 'Individual quota reached. Resets in 2h30m51s',
+        num_turns: 1,
+      },
+    });
+
+    const errorPatch = patches.find(
+      (p) => p.type === 'agent-error-v2'
+    ) as Extract<AgentPatchV2, { type: 'agent-error-v2' }>;
+    expect(errorPatch).toBeTruthy();
+    expect(errorPatch).toMatchObject({
+      failureCode: 'quota_exhausted',
+    });
+    expect((errorPatch as any).retryAfter).toBeDefined();
+    const retryDate = new Date((errorPatch as any).retryAfter);
+    expect(Number.isNaN(retryDate.getTime())).toBe(false);
+  });
+});
+
+describe('Antigravity relative duration parsing (#1579 item 4)', () => {
+  const baseMs = Date.parse('2026-09-08T12:00:00.000Z');
+
+  it('parses incident relative duration: Resets in 2h30m51s', () => {
+    const result = parseAntigravityRetryAfterIso(
+      'Individual quota reached. Resets in 2h30m51s',
+      baseMs
+    );
+    expect(result).toBeDefined();
+    // 2h30m51s = (2 * 3600 + 30 * 60 + 51) * 1000 = 9,051,000 ms
+    const expected = new Date(baseMs + 9_051_000).toISOString();
+    expect(result).toBe(expected);
+  });
+
+  it('parses single-unit minutes: Resets in 45m', () => {
+    const result = parseAntigravityRetryAfterIso('Resets in 45m', baseMs);
+    expect(result).toBe(new Date(baseMs + 45 * 60 * 1000).toISOString());
+  });
+
+  it('parses hours prose: in 3 hours', () => {
+    const result = parseAntigravityRetryAfterIso('in 3 hours', baseMs);
+    expect(result).toBe(new Date(baseMs + 3 * 3600 * 1000).toISOString());
+  });
+
+  it('parses hours prose: try again in 3 hours', () => {
+    const result = parseAntigravityRetryAfterIso(
+      'try again in 3 hours',
+      baseMs
+    );
+    expect(result).toBe(new Date(baseMs + 3 * 3600 * 1000).toISOString());
+  });
+
+  it('parses seconds: resets in 15s', () => {
+    const result = parseAntigravityRetryAfterIso('resets in 15s', baseMs);
+    expect(result).toBe(new Date(baseMs + 15 * 1000).toISOString());
+  });
+
+  it('parses days and hours: Resets in 1d 2h', () => {
+    const result = parseAntigravityRetryAfterIso('Resets in 1d 2h', baseMs);
+    expect(result).toBe(
+      new Date(baseMs + (86_400 + 2 * 3600) * 1000).toISOString()
+    );
+  });
+
+  it('clamps extreme relative durations to 30 days (#1579 review item 4)', () => {
+    const result = parseAntigravityRetryAfterIso(
+      'Resets in 999999999999d',
+      baseMs
+    );
+    const max30dMs = 30 * 24 * 60 * 60 * 1000;
+    expect(result).toBe(new Date(baseMs + max30dMs).toISOString());
+  });
+
+  it('does not parse non-duration prose as quota reset', () => {
+    expect(
+      parseAntigravityRetryAfterIso('0 credits left on your account', baseMs)
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when no relative duration is present', () => {
+    expect(
+      parseAntigravityRetryAfterIso('Individual quota reached', baseMs)
+    ).toBeUndefined();
+    expect(
+      parseAntigravityRetryAfterIso(
+        'Individual quota reached. Please upgrade your subscription.',
+        baseMs
+      )
+    ).toBeUndefined();
+  });
+
+  it('populates retryAfter in classifyAntigravityProviderFailure', () => {
+    const classified = classifyAntigravityProviderFailure(
+      'Individual quota reached. Resets in 2h30m51s',
+      baseMs
+    );
+    expect(classified).toEqual({
+      failureCode: 'quota_exhausted',
+      providerMessage: 'Individual quota reached. Resets in 2h30m51s',
+      retryAfter: new Date(baseMs + 9_051_000).toISOString(),
+    });
+
+    const withoutDuration = classifyAntigravityProviderFailure(
+      'Individual quota reached',
+      baseMs
+    );
+    expect(withoutDuration).toEqual({
+      failureCode: 'quota_exhausted',
+      providerMessage: 'Individual quota reached',
+    });
   });
 });

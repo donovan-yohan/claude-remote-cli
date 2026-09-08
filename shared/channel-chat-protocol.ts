@@ -125,6 +125,9 @@ export function projectDurableMentionDelivery(
           reasonCode: 'provider_unknown_failure',
         };
       default:
+        if (target.reason?.startsWith('provider-failure:')) {
+          return { state: 'refused_provider' };
+        }
         return { state: 'refused_policy' };
     }
   }
@@ -170,7 +173,11 @@ export interface ChannelAsyncRun {
       /** Resolved upstream ref name used for `upstreamSha` (best-effort). */
       upstreamRef?: string | null;
       /** How `upstreamRef` was resolved (e.g. @{u} vs origin/HEAD fallback). */
-      upstreamRefSource?: 'upstream' | 'originHead' | null;
+      upstreamRefSource?:
+        | 'upstream'
+        | 'originHead'
+        | 'tracking-other-branch'
+        | null;
       upstreamSha: string | null;
       prNumber: number | null;
       prHeadSha: string | null;

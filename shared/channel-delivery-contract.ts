@@ -243,3 +243,38 @@ export function parseChannelDeliveryContract(
   const parsed = cleaned.map(parseChannelDeliveryExpectation);
   return { expect: cleaned, parsed };
 }
+
+export function deliveryContractUnmetIntent(spec: string): string {
+  const trimmed = spec.trim();
+  if (trimmed === 'commit') return 'no new commit';
+  if (trimmed === 'push') return 'nothing pushed to the branch';
+  if (trimmed === 'pr' || trimmed.startsWith('pr:')) {
+    return 'no pull request opened/updated for this branch';
+  }
+  if (trimmed.startsWith('file:')) return 'expected artifact missing';
+  if (trimmed.startsWith('text:')) return 'no closing message';
+  try {
+    const parsed = parseChannelDeliveryExpectation(trimmed);
+    switch (parsed.kind) {
+      case 'commit':
+        return 'no new commit';
+      case 'push':
+        return 'nothing pushed to the branch';
+      case 'pr':
+        return 'no pull request opened/updated for this branch';
+      case 'file':
+        return 'expected artifact missing';
+      case 'text':
+        return 'no closing message';
+    }
+  } catch {
+    return 'unmet delivery expectation';
+  }
+}
+
+export function formatDeliveryContractUnmetIntents(
+  unmetSpecs: readonly string[]
+): string {
+  const intents = unmetSpecs.map(deliveryContractUnmetIntent);
+  return intents.join(', ');
+}

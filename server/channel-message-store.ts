@@ -4990,6 +4990,7 @@ export function createChannelMessageStore(
             const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
               ...contract,
               contractPending: false,
+              abandonedAt: contract.abandonedAt ?? now,
               result: {
                 met: false,
                 unmet: [],

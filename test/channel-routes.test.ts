@@ -2041,6 +2041,65 @@ describe('channel routes — gateway capability mapping', () => {
       expect(res.body.contract).toBe(null);
     });
 
+    it('returns completed rather than timeout when delivery contract probe is slow (#1579 item 2)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const baseline = {
+        headSha: 'a'.repeat(40),
+        upstreamSha: null,
+        prNumber: null,
+        prHeadSha: null,
+        capturedAt: '2026-09-07T00:00:00.000Z',
+      };
+      const { message: trigger, run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'ship it @codex',
+        targetIds: [targetId],
+        deliveryContract: {
+          expect: ['commit'],
+          baseline,
+          contractPending: true,
+        },
+        meta: { deliveryContract: { expect: ['commit'] } },
+      });
+      const turnId = channelTurnId(trigger.id, targetId);
+      const started = h.store.beginStream({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        source: { runtimeId: 'rt', turnId, itemId: 'item-final' },
+        text: 'working…',
+        meta: { asyncRun: { runId: run.id, targetId } },
+      });
+      h.store.finalizeStream(started.id, {
+        text: 'final summary',
+        status: 'complete',
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'completed',
+      });
+
+      const res = await req<{
+        run: { id: string; state: string; contractPending?: boolean };
+        outcome: string;
+        finalText: string;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=50`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.outcome).toBe('completed');
+      expect(res.body.run).toMatchObject({
+        id: run.id,
+        state: 'completed',
+        contractPending: true,
+      });
+    });
+
     it('returns cancelled-with-contract quickly (no contract grace)', async () => {
       const h = await harness({ withAuth: true });
       const targetId = builtInAgentProfileId('codex');
@@ -2591,11 +2650,103 @@ describe('channel routes — gateway capability mapping', () => {
         url: `/channels/wait?runId=${encodeURIComponent(parent.run.id)}&for=any&timeoutMs=200`,
         headers: { Authorization: 'Bearer test' },
       });
+      expect(res.body).toMatchObject({
+        run: { id: child.run.id, state: 'completed' },
+        outcome: 'completed',
+        finalText: 'DONE',
+      });
+    });
+
+    it('follows delivery-contract childRunId in channel wait mode (#1579 item 2)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+
+      const parent = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'ship it @codex',
+        targetIds: [targetId],
+        deliveryContract: { expect: ['text:^DONE$'] },
+        meta: { deliveryContract: { expect: ['text:^DONE$'] } },
+      });
+      const parentCompleted = h.store.transitionAsyncRunTarget({
+        runId: parent.run.id,
+        targetId,
+        state: 'completed',
+      });
+      if (parentCompleted) h.hub.broadcastRunLifecycle(parentCompleted);
+
+      const child = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'follow-up @codex',
+        targetIds: [targetId],
+        deliveryContract: {
+          expect: ['text:^DONE$'],
+          parentRunId: parent.run.id,
+        },
+        meta: {
+          deliveryContract: {
+            expect: ['text:^DONE$'],
+            parentRunId: parent.run.id,
+          },
+        },
+      });
+      const turnId = channelTurnId(child.message.id, targetId);
+      const final = h.store.beginStream({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        source: { runtimeId: 'rt', turnId, itemId: 'item-final' },
+        text: 'DONE',
+        meta: { asyncRun: { runId: child.run.id, targetId } },
+      });
+      h.store.finalizeStream(final.id, { text: 'DONE', status: 'complete' });
+      const childCompleted = h.store.transitionAsyncRunTarget({
+        runId: child.run.id,
+        targetId,
+        state: 'completed',
+      });
+      if (childCompleted) h.hub.broadcastRunLifecycle(childCompleted);
+
+      h.store.finalizeAsyncRunDeliveryContract({
+        runId: parent.run.id,
+        result: {
+          met: false,
+          unmet: ['text:^DONE$'],
+          unknown: [],
+          evaluatedAt: new Date().toISOString(),
+        },
+        followupPostedAt: new Date().toISOString(),
+        childRunId: child.run.id,
+      });
+
+      h.store.finalizeAsyncRunDeliveryContract({
+        runId: child.run.id,
+        result: {
+          met: true,
+          unmet: [],
+          unknown: [],
+          evaluatedAt: new Date().toISOString(),
+        },
+      });
+
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        finalText: string;
+        contract: { met: boolean; unmet: string[]; unknown: unknown[] };
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?channelId=${encodeURIComponent(h.channelId)}&afterSeq=0&for=any&timeoutMs=200`,
+        headers: { Authorization: 'Bearer test' },
+      });
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         run: { id: child.run.id, state: 'completed' },
         outcome: 'completed',
         finalText: 'DONE',
+        contract: { met: true, unmet: [], unknown: [] },
       });
     });
 
