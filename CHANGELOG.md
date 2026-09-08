@@ -18,6 +18,18 @@ workflow.
 
 ## [Unreleased]
 
+### Channel orchestration and delivery contract fixes (#1579)
+
+#### Fixed
+
+- `channels wait` in `--channel-id` mode now follows child run hops through continuation chains to observe the terminal outcome of follow-ups (#1579).
+- Delivery contract evaluation for `push` predicates now checks against the configured upstream tracking remote ref rather than assuming identical branch names when tracking branches differ (#1579).
+- Follow-up retry briefs and abandonment rows now articulate intent-level unmet delivery contracts rather than low-level spec syntax (#1579).
+- Antigravity adapter now parses relative reset durations (e.g. `in 54m 32s`) from quota errors into ISO timestamps on `agent-error-v2` (#1579).
+- Durable mention delivery projection defaults unmapped provider failures to `refused_provider` (#1579).
+- Channel post responses return `queued` for non-refusal newest delivery receipts and serialize the authoritative re-read run state (#1579).
+- Channel store restart recovery now stamps `abandonedAt` on pending delivery contracts when finalized with `server-restarted` (#1579).
+
 ### First-class Cursor CLI channel adapter over ACP (`@cursor`)
 
 #### Added
