@@ -641,6 +641,55 @@ describe('mention routing — end-to-end via the router', () => {
     expect(replay.body.mentions).toEqual(original.body.mentions);
   });
 
+  it('returns queued when the newest delivery receipt is non-refusal even if durable target had refused (#1579 item 6)', async () => {
+    const fakeNow = () => 0;
+    const h = await harness(undefined, { now: fakeNow });
+    await h.binder.rosterForChannel(h.channelId);
+    const post = await req<{
+      message: ChannelMessage;
+      run: ChannelAsyncRun;
+      mentions: Array<{
+        targetProfileId: string;
+        state: string;
+        reasonCode?: string;
+      }>;
+    }>({
+      port: h.port,
+      method: 'POST',
+      url: `/channels/${encodeURIComponent(h.channelId)}/messages`,
+      body: { text: '@codex retry', clientMessageId: 'non-refusal-receipt' },
+    });
+    await waitFor(
+      () =>
+        h.store.getAsyncRun(post.body.run.id)?.targets[0]?.state === 'rejected'
+    );
+    // Durable target is now rejected (refused).
+    // Now simulate a newer receipt in the hub ring (e.g. queued or turn_started upon retry).
+    h.hub.broadcastDeliveryReceipt({
+      messageId: post.body.message.id,
+      channelId: h.channelId,
+      targetBindingId: `${h.channelId}::${builtInAgentProfileId('codex')}`,
+      senderProfileId: null,
+      targetProfileId: builtInAgentProfileId('codex'),
+      state: 'queued',
+      ts: new Date().toISOString(),
+    });
+    // When the message is replayed, the newest receipt in the ring is non-refusal ('queued').
+    const replay = await req<typeof post.body>({
+      port: h.port,
+      method: 'POST',
+      url: `/channels/${encodeURIComponent(h.channelId)}/messages`,
+      body: { text: '@codex retry', clientMessageId: 'non-refusal-receipt' },
+    });
+    expect(replay.status).toBe(200);
+    expect(replay.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('codex'),
+        state: 'queued',
+      },
+    ]);
+  });
+
   it('returns a cached unavailable profile as unreachable without waiting for a probe', async () => {
     let clock = 0;
     const targets: MentionTarget[] = [

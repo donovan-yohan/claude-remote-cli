@@ -1476,21 +1476,18 @@ function postMentionDeliveries(
       limit: 1,
     })[0];
     if (receipt) {
-      const projected =
+      if (
         receipt.state === 'refused_policy' ||
         receipt.state === 'refused_provider' ||
         receipt.state === 'unreachable_offline'
-          ? {
-              state: receipt.state,
-              ...(receipt.reasonCode ? { reasonCode: receipt.reasonCode } : {}),
-            }
-          : null;
-      if (projected) {
+      ) {
         return {
           targetProfileId,
-          ...projected,
+          state: receipt.state,
+          ...(receipt.reasonCode ? { reasonCode: receipt.reasonCode } : {}),
         };
       }
+      return { targetProfileId, state: 'queued' };
     }
     const durable = projectDurableMentionDelivery(target);
     if (durable) return { targetProfileId, ...durable };
