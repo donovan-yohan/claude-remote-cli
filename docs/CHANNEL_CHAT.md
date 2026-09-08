@@ -388,7 +388,7 @@ Supported specs:
 - `file:<path>` — require a path to exist relative to the routing cwd
 - `text:<regex>` — require the run’s final assistant text to match
 
-Baseline capture is best-effort and bounded by probe timeouts. If capture fails, the run records `baseline: null` and evaluation falls back to the legacy absolute semantics for `commit`/`pr` (and treats `push` as unverifiable). Follow-up runs in a contract chain inherit the original baseline so the chain measures progress since the operator’s post.
+Baseline capture is best-effort and bounded by probe timeouts. It is captured when the binder dequeues a trigger for delivery (before the runtime accepts input), so `capturedAt` reflects the turn-start probe moment rather than the post admission time. If capture fails, the run records `baseline: null` and evaluation falls back to the legacy absolute semantics for `commit`/`pr` (and treats `push` as unverifiable). Follow-up runs in a contract chain inherit the original baseline so the chain measures progress since the operator’s post.
 
 When a run reaches a terminal state, the binder finalizes a delivery-contract result on the run:
 

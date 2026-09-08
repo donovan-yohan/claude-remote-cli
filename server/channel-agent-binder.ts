@@ -3377,32 +3377,61 @@ export function createChannelAgentBinder(
     const git = probe?.git;
     const pr = probe?.pr;
 
-    let headSha: string;
-    if (git?.headSha) {
-      const outcome = await git.headSha();
-      if (outcome.kind !== 'ok') return null;
-      headSha = String(outcome.value ?? '').trim();
-    } else {
+    const headShaPromise = (async (): Promise<string | null> => {
+      if (git?.headSha) {
+        const outcome = await git.headSha();
+        if (outcome.kind !== 'ok') return null;
+        const sha = String(outcome.value ?? '').trim();
+        return sha ? sha : null;
+      }
       try {
-        headSha = (
-          await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd, timeout })
-        ).stdout.trim();
+        const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+          cwd,
+          timeout,
+        });
+        const sha = stdout.trim();
+        return sha ? sha : null;
       } catch {
         return null;
       }
-    }
-    if (!headSha) return null;
+    })();
 
-    let upstreamRef: string | null = null;
-    if (git?.upstreamRef) {
-      const outcome = await git.upstreamRef();
-      if (outcome.kind === 'ok') {
+    const upstreamRefPromise = (async (): Promise<string | null> => {
+      if (git?.upstreamRef) {
+        const outcome = await git.upstreamRef();
+        if (outcome.kind !== 'ok') return null;
         const ref = String(outcome.value ?? '').trim();
-        upstreamRef = ref ? ref : null;
+        return ref ? ref : null;
       }
-    }
+      // Fallback: best-effort ref discovery.
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+          { cwd, timeout }
+        );
+        const ref = stdout.trim();
+        return ref ? ref : null;
+      } catch {
+        /* no upstream */
+      }
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['symbolic-ref', 'refs/remotes/origin/HEAD'],
+          { cwd, timeout }
+        );
+        const ref = stdout.trim();
+        const prefix = 'refs/remotes/origin/';
+        return ref.startsWith(prefix)
+          ? `origin/${ref.slice(prefix.length)}`
+          : null;
+      } catch {
+        return null;
+      }
+    })();
 
-    const upstreamSha: string | null = await (async () => {
+    const upstreamShaPromise = (async (): Promise<string | null> => {
       if (git?.upstreamSha) {
         const outcome = await git.upstreamSha();
         if (outcome.kind !== 'ok') return null;
@@ -3416,19 +3445,6 @@ export function createChannelAgentBinder(
           { cwd, timeout }
         );
         const sha = stdout.trim();
-        if (!upstreamRef) {
-          try {
-            const { stdout: refStdout } = await execFileAsync(
-              'git',
-              ['rev-parse', '--abbrev-ref', '@{u}'],
-              { cwd, timeout }
-            );
-            const ref = refStdout.trim();
-            upstreamRef = ref ? ref : null;
-          } catch {
-            /* ignore */
-          }
-        }
         return sha ? sha : null;
       } catch {
         /* fall through */
@@ -3440,23 +3456,19 @@ export function createChannelAgentBinder(
           { cwd, timeout }
         );
         const sha = stdout.trim();
-        if (!upstreamRef) upstreamRef = 'origin/HEAD';
         return sha ? sha : null;
       } catch {
         return null;
       }
     })();
 
-    let prNumber: number | null = null;
-    let prHeadSha: string | null = null;
-    let branch: string | null = null;
-    if (git?.currentBranch) {
-      const outcome = await git.currentBranch();
-      if (outcome.kind === 'ok') {
+    const branchPromise = (async (): Promise<string | null> => {
+      if (git?.currentBranch) {
+        const outcome = await git.currentBranch();
+        if (outcome.kind !== 'ok') return null;
         const name = String(outcome.value ?? '').trim();
-        branch = name ? name : null;
+        return name ? name : null;
       }
-    } else {
       try {
         const { stdout } = await execFileAsync(
           'git',
@@ -3464,11 +3476,22 @@ export function createChannelAgentBinder(
           { cwd, timeout }
         );
         const name = stdout.trim();
-        branch = name ? name : null;
+        return name ? name : null;
       } catch {
-        /* detached/unborn/non-git */
+        return null;
       }
-    }
+    })();
+
+    const [headSha, upstreamRef, upstreamSha, branch] = await Promise.all([
+      headShaPromise,
+      upstreamRefPromise,
+      upstreamShaPromise,
+      branchPromise,
+    ]);
+    if (!headSha) return null;
+
+    let prNumber: number | null = null;
+    let prHeadSha: string | null = null;
     if (branch) {
       if (pr?.getOpenPrForBranch) {
         const outcome = await pr.getOpenPrForBranch(branch);
