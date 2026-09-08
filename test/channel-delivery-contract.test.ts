@@ -401,6 +401,46 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
     expect(result.unknown).toEqual([expect.objectContaining({ spec: 'push' })]);
   });
 
+  it('treats push as unknown when the baseline upstream ref came from origin/HEAD fallback (#1578)', async () => {
+    const baselineUpstream = 'a'.repeat(40);
+    const currentUpstream = 'b'.repeat(40);
+    const upstreamRef = 'origin/nightly';
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamRef,
+          upstreamRefSource: 'originHead',
+          upstreamSha: baselineUpstream,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/y' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          upstreamRef: async () => ({ kind: 'ok', value: upstreamRef }),
+          upstreamSha: async () => ({ kind: 'ok', value: currentUpstream }),
+          commitsBetween: async () => ({ kind: 'ok', value: 1 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result.met).toBe(false);
+    expect(result.unmet).toEqual([]);
+    expect(result.unknown).toEqual([expect.objectContaining({ spec: 'push' })]);
+  });
+
   it('falls back to legacy semantics when baseline is null (#1578)', async () => {
     const result = await evaluateDeliveryContract(
       {

@@ -3396,12 +3396,15 @@ export function createChannelAgentBinder(
       }
     })();
 
-    const upstreamRefPromise = (async (): Promise<string | null> => {
+    const upstreamRefPromise = (async (): Promise<{
+      ref: string | null;
+      source: 'upstream' | 'originHead' | null;
+    }> => {
       if (git?.upstreamRef) {
         const outcome = await git.upstreamRef();
-        if (outcome.kind !== 'ok') return null;
+        if (outcome.kind !== 'ok') return { ref: null, source: null };
         const ref = String(outcome.value ?? '').trim();
-        return ref ? ref : null;
+        return { ref: ref ? ref : null, source: null };
       }
       // Fallback: best-effort ref discovery.
       try {
@@ -3411,7 +3414,7 @@ export function createChannelAgentBinder(
           { cwd, timeout }
         );
         const ref = stdout.trim();
-        return ref ? ref : null;
+        return { ref: ref ? ref : null, source: 'upstream' };
       } catch {
         /* no upstream */
       }
@@ -3424,10 +3427,10 @@ export function createChannelAgentBinder(
         const ref = stdout.trim();
         const prefix = 'refs/remotes/origin/';
         return ref.startsWith(prefix)
-          ? `origin/${ref.slice(prefix.length)}`
-          : null;
+          ? { ref: `origin/${ref.slice(prefix.length)}`, source: 'originHead' }
+          : { ref: null, source: null };
       } catch {
-        return null;
+        return { ref: null, source: null };
       }
     })();
 
@@ -3488,6 +3491,8 @@ export function createChannelAgentBinder(
       upstreamShaPromise,
       branchPromise,
     ]);
+    const upstreamRefValue = upstreamRef.ref;
+    const upstreamRefSource = upstreamRef.source;
     if (!headSha) return null;
 
     let prNumber: number | null = null;
@@ -3517,7 +3522,8 @@ export function createChannelAgentBinder(
 
     return {
       headSha,
-      upstreamRef,
+      upstreamRef: upstreamRefValue,
+      upstreamRefSource,
       upstreamSha,
       prNumber,
       prHeadSha,

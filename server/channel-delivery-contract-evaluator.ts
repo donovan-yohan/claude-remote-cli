@@ -62,6 +62,7 @@ export interface EvaluateDeliveryContractInput {
   baseline?: {
     headSha: string;
     upstreamRef?: string | null;
+    upstreamRefSource?: 'upstream' | 'originHead' | null;
     upstreamSha: string | null;
     prNumber: number | null;
     prHeadSha: string | null;
@@ -191,6 +192,19 @@ export async function evaluateDeliveryContract(
         kind: 'unknown',
         reason: 'baseline captured in a different cwd',
       };
+    }
+    if (baseline.upstreamRefSource === 'originHead') {
+      return {
+        kind: 'unknown',
+        reason:
+          'push delta unavailable when upstream ref came from origin/HEAD fallback',
+      };
+    }
+    if (
+      baseline.upstreamRefSource !== undefined &&
+      baseline.upstreamRefSource !== 'upstream'
+    ) {
+      return { kind: 'unknown', reason: 'upstream ref source unavailable' };
     }
     if (!baseline.upstreamRef) {
       return { kind: 'unknown', reason: 'no upstream ref baseline available' };
