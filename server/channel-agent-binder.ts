@@ -4725,7 +4725,7 @@ export function createChannelAgentBinder(
   }
 
   function handleTerminalDeliveryContract(input: {
-    binding: LiveBinding;
+    binding: LiveBinding | null;
     turnId: string;
     run: ChannelAsyncRun;
   }): ChannelAsyncRun | null {
@@ -4743,6 +4743,19 @@ export function createChannelAgentBinder(
     if (!terminal) return null;
 
     if (input.run.state === 'completed') {
+      if (!input.binding) {
+        const evaluatedAt = new Date(now()).toISOString();
+        const unknown = expect.map((spec) => ({
+          spec,
+          reason: 'missing binding for completed contract evaluation',
+        }));
+        return (
+          store.finalizeAsyncRunDeliveryContract({
+            runId: input.run.id,
+            result: { met: false, unmet: [], unknown, evaluatedAt },
+          }) ?? null
+        );
+      }
       // Mark pending immediately so `channels wait` can return without blocking.
       const pending =
         store.setAsyncRunDeliveryContractPending({
@@ -5771,7 +5784,15 @@ export function createChannelAgentBinder(
             state,
             reason,
           });
-          if (changed) hub.broadcastRunLifecycle(changed);
+          if (changed) {
+            const turnId = channelTurnId(trigger.id, profile.id);
+            const updated = handleTerminalDeliveryContract({
+              binding: null,
+              turnId,
+              run: changed,
+            });
+            hub.broadcastRunLifecycle(updated ?? changed);
+          }
         };
         const framework = profile.providerId;
         const target = await resolveTarget(framework);
@@ -5943,7 +5964,15 @@ export function createChannelAgentBinder(
             state: 'failed',
             reason: 'target-routing-failed',
           });
-          if (changed) hub.broadcastRunLifecycle(changed);
+          if (changed) {
+            const turnId = channelTurnId(trigger.id, profile.id);
+            const updated = handleTerminalDeliveryContract({
+              binding: null,
+              turnId,
+              run: changed,
+            });
+            hub.broadcastRunLifecycle(updated ?? changed);
+          }
         }
         logger.warn('channel binder route failed:', err);
       }
@@ -6062,7 +6091,15 @@ export function createChannelAgentBinder(
           state: 'rejected',
           reason,
         });
-        if (changed) hub.broadcastRunLifecycle(changed);
+        if (changed) {
+          const turnId = channelTurnId(message.id, profile.id);
+          const updated = handleTerminalDeliveryContract({
+            binding: null,
+            turnId,
+            run: changed,
+          });
+          hub.broadcastRunLifecycle(updated ?? changed);
+        }
       }
     };
     const sourceRuntime = message.source?.runtimeId
@@ -6208,7 +6245,15 @@ export function createChannelAgentBinder(
           state: 'rejected',
           reason,
         });
-        if (changed) hub.broadcastRunLifecycle(changed);
+        if (changed) {
+          const turnId = channelTurnId(message.id, targetProfileId);
+          const updated = handleTerminalDeliveryContract({
+            binding: null,
+            turnId,
+            run: changed,
+          });
+          hub.broadcastRunLifecycle(updated ?? changed);
+        }
       }
 
       // Narrow exception (#1569): one binder-authored system row can request a

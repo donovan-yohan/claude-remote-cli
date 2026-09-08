@@ -6784,6 +6784,37 @@ describe('channel-agent-binder — lifecycle', () => {
   });
 });
 
+describe('channel-agent-binder — delivery-contract terminal transitions', () => {
+  it('finalizes contract as unknown when routing rejects a target as unavailable (#1578 review)', async () => {
+    const { binder, store } = makeBinder({
+      build: (agentType) => new ScriptedAdapter(agentType, { mode: 'stall' }),
+      targets: [],
+      mentionTargets: async () => [],
+      knownProviderIds: ['mock'],
+    });
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() => store.getAsyncRun(posted.run.id)?.state === 'rejected');
+    const run = store.getAsyncRun(posted.run.id)!;
+    expect(run.deliveryContract?.result).toMatchObject({
+      met: false,
+      unmet: [],
+      unknown: [expect.objectContaining({ spec: 'commit' })],
+    });
+  });
+});
+
 describe('channel-agent-binder — delivery + idempotency', () => {
   it('preserves an active threaded turn across transport rebind and finishes promptly', async () => {
     let spawnNumber = 0;
