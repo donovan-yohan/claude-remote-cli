@@ -2011,6 +2011,7 @@ describe('channel-agent-bridge lifecycle', () => {
     adapter.broadcastPatch(
       assistantUpdated('s', 'turn-drained', 'msg-1', 'late reply text')
     );
+    adapter.broadcastPatch(turnCompleted('s', 'turn-drained'));
     adapter.broadcastPatch(
       assistantUpdated('s', 'turn-drained', 'msg-1', 'late reply text')
     );
@@ -2025,5 +2026,75 @@ describe('channel-agent-bridge lifecycle', () => {
         itemId: 'msg-1#late',
       },
     });
+  });
+
+  it('freezes in-flight streams as interrupted on drain and diverts post-drain patches (#1579 item 4)', () => {
+    const { store, hub } = makeStore();
+    const adapter = new MockProtocolAdapterV2();
+    let isLate = false;
+    const drainControl: { freeze?: (turnId: string) => void } = {};
+    bindSessionToChannel({
+      channelId: 'topic:freeze-drain',
+      agentFramework: 'claude',
+      adapter,
+      store,
+      hub,
+      isLateOutputTurn: (turnId) => isLate && turnId === 'turn-1',
+      onDrainFreezeReady: (freeze) => {
+        drainControl.freeze = freeze;
+      },
+    });
+
+    adapter.broadcastPatch(assistantStarted('s', 'turn-1', 'msg-1'));
+    adapter.broadcastPatch(textDelta('s', 'turn-1', 'msg-1', 'partial output'));
+
+    const beforeDrain = store.history('topic:freeze-drain');
+    expect(beforeDrain).toHaveLength(1);
+    const beforeMsg = beforeDrain[0]!;
+    expect(beforeMsg.status).toBe('streaming');
+
+    isLate = true;
+    if (!drainControl.freeze) throw new Error('missing drain freeze control');
+    drainControl.freeze('turn-1');
+
+    const atDrain = store.history('topic:freeze-drain');
+    const drainedMsg = atDrain.find((m) => m.id === beforeMsg.id);
+    expect(drainedMsg).toMatchObject({
+      status: 'interrupted',
+      body: { text: 'partial output' },
+    });
+
+    adapter.broadcastPatch(
+      textDelta(
+        's',
+        'turn-1',
+        'msg-1',
+        ' more text delta that should be ignored'
+      )
+    );
+
+    const afterDelta = store.history('topic:freeze-drain');
+    const origMsg = afterDelta.find((m) => m.id === beforeMsg.id);
+    expect(origMsg).toBeDefined();
+    expect(origMsg!.status).toBe('interrupted');
+    expect(origMsg!.body.text).toBe('partial output');
+
+    adapter.broadcastPatch(
+      assistantUpdated('s', 'turn-1', 'msg-1', 'complete late output')
+    );
+
+    adapter.broadcastPatch(turnCompleted('s', 'turn-1'));
+
+    const finalMessages = store.history('topic:freeze-drain');
+    const finalOrig = finalMessages.find((m) => m.id === beforeMsg.id);
+    expect(finalOrig!.status).toBe('interrupted');
+    expect(finalOrig!.body.text).toBe('partial output');
+
+    const lateMsg = finalMessages.find(
+      (m) => m.source?.itemId === 'msg-1#late'
+    );
+    expect(lateMsg).toBeDefined();
+    expect(lateMsg!.body.text).toBe('complete late output');
+    expect(lateMsg!.status).toBe('complete');
   });
 });

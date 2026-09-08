@@ -12893,6 +12893,30 @@ describe('channel-agent-binder — topic routing cwd (#1534)', () => {
     const adapter = currentAdapter!;
     await waitFor(() => adapter.sendCalls.length === 1);
     const turn1Id = adapter.sendCalls[0]!;
+    adapter.broadcastPatch({
+      type: 'agent-item-started-v2',
+      sessionId: sessions.firstSessionId(),
+      timestamp: 't',
+      turnId: turn1Id,
+      item: { type: 'assistantMessage', id: 'drained-prose', text: '' },
+    });
+    adapter.broadcastPatch({
+      type: 'agent-item-delta-v2',
+      sessionId: sessions.firstSessionId(),
+      timestamp: 't',
+      turnId: turn1Id,
+      itemId: 'drained-prose',
+      delta: { text: 'partial before drain' },
+    });
+    await waitFor(
+      () =>
+        rows(store).some(
+          (message) =>
+            message.source?.turnId === turn1Id &&
+            message.body.text === 'partial before drain'
+        ),
+      4000
+    );
 
     // Wait for ceiling drain
     await waitFor(
@@ -12900,11 +12924,44 @@ describe('channel-agent-binder — topic routing cwd (#1534)', () => {
       4000
     );
     expect(store.getAsyncRun(run1.id)?.targets[0]?.state).toBe('cancelled');
+    const drainedRow = rows(store).find(
+      (message) => message.source?.turnId === turn1Id
+    );
+    expect(drainedRow).toMatchObject({
+      status: 'interrupted',
+      body: { text: 'partial before drain' },
+    });
 
     // 2. Second turn (successor) starts and completes
     adapter.script = { mode: 'reply', text: 'successor reply' };
     post(store, binder, '@mock second turn', ['mock']);
     await waitFor(() => agentReplies(store, 'mock').length === 1, 4000);
+
+    adapter.broadcastPatch({
+      type: 'agent-item-delta-v2',
+      sessionId: sessions.firstSessionId(),
+      timestamp: 't',
+      turnId: turn1Id,
+      itemId: 'drained-prose',
+      delta: { text: ' late delta must not mutate drained prose' },
+    });
+    expect(store.getMessage(drainedRow!.id)).toMatchObject({
+      status: 'interrupted',
+      body: { text: 'partial before drain' },
+    });
+    const lateCompletedPatch = {
+      type: 'agent-item-updated-v2' as const,
+      sessionId: sessions.firstSessionId(),
+      timestamp: 't',
+      turnId: turn1Id,
+      item: {
+        type: 'assistantMessage' as const,
+        id: 'late-only-prose',
+        text: 'late completed prose',
+        status: 'completed' as const,
+      },
+    };
+    adapter.broadcastPatch(lateCompletedPatch);
 
     // 3. Late agent-turn-completed-v2 arrives for Turn 1
     adapter.broadcastPatch({
@@ -12914,6 +12971,7 @@ describe('channel-agent-binder — topic routing cwd (#1534)', () => {
       status: 'completed',
       timestamp: new Date().toISOString(),
     });
+    adapter.broadcastPatch(lateCompletedPatch);
 
     // 4. Verify Turn 1's run transitions from cancelled to completed
     await waitFor(
@@ -12921,5 +12979,19 @@ describe('channel-agent-binder — topic routing cwd (#1534)', () => {
       4000
     );
     expect(store.getAsyncRun(run1.id)?.state).toBe('completed');
+    expect(
+      rows(store).filter(
+        (message) =>
+          message.source?.turnId === turn1Id &&
+          message.source?.itemId === 'late-only-prose#late'
+      )
+    ).toHaveLength(1);
+    expect(
+      rows(store).filter(
+        (message) =>
+          message.source?.turnId === turn1Id &&
+          message.source?.itemId === 'late-only-prose'
+      )
+    ).toHaveLength(0);
   });
 });
