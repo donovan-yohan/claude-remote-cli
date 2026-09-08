@@ -12,9 +12,13 @@ export interface ProcessInfo {
   pid: number;
   ppid: number;
   pgid: number;
+  state?: string;
   command: string;
   commandLine: string;
   rssBytes: number;
+  cpuTicks?: number;
+  utime?: number;
+  stime?: number;
   /** Linux `/proc/<pid>/stat` start time, used to reject PID reuse on reap. */
   startTicks?: number;
   ageMs?: number;
@@ -107,6 +111,30 @@ const LANGUAGE_SERVER_MATCHERS: Array<{
   { kind: 'pyright', pattern: /(^|[/\s])pyright-langserver(\s|$)/i },
 ];
 
+const DEFAULT_PERSISTENT_HELPER_MATCHERS: readonly RegExp[] = [
+  /(^|[/\s])tsserver\.js(\s|$)/i,
+  /(^|[/\s])typescript-language-server(\s|$)/i,
+  /(^|[/\s])pyright-langserver(\s|$)/i,
+];
+
+export function isPersistentHelperProcess(
+  candidate: {
+    command?: string;
+    commandLine?: string;
+    languageServerKind?: LanguageServerKind;
+  },
+  customMatchers: readonly RegExp[] = []
+): boolean {
+  if (candidate.languageServerKind) return true;
+  const cmdLine = candidate.commandLine ?? '';
+  const cmd = candidate.command ?? '';
+  return (
+    DEFAULT_PERSISTENT_HELPER_MATCHERS.some(
+      (re) => re.test(cmdLine) || re.test(cmd)
+    ) || customMatchers.some((re) => re.test(cmdLine) || re.test(cmd))
+  );
+}
+
 const DEFAULT_CLOCK_TICK_HZ = 100;
 
 export function readProcessTable(
@@ -148,10 +176,14 @@ export function readProcessTable(
       pid,
       ppid: parsed.ppid,
       pgid: parsed.pgid,
+      state: parsed.state,
       command: parsed.command,
       commandLine,
       rssBytes: readRssBytes(processDir),
       startTicks: parsed.startTicks,
+      cpuTicks: parsed.cpuTicks,
+      utime: parsed.utime,
+      stime: parsed.stime,
       ...(ageMs !== undefined ? { ageMs } : {}),
       ...(languageServerKind ? { languageServerKind } : {}),
     });
@@ -436,10 +468,23 @@ export function collectLanguageServerDiagnostics(
   };
 }
 
-function parseProcStat(
-  stat: string
-):
-  | { command: string; ppid: number; pgid: number; startTicks: number }
+export function isZombieProcess(state?: string): boolean {
+  if (!state) return false;
+  const s = state.toUpperCase();
+  return s === 'Z' || s === 'X';
+}
+
+function parseProcStat(stat: string):
+  | {
+      command: string;
+      state: string;
+      ppid: number;
+      pgid: number;
+      utime: number;
+      stime: number;
+      cpuTicks: number;
+      startTicks: number;
+    }
   | undefined {
   const open = stat.indexOf('(');
   const close = stat.lastIndexOf(')');
@@ -449,11 +494,57 @@ function parseProcStat(
     .slice(close + 2)
     .trim()
     .split(/\s+/);
+  const state = rest[0] ?? '';
   const ppid = Number(rest[1]);
   const pgid = Number(rest[2]);
+  const utime = Number(rest[11]);
+  const stime = Number(rest[12]);
+  const cpuTicks =
+    (Number.isFinite(utime) ? utime : 0) + (Number.isFinite(stime) ? stime : 0);
   const startTicks = Number(rest[19]);
   if (![ppid, pgid, startTicks].every(Number.isFinite)) return undefined;
-  return { command, ppid, pgid, startTicks };
+  return { command, state, ppid, pgid, utime, stime, cpuTicks, startTicks };
+}
+
+export function readProcStat(
+  pid: number,
+  procRoot = '/proc'
+): ReturnType<typeof parseProcStat> {
+  if (process.platform !== 'linux' && procRoot === '/proc') return undefined;
+  const stat = readText(`${procRoot}/${pid}/stat`);
+  if (!stat) return undefined;
+  return parseProcStat(stat);
+}
+
+export function signalProcessGroup(
+  pid: number,
+  signal: NodeJS.Signals,
+  recordedStartTicks?: number,
+  procRoot = '/proc',
+  killProcess: (pid: number, signal: NodeJS.Signals) => void = (p, s) =>
+    process.kill(p, s)
+): void {
+  if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid) return;
+  if (process.platform === 'linux') {
+    if (recordedStartTicks !== undefined) {
+      const stat = readProcStat(pid, procRoot);
+      if (stat && stat.startTicks !== recordedStartTicks) {
+        // PID was recycled by the kernel for an unrelated process group.
+        return;
+      }
+    }
+    try {
+      killProcess(-pid, signal);
+      return;
+    } catch {
+      // Best effort fallback to single PID
+    }
+  }
+  try {
+    killProcess(pid, signal);
+  } catch {
+    // Best effort - process may already be dead.
+  }
 }
 
 function readCommandLine(processDir: string, fallbackCommand: string): string {

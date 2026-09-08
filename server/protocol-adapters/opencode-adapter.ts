@@ -19,6 +19,7 @@ import type {
 } from '../protocol-adapter.js';
 import type { ChatEvent, ChatEventSource } from '../../shared/chat-events.js';
 import { createLogger } from '../logger.js';
+import { readProcStat, signalProcessGroup } from '../process-tree.js';
 
 const logger = createLogger('opencode-adapter');
 const MAX_TRACKED_USER_MESSAGES = 100;
@@ -75,6 +76,7 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
   private _status: AdapterStatus = 'disconnected';
   private _config: AdapterConfig | null = null;
   private _process: ChildProcess | null = null;
+  private _exitedProcessRootPid: number | null = null;
   private _processExitCode: number | null = null;
   private _processOutputBuffer = '';
   private _apiPort = 0;
@@ -87,6 +89,7 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
   private _openCodeSessionId: string | null = null;
   private _partText = new Map<string, string>();
   private _userMessageIds = new Set<string>();
+  private _startTicks: number | undefined;
 
   readonly runtimeOwnership = 'spawned' as const;
 
@@ -98,15 +101,22 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
     return this._process;
   }
 
+  ownedProcessRootPids(): number[] {
+    const pid = this._process?.pid;
+    return typeof pid === 'number' && pid > 1 ? [pid] : [];
+  }
+
   async connect(config: AdapterConfig): Promise<void> {
     this._config = config;
     this._status = 'connecting';
+    this._exitedProcessRootPid = null;
     this._processExitCode = null;
     this._processOutputBuffer = '';
     this._currentTurnId = null;
     this._openCodeSessionId = null;
     this._partText.clear();
     this._userMessageIds.clear();
+    this._startTicks = undefined;
 
     this._apiPort = await getPort();
     this._apiHost =
@@ -134,7 +144,11 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
       cwd: config.cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      ...(process.platform === 'linux' ? { detached: true } : {}),
     });
+    if (this._process.pid) {
+      this._startTicks = readProcStat(this._process.pid)?.startTicks;
+    }
 
     const captureProcessOutput = (chunk: Buffer): void => {
       this._processOutputBuffer = (
@@ -190,10 +204,15 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
     this._messageAbortController = null;
 
     if (this._process) {
-      try {
-        this._process.kill('SIGTERM');
-      } catch {
-        /* may already be dead */
+      if (this._process.pid) {
+        this._exitedProcessRootPid = this._process.pid;
+        signalProcessGroup(this._process.pid, 'SIGTERM', this._startTicks);
+      } else {
+        try {
+          this._process.kill('SIGTERM');
+        } catch {
+          /* may already be dead */
+        }
       }
       this._process = null;
     }

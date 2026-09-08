@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -17,6 +18,7 @@ import { emptyAgentSessionV2 } from '../shared/agent-chat-protocol-v2.js';
 import { CHANNEL_ADAPTER_LAUNCH_CONTRACTS } from '../server/protocol-adapters/index.js';
 import { relayMcpLaunchSpec } from '../server/relay-mcp-launch.js';
 import {
+  readProcessTable,
   scheduleRelayProcessTreeReap,
   type ProcessInfo,
 } from '../server/process-tree.js';
@@ -1065,6 +1067,7 @@ describe('ChannelAgentRuntimeManager', () => {
     // a former child under init. The old root-only snapshot must gain this
     // same-group witness, without absorbing an unrelated process.
     currentTable = [reparentedMember, unrelated];
+    await new Promise((r) => setTimeout(r, 260));
     adapterState.last!.emitDisconnected();
 
     await vi.waitFor(() => {
@@ -1228,5 +1231,571 @@ describe('ChannelAgentRuntimeManager', () => {
     expect(reaps).toEqual([
       expect.objectContaining({ rootPids: [50_030], processTable: table }),
     ]);
+  });
+
+  it('detects live child processes under a runtime root PID (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    const table: ProcessInfo[] = [
+      {
+        pid: 60_001,
+        ppid: 1,
+        pgid: 60_001,
+        command: 'antigravity',
+        commandLine: 'agy',
+        rssBytes: 100,
+      },
+      {
+        pid: 60_002,
+        ppid: 60_001,
+        pgid: 60_001,
+        command: 'npm',
+        commandLine: 'npm test',
+        rssBytes: 50,
+      },
+      {
+        pid: 60_003,
+        ppid: 60_002,
+        pgid: 60_001,
+        command: 'node',
+        commandLine: 'vitest',
+        rssBytes: 150,
+      },
+      {
+        pid: 70_000,
+        ppid: 1,
+        pgid: 70_000,
+        command: 'other',
+        commandLine: 'other',
+        rssBytes: 10,
+      },
+    ];
+    let currentTable = table;
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => currentTable,
+    });
+    const runtime = await manager.create({
+      id: 'agy-runtime',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:default',
+      cwd: '/tmp',
+      displayName: 'Antigravity',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [60_001];
+
+    expect(manager.hasLiveChildProcesses(runtime.id)).toBe(true);
+    expect(manager.liveChildPids(runtime.id)).toEqual([60_002, 60_003]);
+
+    // When the child processes exit (only root remains):
+    currentTable = [table[0]!, table[3]!];
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(manager.hasLiveChildProcesses(runtime.id)).toBe(false);
+    expect(manager.liveChildPids(runtime.id)).toEqual([]);
+
+    // Unknown runtime:
+    expect(manager.hasLiveChildProcesses('unknown-id')).toBe(false);
+  });
+
+  it('caches the process table across queries within the short TTL window (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let readCount = 0;
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => {
+        readCount += 1;
+        return [
+          {
+            pid: 80_001,
+            ppid: 1,
+            pgid: 80_001,
+            command: 'node',
+            commandLine: 'node server.js',
+            rssBytes: 100,
+          },
+          {
+            pid: 80_002,
+            ppid: 80_001,
+            pgid: 80_001,
+            command: 'npm',
+            commandLine: 'npm run test',
+            rssBytes: 50,
+          },
+        ];
+      },
+    });
+    const r1 = await manager.create({
+      id: 'r1',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:1',
+      cwd: '/tmp',
+      displayName: 'Agent 1',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [80_001];
+
+    expect(readCount).toBe(0);
+    expect(manager.hasLiveChildProcesses(r1.id)).toBe(true);
+    expect(readCount).toBe(1);
+
+    // Immediate second query shares cached process table
+    expect(manager.hasLiveChildProcesses(r1.id)).toBe(true);
+    expect(manager.liveChildPids(r1.id)).toEqual([80_002]);
+    expect(readCount).toBe(1);
+  });
+
+  it('shares cached process table across rapid adapter patches within 250ms (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let readCount = 0;
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => {
+        readCount += 1;
+        return [
+          {
+            pid: 80_001,
+            ppid: 1,
+            pgid: 80_001,
+            command: 'node',
+            commandLine: 'node server.js',
+            rssBytes: 100,
+          },
+        ];
+      },
+    });
+    const _r1 = await manager.create({
+      id: 'r1',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:1',
+      cwd: '/tmp',
+      displayName: 'Agent 1',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    const adapter = adapterState.last!;
+    adapter.ownedRoots = [80_001];
+
+    const initialReads = readCount;
+    for (let i = 0; i < 10; i++) {
+      adapter.emitPatch({
+        type: 'agent-live-state-updated-v2',
+        sessionId: adapter.sessionId,
+        timestamp: new Date().toISOString(),
+        live: { status: 'working' },
+      });
+    }
+
+    expect(readCount - initialReads).toBeLessThanOrEqual(1);
+  });
+
+  it('ignores idle persistent helpers but recognizes busy children and new children (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let currentTable: ProcessInfo[] = [];
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => currentTable,
+    });
+    const r1 = await manager.create({
+      id: 'r1',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:1',
+      cwd: '/tmp',
+      displayName: 'Codex',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [90_001];
+
+    // Scenario 1: Persistent helpers running under root, but IDLE (no CPU delta, old start)
+    currentTable = [
+      {
+        pid: 90_001,
+        ppid: 1,
+        pgid: 90_001,
+        command: 'codex-app-server',
+        commandLine: 'codex-app-server',
+        rssBytes: 100,
+      },
+      {
+        pid: 90_002,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'node',
+        commandLine: 'node /opt/code-mode-host.js',
+        rssBytes: 50,
+        cpuTicks: 10,
+        ageMs: 60_000,
+      },
+      {
+        pid: 90_003,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'chrome',
+        commandLine: '/usr/bin/chrome --headless',
+        rssBytes: 200,
+        cpuTicks: 20,
+        ageMs: 60_000,
+      },
+      {
+        pid: 90_004,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'node',
+        commandLine: 'node /opt/daemon-catalog-entry.js',
+        rssBytes: 30,
+        cpuTicks: 5,
+        ageMs: 60_000,
+      },
+    ];
+
+    const turnActivityAt = 1_000_000;
+    // Query 1: Prime CPU baseline for idle helpers
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_010_000,
+      })
+    ).toBe(false);
+
+    // Query 2: Still idle (no CPU delta)
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_020_000,
+      })
+    ).toBe(false);
+    expect(
+      manager.liveChildPids(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_020_000,
+      })
+    ).toEqual([]);
+
+    // Scenario 2: A helper becomes busy (CPU delta: 10 -> 25)
+    currentTable = [
+      currentTable[0]!,
+      { ...currentTable[1]!, cpuTicks: 25 },
+      currentTable[2]!,
+      currentTable[3]!,
+    ];
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_030_000,
+      })
+    ).toBe(true);
+    expect(
+      manager.liveChildPids(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_030_000,
+      })
+    ).toEqual([90_002]);
+
+    // Scenario 3: A newly spawned child process (e.g. sleep or npm test, started after lastActivityAt)
+    currentTable = [
+      currentTable[0]!,
+      currentTable[1]!, // no more delta (stays 25)
+      currentTable[2]!,
+      currentTable[3]!,
+      {
+        pid: 90_005,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'sh',
+        commandLine: 'sh -c sleep 150',
+        rssBytes: 10,
+        cpuTicks: 1,
+        ageMs: 5_000, // started at nowMs - 5_000 = 1_035_000 > turnActivityAt
+      },
+    ];
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_040_000,
+      })
+    ).toBe(true);
+    expect(
+      manager.liveChildPids(r1.id, {
+        lastActivityAt: turnActivityAt,
+        nowMs: 1_040_000,
+      })
+    ).toEqual([90_005]);
+  });
+
+  it('recognizes sleeping child process started before lastActivityAt but after turnStartedAt (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let currentTable: ProcessInfo[] = [];
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => currentTable,
+    });
+    const r1 = await manager.create({
+      id: 'r1',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:1',
+      cwd: '/tmp',
+      displayName: 'Codex',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [90_001];
+
+    // Root process + a sleeping child (state 'S') spawned early in the turn
+    // (turnStartedAt: 1_000_000, child started at 1_005_000, lastActivityAt: 1_010_000, nowMs: 1_070_000)
+    currentTable = [
+      {
+        pid: 90_001,
+        ppid: 1,
+        pgid: 90_001,
+        command: 'codex-app-server',
+        commandLine: 'codex-app-server',
+        rssBytes: 100,
+      },
+      {
+        pid: 90_002,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'sleep',
+        commandLine: 'sleep 150',
+        state: 'S',
+        rssBytes: 10,
+        cpuTicks: 1,
+        ageMs: 65_000, // nowMs(1_070_000) - 65_000 = 1_005_000 (after turnStartedAt 1_000_000, before lastActivityAt 1_010_000)
+      },
+    ];
+
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        turnStartedAt: 1_000_000,
+        lastActivityAt: 1_010_000,
+        nowMs: 1_070_000,
+      })
+    ).toBe(true);
+    expect(
+      manager.liveChildPids(r1.id, {
+        turnStartedAt: 1_000_000,
+        lastActivityAt: 1_010_000,
+        nowMs: 1_070_000,
+      })
+    ).toEqual([90_002]);
+
+    // Also test process in state 'R' (Running) or 'D' (Uninterruptible sleep) counts as active even without turnStartedAt
+    currentTable = [
+      {
+        pid: 90_001,
+        ppid: 1,
+        pgid: 90_001,
+        command: 'codex-app-server',
+        commandLine: 'codex-app-server',
+        rssBytes: 100,
+      },
+      {
+        pid: 90_003,
+        ppid: 90_001,
+        pgid: 90_001,
+        command: 'git',
+        commandLine: 'git push',
+        state: 'D',
+        rssBytes: 10,
+        cpuTicks: 1,
+        ageMs: 120_000, // older than turn
+      },
+    ];
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    expect(
+      manager.hasLiveChildProcesses(r1.id, {
+        turnStartedAt: 1_000_000,
+        lastActivityAt: 1_010_000,
+        nowMs: 1_070_000,
+      })
+    ).toBe(true);
+  });
+
+  it('detects reparented grandchild processes with ppid 1 and pgid root (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    const table: ProcessInfo[] = [
+      {
+        pid: 95_001,
+        ppid: 1,
+        pgid: 95_001,
+        command: 'cursor',
+        commandLine: 'cursor-agent acp',
+        rssBytes: 100,
+      },
+      // Reparented child (init ppid 1, but retains group leader pgid 95_001)
+      {
+        pid: 95_002,
+        ppid: 1,
+        pgid: 95_001,
+        command: 'sh',
+        commandLine: 'sh -c nohup sleep 100 &',
+        state: 'R',
+        rssBytes: 20,
+      },
+    ];
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => table,
+    });
+    const r1 = await manager.create({
+      id: 'cursor-runtime',
+      providerId: 'cursor',
+      profileActorId: 'agent-profile:cursor:default',
+      cwd: '/tmp',
+      displayName: 'Cursor',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [95_001];
+
+    const lastActivityAt = Date.now();
+    expect(manager.hasLiveChildProcesses(r1.id, { lastActivityAt })).toBe(true);
+    expect(manager.liveChildPids(r1.id, { lastActivityAt })).toEqual([95_002]);
+  });
+
+  it('detects live child processes under a real detached root on Linux (#1561)', async () => {
+    if (process.platform !== 'linux') return;
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    const parent = spawn('sh', ['-c', 'sh -c "while :; do :; done" & wait'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    const parentPid = parent.pid;
+    if (!parentPid) throw new Error('spawn did not return parent pid');
+
+    try {
+      // Ensure the child predates the activity tick by more than the 1s
+      // new-process tolerance; its running state or CPU sample must prove work.
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      const manager = new ChannelAgentRuntimeManager();
+      const r1 = await manager.create({
+        id: 'real-runtime',
+        providerId: 'cursor',
+        profileActorId: 'agent-profile:cursor:default',
+        cwd: '/tmp',
+        displayName: 'Cursor',
+        port: 3456,
+        configDir: '/tmp',
+      });
+      adapterState.last!.ownedRoots = [parentPid];
+      const lastActivityAt = Date.now();
+
+      expect(manager.hasLiveChildProcesses(r1.id, { lastActivityAt })).toBe(
+        true
+      );
+      const childPids = manager.liveChildPids(r1.id, { lastActivityAt });
+      expect(childPids.length).toBeGreaterThan(0);
+    } finally {
+      try {
+        process.kill(-parentPid, 'SIGKILL');
+      } catch {
+        // cleanup
+      }
+    }
+  });
+
+  it('detects a real busy child reparented under its detached root group on Linux (#1561)', async () => {
+    if (process.platform !== 'linux') return;
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    // The launcher exits immediately. Its CPU-busy child remains in the
+    // detached process group and is adopted by init, as ACP children can be.
+    const launcher = spawn('sh', ['-c', 'sh -c "while :; do :; done" & exit'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    const rootPid = launcher.pid;
+    if (!rootPid) throw new Error('spawn did not return launcher pid');
+
+    try {
+      let reparented: ProcessInfo | undefined;
+      await vi.waitFor(
+        () => {
+          const table = readProcessTable();
+          reparented = table.find(
+            (proc) => proc.pgid === rootPid && proc.pid !== rootPid
+          );
+          expect(table.some((proc) => proc.pid === rootPid)).toBe(false);
+          expect(reparented).toMatchObject({ pgid: rootPid });
+          expect(reparented!.ppid).not.toBe(rootPid);
+        },
+        { timeout: 2_000, interval: 25 }
+      );
+
+      // The child predates this activity tick by more than the 1s new-process
+      // tolerance, so liveness must come from its running state or CPU sample.
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      const lastActivityAt = Date.now();
+      const manager = new ChannelAgentRuntimeManager();
+      const runtime = await manager.create({
+        id: 'real-reparented-runtime',
+        providerId: 'cursor',
+        profileActorId: 'agent-profile:cursor:default',
+        cwd: '/tmp',
+        displayName: 'Cursor',
+        port: 3456,
+        configDir: '/tmp',
+      });
+      adapterState.last!.ownedRoots = [rootPid];
+
+      expect(
+        manager.liveChildPids(runtime.id, { lastActivityAt, sampleDelayMs: 20 })
+      ).toContain(reparented!.pid);
+    } finally {
+      try {
+        process.kill(-rootPid, 'SIGKILL');
+      } catch {
+        // cleanup
+      }
+    }
+  });
+
+  it('samples CPU deliberately when cached process table shows no delta (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let sampleCallCount = 0;
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => {
+        sampleCallCount++;
+        const cpuTicks = sampleCallCount >= 3 ? 25 : 10;
+        return [
+          {
+            pid: 96_001,
+            ppid: 1,
+            pgid: 96_001,
+            command: 'agent',
+            commandLine: 'agent',
+            rssBytes: 0,
+            state: 'S',
+          },
+          {
+            pid: 96_002,
+            ppid: 96_001,
+            pgid: 96_001,
+            command: 'worker',
+            commandLine: 'worker',
+            rssBytes: 0,
+            state: 'S',
+            cpuTicks,
+            ageMs: 60_000,
+          },
+        ];
+      },
+    });
+
+    const r1 = await manager.create({
+      id: 'deliberate-sample-runtime',
+      providerId: 'cursor',
+      profileActorId: 'agent-profile:cursor:default',
+      cwd: '/tmp',
+      displayName: 'Cursor',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [96_001];
+
+    const live = manager.liveChildProcesses(r1.id, {
+      turnStartedAt: Date.now() - 10_000,
+      sampleDelayMs: 10,
+    });
+    expect(live.map((p) => p.pid)).toEqual([96_002]);
+    expect(sampleCallCount).toBeGreaterThanOrEqual(3);
   });
 });

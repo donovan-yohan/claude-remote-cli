@@ -957,6 +957,15 @@ export class AntigravityProtocolAdapter
       return;
     }
 
+    if (stepType === 'checkpoint') {
+      this.emitLive({ activeTurnId: turnId });
+      this.emitProviderExtension(
+        { kind: 'checkpoint', state, stepIndex },
+        'debug'
+      );
+      return;
+    }
+
     // ADAPTER QUIRK (#1548). Every `step_update` names the turn agy is working
     // on, so a step type this adapter has no mapping for is still PROOF the
     // runtime is alive on that turn. agy emits `checkpoint` steps around long

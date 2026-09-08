@@ -94,6 +94,10 @@ const DSH_PROFILE: AcpHarnessProfile = {
   otherKindHeuristics: false,
   commandToolNames: COMMAND_TOOL_NAMES,
   fileToolNames: FILE_TOOL_NAMES,
+  persistentHelperPatterns: [
+    /(^|[/\s])airlock(\s|$)/i,
+    /(^|[/\s])daemon-catalog-entry(\.js)?(\s|$)/i,
+  ],
   fileEditStatus: 'edited',
   approvalSupport: DSH_APPROVAL_SUPPORT,
   command: DSH_CHANNEL_COMMAND,

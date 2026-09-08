@@ -5,9 +5,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import {
   collectLanguageServerDiagnostics,
+  isPersistentHelperProcess,
+  isZombieProcess,
   readProcessTable,
+  readProcStat,
   redactCommandLine,
   scheduleRelayProcessTreeReap,
+  signalProcessGroup,
   summarizeOwnedProcessResources,
   summarizeProcessReap,
   type ProcessInfo,
@@ -530,4 +534,217 @@ describe('process-tree session runtime reaping', () => {
       parent.stdout.destroy();
     }
   }, 15_000);
+
+  it('identifies zombie and dead process states', () => {
+    expect(isZombieProcess('Z')).toBe(true);
+    expect(isZombieProcess('z')).toBe(true);
+    expect(isZombieProcess('X')).toBe(true);
+    expect(isZombieProcess('x')).toBe(true);
+    expect(isZombieProcess('S')).toBe(false);
+    expect(isZombieProcess('R')).toBe(false);
+    expect(isZombieProcess(undefined)).toBe(false);
+  });
+
+  it('parses process state and cpu ticks from /proc stat', () => {
+    const tempDir = mkdtempSync(`${tmpdir()}/proc-stat-test-`);
+    try {
+      const pidDir = `${tempDir}/200`;
+      mkdirSync(pidDir, { recursive: true });
+      // /proc/<pid>/stat format with state 'Z', utime 15, stime 25, starttime 500
+      writeFileSync(
+        `${pidDir}/stat`,
+        '200 (zombie-worker) Z 100 100 1 0 0 0 0 0 0 0 15 25 0 0 20 0 1 0 500 1000 200'
+      );
+      writeFileSync(`${pidDir}/cmdline`, 'zombie-worker\0--arg\0');
+      writeFileSync(
+        `${pidDir}/status`,
+        'Name:\tzombie-worker\nVmRSS:\t100 kB\n'
+      );
+
+      const table = readProcessTable({ procRoot: tempDir });
+      expect(table).toHaveLength(1);
+      expect(table[0]).toMatchObject({
+        pid: 200,
+        ppid: 100,
+        pgid: 100,
+        state: 'Z',
+        command: 'zombie-worker',
+        utime: 15,
+        stime: 25,
+        cpuTicks: 40,
+        startTicks: 500,
+      });
+      expect(isZombieProcess(table[0]!.state)).toBe(true);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('reads proc stat fields directly with readProcStat', () => {
+    const tempDir = mkdtempSync(`${tmpdir()}/proc-stat-direct-`);
+    try {
+      const pidDir = `${tempDir}/300`;
+      mkdirSync(pidDir, { recursive: true });
+      writeFileSync(
+        `${pidDir}/stat`,
+        '300 (my-runner) R 1 300 1 0 0 0 0 0 0 0 10 20 0 0 20 0 1 0 777 1000 200'
+      );
+      const stat = readProcStat(300, tempDir);
+      expect(stat).toEqual({
+        command: 'my-runner',
+        state: 'R',
+        ppid: 1,
+        pgid: 300,
+        utime: 10,
+        stime: 20,
+        cpuTicks: 30,
+        startTicks: 777,
+      });
+      expect(readProcStat(999, tempDir)).toBeUndefined();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('signals process group with startTicks validation in signalProcessGroup', () => {
+    const tempDir = mkdtempSync(`${tmpdir()}/signal-pg-test-`);
+    try {
+      const pidDir = `${tempDir}/400`;
+      mkdirSync(pidDir, { recursive: true });
+      writeFileSync(
+        `${pidDir}/stat`,
+        '400 (proc-leader) S 1 400 1 0 0 0 0 0 0 0 5 5 0 0 20 0 1 0 1234 1000 200'
+      );
+
+      const signalsSent: Array<{ targetPid: number; signal: NodeJS.Signals }> =
+        [];
+      const mockKill = (p: number, s: NodeJS.Signals) => {
+        signalsSent.push({ targetPid: p, signal: s });
+      };
+
+      // 1. Matching startTicks -> signals process group (-pid)
+      signalProcessGroup(400, 'SIGTERM', 1234, tempDir, mockKill);
+      expect(signalsSent).toEqual([{ targetPid: -400, signal: 'SIGTERM' }]);
+
+      // 2. Mismatched startTicks (PID recycled) -> does not signal
+      signalsSent.length = 0;
+      signalProcessGroup(400, 'SIGTERM', 9999, tempDir, mockKill);
+      expect(signalsSent).toEqual([]);
+
+      // 3. Without startTicks -> signals process group (-pid)
+      signalsSent.length = 0;
+      signalProcessGroup(400, 'SIGKILL', undefined, tempDir, mockKill);
+      expect(signalsSent).toEqual([{ targetPid: -400, signal: 'SIGKILL' }]);
+
+      // 4. Fallback to positive pid if group kill fails
+      signalsSent.length = 0;
+      let callCount = 0;
+      const failingGroupKill = (p: number, s: NodeJS.Signals) => {
+        callCount++;
+        if (p < 0) throw new Error('ESRCH');
+        signalsSent.push({ targetPid: p, signal: s });
+      };
+      signalProcessGroup(400, 'SIGTERM', 1234, tempDir, failingGroupKill);
+      expect(callCount).toBe(2);
+      expect(signalsSent).toEqual([{ targetPid: 400, signal: 'SIGTERM' }]);
+
+      // 5. Guards against invalid PID or current process PID
+      signalsSent.length = 0;
+      signalProcessGroup(0, 'SIGTERM', undefined, tempDir, mockKill);
+      signalProcessGroup(1, 'SIGTERM', undefined, tempDir, mockKill);
+      signalProcessGroup(process.pid, 'SIGTERM', undefined, tempDir, mockKill);
+      expect(signalsSent).toEqual([]);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  describe('isPersistentHelperProcess', () => {
+    it('identifies language servers as helpers by default', () => {
+      expect(
+        isPersistentHelperProcess({
+          command: 'node',
+          commandLine: 'node /path/to/tsserver.js --stdio',
+        })
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess({
+          command: 'typescript-language-server',
+          commandLine: 'typescript-language-server --stdio',
+        })
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess({
+          command: 'pyright-langserver',
+          commandLine: 'pyright-langserver --stdio',
+        })
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess({
+          languageServerKind: 'tsserver',
+        })
+      ).toBe(true);
+    });
+
+    it('does not treat chrome/playwright browsers or unconfigured daemons as helpers by default', () => {
+      expect(
+        isPersistentHelperProcess({
+          command: 'chrome',
+          commandLine: '/opt/google/chrome/chrome --headless',
+        })
+      ).toBe(false);
+      expect(
+        isPersistentHelperProcess({
+          command: 'chromium',
+          commandLine: 'chromium --remote-debugging-port=9222',
+        })
+      ).toBe(false);
+      expect(
+        isPersistentHelperProcess({
+          command: 'code-mode-host',
+          commandLine: 'node code-mode-host.js',
+        })
+      ).toBe(false);
+      expect(
+        isPersistentHelperProcess({
+          command: 'airlock',
+          commandLine: 'airlock proxy',
+        })
+      ).toBe(false);
+    });
+
+    it('matches custom adapter-declared helper patterns when provided', () => {
+      const customPatterns = [
+        /(^|[/\s])code-mode-host(\s|$)/i,
+        /(^|[/\s])airlock(\s|$)/i,
+      ];
+      expect(
+        isPersistentHelperProcess(
+          {
+            command: 'code-mode-host',
+            commandLine: 'node code-mode-host.js',
+          },
+          customPatterns
+        )
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess(
+          {
+            command: 'airlock',
+            commandLine: 'airlock proxy',
+          },
+          customPatterns
+        )
+      ).toBe(true);
+      expect(
+        isPersistentHelperProcess(
+          {
+            command: 'vitest',
+            commandLine: 'npx vitest run',
+          },
+          customPatterns
+        )
+      ).toBe(false);
+    });
+  });
 });

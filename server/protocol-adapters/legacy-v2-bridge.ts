@@ -143,6 +143,16 @@ export class LegacyProtocolAdapterV2Bridge extends BaseProtocolAdapterV2 {
     return this.inner.status;
   }
 
+  ownedProcessRootPids(): number[] {
+    return (
+      (
+        this.inner as unknown as {
+          ownedProcessRootPids?: () => number[];
+        }
+      ).ownedProcessRootPids?.() ?? []
+    );
+  }
+
   /**
    * Drop the inner patch subscription. Idempotent, and the first move of every
    * teardown path: nothing the inner adapter emits after this reaches a

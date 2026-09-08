@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { LineFramer } from './line-framer.js';
+import { readProcStat, signalProcessGroup } from './process-tree.js';
 
 export interface PiAgentRpcMessage extends Record<string, unknown> {
   type: string;
@@ -41,6 +42,9 @@ export class PiAgentRpcClient extends EventEmitter {
   private draining = false;
   private detachChildListeners: (() => void) | null = null;
   private detachDrainListener: (() => void) | null = null;
+  private startTicks: number | undefined;
+  /** A Linux detached child owns a process group only when it is its leader. */
+  private detachedGroupLeader = false;
 
   constructor(private readonly options: PiAgentRpcClientOptions = {}) {
     super();
@@ -67,7 +71,9 @@ export class PiAgentRpcClient extends EventEmitter {
         void this.stop().catch((stopError: unknown) =>
           this.emit(
             'error',
-            stopError instanceof Error ? stopError : new Error(String(stopError))
+            stopError instanceof Error
+              ? stopError
+              : new Error(String(stopError))
           )
         );
       },
@@ -75,6 +81,10 @@ export class PiAgentRpcClient extends EventEmitter {
     // An EventEmitter `error` without a listener terminates Node. Transport
     // errors are still observable, but are safe during early process startup.
     this.on('error', () => undefined);
+  }
+
+  get pid(): number | undefined {
+    return this.child?.pid;
   }
 
   async start(): Promise<PiAgentRpcMessage> {
@@ -88,9 +98,18 @@ export class PiAgentRpcClient extends EventEmitter {
         ...(this.options.cwd ? { cwd: this.options.cwd } : {}),
         ...(this.options.env ? { env: this.options.env } : {}),
         stdio: 'pipe',
+        ...(process.platform === 'linux' ? { detached: true } : {}),
       }
     );
     this.child = child;
+    this.startTicks = undefined;
+    this.detachedGroupLeader = false;
+    if (child.pid) {
+      const stat = readProcStat(child.pid);
+      this.startTicks = stat?.startTicks;
+      this.detachedGroupLeader =
+        process.platform === 'linux' && stat?.pgid === child.pid;
+    }
     this.framer.reset();
     const onStdoutData = (chunk: Buffer | string) => this.consume(chunk);
     const onStderrData = (chunk: Buffer | string) =>
@@ -220,13 +239,21 @@ export class PiAgentRpcClient extends EventEmitter {
 
     try {
       try {
-        child.kill('SIGTERM');
+        if (child.pid && this.detachedGroupLeader) {
+          signalProcessGroup(child.pid, 'SIGTERM', this.startTicks);
+        } else {
+          child.kill('SIGTERM');
+        }
       } catch {
         // The process may already have exited.
       }
       if (await waitForClose(timeoutMs)) return;
       try {
-        child.kill('SIGKILL');
+        if (child.pid && this.detachedGroupLeader) {
+          signalProcessGroup(child.pid, 'SIGKILL', this.startTicks);
+        } else {
+          child.kill('SIGKILL');
+        }
       } catch {
         // The process may already have exited.
       }

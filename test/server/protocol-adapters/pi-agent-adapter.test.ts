@@ -1102,4 +1102,16 @@ describe('PiAgentProtocolAdapter', () => {
 
     expect(call.mock.calls.filter(([type]) => type === 'steer').length).toBe(1);
   });
+
+  it('exposes owned process root PIDs from the underlying client (#1561)', async () => {
+    const { adapter, client } = harness();
+    vi.spyOn(client, 'pid', 'get').mockReturnValue(5151);
+    expect(adapter.ownedProcessRootPids()).toEqual([]);
+
+    await adapter.connect(config);
+    expect(adapter.ownedProcessRootPids()).toEqual([5151]);
+
+    await adapter.disconnect();
+    expect(adapter.ownedProcessRootPids()).toEqual([]);
+  });
 });

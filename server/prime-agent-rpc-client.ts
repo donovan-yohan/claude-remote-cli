@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { LineFramer } from './line-framer.js';
+import { readProcStat, signalProcessGroup } from './process-tree.js';
 
 export interface PrimeAgentRpcMessage extends Record<string, unknown> {
   type: string;
@@ -66,6 +67,9 @@ export class PrimeAgentRpcClient extends EventEmitter {
   private readonly diagnosticRingSize: number;
   private ready = false;
   private tombstones: Array<{ command: string; expiresAt: number }> = [];
+  private startTicks: number | undefined;
+  /** A Linux detached child owns a process group only when it is its leader. */
+  private detachedGroupLeader = false;
 
   constructor(private readonly options: PrimeAgentRpcClientOptions = {}) {
     super();
@@ -112,6 +116,10 @@ export class PrimeAgentRpcClient extends EventEmitter {
     return this.diagnosticRing.join('\n');
   }
 
+  get pid(): number | undefined {
+    return this.child?.pid;
+  }
+
   private recordDiagnostic(text: string): void {
     for (const line of text.split('\n')) {
       const trimmed = line.replace(/\s+$/, '');
@@ -134,9 +142,18 @@ export class PrimeAgentRpcClient extends EventEmitter {
         ...(this.options.cwd ? { cwd: this.options.cwd } : {}),
         ...(this.options.env ? { env: this.options.env } : {}),
         stdio: 'pipe',
+        ...(process.platform === 'linux' ? { detached: true } : {}),
       }
     );
     this.child = child;
+    this.startTicks = undefined;
+    this.detachedGroupLeader = false;
+    if (child.pid) {
+      const stat = readProcStat(child.pid);
+      this.startTicks = stat?.startTicks;
+      this.detachedGroupLeader =
+        process.platform === 'linux' && stat?.pgid === child.pid;
+    }
     this.framer.reset();
     const onStdoutData = (chunk: Buffer | string) => this.consume(chunk);
     const onStderrData = (chunk: Buffer | string) => {
@@ -288,13 +305,21 @@ export class PrimeAgentRpcClient extends EventEmitter {
 
     try {
       try {
-        child.kill('SIGTERM');
+        if (child.pid && this.detachedGroupLeader) {
+          signalProcessGroup(child.pid, 'SIGTERM', this.startTicks);
+        } else {
+          child.kill('SIGTERM');
+        }
       } catch {
         // The process may already have exited.
       }
       if (await waitForClose(timeoutMs)) return;
       try {
-        child.kill('SIGKILL');
+        if (child.pid && this.detachedGroupLeader) {
+          signalProcessGroup(child.pid, 'SIGKILL', this.startTicks);
+        } else {
+          child.kill('SIGKILL');
+        }
       } catch {
         // The process may already have exited.
       }

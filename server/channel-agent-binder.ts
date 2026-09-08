@@ -39,7 +39,9 @@ import {
 import type {
   ChannelAgentRuntime,
   CreateChannelAgentRuntimeParams,
+  LiveChildCheckOptions,
 } from './channel-agent-runtime.js';
+import type { ProcessInfo } from './process-tree.js';
 import { providerResumeId } from './channel-agent-runtime.js';
 import {
   DEFAULT_ORCHESTRATOR_PROVIDER_ID,
@@ -350,6 +352,11 @@ export interface BinderRuntimes {
   get(id: string): ChannelAgentRuntime | undefined;
   destroy(id: string): Promise<void>;
   onRuntimeEnd(cb: (runtimeId: string) => void): () => void;
+  liveChildProcesses?(
+    id: string,
+    options?: LiveChildCheckOptions
+  ): ProcessInfo[];
+  hasLiveChildProcesses?(id: string, options?: LiveChildCheckOptions): boolean;
 }
 
 export interface ChannelAgentBinderDeps {
@@ -643,6 +650,8 @@ export interface LiveBinding {
   watchdog: NodeJS.Timeout | null;
   /** Hard turn-wall-clock timer, armed at turn start and never re-armed (#1541). */
   turnCeiling: NodeJS.Timeout | null;
+  /** When the active turn started; used to calculate remaining ceiling budget on drain (#1561). */
+  turnStartedAt: number;
   /**
    * When the runtime last emitted ANYTHING for the active turn (#1541). The
    * inactivity watchdog measures from here, so a working turn is never drained.
@@ -2052,6 +2061,44 @@ export function createChannelAgentBinder(
         scheduleWatchdog(binding, watchdogMs);
         return;
       }
+      const liveChildren =
+        binding.runtimeId && deps.runtimes.liveChildProcesses
+          ? deps.runtimes.liveChildProcesses(binding.runtimeId, {
+              turnStartedAt: binding.turnStartedAt,
+              lastActivityAt: binding.lastActivityAt,
+            })
+          : [];
+      const hasLiveChildren =
+        liveChildren.length > 0 ||
+        (binding.runtimeId && !deps.runtimes.liveChildProcesses
+          ? Boolean(
+              deps.runtimes.hasLiveChildProcesses?.(binding.runtimeId, {
+                turnStartedAt: binding.turnStartedAt,
+                lastActivityAt: binding.lastActivityAt,
+              })
+            )
+          : false);
+      if (hasLiveChildren) {
+        // The runtime has a live child process tree (e.g. `npm test`, `npm run check`)
+        // running under it (#1561). A runtime waiting on long child commands is active,
+        // not stuck: re-arm for another silence window without advancing lastActivityAt;
+        // the hard ceiling still bounds a runaway.
+        logger.debug(
+          'channel binder watchdog deferred to live child process tree',
+          {
+            channelId: binding.channelId,
+            framework: binding.framework,
+            turnId: binding.activeTurnId,
+            runtimeId: binding.runtimeId,
+            liveChildCount: liveChildren.length,
+            liveChildCommands: liveChildren
+              .slice(0, 3)
+              .map((p) => p.commandLine || p.command),
+          }
+        );
+        scheduleWatchdog(binding, watchdogMs);
+        return;
+      }
       const idleMs = now() - binding.lastActivityAt;
       if (idleMs < watchdogMs) {
         // The runtime emitted since this timer was armed, so the turn is
@@ -2066,10 +2113,14 @@ export function createChannelAgentBinder(
         turnId: binding.activeTurnId,
         idleMs,
       });
+      const remainingCeilingMs = Math.max(
+        0,
+        turnCeilingMs - (now() - binding.turnStartedAt)
+      );
       drainBoundedTurn(
         binding,
         'watchdog',
-        `@${binding.displayName} sent nothing for ${describeMs(watchdogMs)} and was interrupted; the turn was force-drained.`
+        `@${binding.displayName} sent nothing for ${describeMs(watchdogMs)} and was interrupted; the turn was force-drained (remaining turn budget: ${describeMs(remainingCeilingMs)}).`
       );
     }, delayMs);
     binding.watchdog.unref?.();
@@ -2090,6 +2141,7 @@ export function createChannelAgentBinder(
    */
   function armTurnCeiling(binding: LiveBinding): void {
     disarmTurnCeiling(binding);
+    binding.turnStartedAt = now();
     binding.turnCeiling = setTimeout(() => {
       binding.turnCeiling = null;
       if (binding.activeTurnId === null) return;
@@ -2234,6 +2286,7 @@ export function createChannelAgentBinder(
       emittedSteerSupported: false,
       watchdog: null,
       turnCeiling: null,
+      turnStartedAt: now(),
       lastActivityAt: now(),
       openToolItems: new Set(),
       retriedTurns: new Set(),
@@ -2298,6 +2351,7 @@ export function createChannelAgentBinder(
       // charged to its replacement.
       existing.openToolItems.clear();
       existing.lastActivityAt = now();
+      existing.turnStartedAt = now();
       // Removing the old adapter listeners establishes a hard boundary for
       // anonymous provider turn ids while retaining an exact active retry.
       existing.turnZeroFallbackUnsafe = false;
@@ -4511,11 +4565,17 @@ export function createChannelAgentBinder(
       const failureCode = recordProviderFailure(binding, patch);
       // Only surface a system row when NO assistant row opened — otherwise the
       // bridge's `failed` finalize is the visible artifact (§7, no duplicate).
-      if (!binding.sawStream) {
+      // Tool and whole-turn timeouts must always post visible system rows (#1561).
+      const isTimeout =
+        patch.message.includes('tool call timed out') ||
+        patch.message.includes('turn timed out');
+      if (!binding.sawStream || isTimeout) {
         const suffix = failureCode ? ` (${failureCode})` : '';
         postSystemRow(
           binding.channelId,
-          `@${binding.displayName} errored${suffix}: ${patch.message}`,
+          isTimeout
+            ? `@${binding.displayName} ${patch.message}`
+            : `@${binding.displayName} errored${suffix}: ${patch.message}`,
           {
             parentMessageId:
               activeTurnId === null

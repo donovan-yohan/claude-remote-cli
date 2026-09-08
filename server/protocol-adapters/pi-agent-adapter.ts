@@ -100,6 +100,7 @@ export class PiAgentProtocolAdapter extends BaseProtocolAdapterV2 {
   private _status: AdapterStatus = 'disconnected';
   private config: AdapterConfig | null = null;
   private client: PiAgentRpcClient | null = null;
+  private exitedProcessRootPid: number | null = null;
   private providerSessionId: string | null = null;
   private providerSessionFile: string | null = null;
   private activeTurnId: string | null = null;
@@ -159,9 +160,15 @@ export class PiAgentProtocolAdapter extends BaseProtocolAdapterV2 {
     return this._status;
   }
 
+  ownedProcessRootPids(): number[] {
+    const pid = this.client?.pid;
+    return typeof pid === 'number' && pid > 1 ? [pid] : [];
+  }
+
   async connect(config: AdapterConfig): Promise<void> {
     this.config = config;
     this._status = 'connecting';
+    this.exitedProcessRootPid = null;
     const args = ['--mode', 'rpc', '--no-extensions'];
     const provider = string(config.extra?.['provider']);
     const thinking = string(config.extra?.['effort']);
@@ -239,6 +246,7 @@ export class PiAgentProtocolAdapter extends BaseProtocolAdapterV2 {
 
   private async teardownClient(): Promise<void> {
     const client = this.client;
+    if (client?.pid) this.exitedProcessRootPid = client.pid;
     this.client = null;
     this.clientGeneration += 1;
     await client?.stop();

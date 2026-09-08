@@ -107,6 +107,7 @@ workflow.
 
 #### Fixed
 
+- On Linux, the inactivity watchdog now re-arms without advancing `lastActivityAt` while a working child process tree (such as a long-running test suite or build command) is alive. The hard turn ceiling still bounds the turn, and force-drain notices report its remaining budget (#1561).
 - Delivery contracts now evaluate `commit`, `push`, and `pr` as deltas from a post-time baseline, so a commit-then-push turn still satisfies `commit` and an existing PR does not satisfy `pr` unless it advanced (#1578).
 - A throwaway hub process launched from a checkout (including `node dist/server/index.js --help`) no longer opens the live hub’s `channel-chat.db` and runs restart recovery. The hub now writes a `hub.lock` ownership record in its config dir and any other process refuses to open the channel store while the owning PID is alive (#1587).
 - An agent turn is no longer interrupted while it sits inside one long, silent

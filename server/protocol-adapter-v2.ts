@@ -121,6 +121,8 @@ export interface ProtocolAdapterV2 {
   readonly runtimeOwnership: 'spawned' | 'attached';
   /** Roots of subprocess trees owned by this adapter, if any. */
   ownedProcessRootPids?(): number[];
+  /** Regex patterns identifying persistent helper processes spawned by this adapter/harness. */
+  persistentHelperPatterns?(): readonly RegExp[];
   readonly agentType: string;
   /** Redaction-safe command previews for a currently connected session. */
   getSlashCommands?(): import('../shared/agent-chat-protocol-v2.js').AgentSlashCommandV2[];

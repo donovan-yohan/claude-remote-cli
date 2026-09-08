@@ -1968,6 +1968,49 @@ class HeartbeatAdapter extends BaseProtocolAdapterV2 {
     });
   }
 
+  emitCheckpoint(stepIndex: number, turnId?: string): void {
+    const targetTurn = turnId ?? this.activeTurn;
+    if (!targetTurn) return;
+    this.emitPatch({
+      type: 'agent-item-started-v2',
+      sessionId: this.sid,
+      timestamp: 't',
+      turnId: targetTurn,
+      item: {
+        type: 'providerExtension',
+        id: `ext-antigravity-${targetTurn}-${stepIndex}`,
+        namespace: 'antigravity',
+        payload: { kind: 'checkpoint', state: 'DONE', stepIndex },
+        status: 'completed',
+      },
+    });
+  }
+
+  emitError(message: string, turnId?: string): void {
+    const targetTurn = turnId ?? this.activeTurn;
+    this.emitPatch({
+      type: 'agent-error-v2',
+      sessionId: this.sid,
+      timestamp: 't',
+      ...(targetTurn ? { turnId: targetTurn } : {}),
+      message,
+    });
+  }
+
+  fail(_message = 'turn failed'): void {
+    const turnId = this.activeTurn;
+    if (turnId === null) return;
+    this.stopBeating();
+    this.activeTurn = null;
+    this.emitPatch({
+      type: 'agent-turn-completed-v2',
+      sessionId: this.sid,
+      timestamp: 't',
+      turnId,
+      status: 'failed',
+    });
+  }
+
   complete(text = 'long job done'): void {
     const turnId = this.activeTurn;
     if (turnId === null) return;
@@ -2588,6 +2631,7 @@ interface SessionsHarness {
   ) => Promise<void>;
   lastCreateParams: () => CreateChannelAgentRuntimeParams | undefined;
   createParams: () => CreateChannelAgentRuntimeParams[];
+  setHasLiveChildProcesses: (sessionId: string, has: boolean) => void;
 }
 
 function makeSessions(
@@ -2607,6 +2651,7 @@ function makeSessions(
   let createErrorOnceRaised = false;
   let lastParams: CreateChannelAgentRuntimeParams | undefined;
   const createParams: CreateChannelAgentRuntimeParams[] = [];
+  const liveChildProcessRuntimes = new Set<string>();
   const sessions: BinderRuntimes = {
     async create(params) {
       spawns++;
@@ -2651,6 +2696,7 @@ function makeSessions(
     },
     async destroy(id) {
       if (!created.delete(id)) return;
+      liveChildProcessRuntimes.delete(id);
       destroyCalls.push(id);
       for (const cb of [...endCbs]) cb(id);
     },
@@ -2661,6 +2707,24 @@ function makeSessions(
         if (i >= 0) endCbs.splice(i, 1);
       };
     },
+    liveChildProcesses(id) {
+      if (liveChildProcessRuntimes.has(id)) {
+        return [
+          {
+            pid: 1234,
+            ppid: 1000,
+            pgid: 1000,
+            command: 'npm',
+            commandLine: 'npm test',
+            rssBytes: 1024,
+          },
+        ];
+      }
+      return [];
+    },
+    hasLiveChildProcesses(id) {
+      return liveChildProcessRuntimes.has(id);
+    },
   };
   return {
     sessions,
@@ -2670,10 +2734,12 @@ function makeSessions(
     adapterFor: (id) => created.get(id)!.runtime.adapter,
     fireEnd: (id) => {
       created.delete(id);
+      liveChildProcessRuntimes.delete(id);
       for (const cb of [...endCbs]) cb(id);
     },
     forgetWithoutEnd: (id) => {
       created.delete(id);
+      liveChildProcessRuntimes.delete(id);
     },
     registerSourceSession: (id, role) => {
       created.set(id, {
@@ -2704,6 +2770,10 @@ function makeSessions(
     },
     lastCreateParams: () => lastParams,
     createParams: () => createParams,
+    setHasLiveChildProcesses: (sessionId: string, has: boolean) => {
+      if (has) liveChildProcessRuntimes.add(sessionId);
+      else liveChildProcessRuntimes.delete(sessionId);
+    },
   };
 }
 
@@ -8953,6 +9023,191 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     expect(
       collectReceipts(hub, CH).some((r) => r.state === 'expired_watchdog')
     ).toBe(true);
+  });
+
+  it('a runtime with a live child process tree is not force-drained by watchdog (#1561)', async () => {
+    const { binder, store, hub, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 40,
+    });
+    postWithAsyncRun(store, binder, '@mock long-child', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    // The runtime is waiting on a long child command (npm test / check / build)
+    // that emits nothing on the stream wire.
+    sessions.setHasLiveChildProcesses(sessionId, true);
+    await new Promise((r) => setTimeout(r, 120));
+    expect(
+      systemRows(store).some((m) => m.body.text.includes('force-drained'))
+    ).toBe(false);
+
+    // When the child process finishes and the runtime remains silent, the
+    // silence budget restarts and drains if still silent.
+    sessions.setHasLiveChildProcesses(sessionId, false);
+    await waitFor(
+      () =>
+        systemRows(store).some((m) => m.body.text.includes('force-drained')),
+      4000
+    );
+    expect(adapter.interruptCalls).toEqual([adapter.sendCalls[0]]);
+    expect(
+      collectReceipts(hub, CH).some((r) => r.state === 'expired_watchdog')
+    ).toBe(true);
+  });
+
+  it('turn ceiling still fires while hasLiveChildProcesses stays true (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 25,
+      turnCeilingMs: 60,
+    });
+    postWithAsyncRun(store, binder, '@mock runaway-child', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    // Keep child processes active indefinitely
+    sessions.setHasLiveChildProcesses(sessionId, true);
+
+    // Turn ceiling must still fire and drain the runaway turn
+    await waitFor(
+      () => systemRows(store).some((m) => m.body.text.includes('turn limit')),
+      4000
+    );
+    const drainRow = systemRows(store).find((m) =>
+      m.body.text.includes('turn limit')
+    )!;
+    expect(drainRow.body.text).toContain('turn limit');
+    expect(adapter.interruptCalls).toEqual([adapter.sendCalls[0]]);
+  });
+
+  it('antigravity checkpoint poll refresh keeps turn active (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 40,
+    });
+    postWithAsyncRun(store, binder, '@mock poll-refresh', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+    const turnId = adapter.sendCalls[0]!;
+
+    // Periodic checkpoint provider extensions arrive before watchdogMs expires
+    for (let i = 0; i < 4; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      adapter.emitCheckpoint(i, turnId);
+    }
+
+    // 80ms have elapsed (watchdogMs is 40ms) but checkpoint keep-alives kept turn alive
+    expect(
+      systemRows(store).some((m) => m.body.text.includes('force-drained'))
+    ).toBe(false);
+
+    // Once checkpoints stop, watchdog drains
+    await waitFor(
+      () =>
+        systemRows(store).some((m) => m.body.text.includes('force-drained')),
+      4000
+    );
+    expect(adapter.interruptCalls).toEqual([turnId]);
+  });
+
+  it('drain row includes remaining turn ceiling budget when watchdog expires (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 25,
+      turnCeilingMs: 60_000,
+    });
+    postWithAsyncRun(store, binder, '@mock silent', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = sessions.adapterFor(
+      sessions.firstSessionId()
+    ) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    await waitFor(
+      () =>
+        systemRows(store).some((m) => m.body.text.includes('force-drained')),
+      4000
+    );
+    const drainRow = systemRows(store).find((m) =>
+      m.body.text.includes('force-drained')
+    )!;
+    expect(drainRow.body.text).toContain('remaining turn budget:');
+    expect(drainRow.body.text).toContain('sent nothing for 25 ms');
+  });
+
+  it('posts a system row when a tool call times out even after sawStream is true (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+    });
+    postWithAsyncRun(store, binder, '@mock timeout-tool', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    // Open a tool item
+    adapter.startTool('npm test');
+
+    // Adapter errors out due to tool timeout
+    adapter.emitError('tool call timed out after 30 s', adapter.sendCalls[0]);
+    adapter.fail('tool call timed out after 30 s');
+
+    await waitFor(
+      () =>
+        systemRows(store).some((m) =>
+          m.body.text.includes('tool call timed out after 30 s')
+        ),
+      4000
+    );
+    const timeoutRow = systemRows(store).find((m) =>
+      m.body.text.includes('tool call timed out after 30 s')
+    )!;
+    expect(timeoutRow.body.text).toBe('@Mock tool call timed out after 30 s');
+  });
+
+  it('posts a system row when a turn times out even after sawStream is true (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+    });
+    postWithAsyncRun(store, binder, '@mock timeout-turn', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    adapter.emitError('turn timed out after 30 s', adapter.sendCalls[0]);
+    adapter.fail('turn timed out after 30 s');
+
+    await waitFor(
+      () =>
+        systemRows(store).some((m) =>
+          m.body.text.includes('turn timed out after 30 s')
+        ),
+      4000
+    );
+    const timeoutRow = systemRows(store).find((m) =>
+      m.body.text.includes('turn timed out after 30 s')
+    )!;
+    expect(timeoutRow.body.text).toBe('@Mock turn timed out after 30 s');
   });
 
   it('cross-node topics fail visibly and never spawn a local stand-in', async () => {

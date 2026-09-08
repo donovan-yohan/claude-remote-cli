@@ -171,6 +171,11 @@ export interface AcpHarnessProfile {
   /** Native tool titles that should render as a file-change card. */
   fileToolNames?: ReadonlySet<string>;
   /**
+   * Harness-specific persistent helper process matchers (e.g. background hosts/daemons
+   * spawned by the harness that stay alive across turns).
+   */
+  persistentHelperPatterns?: readonly RegExp[];
+  /**
    * QUIRK hook: provider-specific failure classification for #1571.
    * Used for auth/quota phrases that are not shared across ACP harnesses.
    */
@@ -256,6 +261,7 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
   private config: AdapterConfig | null = null;
   private client: AcpClient | null = null;
   private clientGeneration = 0;
+  private exitedProcessRootPid: number | null = null;
   private providerSessionId: string | null = null;
   private activeTurnId: string | null = null;
   private activeStartedMs = 0;
@@ -315,9 +321,19 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
     return this._status;
   }
 
+  ownedProcessRootPids(): number[] {
+    const pid = this.client?.pid;
+    return typeof pid === 'number' && pid > 1 ? [pid] : [];
+  }
+
+  persistentHelperPatterns(): readonly RegExp[] {
+    return this.profile.persistentHelperPatterns ?? [];
+  }
+
   async connect(config: AdapterConfig): Promise<void> {
     this.config = config;
     this._status = 'connecting';
+    this.exitedProcessRootPid = null;
     const command =
       typeof this.profile.command === 'function'
         ? this.profile.command(config)
@@ -570,6 +586,7 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
 
   private async teardownClient(): Promise<void> {
     const client = this.client;
+    if (client?.pid) this.exitedProcessRootPid = client.pid;
     this.client = null;
     this.clientGeneration += 1;
     await client?.stop();
@@ -681,7 +698,14 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
     } else if (stopReason === 'end_turn') {
       this.completeTurn('completed');
     } else {
-      const message = stopReasonMessage(this.agentType, stopReason);
+      const hasOpenTool = Array.from(this.items.values()).some(
+        (item) => item.status === 'running'
+      );
+      const message = stopReasonMessage(
+        this.agentType,
+        stopReason,
+        hasOpenTool
+      );
       this.emitError(message);
       this.completeTurn('failed', message);
     }
@@ -1655,13 +1679,30 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
 
 export function stopReasonMessage(
   agentType: string,
-  stopReason: string
+  stopReason: string,
+  hasOpenTool = false
 ): string {
   if (stopReason === 'max_tokens')
     return `${agentType} hit its output-token limit`;
   if (stopReason === 'max_turn_requests')
     return `${agentType} hit its per-turn request limit`;
   if (stopReason === 'refusal') return `${agentType} refused this request`;
+  const timeoutMatch =
+    /^(?:tool_?)?timeout(?::?\s*(\d+)\s*s?)?$/i.exec(stopReason) ||
+    /^(?:tool(?:_call)?\s+)?timed?\s*out(?:\s+after\s+(\d+)\s*s?)?$/i.exec(
+      stopReason
+    ) ||
+    /^(?:turn\s+)?timed?\s*out(?:\s+after\s+(\d+)\s*s?)?$/i.exec(stopReason);
+  if (timeoutMatch) {
+    const seconds = timeoutMatch[1];
+    const isTool = /^tool/i.test(stopReason) || hasOpenTool;
+    if (isTool) {
+      return seconds
+        ? `tool call timed out after ${seconds} s`
+        : 'tool call timed out';
+    }
+    return seconds ? `turn timed out after ${seconds} s` : 'turn timed out';
+  }
   return `${agentType} ended the turn: ${stopReason}`;
 }
 
