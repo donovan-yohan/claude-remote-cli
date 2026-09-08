@@ -79,6 +79,17 @@ export interface ChannelAsyncRunTarget {
   completedAt?: string;
 }
 
+/**
+ * Immediate outcome for one addressed profile on a `channels.post` response.
+ * This stays separate from the durable run target because routing may advance
+ * a run while the HTTP response is being serialized.
+ */
+export interface ChannelPostMentionDelivery {
+  targetProfileId: string;
+  state: 'queued' | 'refused_policy' | 'refused_provider';
+  reasonCode?: ChannelDeliveryReceiptReasonCode;
+}
+
 /** One immutable requester post and its durable per-target outcomes. */
 export interface ChannelAsyncRun {
   id: ChannelAsyncRunId;

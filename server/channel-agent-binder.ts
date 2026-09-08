@@ -5886,6 +5886,44 @@ export function createChannelAgentBinder(
           }
         };
         const framework = profile.providerId;
+        const refuseProviderFailure = (
+          target: MentionTarget,
+          failure: NonNullable<ReturnType<typeof activeProviderFailure>>
+        ) => {
+          releaseDeferredParent();
+          rejectAsyncTarget('refused', `provider-failure:${failure.code}`);
+          const senderDisplayName =
+            profile.displayName || target.displayName || framework;
+          postUnavailableRow(
+            trigger.channelId,
+            profile.id,
+            `@${senderDisplayName} is unavailable — ${failure.reason}`,
+            parentForTrigger(trigger)
+          );
+          emitReceipt({
+            trigger,
+            targetProfileId: profile.id,
+            state: 'refused_provider',
+            reasonCode: providerFailureReceiptReason(failure.code),
+          });
+        };
+        // `routeOne` runs synchronously through its first await. When the
+        // target cache is warm, surface a classified provider refusal in that
+        // same request rather than making the post response race discovery.
+        const cachedTarget =
+          targetsCache && now() - targetsCache.at < TARGETS_TTL_MS
+            ? targetsCache.value.find((target) => target.id === framework)
+            : undefined;
+        if (
+          cachedTarget &&
+          availabilityForProfile(profile, cachedTarget).available
+        ) {
+          const failure = activeProviderFailure(profile, cachedTarget);
+          if (failure) {
+            refuseProviderFailure(cachedTarget, failure);
+            return;
+          }
+        }
         const target = await resolveTarget(framework);
         if (closed) return; // close() raced the availability probe
         if (!target) {
@@ -5921,22 +5959,7 @@ export function createChannelAgentBinder(
         if (availability.available) {
           const failure = activeProviderFailure(profile, target);
           if (failure) {
-            releaseDeferredParent();
-            rejectAsyncTarget('refused', `provider-failure:${failure.code}`);
-            const senderDisplayName =
-              profile.displayName || target.displayName || framework;
-            postUnavailableRow(
-              trigger.channelId,
-              profile.id,
-              `@${senderDisplayName} is unavailable — ${failure.reason}`,
-              parentForTrigger(trigger)
-            );
-            emitReceipt({
-              trigger,
-              targetProfileId: profile.id,
-              state: 'refused_provider',
-              reasonCode: providerFailureReceiptReason(failure.code),
-            });
+            refuseProviderFailure(target, failure);
             return;
           }
         }
@@ -6234,6 +6257,14 @@ export function createChannelAgentBinder(
     // after another turn has paused the channel.
     if (state.paused) {
       rejectPreAdmittedTargets('mention-chain-paused');
+      for (const profile of profiles) {
+        emitReceipt({
+          trigger: message,
+          targetProfileId: profile.id,
+          state: 'refused_policy',
+          reasonCode: 'mention_chain_paused',
+        });
+      }
       return;
     }
     if (!state.allowedTurnKeys.has(turnKey)) {

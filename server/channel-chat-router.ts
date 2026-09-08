@@ -79,6 +79,7 @@ import {
   type ChannelBodyFormat,
   type ChannelMention,
   type ChannelPostSteering,
+  type ChannelPostMentionDelivery,
   type ChannelMessage,
   type ChannelMessageSearchResponse,
   type ChannelMessageSearchResult,
@@ -1456,6 +1457,34 @@ function postToChannel(
   // Message replay is therefore not evidence that clients already saw lifecycle.
   if (!result.runReplayed) hub.broadcastRunLifecycle(result.run);
   return result;
+}
+
+function postMentionDeliveries(
+  hub: Pick<ChannelHub, 'listDeliveryReceipts'>,
+  message: ChannelMessage,
+  targetIds: readonly string[]
+): ChannelPostMentionDelivery[] {
+  return targetIds.map((targetProfileId) => {
+    // The ring is newest-first. Query one exact target so a broad fan-out does
+    // not truncate a relevant refusal from this response's lookup result.
+    const receipt = hub.listDeliveryReceipts({
+      channelId: message.channelId,
+      messageId: message.id,
+      targetProfileId,
+      limit: 1,
+    })[0];
+    if (
+      receipt?.state === 'refused_policy' ||
+      receipt?.state === 'refused_provider'
+    ) {
+      return {
+        targetProfileId,
+        state: receipt.state,
+        ...(receipt.reasonCode ? { reasonCode: receipt.reasonCode } : {}),
+      };
+    }
+    return { targetProfileId, state: 'queued' };
+  });
 }
 
 export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
@@ -3374,6 +3403,11 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         operatorClientPublicValue(req, {
           message: result.message,
           run: result.run,
+          mentions: postMentionDeliveries(
+            deps.hub,
+            result.message,
+            result.run.targets.map((target) => target.targetId)
+          ),
         })
       );
     } catch (error) {
