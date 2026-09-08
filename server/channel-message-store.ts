@@ -1567,6 +1567,11 @@ export interface ChannelMessageStore {
     abandonedAt?: string;
     followupDecidedAt?: string;
   }): ChannelAsyncRun | null;
+  /** Stamp a follow-up decision without fabricating a delivery result. */
+  stampAsyncRunDeliveryContractFollowupDecidedAt(input: {
+    runId: ChannelAsyncRunId;
+    followupDecidedAt: string;
+  }): ChannelAsyncRun | null;
   /** Mark a contract as pending final evaluation. */
   setAsyncRunDeliveryContractPending(input: {
     runId: ChannelAsyncRunId;
@@ -4911,6 +4916,40 @@ export function createChannelMessageStore(
     }
   );
 
+  const stampAsyncRunDeliveryContractFollowupDecidedAtImpl = db.transaction(
+    (input: {
+      runId: ChannelAsyncRunId;
+      followupDecidedAt: string;
+    }): ChannelAsyncRun | null => {
+      const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
+      if (!run) return null;
+      if (!run.delivery_contract_json) return asyncRunFromRow(run);
+
+      let contract: NonNullable<ChannelAsyncRun['deliveryContract']>;
+      try {
+        contract = JSON.parse(run.delivery_contract_json) as NonNullable<
+          ChannelAsyncRun['deliveryContract']
+        >;
+      } catch {
+        return asyncRunFromRow(run);
+      }
+      if (!contract || !Array.isArray(contract.expect))
+        return asyncRunFromRow(run);
+      if (contract.followupDecidedAt) return asyncRunFromRow(run);
+
+      const next: NonNullable<ChannelAsyncRun['deliveryContract']> = {
+        ...contract,
+        followupDecidedAt: input.followupDecidedAt,
+      };
+      const now = nowIso();
+      db.prepare(
+        `UPDATE channel_async_runs SET delivery_contract_json = ?, updated_at = ?
+          WHERE id = ?`
+      ).run(JSON.stringify(next), now, run.id);
+      return asyncRunFromRow(selectAsyncRun.get(run.id) as AsyncRunRow);
+    }
+  );
+
   const setAsyncRunDeliveryContractPendingImpl = db.transaction(
     (input: {
       runId: ChannelAsyncRunId;
@@ -5857,6 +5896,10 @@ export function createChannelMessageStore(
 
     finalizeAsyncRunDeliveryContract(input) {
       return finalizeAsyncRunDeliveryContractImpl(input);
+    },
+
+    stampAsyncRunDeliveryContractFollowupDecidedAt(input) {
+      return stampAsyncRunDeliveryContractFollowupDecidedAtImpl(input);
     },
 
     setAsyncRunDeliveryContractPending(input) {

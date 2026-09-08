@@ -1240,6 +1240,45 @@ describe('channel-message-store schema migration', () => {
     const run = reopened.getAsyncRun(created.run.id);
     expect(run?.deliveryContract?.baseline).toEqual(baseline);
   });
+
+  it('stamps a follow-up decision without persisting a synthetic result (#1579)', () => {
+    const s = store();
+    const { run } = s.appendCompleteWithAsyncRun({
+      channelId: 'topic:followup-decision',
+      sender: HUMAN,
+      text: '@mock do the thing',
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    s.transitionAsyncRunTarget({
+      runId: run.id,
+      targetId: builtInAgentProfileId('mock'),
+      state: 'completed',
+    });
+    const pending = s.setAsyncRunDeliveryContractPending({
+      runId: run.id,
+      pending: true,
+    })!;
+
+    const stamped = s.stampAsyncRunDeliveryContractFollowupDecidedAt({
+      runId: run.id,
+      followupDecidedAt: '2026-09-08T00:00:00.000Z',
+    })!;
+
+    expect(stamped.deliveryContract?.followupDecidedAt).toBe(
+      '2026-09-08T00:00:00.000Z'
+    );
+    expect(stamped.deliveryContract?.result).toBeUndefined();
+    expect(stamped.deliveryContract?.contractPending).toBe(true);
+    expect(stamped.state).toBe(pending.state);
+    expect(
+      s.stampAsyncRunDeliveryContractFollowupDecidedAt({
+        runId: run.id,
+        followupDecidedAt: '2026-09-09T00:00:00.000Z',
+      })?.deliveryContract?.followupDecidedAt
+    ).toBe('2026-09-08T00:00:00.000Z');
+  });
 });
 
 describe('channel-message-store async-run migration (#1391)', () => {

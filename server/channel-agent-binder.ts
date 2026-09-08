@@ -5289,9 +5289,8 @@ export function createChannelAgentBinder(
       )
         return;
       const followupDecidedAt = new Date(now()).toISOString();
-      const stamped = store.finalizeAsyncRunDeliveryContract({
+      const stamped = store.stampAsyncRunDeliveryContractFollowupDecidedAt({
         runId: run.id,
-        result: { met: false, unmet: [], unknown: [], evaluatedAt },
         followupDecidedAt,
       });
       if (stamped) hub.broadcastRunLifecycle(stamped);
