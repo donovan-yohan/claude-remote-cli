@@ -5002,6 +5002,67 @@ describe('channel-agent-binder — lifecycle', () => {
     ).toBe(true);
   });
 
+  it('memoizes git/pr probes so deltaSummary does not re-run evaluation probes (#1578 review)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    let headShaCalls = 0;
+    let commitsBetweenCalls = 0;
+
+    const { binder, store } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          headSha: async () => {
+            headShaCalls += 1;
+            return { kind: 'ok', value: 'a'.repeat(40) };
+          },
+          commitsBetween: async () => {
+            commitsBetweenCalls += 1;
+            return { kind: 'ok', value: 0 };
+          },
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const mentions = parseMentions('@mock please ship', ['mock']);
+    const result = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: {
+        expect: ['commit'],
+        baseline: {
+          headSha: 'a'.repeat(40),
+          upstreamSha: null,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+      },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(result.message, result.message.mentions ?? []);
+
+    await waitFor(
+      () => store.getAsyncRun(result.run.id)?.state === 'completed_unmet'
+    );
+    expect(headShaCalls).toBe(1);
+    expect(commitsBetweenCalls).toBe(1);
+  });
+
   it('broadcasts abandonedAt in the terminal run lifecycle frame (#1585)', async () => {
     const profiles = createAgentProfileStore(':memory:');
     cleanup.push(() => profiles.close());

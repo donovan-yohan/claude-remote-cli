@@ -5258,6 +5258,95 @@ export function createChannelAgentBinder(
     return trimmed.length >= 7 ? trimmed.slice(0, 7) : trimmed || null;
   }
 
+  function memoizeDeliveryContractProbe(input: {
+    git: DeliveryContractGitProbe;
+    pr: DeliveryContractPrProbe;
+  }): { git: DeliveryContractGitProbe; pr: DeliveryContractPrProbe } {
+    const memo0 = <T>(fn: () => Promise<T>): (() => Promise<T>) => {
+      let promise: Promise<T> | null = null;
+      return () => {
+        promise ??= fn();
+        return promise;
+      };
+    };
+    const memo1 = <A, T>(
+      fn: (arg: A) => Promise<T>,
+      key: (arg: A) => string
+    ): ((arg: A) => Promise<T>) => {
+      const cache = new Map<string, Promise<T>>();
+      return (arg) => {
+        const k = key(arg);
+        const existing = cache.get(k);
+        if (existing) return existing;
+        const promise = fn(arg);
+        cache.set(k, promise);
+        return promise;
+      };
+    };
+    const memo2 = <A, B, T>(
+      fn: (a: A, b: B) => Promise<T>,
+      key: (a: A, b: B) => string
+    ): ((a: A, b: B) => Promise<T>) => {
+      const cache = new Map<string, Promise<T>>();
+      return (a, b) => {
+        const k = key(a, b);
+        const existing = cache.get(k);
+        if (existing) return existing;
+        const promise = fn(a, b);
+        cache.set(k, promise);
+        return promise;
+      };
+    };
+
+    return {
+      git: {
+        ...input.git,
+        ...(input.git.currentBranch
+          ? { currentBranch: memo0(() => input.git.currentBranch()) }
+          : {}),
+        ...(input.git.aheadCount
+          ? { aheadCount: memo0(() => input.git.aheadCount()) }
+          : {}),
+        ...(input.git.headSha
+          ? { headSha: memo0(() => input.git.headSha!()) }
+          : {}),
+        ...(input.git.upstreamRef
+          ? { upstreamRef: memo0(() => input.git.upstreamRef!()) }
+          : {}),
+        ...(input.git.upstreamSha
+          ? { upstreamSha: memo0(() => input.git.upstreamSha!()) }
+          : {}),
+        ...(input.git.commitsBetween
+          ? {
+              commitsBetween: memo2(
+                (base, head) => input.git.commitsBetween!(base, head),
+                (base, head) => `${base}\u0000${head}`
+              ),
+            }
+          : {}),
+      },
+      pr: {
+        ...input.pr,
+        ...(input.pr.hasOpenPrForBranch
+          ? {
+              hasOpenPrForBranch: memo1(
+                (branch) => input.pr.hasOpenPrForBranch(branch),
+                (branch) => branch.trim()
+              ),
+            }
+          : {}),
+        ...(input.pr.getOpenPrForBranch
+          ? {
+              getOpenPrForBranch: memo1(
+                (branch) => input.pr.getOpenPrForBranch!(branch),
+                (branch) => branch.trim()
+              ),
+            }
+          : {}),
+      },
+    };
+  }
+
   async function computeDeliveryContractDeltaSummary(input: {
     unmet: string[];
     baseline:
@@ -5408,6 +5497,7 @@ export function createChannelAgentBinder(
       const deliveryProbe = deps.deliveryContractProbeFactory
         ? deps.deliveryContractProbeFactory({ cwd })
         : createDefaultDeliveryContractProbe({ cwd });
+      const memoizedProbe = memoizeDeliveryContractProbe(deliveryProbe);
 
       const evaluation = await evaluateDeliveryContract(
         finalAssistantTextIsClosing === undefined
@@ -5428,13 +5518,13 @@ export function createChannelAgentBinder(
                 ? { baseline: run.deliveryContract.baseline }
                 : {}),
             },
-        deliveryProbe
+        memoizedProbe
       );
       const evaluatedAt = new Date(now()).toISOString();
       const deltaSummary = await computeDeliveryContractDeltaSummary({
         unmet: evaluation.unmet,
         baseline: run.deliveryContract?.baseline,
-        probe: deliveryProbe,
+        probe: memoizedProbe,
       });
       const updated = store.finalizeAsyncRunDeliveryContract({
         runId: run.id,
