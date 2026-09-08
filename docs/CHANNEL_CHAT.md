@@ -253,10 +253,13 @@ operator-facing lanes:
   `providerFailureCode`, `providerFailureSince`, and optional
   `providerFailureRetryAfter`. `reason` remains the human-readable message; the
   structured code is carried separately as `providerFailureCode`.
-- **Run admission**: `channels.post` may refuse an addressed target during
-  admission. The returned `run.targets[]` entry terminalizes as
-  `state:"refused"` with a structured `reason` (for provider failures,
-  `provider-failure:<code>`). Other targets in the same post still run.
+- **Run admission**: `channels.post` reports each addressed target in its
+  synchronous `mentions[]` result with `state:"queued"`, `"refused_policy"`,
+  `"refused_provider"`, or `"unreachable_offline"`, plus a `reasonCode` for
+  each refusal. The run id
+  remains the correlation key for accepted asynchronous work; later outcomes
+  continue through run lifecycle frames and `channel-delivery-receipt-v1`
+  delivery receipts.
 - **Receipts / attention**: typed delivery receipts carry
   `state:"refused_provider"` with a `reasonCode` like `provider_quota_exhausted`,
   and the hub publishes an

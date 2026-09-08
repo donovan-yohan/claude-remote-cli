@@ -35,6 +35,7 @@ workflow.
 
 #### Fixed
 
+- `relay-ide v1 channels post` now returns synchronous mention refusal states and reason codes, and `--fail-on-refused` exits 2 immediately while preserving the post envelope (#1560).
 - The Cursor adapter now explicitly passes `--model auto` on every spawn when no profile model is set rather than omitting `--model` and inheriting the CLI's last persisted default (`~/.cursor/cli-config.json`), preventing silent drift to token-billed models like `gpt-5.2`. Spawn lines now log the effective model (`[acp-adapter] [cursor] spawn model=...`) and record it on the runtime so roster and `agent-profiles list` expose the active model (#1590).
 - ACP adapters now fail closed on connect when the authenticate step fails, and refuse to report connected if `session/new` returns no `sessionId` (#1554). For resume lanes (`session/load` / `session/resume`), a session id-less success response is accepted and the requested resume id is treated as the provider session id (per the captured Cursor `session/load` wire).
 - `relay-ide v1 channels subscribe --only` now accepts validated `run-terminal,system|run|message` filters again over both HTTP and CLI paths instead of failing as an invalid argument. (#1582)

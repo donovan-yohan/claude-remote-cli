@@ -224,14 +224,28 @@ class StallingAdapter extends BaseProtocolAdapterV2 {
       status: 'interrupted',
     });
   }
+  failWithQuota(): void {
+    if (!this.live) throw new Error('no live turn to fail');
+    this.emitPatch({
+      type: 'agent-error-v2',
+      sessionId: this.sid,
+      timestamp: 't',
+      turnId: this.live,
+      message: 'usage limit reached',
+      failureCode: 'quota_exhausted',
+      retryAfter: '2999-01-01T00:00:00.000Z',
+    });
+  }
 }
 
 interface Harness {
   port: number;
   store: ChannelMessageStore;
+  storePath: string;
   hub: ChannelHub;
   channelId: string;
   binder: ChannelAgentBinder;
+  topicStore: WorkspaceTopicStore;
   adapters: () => ProtocolAdapterV2[];
 }
 
@@ -342,6 +356,7 @@ async function harness(
     targets?: MentionTarget[];
     knownProviderIds?: string[];
     agentProfileStore?: AgentProfileStore;
+    now?: () => number;
   } = {}
 ): Promise<Harness> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-mention-e2e-'));
@@ -351,7 +366,8 @@ async function harness(
     now: () => '2026-07-18T00:00:00.000Z',
   });
   cleanup.push(() => topicStore.close());
-  const store = createChannelMessageStore(path.join(dir, 'channel-chat.db'));
+  const storePath = path.join(dir, 'channel-chat.db');
+  const store = createChannelMessageStore(storePath);
   cleanup.push(() => store.close());
   const hub = createChannelHub({
     store,
@@ -380,6 +396,7 @@ async function harness(
     ...(opts.agentProfileStore
       ? { agentProfileStore: opts.agentProfileStore }
       : {}),
+    ...(opts.now ? { now: opts.now } : {}),
   });
   cleanup.push(() => binder.close());
   hub.onMessagePosted((m, mentions, options) =>
@@ -421,9 +438,11 @@ async function harness(
   return {
     port: address.port,
     store,
+    storePath,
     hub,
     channelId: topic.id,
     binder,
+    topicStore,
     adapters: () => adapters,
   };
 }
@@ -506,6 +525,174 @@ describe('mention routing — end-to-end via the router', () => {
       h.store.getBinding(h.channelId, builtInAgentProfileId('mock'))
         ?.providerSession['lastDeliveredSeq']
     ).toBe(res.body.message.seq);
+  });
+
+  it('returns a cached provider refusal in the posting response', async () => {
+    const fakeNow = () => 0;
+    const h = await harness(() => new StallingAdapter('mock'), {
+      now: fakeNow,
+    });
+    const url = `/channels/${encodeURIComponent(h.channelId)}/messages`;
+    await req({
+      port: h.port,
+      method: 'POST',
+      url,
+      body: { text: '@mock warm' },
+    });
+    await waitFor(() => h.adapters().length === 1);
+    (h.adapters()[0] as StallingAdapter).failWithQuota();
+    await waitFor(() =>
+      h.store
+        .history(h.channelId, { limit: 50 })
+        .some((message) => message.body.text.includes('quota_exhausted'))
+    );
+    const refused = await req<{
+      mentions: Array<{
+        targetProfileId: string;
+        state: string;
+        reasonCode?: string;
+      }>;
+    }>({
+      port: h.port,
+      method: 'POST',
+      url,
+      body: { text: '@mock retry', clientMessageId: 'provider-refusal' },
+    });
+    expect(refused.status).toBe(201);
+    expect(refused.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('mock'),
+        state: 'refused_provider',
+        reasonCode: 'provider_quota_exhausted',
+      },
+    ]);
+    const replay = await req<typeof refused.body>({
+      port: h.port,
+      method: 'POST',
+      url,
+      body: { text: '@mock retry', clientMessageId: 'provider-refusal' },
+    });
+    expect(replay.status).toBe(200);
+    expect(replay.body.mentions).toEqual(refused.body.mentions);
+  });
+
+  it('replays a durable refusal after the volatile receipt ring is lost', async () => {
+    const fakeNow = () => 0;
+    const h = await harness(undefined, { now: fakeNow });
+    await h.binder.rosterForChannel(h.channelId);
+    const original = await req<{
+      message: ChannelMessage;
+      run: ChannelAsyncRun;
+      mentions: Array<{ state: string; reasonCode?: string }>;
+    }>({
+      port: h.port,
+      method: 'POST',
+      url: `/channels/${encodeURIComponent(h.channelId)}/messages`,
+      body: { text: '@codex unavailable', clientMessageId: 'durable-refusal' },
+    });
+    await waitFor(
+      () =>
+        h.store.getAsyncRun(original.body.run.id)?.targets[0]?.state ===
+        'rejected'
+    );
+    expect(original.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('codex'),
+        state: 'unreachable_offline',
+        reasonCode: 'runtime_unavailable',
+      },
+    ]);
+
+    // A fresh hub deliberately has no in-memory receipt ring, just as after a
+    // hub restart. Replaying the id must still serialize the durable target.
+    h.binder.close();
+    h.store.close();
+    const reopenedStore = createChannelMessageStore(h.storePath);
+    cleanup.push(() => reopenedStore.close());
+    const freshHub = createChannelHub({
+      store: reopenedStore,
+      channelExists: (id) => Boolean(h.topicStore.get(id)),
+    });
+    cleanup.push(() => freshHub.close());
+    const app = express();
+    app.use(express.json());
+    app.use(
+      createChannelChatRouter({
+        store: reopenedStore,
+        hub: freshHub,
+        topicStore: h.topicStore,
+        knownProviderIds: ['mock', 'codex'],
+      })
+    );
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) =>
+      server.listen(0, '127.0.0.1', resolve)
+    );
+    cleanup.push(() => server.close());
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('no address');
+    const replay = await req<typeof original.body>({
+      port: address.port,
+      method: 'POST',
+      url: `/channels/${encodeURIComponent(h.channelId)}/messages`,
+      body: { text: '@codex unavailable', clientMessageId: 'durable-refusal' },
+    });
+    expect(replay.status).toBe(200);
+    expect(replay.body.mentions).toEqual(original.body.mentions);
+  });
+
+  it('returns a cached unavailable profile as unreachable without waiting for a probe', async () => {
+    let clock = 0;
+    const targets: MentionTarget[] = [
+      {
+        id: 'mock',
+        displayName: 'Mock',
+        kind: 'framework',
+        available: false,
+        reason: 'Mock is offline.',
+      },
+    ];
+    const h = await harness(undefined, { targets, now: () => clock });
+    // Warm the availability cache deterministically. The next post stays in
+    // this cache window, so routeOne must classify it before its first await.
+    await h.binder.rosterForChannel(h.channelId);
+    const unavailable = await req<{
+      mentions: Array<{
+        targetProfileId: string;
+        state: string;
+        reasonCode?: string;
+      }>;
+    }>({
+      port: h.port,
+      method: 'POST',
+      url: `/channels/${encodeURIComponent(h.channelId)}/messages`,
+      body: { text: '@mock unavailable now' },
+    });
+    expect(unavailable.status).toBe(201);
+    expect(unavailable.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('mock'),
+        state: 'unreachable_offline',
+        reasonCode: 'runtime_unavailable',
+      },
+    ]);
+    // Advancing the injected clock exactly to TTL expiry forces a fresh probe;
+    // this guards the cache boundary without a wall-clock sleep.
+    clock += 5_000;
+    targets[0] = { ...targets[0]!, available: true, reason: null };
+    const refreshed = await req<{ mentions: Array<{ state: string }> }>({
+      port: h.port,
+      method: 'POST',
+      url: `/channels/${encodeURIComponent(h.channelId)}/messages`,
+      body: { text: '@mock available after refresh' },
+    });
+    expect(refreshed.status).toBe(201);
+    expect(refreshed.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('mock'),
+        state: 'queued',
+      },
+    ]);
   });
 
   it('delivers a typed completion trigger after an agent @mention without fabricating an @mention row', async () => {
@@ -1039,7 +1226,15 @@ describe('mention routing — real scoped-actor auth composition (P2 #1180)', ()
       'x-relay-cli-command': 'channels.post',
     };
     const postOnce = (text: string) =>
-      req<{ message: ChannelMessage; run: ChannelAsyncRun }>({
+      req<{
+        message: ChannelMessage;
+        run: ChannelAsyncRun;
+        mentions: Array<{
+          targetProfileId: string;
+          state: string;
+          reasonCode?: string;
+        }>;
+      }>({
         port: h.port,
         method: 'POST',
         url: `/channels/${encodeURIComponent(h.channelId)}/messages`,
@@ -1054,6 +1249,10 @@ describe('mention routing — real scoped-actor auth composition (P2 #1180)', ()
       kind: 'agent',
       id: 'agent:orchestrator',
     });
+    expect(first.body.mentions).toEqual([
+      { targetProfileId: builtInAgentProfileId('mock'), state: 'queued' },
+    ]);
+    expect(first.body.run.id).toMatch(/^chrun:/);
     // Routing works through the real auth lane.
     await waitFor(() => agentReply(h.store, h.channelId).length >= 1);
     expect(agentReply(h.store, h.channelId)[0]!.sender.id).toBe(
@@ -1063,12 +1262,7 @@ describe('mention routing — real scoped-actor auth composition (P2 #1180)', ()
     // Brake accounting: further agent-sender posts count toward the cap. Posting
     // past MAX trips the pause row — a browser (human) sender never would, proving
     // the actor post is accounted as an agent turn end-to-end.
-    let pausedPost:
-      | {
-          status: number;
-          body: { message: ChannelMessage; run: ChannelAsyncRun };
-        }
-      | undefined;
+    let pausedPost: Awaited<ReturnType<typeof postOnce>> | undefined;
     for (let i = 1; i <= 4; i++) {
       const res = await postOnce(`@mock brief ${i}`);
       expect(res.status).toBe(201);
@@ -1089,6 +1283,22 @@ describe('mention routing — real scoped-actor auth composition (P2 #1180)', ()
           m.kind === 'system' && m.body.text.includes('Mention chain paused')
       );
     expect(paused).toHaveLength(1);
+    expect(pausedPost!.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('mock'),
+        state: 'refused_policy',
+        reasonCode: 'mention_chain_paused',
+      },
+    ]);
+    const alreadyPaused = await postOnce('@mock brief after pause');
+    expect(alreadyPaused.status).toBe(201);
+    expect(alreadyPaused.body.mentions).toEqual([
+      {
+        targetProfileId: builtInAgentProfileId('mock'),
+        state: 'refused_policy',
+        reasonCode: 'mention_chain_paused',
+      },
+    ]);
     // The router admitted this target atomically with the message before the
     // binder observed the cap. The brake must close that durable target, not
     // strand a client-visible queued run forever.

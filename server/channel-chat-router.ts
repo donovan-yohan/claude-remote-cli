@@ -72,6 +72,7 @@ import {
   CHANNEL_SEARCH_QUERY_MAX_CHARS,
   channelMessageIsPrincipalProse,
   channelTurnId,
+  projectDurableMentionDelivery,
   isChannelPostSteering,
   parseMentions,
   type ChannelAsyncRunId,
@@ -79,6 +80,7 @@ import {
   type ChannelBodyFormat,
   type ChannelMention,
   type ChannelPostSteering,
+  type ChannelPostMentionDelivery,
   type ChannelMessage,
   type ChannelMessageSearchResponse,
   type ChannelMessageSearchResult,
@@ -1456,6 +1458,44 @@ function postToChannel(
   // Message replay is therefore not evidence that clients already saw lifecycle.
   if (!result.runReplayed) hub.broadcastRunLifecycle(result.run);
   return result;
+}
+
+function postMentionDeliveries(
+  hub: Pick<ChannelHub, 'listDeliveryReceipts'>,
+  message: ChannelMessage,
+  run: ChannelAsyncRun
+): ChannelPostMentionDelivery[] {
+  return run.targets.map((target) => {
+    const targetProfileId = target.targetId;
+    // The ring is newest-first. Query one exact target so a broad fan-out does
+    // not truncate a relevant refusal from this response's lookup result.
+    const receipt = hub.listDeliveryReceipts({
+      channelId: message.channelId,
+      messageId: message.id,
+      targetProfileId,
+      limit: 1,
+    })[0];
+    if (receipt) {
+      const projected =
+        receipt.state === 'refused_policy' ||
+        receipt.state === 'refused_provider' ||
+        receipt.state === 'unreachable_offline'
+          ? {
+              state: receipt.state,
+              ...(receipt.reasonCode ? { reasonCode: receipt.reasonCode } : {}),
+            }
+          : null;
+      if (projected) {
+        return {
+          targetProfileId,
+          ...projected,
+        };
+      }
+    }
+    const durable = projectDurableMentionDelivery(target);
+    if (durable) return { targetProfileId, ...durable };
+    return { targetProfileId, state: 'queued' };
+  });
 }
 
 export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
@@ -3374,6 +3414,14 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         operatorClientPublicValue(req, {
           message: result.message,
           run: result.run,
+          // Routing is asynchronous. Read the durable run again so an
+          // admission refusal settled during this request is reflected even
+          // though `postToChannel` returned its transaction snapshot.
+          mentions: postMentionDeliveries(
+            deps.hub,
+            result.message,
+            store.getAsyncRun(result.run.id) ?? result.run
+          ),
         })
       );
     } catch (error) {

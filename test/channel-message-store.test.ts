@@ -2297,6 +2297,44 @@ describe('channel-message-store async runs (#1391)', () => {
     ]);
   });
 
+  it('persists refused and unavailable target admission outcomes across reopen (#1594)', () => {
+    const file = dbPath();
+    const seeded = store(file);
+    const { run } = seeded.appendCompleteWithAsyncRun({
+      channelId: 'topic:durable-refusal',
+      sender: HUMAN,
+      text: '@a investigate',
+      targetIds: ['agent-profile:a:default', 'agent-profile:b:default'],
+    });
+    seeded.transitionAsyncRunTarget({
+      runId: run.id,
+      targetId: 'agent-profile:a:default',
+      state: 'refused',
+      reason: 'provider-failure:quota_exhausted',
+    });
+    seeded.transitionAsyncRunTarget({
+      runId: run.id,
+      targetId: 'agent-profile:b:default',
+      state: 'rejected',
+      reason: 'target-unavailable',
+    });
+    seeded.close();
+
+    const reopened = store(file);
+    expect(reopened.getAsyncRun(run.id)?.targets).toEqual([
+      expect.objectContaining({
+        targetId: 'agent-profile:a:default',
+        state: 'refused',
+        reason: 'provider-failure:quota_exhausted',
+      }),
+      expect.objectContaining({
+        targetId: 'agent-profile:b:default',
+        state: 'rejected',
+        reason: 'target-unavailable',
+      }),
+    ]);
+  });
+
   it('rejects a run with no eligible target without inventing a provider identity', () => {
     const s = store();
     const { run } = s.appendCompleteWithAsyncRun({
