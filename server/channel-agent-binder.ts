@@ -5079,8 +5079,25 @@ export function createChannelAgentBinder(
     const parentMessageId = input.parentMessageId ?? undefined;
 
     const contract = updatedRun?.deliveryContract ?? run.deliveryContract;
+    const stampFollowupDecidedAt = (): void => {
+      if (
+        typeof contract?.followupDecidedAt === 'string' &&
+        contract.followupDecidedAt
+      )
+        return;
+      const followupDecidedAt = new Date(now()).toISOString();
+      const stamped = store.finalizeAsyncRunDeliveryContract({
+        runId: run.id,
+        result: { met: false, unmet: [], unknown: [], evaluatedAt },
+        followupDecidedAt,
+      });
+      if (stamped) hub.broadcastRunLifecycle(stamped);
+    };
     const alreadyFollowedUp = Boolean(contract?.followupPostedAt);
-    if (alreadyFollowedUp) return;
+    if (alreadyFollowedUp) {
+      stampFollowupDecidedAt();
+      return;
+    }
 
     const scopeKey = conversationScopeKey(binding.channelId, run.threadId);
     const brakeState = consecutiveAgentTurns.get(scopeKey);
@@ -5090,11 +5107,15 @@ export function createChannelAgentBinder(
         `Mention chain paused — ${brakeState.count} agent turns without a human.`,
         { parentMessageId }
       );
+      stampFollowupDecidedAt();
       return;
     }
 
     // #1585: allow operator to disable follow-up chaining entirely.
-    if (deliveryContractMaxFollowups === 0) return;
+    if (deliveryContractMaxFollowups === 0) {
+      stampFollowupDecidedAt();
+      return;
+    }
 
     const depth = contract?.followupDepth ?? 0;
     if (depth >= deliveryContractMaxFollowups) {
@@ -5129,6 +5150,7 @@ export function createChannelAgentBinder(
           maxFollowups: deliveryContractMaxFollowups,
         },
       });
+      stampFollowupDecidedAt();
       return;
     }
 

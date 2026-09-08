@@ -137,6 +137,11 @@ export interface ChannelAsyncRun {
      * chain (e.g. max follow-up depth reached).
      */
     abandonedAt?: string;
+    /**
+     * #1585: timestamp at which Relay decided whether to post a follow-up trigger.
+     * Present even when no follow-up was posted (e.g. paused by brake).
+     */
+    followupDecidedAt?: string;
     result?: {
       met: boolean;
       unmet: string[];

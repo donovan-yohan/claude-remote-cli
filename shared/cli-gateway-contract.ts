@@ -3745,6 +3745,7 @@ const channelAsyncRunSchema: RelayJsonSchema = {
         parentRunId: stringSchema,
         childRunId: stringSchema,
         abandonedAt: stringSchema,
+        followupDecidedAt: { type: 'string', format: 'date-time' },
         result: {
           oneOf: [
             { type: 'null' },

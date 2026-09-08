@@ -1541,6 +1541,7 @@ export interface ChannelMessageStore {
     followupPostedAt?: string;
     childRunId?: ChannelAsyncRunId;
     abandonedAt?: string;
+    followupDecidedAt?: string;
   }): ChannelAsyncRun | null;
   /** Mark a contract as pending final evaluation. */
   setAsyncRunDeliveryContractPending(input: {
@@ -4815,6 +4816,7 @@ export function createChannelMessageStore(
       followupPostedAt?: string;
       childRunId?: ChannelAsyncRunId;
       abandonedAt?: string;
+      followupDecidedAt?: string;
     }): ChannelAsyncRun | null => {
       const run = selectAsyncRun.get(input.runId) as AsyncRunRow | undefined;
       if (!run) return null;
@@ -4846,6 +4848,9 @@ export function createChannelMessageStore(
           : {}),
         ...(input.abandonedAt && !contract.abandonedAt
           ? { abandonedAt: input.abandonedAt }
+          : {}),
+        ...(input.followupDecidedAt && !contract.followupDecidedAt
+          ? { followupDecidedAt: input.followupDecidedAt }
           : {}),
       };
 

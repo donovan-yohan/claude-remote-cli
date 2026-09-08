@@ -835,6 +835,9 @@ export function createChannelHub(options: ChannelHubOptions): ChannelHub {
           ...(contract.followupPostedAt
             ? { followupPostedAt: contract.followupPostedAt }
             : {}),
+          ...(contract.followupDecidedAt
+            ? { followupDecidedAt: contract.followupDecidedAt }
+            : {}),
         };
         if (Object.keys(summary).length > 0) extras['contract'] = summary;
       }
