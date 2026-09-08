@@ -72,6 +72,7 @@ import {
   CHANNEL_SEARCH_QUERY_MAX_CHARS,
   channelMessageIsPrincipalProse,
   channelTurnId,
+  projectDurableMentionDelivery,
   isChannelPostSteering,
   parseMentions,
   type ChannelAsyncRunId,
@@ -1462,9 +1463,10 @@ function postToChannel(
 function postMentionDeliveries(
   hub: Pick<ChannelHub, 'listDeliveryReceipts'>,
   message: ChannelMessage,
-  targetIds: readonly string[]
+  run: ChannelAsyncRun
 ): ChannelPostMentionDelivery[] {
-  return targetIds.map((targetProfileId) => {
+  return run.targets.map((target) => {
+    const targetProfileId = target.targetId;
     // The ring is newest-first. Query one exact target so a broad fan-out does
     // not truncate a relevant refusal from this response's lookup result.
     const receipt = hub.listDeliveryReceipts({
@@ -1473,16 +1475,25 @@ function postMentionDeliveries(
       targetProfileId,
       limit: 1,
     })[0];
-    if (
-      receipt?.state === 'refused_policy' ||
-      receipt?.state === 'refused_provider'
-    ) {
-      return {
-        targetProfileId,
-        state: receipt.state,
-        ...(receipt.reasonCode ? { reasonCode: receipt.reasonCode } : {}),
-      };
+    if (receipt) {
+      const projected =
+        receipt.state === 'refused_policy' ||
+        receipt.state === 'refused_provider' ||
+        receipt.state === 'unreachable_offline'
+          ? {
+              state: receipt.state,
+              ...(receipt.reasonCode ? { reasonCode: receipt.reasonCode } : {}),
+            }
+          : null;
+      if (projected) {
+        return {
+          targetProfileId,
+          ...projected,
+        };
+      }
     }
+    const durable = projectDurableMentionDelivery(target);
+    if (durable) return { targetProfileId, ...durable };
     return { targetProfileId, state: 'queued' };
   });
 }
@@ -3403,10 +3414,13 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         operatorClientPublicValue(req, {
           message: result.message,
           run: result.run,
+          // Routing is asynchronous. Read the durable run again so an
+          // admission refusal settled during this request is reflected even
+          // though `postToChannel` returned its transaction snapshot.
           mentions: postMentionDeliveries(
             deps.hub,
             result.message,
-            result.run.targets.map((target) => target.targetId)
+            store.getAsyncRun(result.run.id) ?? result.run
           ),
         })
       );

@@ -86,8 +86,62 @@ export interface ChannelAsyncRunTarget {
  */
 export interface ChannelPostMentionDelivery {
   targetProfileId: string;
-  state: 'queued' | 'refused_policy' | 'refused_provider';
+  state:
+    | 'queued'
+    | 'refused_policy'
+    | 'refused_provider'
+    | 'unreachable_offline';
   reasonCode?: ChannelDeliveryReceiptReasonCode;
+}
+
+/**
+ * Project a durable terminal admission result into the immediate post-envelope
+ * vocabulary. Receipt rings are intentionally volatile, so replay callers use
+ * this when their exact receipt was evicted or Relay restarted.
+ */
+export function projectDurableMentionDelivery(
+  target: Pick<ChannelAsyncRunTarget, 'state' | 'reason'>
+): Pick<ChannelPostMentionDelivery, 'state' | 'reasonCode'> | null {
+  if (target.state === 'refused') {
+    switch (target.reason) {
+      case 'provider-failure:quota_exhausted':
+        return {
+          state: 'refused_provider',
+          reasonCode: 'provider_quota_exhausted',
+        };
+      case 'provider-failure:auth_required':
+        return {
+          state: 'refused_provider',
+          reasonCode: 'provider_auth_required',
+        };
+      case 'provider-failure:binary_missing':
+        return {
+          state: 'refused_provider',
+          reasonCode: 'provider_binary_missing',
+        };
+      case 'provider-failure:unknown':
+        return {
+          state: 'refused_provider',
+          reasonCode: 'provider_unknown_failure',
+        };
+      default:
+        return { state: 'refused_policy' };
+    }
+  }
+  if (target.state !== 'rejected') return null;
+  if (target.reason === 'mention-chain-paused') {
+    return { state: 'refused_policy', reasonCode: 'mention_chain_paused' };
+  }
+  if (target.reason === 'target-unavailable') {
+    return {
+      state: 'unreachable_offline',
+      reasonCode: 'runtime_unavailable',
+    };
+  }
+  if (target.reason === 'target-binding-failed') {
+    return { state: 'refused_policy', reasonCode: 'binding_failed' };
+  }
+  return { state: 'refused_policy' };
 }
 
 /** One immutable requester post and its durable per-target outcomes. */
