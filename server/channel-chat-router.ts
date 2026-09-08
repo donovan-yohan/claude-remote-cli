@@ -3333,17 +3333,18 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       if (result.replayed && steering) {
         deps.binder?.steerExisting(result.message, steering);
       }
+      const authoritativeRun = store.getAsyncRun(result.run.id) ?? result.run;
       res.status(result.replayed ? 200 : 201).json(
         operatorClientPublicValue(req, {
           message: result.message,
-          run: result.run,
+          run: authoritativeRun,
           // Routing is asynchronous. Read the durable run again so an
           // admission refusal settled during this request is reflected even
           // though `postToChannel` returned its transaction snapshot.
           mentions: postMentionDeliveries(
             deps.hub,
             result.message,
-            store.getAsyncRun(result.run.id) ?? result.run
+            authoritativeRun
           ),
         })
       );
