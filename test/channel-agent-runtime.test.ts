@@ -1066,6 +1066,7 @@ describe('ChannelAgentRuntimeManager', () => {
     // a former child under init. The old root-only snapshot must gain this
     // same-group witness, without absorbing an unrelated process.
     currentTable = [reparentedMember, unrelated];
+    await new Promise((r) => setTimeout(r, 260));
     adapterState.last!.emitDisconnected();
 
     await vi.waitFor(() => {
@@ -1340,6 +1341,49 @@ describe('ChannelAgentRuntimeManager', () => {
     expect(manager.hasLiveChildProcesses(r1.id)).toBe(true);
     expect(manager.liveChildPids(r1.id)).toEqual([80_002]);
     expect(readCount).toBe(1);
+  });
+
+  it('shares cached process table across rapid adapter patches within 250ms (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    let readCount = 0;
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => {
+        readCount += 1;
+        return [
+          {
+            pid: 80_001,
+            ppid: 1,
+            pgid: 80_001,
+            command: 'node',
+            commandLine: 'node server.js',
+            rssBytes: 100,
+          },
+        ];
+      },
+    });
+    const _r1 = await manager.create({
+      id: 'r1',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:1',
+      cwd: '/tmp',
+      displayName: 'Agent 1',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    const adapter = adapterState.last!;
+    adapter.ownedRoots = [80_001];
+
+    const initialReads = readCount;
+    for (let i = 0; i < 10; i++) {
+      adapter.emitPatch({
+        type: 'agent-live-state-updated-v2',
+        sessionId: adapter.sessionId,
+        timestamp: new Date().toISOString(),
+        live: { status: 'working' },
+      });
+    }
+
+    expect(readCount - initialReads).toBeLessThanOrEqual(1);
   });
 
   it('ignores idle persistent helpers but recognizes busy children and new children (#1561)', async () => {

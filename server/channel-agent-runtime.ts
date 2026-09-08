@@ -926,7 +926,7 @@ export class ChannelAgentRuntimeManager {
   ): void {
     const rootPids = ownedProcessRootPids(runtime.adapter);
     if (rootPids.length === 0) return;
-    const processTable = this.readProcessTable({ forceFresh: true });
+    const processTable = this.readProcessTable();
     // An unexpected close retains the old detached-group leader id briefly.
     // Do not replace a useful pre-exit snapshot with an empty post-exit table,
     // but merge reparented members of that *same* group when the leader has
