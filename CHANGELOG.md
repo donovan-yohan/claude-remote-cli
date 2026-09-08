@@ -107,6 +107,7 @@ workflow.
 #### Fixed
 
 - Delivery contracts now evaluate `commit`, `push`, and `pr` as deltas from a post-time baseline, so a commit-then-push turn still satisfies `commit` and an existing PR does not satisfy `pr` unless it advanced (#1578).
+- A throwaway hub process launched from a checkout (including `node dist/server/index.js --help`) no longer opens the live hub’s `channel-chat.db` and runs restart recovery. The hub now writes a `hub.lock` ownership record in its config dir and any other process refuses to open the channel store while the owning PID is alive (#1587).
 - An agent turn is no longer interrupted while it sits inside one long, silent
   command. `npm run check`, a full test run, or any tool call that takes minutes
   and prints nothing looks identical to a wedged agent to a watchdog that only
