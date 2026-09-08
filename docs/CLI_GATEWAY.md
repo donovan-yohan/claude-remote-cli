@@ -209,13 +209,18 @@ multiple outstanding posts on one subscription. Provider runtime, turn, and
 item identifiers are optional diagnostics only and must never be parsed for
 correlation.
 
-When a target is refused during admission (such as a classified provider failure
-#1571), the corresponding `run.targets[]` entry terminalizes as
-`state: "refused"` with a `reason` string (for provider failures,
-`provider-failure:<code>`). `--fail-on-refused` is a CLI-only convenience: it
-still prints the JSON envelope, but then waits for the correlated run to settle
-(via the same `channels wait` surface) before deciding whether to exit non-zero
-(code 2) for a provider-failure refusal.
+The post envelope includes `mentions[]`, one entry per routing mention:
+`{ targetProfileId, state: "queued" | "refused_policy" | "refused_provider",
+reasonCode? }`. It reports refusals known before the HTTP response is written;
+accepted targets remain `queued` with the run id. Later delivery changes still
+arrive as `channel-delivery-receipt-v1` and run lifecycle frames through
+`channels subscribe`.
+
+`--fail-on-refused` always prints the original JSON envelope. When `mentions[]`
+contains a synchronous policy or provider refusal, it prints the reason code to
+stderr and exits 2 immediately. For older or asynchronous provider failures it
+retains the existing correlated `channels wait` then `channels run get`
+follow-through before deciding whether to exit 2.
 
 Delivery-contract follow-ups (#1585) produce their own runs; `run.deliveryContract`
 may additionally carry `followupDepth` (0 for the original post),
