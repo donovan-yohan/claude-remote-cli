@@ -246,10 +246,10 @@ export async function evaluateDeliveryContract(
       if (!branch) {
         return { kind: 'unknown', reason: 'unable to resolve current branch' };
       }
-      const remoteOutcome = await probes.git.lsRemoteBranchSha(
-        'origin',
-        branch
-      );
+      const remote = baseline.upstreamRef
+        ? baseline.upstreamRef.split('/')[0] || 'origin'
+        : 'origin';
+      const remoteOutcome = await probes.git.lsRemoteBranchSha(remote, branch);
       if (remoteOutcome.kind === 'unknown') return remoteOutcome;
       const currentRemoteSha = remoteOutcome.value?.trim() || null;
       if (!currentRemoteSha) {

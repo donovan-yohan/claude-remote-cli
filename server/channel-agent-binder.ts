@@ -3558,17 +3558,18 @@ export function createChannelAgentBinder(
     const upstreamRefValue = upstreamRef.ref;
     let upstreamRefSource = upstreamRef.source;
     let effectiveUpstreamSha = upstreamSha;
+    const remote = upstreamRefValue
+      ? upstreamRefValue.split('/')[0] || 'origin'
+      : 'origin';
 
     if (
       branch &&
       upstreamRefValue &&
       (upstreamRefSource === 'upstream' || upstreamRefSource === null)
     ) {
-      const expectedOrigin = `origin/${branch}`;
+      const expectedOrigin = `${remote}/${branch}`;
       const isSameBranch =
-        upstreamRefValue === expectedOrigin ||
-        upstreamRefValue === branch ||
-        upstreamRefValue.endsWith(`/${branch}`);
+        upstreamRefValue === expectedOrigin || upstreamRefValue === branch;
       if (!isSameBranch) {
         upstreamRefSource = 'tracking-other-branch';
       }
@@ -3577,14 +3578,14 @@ export function createChannelAgentBinder(
     if (upstreamRefSource === 'tracking-other-branch') {
       if (branch) {
         if (git?.lsRemoteBranchSha) {
-          const outcome = await git.lsRemoteBranchSha('origin', branch);
+          const outcome = await git.lsRemoteBranchSha(remote, branch);
           effectiveUpstreamSha =
             outcome.kind === 'ok' && outcome.value ? outcome.value : null;
         } else {
           try {
             const { stdout } = await execFileAsync(
               'git',
-              ['ls-remote', 'origin', `refs/heads/${branch}`],
+              ['ls-remote', remote, `refs/heads/${branch}`],
               { cwd, timeout }
             );
             const line = stdout.trim().split('\n')[0]?.trim();

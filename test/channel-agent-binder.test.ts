@@ -7144,6 +7144,77 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
       unknown: [expect.objectContaining({ spec: 'commit' })],
     });
   });
+
+  it('derives remote from upstreamRef and treats non-matching prefix branch as tracking-other-branch (#1579 review item 3)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+    const custom = profiles.create({
+      providerId: 'mock',
+      displayName: 'Custom',
+    });
+    const lsRemoteCalls: Array<{ remote: string; branch: string }> = [];
+    const { binder, store } = makeBinder({
+      build: (agentType) =>
+        new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat' }),
+          headSha: async () => ({
+            kind: 'ok',
+            value: '1111111111111111111111111111111111111111',
+          }),
+          upstreamRef: async () => ({
+            kind: 'ok',
+            value: 'upstream/other-feat',
+          }),
+          upstreamSha: async () => ({
+            kind: 'ok',
+            value: '2222222222222222222222222222222222222222',
+          }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          lsRemoteBranchSha: async (remote, branch) => {
+            lsRemoteCalls.push({ remote, branch });
+            return {
+              kind: 'ok',
+              value: '3333333333333333333333333333333333333333',
+            };
+          },
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const result = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please push',
+      mentions: [{ raw: '@mock', providerId: 'mock', profileId: custom.id }],
+      targetIds: [custom.id],
+      deliveryContract: { expect: ['push'] },
+      meta: { deliveryContract: { expect: ['push'] } },
+    });
+    binder.handleMessagePosted(result.message, result.message.mentions ?? []);
+
+    await waitFor(() => {
+      const run = store.getAsyncRun(result.run.id);
+      return (
+        run?.state === 'completed' && Boolean(run.deliveryContract?.baseline)
+      );
+    });
+    const run = store.getAsyncRun(result.run.id)!;
+    expect(run.deliveryContract?.baseline).toMatchObject({
+      upstreamRef: 'upstream/other-feat',
+      upstreamRefSource: 'tracking-other-branch',
+      upstreamSha: '3333333333333333333333333333333333333333',
+    });
+    expect(lsRemoteCalls).toEqual([{ remote: 'upstream', branch: 'feat' }]);
+  });
 });
 
 describe('channel-agent-binder — delivery + idempotency', () => {

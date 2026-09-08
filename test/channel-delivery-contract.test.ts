@@ -601,6 +601,49 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
     expect(result.unknown).toEqual([]);
   });
 
+  it('derives remote from baseline.upstreamRef when tracking-other-branch (#1579 review item 3)', async () => {
+    const branch = 'feat/worktree-branch';
+    const remoteSha = 'a'.repeat(40);
+    const newRemoteSha = 'b'.repeat(40);
+    const requestedRemotes: string[] = [];
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: 'd'.repeat(40),
+          upstreamRef: 'upstream/nightly',
+          upstreamRefSource: 'tracking-other-branch',
+          upstreamSha: remoteSha,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: branch }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          lsRemoteBranchSha: async (remote) => {
+            requestedRemotes.push(remote);
+            return { kind: 'ok', value: newRemoteSha };
+          },
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(requestedRemotes).toEqual(['upstream']);
+    expect(result.met).toBe(true);
+    expect(result.unmet).toEqual([]);
+    expect(result.unknown).toEqual([]);
+  });
+
   it('falls back to legacy semantics when baseline is null (#1578)', async () => {
     const result = await evaluateDeliveryContract(
       {
