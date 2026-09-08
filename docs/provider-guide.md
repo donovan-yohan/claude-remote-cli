@@ -301,7 +301,7 @@ The adapter maps:
 - `cursor/ask_question` peer requests -> Relay question cards, answered with structured `{ questionId, selectedOptionIds }` selections
 - `cursor/create_plan` peer requests -> canonical Relay plan items, auto-accepted so execution proceeds without blocking
 - Provider extensions for `cursor/update_todos`, `cursor/task`, and `cursor/generate_image`
-- Command arguments pass root options (`--model <id>`, `--yolo`) before the `acp` subcommand.
+- Command arguments pass root options (`--model <id>`, `--yolo`) before the `acp` subcommand. When the profile has no explicit model set, the Cursor adapter explicitly passes `--model auto` on every spawn rather than omitting `--model`. Omitting `--model` causes the Cursor CLI to inherit the last model persisted in `~/.cursor/cli-config.json` (`model.modelId`, `selectedModel`), which can silently drift to a pay-per-token model (e.g. `gpt-5.2`) after one-off manual CLI invocations on the host. Explicitly passing `--model auto` pins the spawn to Cursor's auto-selection unless an explicit model override is configured on the profile (#1590). The effective model is logged on spawn (`[acp-adapter] [cursor] spawn model=... args=...`) and recorded on the runtime.
 
 The `cursor-agent` executable is also available as a normal terminal launch, but that surface stays a generic PTY.
 

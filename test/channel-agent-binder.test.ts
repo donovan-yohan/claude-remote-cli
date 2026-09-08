@@ -2640,6 +2640,7 @@ function makeSessions(
         adapter,
         cwd: params.cwd,
         providerSession: {},
+        ...(params.model !== undefined ? { model: params.model } : {}),
       } as unknown as ChannelAgentRuntime;
       created.set(id, { runtime });
       order.push(id);
@@ -8393,6 +8394,35 @@ describe('channel-agent-binder — roster + availability', () => {
       roster.find((r) => r.id === builtInAgentProfileId('mock'))!.binding
         ?.status
     ).toBe('idle');
+  });
+
+  it('surfaces bound runtime model on roster and agentProfileStatus', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+    const profile = profiles.create({
+      id: 'agent-profile:mock:model-tester',
+      providerId: 'mock',
+      displayName: 'ModelTester',
+      model: 'test-model-4o',
+    });
+
+    const { binder, store, sessions } = makeBinder({
+      build: () => new MockProtocolAdapterV2({ connectMs: 1, stepMs: 1 }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+    });
+
+    post(store, binder, '@ModelTester hi', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+
+    const roster = await binder.rosterForChannel(CH);
+    const row = roster.find((r) => r.id === profile.id);
+    expect(row?.binding?.model).toBe('test-model-4o');
+
+    const status = await binder.agentProfileStatus(profile.id);
+    expect(status.model).toBe('test-model-4o');
   });
 
   it('clears presence to idle when a turn finalizes with an idle live-state and no turn-completed (#1181)', async () => {
