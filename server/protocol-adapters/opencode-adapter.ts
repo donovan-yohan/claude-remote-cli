@@ -141,6 +141,7 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
       cwd: config.cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
+      ...(process.platform === 'linux' ? { detached: true } : {}),
     });
 
     const captureProcessOutput = (chunk: Buffer): void => {

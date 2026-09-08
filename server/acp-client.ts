@@ -147,6 +147,7 @@ export class AcpClient extends EventEmitter {
       ...(this.options.cwd ? { cwd: this.options.cwd } : {}),
       ...(this.options.env ? { env: this.options.env } : {}),
       stdio: 'pipe',
+      ...(process.platform === 'linux' ? { detached: true } : {}),
     });
     this.child = child;
     this.framer.reset();

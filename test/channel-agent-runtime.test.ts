@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
@@ -1475,5 +1476,80 @@ describe('ChannelAgentRuntimeManager', () => {
         nowMs: 1_040_000,
       })
     ).toEqual([90_005]);
+  });
+
+  it('detects reparented grandchild processes with ppid 1 and pgid root (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    const table: ProcessInfo[] = [
+      {
+        pid: 95_001,
+        ppid: 1,
+        pgid: 95_001,
+        command: 'cursor',
+        commandLine: 'cursor-agent acp',
+        rssBytes: 100,
+      },
+      // Reparented child (init ppid 1, but retains group leader pgid 95_001)
+      {
+        pid: 95_002,
+        ppid: 1,
+        pgid: 95_001,
+        command: 'sh',
+        commandLine: 'sh -c nohup sleep 100 &',
+        rssBytes: 20,
+      },
+    ];
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => table,
+    });
+    const r1 = await manager.create({
+      id: 'cursor-runtime',
+      providerId: 'cursor',
+      profileActorId: 'agent-profile:cursor:default',
+      cwd: '/tmp',
+      displayName: 'Cursor',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [95_001];
+
+    expect(manager.hasLiveChildProcesses(r1.id)).toBe(true);
+    expect(manager.liveChildPids(r1.id)).toEqual([95_002]);
+  });
+
+  it('detects live child processes under a real detached root on Linux (#1561)', async () => {
+    if (process.platform !== 'linux') return;
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    const parent = spawn('sh', ['-c', 'sh -c "sleep 5"'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    const parentPid = parent.pid;
+    if (!parentPid) throw new Error('spawn did not return parent pid');
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const manager = new ChannelAgentRuntimeManager();
+      const r1 = await manager.create({
+        id: 'real-runtime',
+        providerId: 'cursor',
+        profileActorId: 'agent-profile:cursor:default',
+        cwd: '/tmp',
+        displayName: 'Cursor',
+        port: 3456,
+        configDir: '/tmp',
+      });
+      adapterState.last!.ownedRoots = [parentPid];
+
+      expect(manager.hasLiveChildProcesses(r1.id)).toBe(true);
+      const childPids = manager.liveChildPids(r1.id);
+      expect(childPids.length).toBeGreaterThan(0);
+    } finally {
+      try {
+        process.kill(-parentPid, 'SIGKILL');
+      } catch {
+        // cleanup
+      }
+    }
   });
 });
