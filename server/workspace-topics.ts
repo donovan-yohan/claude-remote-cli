@@ -6,6 +6,7 @@ import express, {
   type Response,
 } from 'express';
 
+import { assertConfigDirSafeForDbPath } from './open-config-dir-database.js';
 import type { RelayCliGatewayErrorCode } from '../shared/cli-gateway-contract.js';
 import type { Config } from './types.js';
 import type { WorkContextStore } from './work-contexts.js';
@@ -210,6 +211,7 @@ export function createWorkspaceTopicStore(input: {
   dbPath: string;
   now?: () => string;
 }): WorkspaceTopicStore {
+  assertConfigDirSafeForDbPath(input.dbPath);
   const db = new Database(input.dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA_SQL);

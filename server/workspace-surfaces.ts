@@ -7,6 +7,7 @@ import express, {
   type Response,
 } from 'express';
 
+import { assertConfigDirSafeForDbPath } from './open-config-dir-database.js';
 import type { RelayCliGatewayErrorCode } from '../shared/cli-gateway-contract.js';
 import { DEFAULT_LOCAL_NODE_ID } from '../shared/identity.js';
 import {
@@ -336,6 +337,7 @@ export function createWorkspaceSurfaceStore(input: {
   dbPath: string;
   now?: () => string;
 }): WorkspaceSurfaceStore {
+  assertConfigDirSafeForDbPath(input.dbPath);
   const db = new Database(input.dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA_SQL);

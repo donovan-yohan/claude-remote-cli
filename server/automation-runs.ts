@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
+import { assertConfigDirSafeForDbPath } from './open-config-dir-database.js';
 import {
   AUTOMATION_RUN_SCHEMA_VERSION,
   deriveAutomationRunStatus,
@@ -144,6 +145,7 @@ export function createAutomationRunStore(input: {
   dbPath: string;
   now?: () => string;
 }): AutomationRunStore {
+  assertConfigDirSafeForDbPath(input.dbPath);
   const db = new Database(input.dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA_SQL);

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 
 import Database from 'better-sqlite3';
 
+import { assertConfigDirSafeForDbPath } from './open-config-dir-database.js';
 import {
   PIPELINE_HANDOFF_STAGES,
   isPipelineHandoffArtifact,
@@ -328,6 +329,7 @@ function createWorkContextArtifactStoreUnsafe(input: {
     path.join(path.dirname(input.dbPath), 'work-context-artifacts', 'payloads');
   mkdirSync(payloadRoot, { recursive: true });
 
+  assertConfigDirSafeForDbPath(input.dbPath);
   const db = new Database(input.dbPath);
   db.pragma(`busy_timeout = ${input.busyTimeoutMs ?? 5000}`);
   db.pragma('journal_mode = WAL');

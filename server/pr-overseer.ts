@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
+import { assertConfigDirSafeForDbPath } from './open-config-dir-database.js';
 import {
   PR_OVERSEER_SCHEMA_VERSION,
   boundPrObservation,
@@ -142,6 +143,7 @@ export function createPrOverseerStore(input: {
   dbPath: string;
   now?: () => string;
 }): PrOverseerStore {
+  assertConfigDirSafeForDbPath(input.dbPath);
   const db = new Database(input.dbPath);
   db.pragma('journal_mode = WAL');
   db.exec(SCHEMA_SQL);

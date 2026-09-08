@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import Database from 'better-sqlite3';
 
+import { assertConfigDirSafeForDbPath } from './open-config-dir-database.js';
 import {
   WORK_CONTEXT_MESSAGE_SCHEMA_VERSION,
   normalizeWorkContextMessageCreateInput,
@@ -246,6 +247,7 @@ export function initWorkContextMessageStore(
 export function createWorkContextMessageStore(
   dbPath: string
 ): WorkContextMessageStore {
+  assertConfigDirSafeForDbPath(dbPath);
   const db = new Database(dbPath);
   try {
     db.pragma('journal_mode = WAL');
