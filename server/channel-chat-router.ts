@@ -2389,183 +2389,109 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     if (signal.aborted) return;
 
     const deadline = Date.now() + input.timeoutMs;
-    const serverRestartCancelGraceMs = 2000;
-    const serverRestartCancelledSince = new Map<string, number>();
-    const inspected = new Map<
-      string,
-      { state: ChannelAsyncRun['state']; finalMessageSeq: number | null }
-    >();
+    const configuredMaxFollowups = deps.deliveryContractMaxFollowups ?? 3;
+    const maxFollowupRunsToVisit =
+      Number.isSafeInteger(configuredMaxFollowups) &&
+      configuredMaxFollowups >= 0
+        ? configuredMaxFollowups + 1
+        : 4;
 
-    // TS control-flow analysis does not reliably narrow this closure-mutated
-    // candidate across the subscription + poll loop; keep the surface typed at
-    // the response boundary.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let best: any = null;
+    const inspectedTerminalNonMatching = new Set<string>();
 
-    async function considerCandidate(
-      candidate: ChannelAsyncRun
-    ): Promise<void> {
-      if (
-        candidate.state === 'cancelled' &&
-        candidate.reason === 'server-restarted'
-      ) {
-        const since =
-          serverRestartCancelledSince.get(candidate.id) ?? Date.now();
-        serverRestartCancelledSince.set(candidate.id, since);
-        if (Date.now() - since < serverRestartCancelGraceMs) return;
-      } else {
-        serverRestartCancelledSince.delete(candidate.id);
-      }
-      if (!matchesWaitFor(candidate.state, input.for)) {
-        const prev = inspected.get(candidate.id);
-        if (!prev || prev.state !== candidate.state) {
-          inspected.set(candidate.id, {
-            state: candidate.state,
-            finalMessageSeq: null,
-          });
-        }
-        return;
-      }
+    const findOldestCandidate = (): ChannelAsyncRun | null => {
+      const runs = store.listAsyncRuns(channelId, 200);
+      if (runs.length === 0) return null;
+      const candidates: Array<{ run: ChannelAsyncRun; minSeq: number }> = [];
+      for (const run of runs) {
+        if (inspectedTerminalNonMatching.has(run.id)) continue;
+        const parentRunId = run.deliveryContract?.parentRunId;
+        const parentRun =
+          typeof parentRunId === 'string'
+            ? store.getAsyncRun(parentRunId as ChannelAsyncRunId)
+            : null;
+        const reqMsg = store.getMessage(run.requestMessageId);
+        const reqSeq = reqMsg?.seq ?? 0;
+        const final = finalAssistantTextForRun(store, run);
+        const maxSeq = Math.max(reqSeq, final.finalMessageSeq ?? 0);
+        if (maxSeq <= input.afterSeq) continue;
 
-      const prev = inspected.get(candidate.id);
-      if (
-        prev &&
-        prev.state === candidate.state &&
-        prev.finalMessageSeq !== null
-      ) {
-        // Negative cache for this terminal state: we already computed its final seq.
-        if (prev.finalMessageSeq <= input.afterSeq) return;
-        if (
-          best &&
-          (prev.finalMessageSeq > best.finalMessageSeq ||
-            prev.finalMessageSeq === best.finalMessageSeq)
-        ) {
-          return;
-        }
-      }
-      if (
-        prev &&
-        prev.state === candidate.state &&
-        prev.finalMessageSeq === null &&
-        runTerminalState(candidate.state) &&
-        candidate.state !== 'completed' &&
-        candidate.state !== 'completed_unmet'
-      ) {
-        // Negative cache for prose-less terminal states: once we've observed
-        // "no principal prose" for this (run,state), do not rescan on every
-        // tick (#1570 item 5).
-        return;
-      }
-
-      const final = finalAssistantTextForRun(store, candidate);
-      inspected.set(candidate.id, {
-        state: candidate.state,
-        finalMessageSeq: final.finalMessageSeq,
-      });
-      if (final.finalMessageSeq === null) return;
-      if (final.finalMessageSeq <= input.afterSeq) return;
-      if (!best || final.finalMessageSeq < best.finalMessageSeq) {
-        best = {
-          run: candidate,
-          finalText: final.finalText ?? '',
-          finalMessageSeq: final.finalMessageSeq,
-        };
-      }
-    }
-
-    let done = false;
-    let resolveDone: (() => void) | null = null;
-    const donePromise = new Promise<void>((resolve) => {
-      resolveDone = resolve;
-    });
-
-    let closeHandler: (() => void) | null = null;
-    const sink = {
-      get ready() {
-        return !signal.aborted;
-      },
-      get bufferedAmount() {
-        return 0;
-      },
-      send(event: import('../shared/channel-chat-protocol.js').ChannelEventV1) {
-        if (done) return false;
-        if (event.type === 'channel-snapshot-v1' && Array.isArray(event.runs)) {
-          void Promise.all(event.runs.map((r) => considerCandidate(r))).then(
-            () => {
-              if (!done && best) resolveDone?.();
-            }
+        if (parentRun && !inspectedTerminalNonMatching.has(parentRun.id)) {
+          const parentReqMsg = store.getMessage(parentRun.requestMessageId);
+          const parentReqSeq = parentReqMsg?.seq ?? 0;
+          const parentFinal = finalAssistantTextForRun(store, parentRun);
+          const parentMaxSeq = Math.max(
+            parentReqSeq,
+            parentFinal.finalMessageSeq ?? 0
           );
-        } else if (event.type === 'channel-run-lifecycle-v1') {
-          void considerCandidate(event.run).then(() => {
-            if (!done && best) resolveDone?.();
-          });
+          if (parentMaxSeq > input.afterSeq) continue;
         }
-        return true;
-      },
-      close(
-        _reason: import('./channel-hub.js').ChannelSubscriptionCloseReason
-      ) {
-        closeHandler?.();
-      },
-      onClose(handler: () => void) {
-        closeHandler = handler;
-      },
-    } satisfies import('./channel-hub.js').ChannelEventSink;
 
-    const cleanup = deps.hub.subscribe(sink, {
-      channelId,
-      afterSeq: input.afterSeq,
-    });
-
-    try {
-      signal.addEventListener(
-        'abort',
-        () => {
-          done = true;
-          resolveDone?.();
-        },
-        { once: true }
-      );
-      while (!done && Date.now() < deadline && !signal.aborted) {
-        if (best) break;
-        const runs = store.listAsyncRuns(channelId, 200);
-        for (const candidate of runs) {
-          if (best && best.finalMessageSeq <= input.afterSeq) break;
-          // Only re-inspect when state differs from the cached observation.
-          const prev = inspected.get(candidate.id);
-          if (prev && prev.state === candidate.state) continue;
-          await considerCandidate(candidate);
-          if (best) break;
-        }
-        if (best) break;
-        const remaining = Math.max(0, deadline - Date.now());
-        await Promise.race([
-          donePromise,
-          sleepWithAbort(Math.min(1000, remaining), signal),
-        ]);
+        const minSeq = reqSeq > 0 ? reqSeq : (final.finalMessageSeq ?? maxSeq);
+        candidates.push({ run, minSeq });
       }
-    } finally {
-      done = true;
-      cleanup();
+      if (candidates.length === 0) return null;
+      candidates.sort((a, b) => a.minSeq - b.minSeq);
+      return candidates[0]!.run;
+    };
+
+    while (Date.now() < deadline && !signal.aborted) {
+      const candidate = findOldestCandidate();
+      if (candidate) {
+        const remainingMs = Math.max(0, deadline - Date.now());
+        const waited = await waitForWaitableRun({
+          store,
+          hub: deps.hub,
+          initial: candidate,
+          timeoutMs: remainingMs,
+          maxFollowupRunsToVisit,
+          signal,
+        });
+        if (signal.aborted) return;
+        if (waited.run && runTerminalState(waited.run.state)) {
+          if (matchesWaitFor(waited.run.state, input.for)) {
+            await sendTerminalWaitResponse({
+              req,
+              res,
+              store,
+              hub: deps.hub,
+              runId: waited.runId,
+              run: waited.run,
+              deadline: waited.timedOut ? Date.now() : deadline,
+              signal,
+            });
+            return;
+          }
+          inspectedTerminalNonMatching.add(candidate.id);
+          inspectedTerminalNonMatching.add(waited.runId);
+        }
+      }
+
+      const remainingMs = Math.max(0, deadline - Date.now());
+      if (remainingMs <= 0) break;
+
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, Math.min(200, remainingMs));
+        const unlisten = deps.hub.onRunLifecycle((r) => {
+          if (r.channelId === channelId) {
+            clearTimeout(timer);
+            unlisten();
+            resolve();
+          }
+        });
+        signal.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            unlisten();
+            resolve();
+          },
+          { once: true }
+        );
+      });
     }
 
     if (signal.aborted) return;
-    if (best) {
-      res.json(
-        operatorClientPublicValue(req, {
-          run: {
-            id: best.run.id,
-            state: best.run.state,
-            ...(best.run.reason ? { reason: best.run.reason } : {}),
-          },
-          outcome: best.run.state,
-          finalText: best.finalText,
-          finalMessageSeq: best.finalMessageSeq ?? null,
-          contract: contractSummaryForRun(best.run),
-        })
-      );
-      return;
-    }
+
     res.json(
       operatorClientPublicValue(req, {
         run: null,
