@@ -3229,7 +3229,36 @@ export function createChannelAgentBinder(
   function pump(binding: LiveBinding): void {
     if (binding.activeTurnId !== null) return;
     if (binding.sendPreflight) return;
-    if (!binding.adapter) return;
+    if (!binding.adapter) {
+      const head = binding.queue[0];
+      if (!head?.reEnqueued) return;
+      if (closed) return;
+      const key = bindingKey(
+        binding.channelId,
+        binding.profileActorId,
+        binding.threadId
+      );
+      if (inflight.has(key)) return;
+      const profile = deps.agentProfileStore
+        ? deps.agentProfileStore.get(binding.profileActorId)
+        : defaultProfileForProvider(binding.framework);
+      if (!profile) return;
+      // One-shot best-effort rebind for a re-enqueued trigger (baseline bail).
+      void ensureProfileBinding(
+        binding.channelId,
+        profile,
+        undefined,
+        binding.threadId
+      )
+        .then((rebound) => {
+          if (closed) return;
+          pump(rebound);
+        })
+        .catch(() => {
+          /* ignore: a later post can retry binding admission */
+        });
+      return;
+    }
     const head = binding.queue[0];
     if (!head) return;
     let take = 1;
@@ -3584,10 +3613,9 @@ export function createChannelAgentBinder(
     binding: LiveBinding,
     trigger: ChannelMessage
   ): Promise<void> {
-    const enqueueAndPump = (target: LiveBinding) => {
-      enqueueTurn(target, trigger, undefined, true);
-      pump(target);
-    };
+    const mentions = (trigger.mentions ?? []).map((m) => m.raw).filter(Boolean);
+    const mentionText =
+      mentions.length > 0 ? mentions.join(' ') : '(no mentions)';
 
     const key = bindingKey(
       binding.channelId,
@@ -3595,8 +3623,9 @@ export function createChannelAgentBinder(
       binding.threadId
     );
     const current = live.get(key);
-    if (current?.adapter) {
-      enqueueAndPump(current);
+    if (current) {
+      enqueueTurn(current, trigger, undefined, true);
+      if (!closed) pump(current);
       return;
     }
 
@@ -3604,22 +3633,21 @@ export function createChannelAgentBinder(
       ? deps.agentProfileStore.get(binding.profileActorId)
       : defaultProfileForProvider(binding.framework);
     if (!profile) {
-      enqueueAndPump(binding);
+      postSystemRow(
+        binding.channelId,
+        `Dropped mention ${mentionText} — runtime exited during baseline capture.`,
+        { parentMessageId: parentForTrigger(trigger) ?? undefined }
+      );
       return;
     }
 
-    try {
-      const rebound = await ensureProfileBinding(
-        binding.channelId,
-        profile,
-        undefined,
-        binding.threadId
-      );
-      if (closed) return;
-      enqueueAndPump(rebound);
-    } catch {
-      enqueueAndPump(binding);
-    }
+    // Do not respawn a runtime from this failure handler (#1578 review). Any
+    // subsequent routing/binding admission will pick up the durable trigger.
+    postSystemRow(
+      binding.channelId,
+      `Dropped mention ${mentionText} — runtime binding unavailable after baseline capture.`,
+      { parentMessageId: parentForTrigger(trigger) ?? undefined }
+    );
   }
 
   function startTurn(input: {
@@ -6565,6 +6593,7 @@ export function createChannelAgentBinder(
    * disarmed while `waitingOn !== null` and unarmed once a turn is over).
    */
   function releaseBinding(key: string, binding: LiveBinding): void {
+    const preserveForPreflight = binding.sendPreflight;
     if (binding.activeTurnId !== null) {
       const activeTurnId = binding.activeTurnId;
       if (!releaseUnacceptedCompletionCallbackTurn(binding, activeTurnId)) {
@@ -6583,7 +6612,7 @@ export function createChannelAgentBinder(
     disarmTurnCeiling(binding);
     // No-op when `markDeadRuntimeIdle` already drained on the `disconnected`
     // patch, so a death that fires both paths posts one row per trigger.
-    dropQueuedTurns(binding);
+    if (!preserveForPreflight) dropQueuedTurns(binding);
     binding.adapter = null;
     binding.unbind = null;
     binding.patchUnlisten = null;
@@ -6605,7 +6634,7 @@ export function createChannelAgentBinder(
     // The binding may already have BEEN idle, so the dropped queue needs its
     // own emit — otherwise the chip keeps a count for a dead runtime.
     emitAgentStatus(binding);
-    live.delete(key);
+    if (!preserveForPreflight) live.delete(key);
     try {
       store.upsertBinding({
         channelId: binding.channelId,
@@ -6617,6 +6646,7 @@ export function createChannelAgentBinder(
     } catch (err) {
       logger.warn('channel binder unbind persist failed:', err);
     }
+    if (preserveForPreflight) binding.sendPreflight = false;
   }
 
   function handleRuntimeEnd(runtimeId: string): void {
