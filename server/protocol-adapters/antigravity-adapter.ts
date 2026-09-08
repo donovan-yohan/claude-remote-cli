@@ -45,6 +45,8 @@ import { createLogger } from '../logger.js';
 
 const logger = createLogger('antigravity-adapter');
 
+const MAX_RETRY_AFTER_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
 export function parseAntigravityRetryAfterIso(
   message: string,
   nowMs: number = Date.now()
@@ -52,9 +54,9 @@ export function parseAntigravityRetryAfterIso(
   if (!message || typeof message !== 'string') return undefined;
 
   // Match relative duration expressions like:
-  // "Resets in 2h30m51s", "resets in 45m", "in 3 hours", "resets in 1h 30m 10s"
+  // "Resets in 2h30m51s", "resets in 45m", "try again in 3 hours", "resets in 1h 30m 10s"
   const relMatch =
-    /(?:resets?\s+in|retry\s+after|try\s+again\s+in|\bin)\s+((?:(?:\d+\s*(?:d(?:ays?)?|h(?:(?:ou)?rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?))\s*)+)/i.exec(
+    /(?:resets?\s+in|retry\s+(?:after|in)|try\s+again\s+in|available\s+in|refills?\s+in)\s+((?:(?:\d+\s*(?:d(?:ays?)?|h(?:(?:ou)?rs?)?|m(?:in(?:ute)?s?)?|s(?:ec(?:ond)?s?)?))\s*)+)/i.exec(
       message
     );
 
@@ -92,7 +94,18 @@ export function parseAntigravityRetryAfterIso(
     }
 
     if (matchedAny && totalMs > 0) {
-      return new Date(nowMs + totalMs).toISOString();
+      if (totalMs > MAX_RETRY_AFTER_MS) {
+        totalMs = MAX_RETRY_AFTER_MS;
+      }
+      const targetTime = nowMs + totalMs;
+      if (!Number.isFinite(targetTime)) return undefined;
+      const date = new Date(targetTime);
+      if (Number.isNaN(date.getTime())) return undefined;
+      try {
+        return date.toISOString();
+      } catch {
+        return undefined;
+      }
     }
   }
 

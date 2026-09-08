@@ -1608,8 +1608,11 @@ describe('Antigravity relative duration parsing (#1579 item 4)', () => {
     expect(result).toBe(new Date(baseMs + 45 * 60 * 1000).toISOString());
   });
 
-  it('parses hours prose: in 3 hours', () => {
-    const result = parseAntigravityRetryAfterIso('in 3 hours', baseMs);
+  it('parses hours prose: try again in 3 hours', () => {
+    const result = parseAntigravityRetryAfterIso(
+      'try again in 3 hours',
+      baseMs
+    );
     expect(result).toBe(new Date(baseMs + 3 * 3600 * 1000).toISOString());
   });
 
@@ -1623,6 +1626,21 @@ describe('Antigravity relative duration parsing (#1579 item 4)', () => {
     expect(result).toBe(
       new Date(baseMs + (86_400 + 2 * 3600) * 1000).toISOString()
     );
+  });
+
+  it('clamps extreme relative durations to 30 days (#1579 review item 4)', () => {
+    const result = parseAntigravityRetryAfterIso(
+      'Resets in 999999999999d',
+      baseMs
+    );
+    const max30dMs = 30 * 24 * 60 * 60 * 1000;
+    expect(result).toBe(new Date(baseMs + max30dMs).toISOString());
+  });
+
+  it('does not parse non-reset prose with time expressions as quota reset (#1579 review item 4)', () => {
+    expect(
+      parseAntigravityRetryAfterIso('0 credits left in 3 days', baseMs)
+    ).toBeUndefined();
   });
 
   it('returns undefined when no relative duration is present', () => {
