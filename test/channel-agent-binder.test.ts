@@ -6813,6 +6813,42 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
       unknown: [expect.objectContaining({ spec: 'commit' })],
     });
   });
+
+  it('finalizes contract as unknown when a contract turn is cancelled (#1578 review)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    const { binder, store } = makeBinder({
+      build: (agentType) => new ScriptedAdapter(agentType, { mode: 'stall' }),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      turnCeilingMs: 10,
+    });
+
+    const mentions = parseMentions('@mock ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(
+      () => store.getAsyncRun(posted.run.id)?.state === 'cancelled'
+    );
+    const run = store.getAsyncRun(posted.run.id)!;
+    expect(run.deliveryContract?.result).toMatchObject({
+      met: false,
+      unmet: [],
+      unknown: [expect.objectContaining({ spec: 'commit' })],
+    });
+  });
 });
 
 describe('channel-agent-binder — delivery + idempotency', () => {

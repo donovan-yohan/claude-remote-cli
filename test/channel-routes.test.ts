@@ -2041,7 +2041,7 @@ describe('channel routes — gateway capability mapping', () => {
       expect(res.body.contract).toBe(null);
     });
 
-    it('returns cancelled-with-contract within 2s (no contract grace)', async () => {
+    it('returns cancelled-with-contract quickly (no contract grace)', async () => {
       const h = await harness({ withAuth: true });
       const targetId = builtInAgentProfileId('codex');
       const { run } = h.store.appendCompleteWithAsyncRun({
@@ -2071,15 +2071,23 @@ describe('channel routes — gateway capability mapping', () => {
       });
 
       const start = Date.now();
-      const res = await req<{ contract: unknown }>({
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        contract: unknown;
+      }>({
         port: h.port,
         method: 'GET',
-        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=2000`,
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=5000`,
         headers: { Authorization: 'Bearer test' },
       });
       const elapsed = Date.now() - start;
       expect(res.status).toBe(200);
-      expect(elapsed).toBeLessThan(2000);
+      expect(elapsed).toBeLessThan(500);
+      expect(res.body).toMatchObject({
+        run: { id: run.id, state: 'cancelled' },
+        outcome: 'cancelled',
+      });
       expect(res.body.contract).toMatchObject({
         met: false,
         unmet: [],
@@ -2087,7 +2095,7 @@ describe('channel routes — gateway capability mapping', () => {
       });
     });
 
-    it('returns failed-with-contract within 2s (no contract grace)', async () => {
+    it('returns failed-with-contract quickly (no contract grace)', async () => {
       const h = await harness({ withAuth: true });
       const targetId = builtInAgentProfileId('codex');
       const { run } = h.store.appendCompleteWithAsyncRun({
@@ -2117,15 +2125,23 @@ describe('channel routes — gateway capability mapping', () => {
       });
 
       const start = Date.now();
-      const res = await req<{ contract: unknown }>({
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        contract: unknown;
+      }>({
         port: h.port,
         method: 'GET',
-        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=2000`,
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=5000`,
         headers: { Authorization: 'Bearer test' },
       });
       const elapsed = Date.now() - start;
       expect(res.status).toBe(200);
-      expect(elapsed).toBeLessThan(2000);
+      expect(elapsed).toBeLessThan(500);
+      expect(res.body).toMatchObject({
+        run: { id: run.id, state: 'failed' },
+        outcome: 'failed',
+      });
       expect(res.body.contract).toMatchObject({
         met: false,
         unmet: [],
