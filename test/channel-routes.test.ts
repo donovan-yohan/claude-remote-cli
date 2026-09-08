@@ -2557,6 +2557,88 @@ describe('channel routes — gateway capability mapping', () => {
       });
     });
 
+    it('hops to childRunId that appears after the parent result lands (#1585)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+
+      const parent = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'ship it @codex',
+        targetIds: [targetId],
+        deliveryContract: { expect: ['text:^DONE$'] },
+        meta: { deliveryContract: { expect: ['text:^DONE$'] } },
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: parent.run.id,
+        targetId,
+        state: 'completed',
+      });
+
+      const child = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'follow-up @codex',
+        targetIds: [targetId],
+      });
+      const turnId = channelTurnId(child.message.id, targetId);
+      const final = h.store.beginStream({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        source: { runtimeId: 'rt', turnId, itemId: 'item-final' },
+        text: 'DONE',
+        meta: { asyncRun: { runId: child.run.id, targetId } },
+      });
+      h.store.finalizeStream(final.id, { text: 'DONE', status: 'complete' });
+      h.store.transitionAsyncRunTarget({
+        runId: child.run.id,
+        targetId,
+        state: 'completed',
+      });
+
+      // Parent result lands first (no childRunId yet).
+      h.store.finalizeAsyncRunDeliveryContract({
+        runId: parent.run.id,
+        result: {
+          met: false,
+          unmet: ['text:^DONE$'],
+          unknown: [],
+          evaluatedAt: new Date().toISOString(),
+        },
+      });
+
+      setTimeout(() => {
+        h.store.finalizeAsyncRunDeliveryContract({
+          runId: parent.run.id,
+          result: {
+            met: false,
+            unmet: ['text:^DONE$'],
+            unknown: [],
+            evaluatedAt: new Date().toISOString(),
+          },
+          followupPostedAt: new Date().toISOString(),
+          childRunId: child.run.id,
+        });
+      }, 50);
+
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+        finalText: string;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(parent.run.id)}&for=any&timeoutMs=1000`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        run: { id: child.run.id, state: 'completed' },
+        outcome: 'completed',
+        finalText: 'DONE',
+      });
+    });
+
     it('caps childRunId hop following by configured maxFollowups+1 (#1585)', async () => {
       const h = await harness({
         withAuth: true,

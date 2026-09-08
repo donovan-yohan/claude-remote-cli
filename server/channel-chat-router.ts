@@ -2121,6 +2121,20 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
           await sleepWithAbort(0, signal);
           continue;
         }
+        if (
+          latest.state === 'completed_unmet' &&
+          latest.deliveryContract?.result &&
+          latest.deliveryContract.result.met === false &&
+          !childRunId &&
+          !latest.deliveryContract.abandonedAt &&
+          !latest.deliveryContract.contractPending &&
+          hop + 1 < maxFollowupRunsToVisit
+        ) {
+          // The contract result landed but the binder may still be posting the
+          // follow-up run. Keep waiting so `channels wait` can hop the chain.
+          await sleepWithAbort(50, signal);
+          continue;
+        }
         const final = await finalAssistantTextForTerminalRun(
           store,
           runId,
