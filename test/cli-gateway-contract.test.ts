@@ -400,6 +400,38 @@ describe('CLI gateway contract', () => {
     expect(receiptItem?.properties).not.toHaveProperty('attachments');
   });
 
+  it('models immediate post mention delivery outcomes (#1560)', () => {
+    const data = commandSpec('channels.post').outputSchema.properties?.['data'];
+    if (!data) throw new Error('channels.post output data schema is missing');
+    const base = {
+      message: {},
+      run: {
+        id: 'chrun:test',
+        channelId: 'topic:test',
+        threadId: null,
+        requestMessageId: 'chm:test',
+        requesterId: 'human:operator',
+        state: 'submitted',
+        targets: [],
+        createdAt: '2026-09-08T00:00:00.000Z',
+        updatedAt: '2026-09-08T00:00:00.000Z',
+      },
+    };
+    expect(
+      schemaMatches(data, {
+        ...base,
+        mentions: [
+          {
+            targetProfileId: 'agent-profile:mock:default',
+            state: 'refused_policy',
+            reasonCode: 'mention_chain_paused',
+          },
+        ],
+      })
+    ).toBe(true);
+    expect(schemaMatches(data, base)).toBe(false);
+  });
+
   it('models a bounded exclusive channel subscription cursor', () => {
     expect(
       schemaAcceptsCommandInput('channels.subscribe', {
@@ -606,7 +638,15 @@ describe('CLI gateway contract', () => {
       createdAt: '2026-08-11T00:00:00.000Z',
       updatedAt: '2026-08-11T00:00:00.000Z',
     };
-    expect(schemaMatches(data, { message: {}, run })).toBe(true);
+    expect(
+      schemaMatches(data, {
+        message: {},
+        run,
+        mentions: [
+          { targetProfileId: 'agent-profile:mock:default', state: 'queued' },
+        ],
+      })
+    ).toBe(true);
     expect(schemaMatches(data, { message: {} })).toBe(false);
   });
 

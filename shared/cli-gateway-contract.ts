@@ -3809,8 +3809,24 @@ const channelPostOutputDataSchema: RelayJsonSchema = {
   properties: {
     message: { type: 'object', additionalProperties: true },
     run: channelAsyncRunSchema,
+    mentions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          targetProfileId: stringSchema,
+          state: {
+            type: 'string',
+            enum: ['queued', 'refused_policy', 'refused_provider'],
+          },
+          reasonCode: { type: 'string' },
+        },
+        required: ['targetProfileId', 'state'],
+      },
+    },
   },
-  required: ['message', 'run'],
+  required: ['message', 'run', 'mentions'],
 };
 
 const channelObjectSchema: RelayJsonSchema = {
@@ -4031,6 +4047,10 @@ const channelDeliveryReceiptSchema: RelayJsonSchema = {
         'profile_missing',
         'provider_unavailable',
         'mention_chain_paused',
+        'provider_quota_exhausted',
+        'provider_auth_required',
+        'provider_binary_missing',
+        'provider_unknown_failure',
       ],
     },
     ts: stringSchema,
