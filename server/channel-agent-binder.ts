@@ -5656,7 +5656,7 @@ export function createChannelAgentBinder(
         updatedRun: updated ?? null,
         evaluation,
         evaluatedAt,
-        deliveryProbe,
+        deliveryProbe: memoizedProbe,
         cwd,
         ...(runtime?.repoPath
           ? { runtime: { repoPath: runtime.repoPath } }
