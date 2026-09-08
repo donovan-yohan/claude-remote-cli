@@ -3588,6 +3588,84 @@ export function createChannelAgentBinder(
     }
   }
 
+  function startTurn(input: {
+    binding: LiveBinding;
+    adapter: ProtocolAdapterV2;
+    trigger: ChannelMessage;
+    packet: ResolvedMentionContextPacket;
+    turnId: string;
+    completionCallback?: ChannelCompletionCallbackEdge;
+    callbackEdgeRequest?: CallbackEdgeRequest;
+  }): void {
+    const {
+      binding,
+      adapter,
+      trigger,
+      packet,
+      turnId,
+      completionCallback,
+      callbackEdgeRequest,
+    } = input;
+    // Retained parents exist solely for output that opens shortly after a bare
+    // idle finalized its turn. Once a successor starts, the old association is
+    // no longer safe for a turn-0 fallback and must not accumulate forever.
+    if (binding.parentMessageIdByTurn.size > 0) {
+      binding.turnZeroFallbackUnsafe = true;
+    }
+    retainExactTurnTombstones(binding);
+    binding.parentMessageIdByTurn.clear();
+    binding.requestMessageIdByTurn.clear();
+    binding.activeTurnId = turnId;
+    binding.parentMessageIdByTurn.set(
+      turnId,
+      parentForTrigger(trigger) ?? null
+    );
+    // Completion callbacks travel upward only. They must never inherit the
+    // triggering requester run or make callback prose look like a reply to it.
+    if (!completionCallback) {
+      binding.requestMessageIdByTurn.set(turnId, trigger.id);
+      const asyncRun = store.getAsyncRunForRequestMessage(trigger.id);
+      if (asyncRun) {
+        const changed = store.transitionAsyncRunTarget({
+          runId: asyncRun.id,
+          targetId: binding.profileActorId,
+          state: 'working',
+        });
+        if (changed) hub.broadcastRunLifecycle(changed);
+      }
+    }
+    if (completionCallback?.continuationParentCallbackId) {
+      binding.continuationByTurn.set(turnId, {
+        childCallbackId: completionCallback.id,
+        parentCallbackId: completionCallback.continuationParentCallbackId,
+      });
+    }
+    if (completionCallback) {
+      binding.completionCallbackByTurn.set(turnId, completionCallback);
+    }
+    binding.sawStream = false;
+    binding.openToolItems.clear();
+    binding.waitingOn = null;
+    binding.activeContent = packet.content;
+    binding.activeAttachments = packet.attachments;
+    setStatus(binding, 'thinking');
+    emitReceipt({
+      trigger,
+      targetProfileId: binding.profileActorId,
+      state: 'turn_started',
+    });
+    armWatchdog(binding);
+    armTurnCeiling(binding);
+    deliver(
+      binding,
+      adapter,
+      turnId,
+      trigger,
+      completionCallback,
+      callbackEdgeRequest
+    );
+  }
+
   function sendTurn(
     binding: LiveBinding,
     trigger: ChannelMessage,
@@ -3651,62 +3729,15 @@ export function createChannelAgentBinder(
     // Fast path: no baseline capture needed. Stay synchronous so binder lifecycle
     // tests and queue draining remain tick-free.
     if (!needsBaselineCapture) {
-      // Retained parents exist solely for output that opens shortly after a bare
-      // idle finalized its turn. Once a successor starts, the old association is
-      // no longer safe for a turn-0 fallback and must not accumulate forever.
-      if (binding.parentMessageIdByTurn.size > 0) {
-        binding.turnZeroFallbackUnsafe = true;
-      }
-      retainExactTurnTombstones(binding);
-      binding.parentMessageIdByTurn.clear();
-      binding.requestMessageIdByTurn.clear();
-      binding.activeTurnId = turnId;
-      binding.parentMessageIdByTurn.set(
-        turnId,
-        parentForTrigger(trigger) ?? null
-      );
-      if (!completionCallback) {
-        binding.requestMessageIdByTurn.set(turnId, trigger.id);
-        const asyncRun = store.getAsyncRunForRequestMessage(trigger.id);
-        if (asyncRun) {
-          const changed = store.transitionAsyncRunTarget({
-            runId: asyncRun.id,
-            targetId: binding.profileActorId,
-            state: 'working',
-          });
-          if (changed) hub.broadcastRunLifecycle(changed);
-        }
-      }
-      if (completionCallback?.continuationParentCallbackId) {
-        binding.continuationByTurn.set(turnId, {
-          childCallbackId: completionCallback.id,
-          parentCallbackId: completionCallback.continuationParentCallbackId,
-        });
-      }
-      if (completionCallback) {
-        binding.completionCallbackByTurn.set(turnId, completionCallback);
-      }
-      binding.sawStream = false;
-      binding.openToolItems.clear();
-      binding.waitingOn = null;
-      binding.activeContent = packet.content;
-      binding.activeAttachments = packet.attachments;
-      setStatus(binding, 'thinking');
-      emitReceipt({
-        trigger,
-        targetProfileId: binding.profileActorId,
-        state: 'turn_started',
-      });
-      armWatchdog(binding);
-      armTurnCeiling(binding);
-      deliver(
+      startTurn({
         binding,
         adapter,
-        turnId,
         trigger,
-        completionCallback,
-        callbackEdgeRequest
-      );
+        packet,
+        turnId,
+        ...(completionCallback ? { completionCallback } : {}),
+        ...(callbackEdgeRequest ? { callbackEdgeRequest } : {}),
+      });
       return;
     }
 
@@ -3735,68 +3766,15 @@ export function createChannelAgentBinder(
         await reenqueueTriggerAfterBaselineBail(binding, trigger);
         return;
       }
-
-      // Retained parents exist solely for output that opens shortly after a bare
-      // idle finalized its turn. Once a successor starts, the old association is
-      // no longer safe for a turn-0 fallback and must not accumulate forever.
-      if (binding.parentMessageIdByTurn.size > 0) {
-        // A successor started while its predecessor was retained after bare idle.
-        // Future anonymous turn-0 patches cannot be assigned to either generation
-        // safely; exact turn ids continue to work.
-        binding.turnZeroFallbackUnsafe = true;
-      }
-      retainExactTurnTombstones(binding);
-      binding.parentMessageIdByTurn.clear();
-      binding.requestMessageIdByTurn.clear();
-      binding.activeTurnId = turnId;
-      binding.parentMessageIdByTurn.set(
-        turnId,
-        parentForTrigger(trigger) ?? null
-      );
-      // Completion callbacks travel upward only. They must never inherit the
-      // triggering requester run or make callback prose look like a reply to it.
-      if (!completionCallback) {
-        binding.requestMessageIdByTurn.set(turnId, trigger.id);
-        const asyncRun = store.getAsyncRunForRequestMessage(trigger.id);
-        if (asyncRun) {
-          const changed = store.transitionAsyncRunTarget({
-            runId: asyncRun.id,
-            targetId: binding.profileActorId,
-            state: 'working',
-          });
-          if (changed) hub.broadcastRunLifecycle(changed);
-        }
-      }
-      if (completionCallback?.continuationParentCallbackId) {
-        binding.continuationByTurn.set(turnId, {
-          childCallbackId: completionCallback.id,
-          parentCallbackId: completionCallback.continuationParentCallbackId,
-        });
-      }
-      if (completionCallback) {
-        binding.completionCallbackByTurn.set(turnId, completionCallback);
-      }
-      binding.sawStream = false;
-      binding.openToolItems.clear();
-      binding.waitingOn = null;
-      binding.activeContent = packet.content;
-      binding.activeAttachments = packet.attachments;
-      setStatus(binding, 'thinking');
-      emitReceipt({
-        trigger,
-        targetProfileId: binding.profileActorId,
-        state: 'turn_started',
-      });
-      armWatchdog(binding);
-      armTurnCeiling(binding);
-      deliver(
+      startTurn({
         binding,
-        binding.adapter,
-        turnId,
+        adapter: binding.adapter,
         trigger,
-        completionCallback,
-        callbackEdgeRequest
-      );
+        packet,
+        turnId,
+        ...(completionCallback ? { completionCallback } : {}),
+        ...(callbackEdgeRequest ? { callbackEdgeRequest } : {}),
+      });
     })().catch((err) => {
       binding.sendPreflight = false;
       logger.warn('channel binder sendTurn preflight failed:', errText(err));
