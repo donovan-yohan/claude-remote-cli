@@ -52,11 +52,17 @@ async function execNode(
   args: string[],
   env: NodeJS.ProcessEnv
 ): Promise<string> {
+  const childEnv: NodeJS.ProcessEnv = {
+    ...env,
+    XDG_CONFIG_HOME: env.XDG_CONFIG_HOME ?? path.join(tmpDir, 'xdg'),
+    RELAY_IDE_CONFIG:
+      env.RELAY_IDE_CONFIG ?? path.join(tmpDir, 'config', 'config.json'),
+  };
   return await new Promise<string>((resolve, reject) => {
     execFile(
       'node',
       args,
-      { encoding: 'utf-8', env, timeout: 10_000 },
+      { encoding: 'utf-8', env: childEnv, timeout: 10_000 },
       (error, stdout) => {
         if (error) reject(error);
         else resolve(stdout);
@@ -73,11 +79,17 @@ async function execNodeFailure(
   stdout: string;
   stderr: string;
 }> {
+  const childEnv: NodeJS.ProcessEnv = {
+    ...env,
+    XDG_CONFIG_HOME: env.XDG_CONFIG_HOME ?? path.join(tmpDir, 'xdg'),
+    RELAY_IDE_CONFIG:
+      env.RELAY_IDE_CONFIG ?? path.join(tmpDir, 'config', 'config.json'),
+  };
   return await new Promise((resolve, reject) => {
     execFile(
       'node',
       args,
-      { encoding: 'utf-8', env, timeout: 10_000 },
+      { encoding: 'utf-8', env: childEnv, timeout: 10_000 },
       (error, stdout, stderr) => {
         if (!error) {
           reject(new Error(`expected command to fail: node ${args.join(' ')}`));
@@ -113,7 +125,10 @@ test('browser command with no args prints usage and exits 1', () => {
   try {
     execFileSync('node', ['dist/bin/relay-ide.js', 'browser'], {
       encoding: 'utf-8',
-      env: buildChildEnv(),
+      env: buildChildEnv({
+        XDG_CONFIG_HOME: path.join(tmpDir, 'xdg'),
+        RELAY_IDE_CONFIG: path.join(tmpDir, 'config', 'config.json'),
+      }),
     });
     throw new Error('Should have exited with code 1');
   } catch (err) {
@@ -130,7 +145,10 @@ test('browser --help shows usage and exits 0', () => {
       ['dist/bin/relay-ide.js', 'browser', '--help'],
       {
         encoding: 'utf-8',
-        env: buildChildEnv(),
+        env: buildChildEnv({
+          XDG_CONFIG_HOME: path.join(tmpDir, 'xdg'),
+          RELAY_IDE_CONFIG: path.join(tmpDir, 'config', 'config.json'),
+        }),
       }
     );
     expect(output.includes('Usage') || output.includes('browser')).toBe(true);
@@ -152,6 +170,8 @@ test('browser command fails gracefully when server is not running', () => {
         env: buildChildEnv({
           RELAY_IDE_PORT: '19999',
           RELAY_IDE_BROWSER_TOKEN: 'test-token',
+          XDG_CONFIG_HOME: path.join(tmpDir, 'xdg'),
+          RELAY_IDE_CONFIG: path.join(tmpDir, 'config', 'config.json'),
         }),
       }
     );
@@ -177,6 +197,8 @@ test('browser command fails when token not set', () => {
         env: buildChildEnv({
           RELAY_IDE_PORT: '19999',
           RELAY_IDE_BROWSER_TOKEN: '', // empty token
+          XDG_CONFIG_HOME: path.join(tmpDir, 'xdg'),
+          RELAY_IDE_CONFIG: path.join(tmpDir, 'config', 'config.json'),
         }),
       }
     );
