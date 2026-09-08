@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { LineFramer } from './line-framer.js';
+import { readProcStat, signalProcessGroup } from './process-tree.js';
 
 export interface PrimeAgentRpcMessage extends Record<string, unknown> {
   type: string;
@@ -66,6 +67,7 @@ export class PrimeAgentRpcClient extends EventEmitter {
   private readonly diagnosticRingSize: number;
   private ready = false;
   private tombstones: Array<{ command: string; expiresAt: number }> = [];
+  private startTicks: number | undefined;
 
   constructor(private readonly options: PrimeAgentRpcClientOptions = {}) {
     super();
@@ -142,6 +144,9 @@ export class PrimeAgentRpcClient extends EventEmitter {
       }
     );
     this.child = child;
+    if (child.pid) {
+      this.startTicks = readProcStat(child.pid)?.startTicks;
+    }
     this.framer.reset();
     const onStdoutData = (chunk: Buffer | string) => this.consume(chunk);
     const onStderrData = (chunk: Buffer | string) => {
@@ -293,13 +298,21 @@ export class PrimeAgentRpcClient extends EventEmitter {
 
     try {
       try {
-        child.kill('SIGTERM');
+        if (child.pid) {
+          signalProcessGroup(child.pid, 'SIGTERM', this.startTicks);
+        } else {
+          child.kill('SIGTERM');
+        }
       } catch {
         // The process may already have exited.
       }
       if (await waitForClose(timeoutMs)) return;
       try {
-        child.kill('SIGKILL');
+        if (child.pid) {
+          signalProcessGroup(child.pid, 'SIGKILL', this.startTicks);
+        } else {
+          child.kill('SIGKILL');
+        }
       } catch {
         // The process may already have exited.
       }

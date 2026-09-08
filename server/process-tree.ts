@@ -505,6 +505,47 @@ function parseProcStat(stat: string):
   return { command, state, ppid, pgid, utime, stime, cpuTicks, startTicks };
 }
 
+export function readProcStat(
+  pid: number,
+  procRoot = '/proc'
+): ReturnType<typeof parseProcStat> {
+  if (process.platform !== 'linux' && procRoot === '/proc') return undefined;
+  const stat = readText(`${procRoot}/${pid}/stat`);
+  if (!stat) return undefined;
+  return parseProcStat(stat);
+}
+
+export function signalProcessGroup(
+  pid: number,
+  signal: NodeJS.Signals,
+  recordedStartTicks?: number,
+  procRoot = '/proc',
+  killProcess: (pid: number, signal: NodeJS.Signals) => void = (p, s) =>
+    process.kill(p, s)
+): void {
+  if (!Number.isSafeInteger(pid) || pid <= 1 || pid === process.pid) return;
+  if (process.platform === 'linux') {
+    if (recordedStartTicks !== undefined) {
+      const stat = readProcStat(pid, procRoot);
+      if (stat && stat.startTicks !== recordedStartTicks) {
+        // PID was recycled by the kernel for an unrelated process group.
+        return;
+      }
+    }
+    try {
+      killProcess(-pid, signal);
+      return;
+    } catch {
+      // Best effort fallback to single PID
+    }
+  }
+  try {
+    killProcess(pid, signal);
+  } catch {
+    // Best effort - process may already be dead.
+  }
+}
+
 function readCommandLine(processDir: string, fallbackCommand: string): string {
   const cmdline = readText(`${processDir}/cmdline`);
   if (!cmdline) return fallbackCommand;

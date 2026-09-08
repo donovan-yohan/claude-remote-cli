@@ -19,6 +19,7 @@ import type {
 } from '../protocol-adapter.js';
 import type { ChatEvent, ChatEventSource } from '../../shared/chat-events.js';
 import { createLogger } from '../logger.js';
+import { readProcStat, signalProcessGroup } from '../process-tree.js';
 
 const logger = createLogger('opencode-adapter');
 const MAX_TRACKED_USER_MESSAGES = 100;
@@ -88,6 +89,7 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
   private _openCodeSessionId: string | null = null;
   private _partText = new Map<string, string>();
   private _userMessageIds = new Set<string>();
+  private _startTicks: number | undefined;
 
   readonly runtimeOwnership = 'spawned' as const;
 
@@ -114,6 +116,7 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
     this._openCodeSessionId = null;
     this._partText.clear();
     this._userMessageIds.clear();
+    this._startTicks = undefined;
 
     this._apiPort = await getPort();
     this._apiHost =
@@ -143,6 +146,9 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(process.platform === 'linux' ? { detached: true } : {}),
     });
+    if (this._process.pid) {
+      this._startTicks = readProcStat(this._process.pid)?.startTicks;
+    }
 
     const captureProcessOutput = (chunk: Buffer): void => {
       this._processOutputBuffer = (
@@ -198,11 +204,15 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
     this._messageAbortController = null;
 
     if (this._process) {
-      if (this._process.pid) this._exitedProcessRootPid = this._process.pid;
-      try {
-        this._process.kill('SIGTERM');
-      } catch {
-        /* may already be dead */
+      if (this._process.pid) {
+        this._exitedProcessRootPid = this._process.pid;
+        signalProcessGroup(this._process.pid, 'SIGTERM', this._startTicks);
+      } else {
+        try {
+          this._process.kill('SIGTERM');
+        } catch {
+          /* may already be dead */
+        }
       }
       this._process = null;
     }

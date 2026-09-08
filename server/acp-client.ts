@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { LineFramer } from './line-framer.js';
+import { readProcStat, signalProcessGroup } from './process-tree.js';
 
 /**
  * Transport for Agent Client Protocol (ACP) stdio servers.
@@ -90,6 +91,7 @@ export class AcpClient extends EventEmitter {
   private detachChildListeners: (() => void) | null = null;
   private detachDrainListener: (() => void) | null = null;
   private readonly stderrTail: string[] = [];
+  private startTicks: number | undefined;
 
   constructor(private readonly options: AcpClientOptions) {
     super();
@@ -150,6 +152,9 @@ export class AcpClient extends EventEmitter {
       ...(process.platform === 'linux' ? { detached: true } : {}),
     });
     this.child = child;
+    if (child.pid) {
+      this.startTicks = readProcStat(child.pid)?.startTicks;
+    }
     this.framer.reset();
     this.stderrTail.length = 0;
     const onStdoutData = (chunk: Buffer | string) => this.consume(chunk);
@@ -331,13 +336,21 @@ export class AcpClient extends EventEmitter {
       }
       if (await waitForClose(timeoutMs)) return;
       try {
-        child.kill('SIGTERM');
+        if (child.pid) {
+          signalProcessGroup(child.pid, 'SIGTERM', this.startTicks);
+        } else {
+          child.kill('SIGTERM');
+        }
       } catch {
         // The process may already have exited.
       }
       if (await waitForClose(timeoutMs)) return;
       try {
-        child.kill('SIGKILL');
+        if (child.pid) {
+          signalProcessGroup(child.pid, 'SIGKILL', this.startTicks);
+        } else {
+          child.kill('SIGKILL');
+        }
       } catch {
         // The process may already have exited.
       }
