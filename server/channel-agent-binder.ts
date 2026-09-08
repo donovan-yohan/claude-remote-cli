@@ -4565,14 +4565,16 @@ export function createChannelAgentBinder(
       const failureCode = recordProviderFailure(binding, patch);
       // Only surface a system row when NO assistant row opened — otherwise the
       // bridge's `failed` finalize is the visible artifact (§7, no duplicate).
-      // Tool call timeouts must always post a visible system row (#1561).
-      const isToolTimeout = patch.message.includes('tool call timed out');
-      if (!binding.sawStream || isToolTimeout) {
+      // Tool and whole-turn timeouts must always post visible system rows (#1561).
+      const isTimeout =
+        patch.message.includes('tool call timed out') ||
+        patch.message.includes('turn timed out');
+      if (!binding.sawStream || isTimeout) {
         const suffix = failureCode ? ` (${failureCode})` : '';
         postSystemRow(
           binding.channelId,
-          isToolTimeout
-            ? patch.message
+          isTimeout
+            ? `@${binding.displayName} ${patch.message}`
             : `@${binding.displayName} errored${suffix}: ${patch.message}`,
           {
             parentMessageId:

@@ -9179,7 +9179,35 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     const timeoutRow = systemRows(store).find((m) =>
       m.body.text.includes('tool call timed out after 30 s')
     )!;
-    expect(timeoutRow.body.text).toBe('tool call timed out after 30 s');
+    expect(timeoutRow.body.text).toBe('@Mock tool call timed out after 30 s');
+  });
+
+  it('posts a system row when a turn times out even after sawStream is true (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+    });
+    postWithAsyncRun(store, binder, '@mock timeout-turn', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    adapter.emitError('turn timed out after 30 s', adapter.sendCalls[0]);
+    adapter.fail('turn timed out after 30 s');
+
+    await waitFor(
+      () =>
+        systemRows(store).some((m) =>
+          m.body.text.includes('turn timed out after 30 s')
+        ),
+      4000
+    );
+    const timeoutRow = systemRows(store).find((m) =>
+      m.body.text.includes('turn timed out after 30 s')
+    )!;
+    expect(timeoutRow.body.text).toBe('@Mock turn timed out after 30 s');
   });
 
   it('cross-node topics fail visibly and never spawn a local stand-in', async () => {
