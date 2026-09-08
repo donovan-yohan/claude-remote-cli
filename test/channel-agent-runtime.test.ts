@@ -18,6 +18,7 @@ import { emptyAgentSessionV2 } from '../shared/agent-chat-protocol-v2.js';
 import { CHANNEL_ADAPTER_LAUNCH_CONTRACTS } from '../server/protocol-adapters/index.js';
 import { relayMcpLaunchSpec } from '../server/relay-mcp-launch.js';
 import {
+  readProcessTable,
   scheduleRelayProcessTreeReap,
   type ProcessInfo,
 } from '../server/process-tree.js';
@@ -1628,6 +1629,7 @@ describe('ChannelAgentRuntimeManager', () => {
         pgid: 95_001,
         command: 'sh',
         commandLine: 'sh -c nohup sleep 100 &',
+        state: 'R',
         rssBytes: 20,
       },
     ];
@@ -1645,14 +1647,15 @@ describe('ChannelAgentRuntimeManager', () => {
     });
     adapterState.last!.ownedRoots = [95_001];
 
-    expect(manager.hasLiveChildProcesses(r1.id)).toBe(true);
-    expect(manager.liveChildPids(r1.id)).toEqual([95_002]);
+    const lastActivityAt = Date.now();
+    expect(manager.hasLiveChildProcesses(r1.id, { lastActivityAt })).toBe(true);
+    expect(manager.liveChildPids(r1.id, { lastActivityAt })).toEqual([95_002]);
   });
 
   it('detects live child processes under a real detached root on Linux (#1561)', async () => {
     if (process.platform !== 'linux') return;
     const { ChannelAgentRuntimeManager } = await runtimeModule();
-    const parent = spawn('sh', ['-c', 'sh -c "sleep 5"'], {
+    const parent = spawn('sh', ['-c', 'sh -c "while :; do :; done" & wait'], {
       detached: true,
       stdio: 'ignore',
     });
@@ -1660,7 +1663,9 @@ describe('ChannelAgentRuntimeManager', () => {
     if (!parentPid) throw new Error('spawn did not return parent pid');
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Ensure the child predates the activity tick by more than the 1s
+      // new-process tolerance; its running state or CPU sample must prove work.
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
       const manager = new ChannelAgentRuntimeManager();
       const r1 = await manager.create({
         id: 'real-runtime',
@@ -1672,13 +1677,71 @@ describe('ChannelAgentRuntimeManager', () => {
         configDir: '/tmp',
       });
       adapterState.last!.ownedRoots = [parentPid];
+      const lastActivityAt = Date.now();
 
-      expect(manager.hasLiveChildProcesses(r1.id)).toBe(true);
-      const childPids = manager.liveChildPids(r1.id);
+      expect(manager.hasLiveChildProcesses(r1.id, { lastActivityAt })).toBe(
+        true
+      );
+      const childPids = manager.liveChildPids(r1.id, { lastActivityAt });
       expect(childPids.length).toBeGreaterThan(0);
     } finally {
       try {
         process.kill(-parentPid, 'SIGKILL');
+      } catch {
+        // cleanup
+      }
+    }
+  });
+
+  it('detects a real busy child reparented under its detached root group on Linux (#1561)', async () => {
+    if (process.platform !== 'linux') return;
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    // The launcher exits immediately. Its CPU-busy child remains in the
+    // detached process group and is adopted by init, as ACP children can be.
+    const launcher = spawn('sh', ['-c', 'sh -c "while :; do :; done" & exit'], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    const rootPid = launcher.pid;
+    if (!rootPid) throw new Error('spawn did not return launcher pid');
+
+    try {
+      let reparented: ProcessInfo | undefined;
+      await vi.waitFor(
+        () => {
+          const table = readProcessTable();
+          reparented = table.find(
+            (proc) => proc.pgid === rootPid && proc.pid !== rootPid
+          );
+          expect(table.some((proc) => proc.pid === rootPid)).toBe(false);
+          expect(reparented).toMatchObject({ pgid: rootPid });
+          expect(reparented!.ppid).not.toBe(rootPid);
+        },
+        { timeout: 2_000, interval: 25 }
+      );
+
+      // The child predates this activity tick by more than the 1s new-process
+      // tolerance, so liveness must come from its running state or CPU sample.
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      const lastActivityAt = Date.now();
+      const manager = new ChannelAgentRuntimeManager();
+      const runtime = await manager.create({
+        id: 'real-reparented-runtime',
+        providerId: 'cursor',
+        profileActorId: 'agent-profile:cursor:default',
+        cwd: '/tmp',
+        displayName: 'Cursor',
+        port: 3456,
+        configDir: '/tmp',
+      });
+      adapterState.last!.ownedRoots = [rootPid];
+
+      expect(
+        manager.liveChildPids(runtime.id, { lastActivityAt, sampleDelayMs: 20 })
+      ).toContain(reparented!.pid);
+    } finally {
+      try {
+        process.kill(-rootPid, 'SIGKILL');
       } catch {
         // cleanup
       }
