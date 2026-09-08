@@ -1047,6 +1047,24 @@ describe('AntigravityProtocolAdapter', () => {
     expect(
       Object.keys((live[0] as { live: Record<string, unknown> }).live)
     ).toEqual(['activeTurnId']);
+
+    const ext = patches
+      .slice(before)
+      .filter((p) => p.type === 'agent-item-started-v2');
+    expect(ext).toHaveLength(1);
+    expect(ext[0]).toMatchObject({
+      type: 'agent-item-started-v2',
+      turnId: 't1',
+      item: {
+        type: 'providerExtension',
+        namespace: 'antigravity',
+        payload: {
+          kind: 'checkpoint',
+          state: 'DONE',
+          stepIndex: 2,
+        },
+      },
+    });
   });
 
   // Test 17c (#1548)
