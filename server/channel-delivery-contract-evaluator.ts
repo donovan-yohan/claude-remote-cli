@@ -147,23 +147,26 @@ export async function evaluateDeliveryContract(
 
   async function evalCommit(): Promise<DeliveryContractProbeOutcome<boolean>> {
     const baseline = input.baseline;
-    if (
-      baseline &&
-      typeof probes.git.headSha === 'function' &&
-      typeof probes.git.commitsBetween === 'function'
-    ) {
-      const head = await probes.git.headSha();
-      if (head.kind === 'ok' && typeof head.value === 'string' && head.value) {
-        const delta = await probes.git.commitsBetween(
-          baseline.headSha,
-          head.value
-        );
-        if (delta.kind === 'ok') {
-          const n = delta.value;
-          return { kind: 'ok', value: Number.isFinite(n) && n >= 1 };
-        }
+    if (baseline) {
+      if (
+        typeof probes.git.headSha !== 'function' ||
+        typeof probes.git.commitsBetween !== 'function'
+      ) {
+        return {
+          kind: 'unknown',
+          reason: 'git probes missing for commit delta evaluation',
+        };
       }
-      // Probe failure: fall back to legacy semantics below.
+      const head = await probes.git.headSha();
+      if (head.kind === 'unknown') return head;
+      const headSha = typeof head.value === 'string' ? head.value.trim() : '';
+      if (!headSha) {
+        return { kind: 'unknown', reason: 'unable to resolve HEAD sha' };
+      }
+      const delta = await probes.git.commitsBetween(baseline.headSha, headSha);
+      if (delta.kind === 'unknown') return delta;
+      const n = delta.value;
+      return { kind: 'ok', value: Number.isFinite(n) && n >= 1 };
     }
     const ahead = await probes.git.aheadCount();
     if (ahead.kind === 'unknown') return ahead;

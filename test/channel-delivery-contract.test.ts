@@ -163,6 +163,48 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
     expect(result).toEqual({ met: true, unmet: [], unknown: [] });
   });
 
+  it('treats commit as unknown when a baseline exists but the delta probe fails (#1578)', async () => {
+    const baselineHead = 'a'.repeat(40);
+    const currentHead = 'b'.repeat(40);
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['commit'],
+        cwd: '/tmp/repo',
+        baseline: {
+          headSha: baselineHead,
+          upstreamSha: null,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/y' }),
+          // Legacy semantics would pass here; baseline semantics must return unknown.
+          aheadCount: async () => ({ kind: 'ok', value: 1 }),
+          headSha: async () => ({ kind: 'ok', value: currentHead }),
+          commitsBetween: async () => ({
+            kind: 'unknown',
+            reason: 'boom: delta unavailable',
+          }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+        fs: {
+          exists: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+    expect(result.met).toBe(false);
+    expect(result.unmet).toEqual([]);
+    expect(result.unknown).toEqual([
+      { spec: 'commit', reason: 'boom: delta unavailable' },
+    ]);
+  });
+
   it('treats pr as unmet when the PR existed at baseline and its head did not move (#1578)', async () => {
     const prHead = 'a'.repeat(40);
     const result = await evaluateDeliveryContract(
