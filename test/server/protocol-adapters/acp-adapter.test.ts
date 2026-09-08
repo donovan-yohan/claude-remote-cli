@@ -607,4 +607,22 @@ describe('AcpProtocolAdapter (base)', () => {
     h.settlePrompt('end_turn');
     await h.adapter.disconnect();
   });
+
+  it('exposes owned process root PIDs from the underlying client (#1561)', async () => {
+    const h = harness({
+      initResult: {
+        protocolVersion: ACP_PROTOCOL_VERSION,
+        agentCapabilities: {},
+        authMethods: [],
+      },
+    });
+    vi.spyOn(h.client, 'pid', 'get').mockReturnValue(4242);
+    expect(h.adapter.ownedProcessRootPids()).toEqual([]);
+
+    await h.adapter.connect(config);
+    expect(h.adapter.ownedProcessRootPids()).toEqual([4242]);
+
+    await h.adapter.disconnect();
+    expect(h.adapter.ownedProcessRootPids()).toEqual([4242]);
+  });
 });

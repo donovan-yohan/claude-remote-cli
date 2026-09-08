@@ -151,6 +151,51 @@ describe('OpenCode V2 web adapter registration', () => {
     expect(adapter.agentType).toBe('opencode');
     expect(adapter.capabilities).toMatchObject({ streaming: true });
   });
+
+  it('exposes owned process root PIDs from the spawned child process (#1561)', async () => {
+    const child = Object.assign(new EventEmitter(), {
+      pid: 7171,
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(() => true),
+    }) as unknown as ChildProcess;
+    const spawnFn = vi.fn(() => child) as unknown as typeof spawn;
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.endsWith('/global/health')) {
+          return new Response('{}', { status: 200 });
+        }
+        if (url.endsWith('/session') && init?.method === 'POST') {
+          return new Response(JSON.stringify({ id: 'opencode-session' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (url.endsWith('/global/event')) {
+          return new Response('', { status: 200 });
+        }
+        throw new Error(`unexpected OpenCode URL: ${url}`);
+      });
+    const adapter = new OpenCodeProtocolAdapter(spawnFn);
+    try {
+      expect(adapter.ownedProcessRootPids()).toEqual([]);
+      await adapter.connect({
+        cwd: '/tmp',
+        port: 1,
+        sessionId: 'relay-session',
+        hookToken: 'x',
+        configDir: '/tmp',
+      });
+      expect(adapter.ownedProcessRootPids()).toEqual([7171]);
+      await adapter.disconnect();
+      expect(adapter.ownedProcessRootPids()).toEqual([7171]);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
 });
 
 // The `streaming` bit means "this adapter emits live `agent-item-delta-v2`

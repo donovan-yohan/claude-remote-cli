@@ -256,6 +256,7 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
   private config: AdapterConfig | null = null;
   private client: AcpClient | null = null;
   private clientGeneration = 0;
+  private exitedProcessRootPid: number | null = null;
   private providerSessionId: string | null = null;
   private activeTurnId: string | null = null;
   private activeStartedMs = 0;
@@ -315,9 +316,15 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
     return this._status;
   }
 
+  ownedProcessRootPids(): number[] {
+    const pid = this.client?.pid ?? this.exitedProcessRootPid;
+    return typeof pid === 'number' && pid > 1 ? [pid] : [];
+  }
+
   async connect(config: AdapterConfig): Promise<void> {
     this.config = config;
     this._status = 'connecting';
+    this.exitedProcessRootPid = null;
     const command =
       typeof this.profile.command === 'function'
         ? this.profile.command(config)
@@ -570,6 +577,7 @@ export class AcpProtocolAdapter extends BaseProtocolAdapterV2 {
 
   private async teardownClient(): Promise<void> {
     const client = this.client;
+    if (client?.pid) this.exitedProcessRootPid = client.pid;
     this.client = null;
     this.clientGeneration += 1;
     await client?.stop();

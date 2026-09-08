@@ -107,7 +107,9 @@ workflow.
 
 #### Fixed
 
+- The inactivity watchdog no longer interrupts an agent turn while a child process tree (such as a long-running test suite or build command) is actively executing. The binder now queries the runtime's owned process root PIDs on each watchdog tick, refreshes the silence budget while child processes are alive, and reports the remaining turn ceiling budget in force-drain notices (#1561).
 - Delivery contracts now evaluate `commit`, `push`, and `pr` as deltas from a post-time baseline, so a commit-then-push turn still satisfies `commit` and an existing PR does not satisfy `pr` unless it advanced (#1578).
+
 - A throwaway hub process launched from a checkout (including `node dist/server/index.js --help`) no longer opens the live hub’s `channel-chat.db` and runs restart recovery. The hub now writes a `hub.lock` ownership record in its config dir and any other process refuses to open the channel store while the owning PID is alive (#1587).
 - An agent turn is no longer interrupted while it sits inside one long, silent
   command. `npm run check`, a full test run, or any tool call that takes minutes

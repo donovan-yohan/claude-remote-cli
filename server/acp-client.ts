@@ -130,6 +130,10 @@ export class AcpClient extends EventEmitter {
     return this.stderrTail.join('\n');
   }
 
+  get pid(): number | undefined {
+    return this.child?.pid;
+  }
+
   /**
    * Spawn the ACP server and complete the `initialize` handshake, which is the
    * readiness barrier: the server answers it only once its plugin/server tree

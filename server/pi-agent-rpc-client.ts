@@ -67,7 +67,9 @@ export class PiAgentRpcClient extends EventEmitter {
         void this.stop().catch((stopError: unknown) =>
           this.emit(
             'error',
-            stopError instanceof Error ? stopError : new Error(String(stopError))
+            stopError instanceof Error
+              ? stopError
+              : new Error(String(stopError))
           )
         );
       },
@@ -75,6 +77,10 @@ export class PiAgentRpcClient extends EventEmitter {
     // An EventEmitter `error` without a listener terminates Node. Transport
     // errors are still observable, but are safe during early process startup.
     this.on('error', () => undefined);
+  }
+
+  get pid(): number | undefined {
+    return this.child?.pid;
   }
 
   async start(): Promise<PiAgentRpcMessage> {

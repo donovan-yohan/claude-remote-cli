@@ -2588,6 +2588,7 @@ interface SessionsHarness {
   ) => Promise<void>;
   lastCreateParams: () => CreateChannelAgentRuntimeParams | undefined;
   createParams: () => CreateChannelAgentRuntimeParams[];
+  setHasLiveChildProcesses: (sessionId: string, has: boolean) => void;
 }
 
 function makeSessions(
@@ -2607,6 +2608,7 @@ function makeSessions(
   let createErrorOnceRaised = false;
   let lastParams: CreateChannelAgentRuntimeParams | undefined;
   const createParams: CreateChannelAgentRuntimeParams[] = [];
+  const liveChildProcessRuntimes = new Set<string>();
   const sessions: BinderRuntimes = {
     async create(params) {
       spawns++;
@@ -2651,6 +2653,7 @@ function makeSessions(
     },
     async destroy(id) {
       if (!created.delete(id)) return;
+      liveChildProcessRuntimes.delete(id);
       destroyCalls.push(id);
       for (const cb of [...endCbs]) cb(id);
     },
@@ -2661,6 +2664,9 @@ function makeSessions(
         if (i >= 0) endCbs.splice(i, 1);
       };
     },
+    hasLiveChildProcesses(id) {
+      return liveChildProcessRuntimes.has(id);
+    },
   };
   return {
     sessions,
@@ -2670,10 +2676,12 @@ function makeSessions(
     adapterFor: (id) => created.get(id)!.runtime.adapter,
     fireEnd: (id) => {
       created.delete(id);
+      liveChildProcessRuntimes.delete(id);
       for (const cb of [...endCbs]) cb(id);
     },
     forgetWithoutEnd: (id) => {
       created.delete(id);
+      liveChildProcessRuntimes.delete(id);
     },
     registerSourceSession: (id, role) => {
       created.set(id, {
@@ -2704,6 +2712,10 @@ function makeSessions(
     },
     lastCreateParams: () => lastParams,
     createParams: () => createParams,
+    setHasLiveChildProcesses: (sessionId: string, has: boolean) => {
+      if (has) liveChildProcessRuntimes.add(sessionId);
+      else liveChildProcessRuntimes.delete(sessionId);
+    },
   };
 }
 
@@ -8953,6 +8965,68 @@ describe('channel-agent-binder — watchdog + cross-node + interrupt', () => {
     expect(
       collectReceipts(hub, CH).some((r) => r.state === 'expired_watchdog')
     ).toBe(true);
+  });
+
+  it('a runtime with a live child process tree is not force-drained by watchdog (#1561)', async () => {
+    const { binder, store, hub, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 40,
+    });
+    postWithAsyncRun(store, binder, '@mock long-child', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const sessionId = sessions.firstSessionId();
+    const adapter = sessions.adapterFor(sessionId) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    // The runtime is waiting on a long child command (npm test / check / build)
+    // that emits nothing on the stream wire.
+    sessions.setHasLiveChildProcesses(sessionId, true);
+    await new Promise((r) => setTimeout(r, 120));
+    expect(
+      systemRows(store).some((m) => m.body.text.includes('force-drained'))
+    ).toBe(false);
+
+    // When the child process finishes and the runtime remains silent, the
+    // silence budget restarts and drains if still silent.
+    sessions.setHasLiveChildProcesses(sessionId, false);
+    await waitFor(
+      () =>
+        systemRows(store).some((m) => m.body.text.includes('force-drained')),
+      4000
+    );
+    expect(adapter.interruptCalls).toEqual([adapter.sendCalls[0]]);
+    expect(
+      collectReceipts(hub, CH).some((r) => r.state === 'expired_watchdog')
+    ).toBe(true);
+  });
+
+  it('drain row includes remaining turn ceiling budget when watchdog expires (#1561)', async () => {
+    const { binder, store, sessions } = makeBinder({
+      build: (t) => new HeartbeatAdapter(t, 60_000),
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      watchdogMs: 25,
+      turnCeilingMs: 60_000,
+    });
+    postWithAsyncRun(store, binder, '@mock silent', ['mock']);
+    await waitFor(() => sessions.spawns() === 1);
+    const adapter = sessions.adapterFor(
+      sessions.firstSessionId()
+    ) as HeartbeatAdapter;
+    await waitFor(() => adapter.sendCalls.length === 1);
+
+    await waitFor(
+      () =>
+        systemRows(store).some((m) => m.body.text.includes('force-drained')),
+      4000
+    );
+    const drainRow = systemRows(store).find((m) =>
+      m.body.text.includes('force-drained')
+    )!;
+    expect(drainRow.body.text).toContain('remaining turn budget:');
+    expect(drainRow.body.text).toContain('sent nothing for 25 ms');
   });
 
   it('cross-node topics fail visibly and never spawn a local stand-in', async () => {

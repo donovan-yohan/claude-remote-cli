@@ -1229,4 +1229,67 @@ describe('ChannelAgentRuntimeManager', () => {
       expect.objectContaining({ rootPids: [50_030], processTable: table }),
     ]);
   });
+
+  it('detects live child processes under a runtime root PID (#1561)', async () => {
+    const { ChannelAgentRuntimeManager } = await runtimeModule();
+    const table: ProcessInfo[] = [
+      {
+        pid: 60_001,
+        ppid: 1,
+        pgid: 60_001,
+        command: 'antigravity',
+        commandLine: 'agy',
+        rssBytes: 100,
+      },
+      {
+        pid: 60_002,
+        ppid: 60_001,
+        pgid: 60_001,
+        command: 'npm',
+        commandLine: 'npm test',
+        rssBytes: 50,
+      },
+      {
+        pid: 60_003,
+        ppid: 60_002,
+        pgid: 60_001,
+        command: 'node',
+        commandLine: 'vitest',
+        rssBytes: 150,
+      },
+      {
+        pid: 70_000,
+        ppid: 1,
+        pgid: 70_000,
+        command: 'other',
+        commandLine: 'other',
+        rssBytes: 10,
+      },
+    ];
+    let currentTable = table;
+    const manager = new ChannelAgentRuntimeManager({
+      readProcessTable: () => currentTable,
+    });
+    const runtime = await manager.create({
+      id: 'agy-runtime',
+      providerId: 'codex',
+      profileActorId: 'agent-profile:codex:default',
+      cwd: '/tmp',
+      displayName: 'Antigravity',
+      port: 3456,
+      configDir: '/tmp',
+    });
+    adapterState.last!.ownedRoots = [60_001];
+
+    expect(manager.hasLiveChildProcesses(runtime.id)).toBe(true);
+    expect(manager.liveChildPids(runtime.id)).toEqual([60_002, 60_003]);
+
+    // When the child processes exit (only root remains):
+    currentTable = [table[0]!, table[3]!];
+    expect(manager.hasLiveChildProcesses(runtime.id)).toBe(false);
+    expect(manager.liveChildPids(runtime.id)).toEqual([]);
+
+    // Unknown runtime:
+    expect(manager.hasLiveChildProcesses('unknown-id')).toBe(false);
+  });
 });

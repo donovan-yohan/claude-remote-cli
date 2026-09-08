@@ -1829,4 +1829,16 @@ describe('PrimeAgentProtocolAdapter', () => {
       'prime-agent rpc exited (code=1): Error: Session locked by daemon lease v2'
     );
   });
+
+  it('exposes owned process root PIDs from the underlying client (#1561)', async () => {
+    const { adapter, client } = harness();
+    vi.spyOn(client, 'pid', 'get').mockReturnValue(6161);
+    expect(adapter.ownedProcessRootPids()).toEqual([]);
+
+    await adapter.connect(config);
+    expect(adapter.ownedProcessRootPids()).toEqual([6161]);
+
+    await adapter.disconnect();
+    expect(adapter.ownedProcessRootPids()).toEqual([6161]);
+  });
 });

@@ -112,6 +112,10 @@ export class PrimeAgentRpcClient extends EventEmitter {
     return this.diagnosticRing.join('\n');
   }
 
+  get pid(): number | undefined {
+    return this.child?.pid;
+  }
+
   private recordDiagnostic(text: string): void {
     for (const line of text.split('\n')) {
       const trimmed = line.replace(/\s+$/, '');

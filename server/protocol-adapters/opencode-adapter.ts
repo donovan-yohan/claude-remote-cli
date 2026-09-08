@@ -75,6 +75,7 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
   private _status: AdapterStatus = 'disconnected';
   private _config: AdapterConfig | null = null;
   private _process: ChildProcess | null = null;
+  private _exitedProcessRootPid: number | null = null;
   private _processExitCode: number | null = null;
   private _processOutputBuffer = '';
   private _apiPort = 0;
@@ -98,9 +99,15 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
     return this._process;
   }
 
+  ownedProcessRootPids(): number[] {
+    const pid = this._process?.pid ?? this._exitedProcessRootPid;
+    return typeof pid === 'number' && pid > 1 ? [pid] : [];
+  }
+
   async connect(config: AdapterConfig): Promise<void> {
     this._config = config;
     this._status = 'connecting';
+    this._exitedProcessRootPid = null;
     this._processExitCode = null;
     this._processOutputBuffer = '';
     this._currentTurnId = null;
@@ -190,6 +197,7 @@ export class OpenCodeProtocolAdapter extends BaseProtocolAdapter {
     this._messageAbortController = null;
 
     if (this._process) {
+      if (this._process.pid) this._exitedProcessRootPid = this._process.pid;
       try {
         this._process.kill('SIGTERM');
       } catch {

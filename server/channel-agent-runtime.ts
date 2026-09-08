@@ -32,6 +32,7 @@ import {
 } from './protocol-adapters/index.js';
 import { createLogger } from './logger.js';
 import {
+  descendantsOf,
   readProcessTable,
   scheduleRelayProcessTreeReap,
   summarizeOwnedProcessResources,
@@ -790,6 +791,30 @@ export class ChannelAgentRuntimeManager {
       processCount: aggregate.processCount,
       totalRssBytes: aggregate.totalRssBytes,
     };
+  }
+
+  liveChildPids(id: string): number[] {
+    const runtime = this.runtimes.get(id);
+    if (!runtime) return [];
+    const rootPids = ownedProcessRootPids(runtime.adapter);
+    if (rootPids.length === 0) return [];
+    const table = this.readProcessTable();
+    const childPids = new Set<number>();
+    for (const rootPid of rootPids) {
+      for (const desc of descendantsOf(rootPid, table)) {
+        if (desc.pid !== rootPid) childPids.add(desc.pid);
+      }
+      for (const proc of table) {
+        if (proc.pgid === rootPid && proc.pid !== rootPid) {
+          childPids.add(proc.pid);
+        }
+      }
+    }
+    return Array.from(childPids).sort((a, b) => a - b);
+  }
+
+  hasLiveChildProcesses(id: string): boolean {
+    return this.liveChildPids(id).length > 0;
   }
 
   private captureOwnedProcessSnapshot(
