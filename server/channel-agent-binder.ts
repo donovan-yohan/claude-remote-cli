@@ -3366,24 +3366,40 @@ export function createChannelAgentBinder(
 
   async function captureDeliveryContractBaseline(input: {
     cwd: string;
+    probe?: Parameters<typeof evaluateDeliveryContract>[1];
   }): Promise<Exclude<
     NonNullable<NonNullable<ChannelAsyncRun['deliveryContract']>['baseline']>,
     null
   > | null> {
     const cwd = input.cwd;
     const timeout = 5000;
+    const probe = input.probe;
+    const git = probe?.git;
+    const pr = probe?.pr;
 
     let headSha: string;
-    try {
-      headSha = (
-        await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd, timeout })
-      ).stdout.trim();
-    } catch {
-      return null;
+    if (git?.headSha) {
+      const outcome = await git.headSha();
+      if (outcome.kind !== 'ok') return null;
+      headSha = String(outcome.value ?? '').trim();
+    } else {
+      try {
+        headSha = (
+          await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd, timeout })
+        ).stdout.trim();
+      } catch {
+        return null;
+      }
     }
     if (!headSha) return null;
 
     const upstreamSha: string | null = await (async () => {
+      if (git?.upstreamSha) {
+        const outcome = await git.upstreamSha();
+        if (outcome.kind !== 'ok') return null;
+        const sha = String(outcome.value ?? '').trim();
+        return sha ? sha : null;
+      }
       try {
         const { stdout } = await execFileAsync(
           'git',
@@ -3411,29 +3427,45 @@ export function createChannelAgentBinder(
     let prNumber: number | null = null;
     let prHeadSha: string | null = null;
     let branch: string | null = null;
-    try {
-      const { stdout } = await execFileAsync(
-        'git',
-        ['symbolic-ref', '--quiet', '--short', 'HEAD'],
-        { cwd, timeout }
-      );
-      const name = stdout.trim();
-      branch = name ? name : null;
-    } catch {
-      /* detached/unborn/non-git */
+    if (git?.currentBranch) {
+      const outcome = await git.currentBranch();
+      if (outcome.kind === 'ok') {
+        const name = String(outcome.value ?? '').trim();
+        branch = name ? name : null;
+      }
+    } else {
+      try {
+        const { stdout } = await execFileAsync(
+          'git',
+          ['symbolic-ref', '--quiet', '--short', 'HEAD'],
+          { cwd, timeout }
+        );
+        const name = stdout.trim();
+        branch = name ? name : null;
+      } catch {
+        /* detached/unborn/non-git */
+      }
     }
     if (branch) {
-      type ExecLike = (
-        file: string,
-        args: string[],
-        options: { cwd: string; timeout?: number }
-      ) => Promise<{ stdout: string; stderr: string }>;
-      const pr = await getPrForBranchResult(cwd, branch, {
-        exec: execFileAsync as unknown as ExecLike,
-      });
-      if (pr.kind === 'ok' && pr.pr && pr.pr.state === 'OPEN') {
-        prNumber = pr.pr.number;
-        prHeadSha = pr.pr.headSha ?? null;
+      if (pr?.getOpenPrForBranch) {
+        const outcome = await pr.getOpenPrForBranch(branch);
+        if (outcome.kind === 'ok' && outcome.value) {
+          prNumber = outcome.value.number;
+          prHeadSha = outcome.value.headSha ?? null;
+        }
+      } else {
+        type ExecLike = (
+          file: string,
+          args: string[],
+          options: { cwd: string; timeout?: number }
+        ) => Promise<{ stdout: string; stderr: string }>;
+        const result = await getPrForBranchResult(cwd, branch, {
+          exec: execFileAsync as unknown as ExecLike,
+        });
+        if (result.kind === 'ok' && result.pr && result.pr.state === 'OPEN') {
+          prNumber = result.pr.number;
+          prHeadSha = result.pr.headSha ?? null;
+        }
       }
     }
 
@@ -3469,7 +3501,10 @@ export function createChannelAgentBinder(
       null
     > | null = null;
     try {
-      baseline = await captureDeliveryContractBaseline({ cwd });
+      const probe = deps.deliveryContractProbeFactory
+        ? deps.deliveryContractProbeFactory({ cwd })
+        : createDefaultDeliveryContractProbe({ cwd });
+      baseline = await captureDeliveryContractBaseline({ cwd, probe });
     } catch (err) {
       logger.debug?.(
         'channel binder delivery-contract baseline capture failed: %s',
@@ -3484,6 +3519,48 @@ export function createChannelAgentBinder(
       if (updated) hub.broadcastRunLifecycle(updated);
     } catch {
       /* ignore */
+    }
+  }
+
+  async function reenqueueTriggerAfterBaselineBail(
+    binding: LiveBinding,
+    trigger: ChannelMessage
+  ): Promise<void> {
+    const enqueueAndPump = (target: LiveBinding) => {
+      enqueueTurn(target, trigger, undefined, true);
+      pump(target);
+    };
+
+    const key = bindingKey(
+      binding.channelId,
+      binding.profileActorId,
+      binding.threadId
+    );
+    const current = live.get(key);
+    if (current?.adapter) {
+      enqueueAndPump(current);
+      return;
+    }
+
+    const profile = deps.agentProfileStore
+      ? deps.agentProfileStore.get(binding.profileActorId)
+      : defaultProfileForProvider(binding.framework);
+    if (!profile) {
+      enqueueAndPump(binding);
+      return;
+    }
+
+    try {
+      const rebound = await ensureProfileBinding(
+        binding.channelId,
+        profile,
+        undefined,
+        binding.threadId
+      );
+      if (closed) return;
+      enqueueAndPump(rebound);
+    } catch {
+      enqueueAndPump(binding);
     }
   }
 
@@ -3620,9 +3697,20 @@ export function createChannelAgentBinder(
       }
 
       binding.sendPreflight = false;
-      if (closed) return;
-      if (binding.activeTurnId !== null) return;
-      if (!binding.adapter) return;
+      if (closed) {
+        enqueueTurn(binding, trigger, undefined, true);
+        pump(binding);
+        return;
+      }
+      if (binding.activeTurnId !== null) {
+        enqueueTurn(binding, trigger, undefined, true);
+        pump(binding);
+        return;
+      }
+      if (!binding.adapter) {
+        await reenqueueTriggerAfterBaselineBail(binding, trigger);
+        return;
+      }
 
       // Retained parents exist solely for output that opens shortly after a bare
       // idle finalized its turn. Once a successor starts, the old association is

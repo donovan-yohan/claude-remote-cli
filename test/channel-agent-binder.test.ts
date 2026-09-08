@@ -6148,6 +6148,65 @@ describe('channel-agent-binder — lifecycle', () => {
     );
   });
 
+  it('re-enqueues a trigger when the runtime exits during baseline capture (#1578 review)', async () => {
+    const profiles = createAgentProfileStore(':memory:');
+    cleanup.push(() => profiles.close());
+    profiles.seedBuiltIns([{ id: 'mock' }]);
+
+    const built: ScriptedAdapter[] = [];
+    let releaseGate!: (value?: void | PromiseLike<void>) => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+
+    const { binder, store, sessions } = makeBinder({
+      build: (agentType) => {
+        const adapter = new ScriptedAdapter(agentType, {
+          mode: 'reply',
+          text: 'done',
+        });
+        built.push(adapter);
+        return adapter;
+      },
+      targets: MOCK_TARGETS,
+      knownProviderIds: ['mock'],
+      agentProfileStore: profiles,
+      deliveryContractProbeFactory: () => ({
+        git: {
+          headSha: async () => {
+            await gate;
+            return { kind: 'ok', value: 'a'.repeat(40) };
+          },
+          currentBranch: async () => ({ kind: 'ok', value: 'feat/x' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }),
+    });
+
+    const mentions = parseMentions('@mock please ship', ['mock']);
+    const posted = store.appendCompleteWithAsyncRun({
+      channelId: CH,
+      sender: OPERATOR,
+      text: '@mock please ship',
+      mentions,
+      targetIds: [builtInAgentProfileId('mock')],
+      deliveryContract: { expect: ['commit'] },
+      meta: { deliveryContract: { expect: ['commit'] } },
+    });
+    binder.handleMessagePosted(posted.message, posted.message.mentions ?? []);
+
+    await waitFor(() => sessions.spawns() === 1);
+    sessions.fireEnd(sessions.firstSessionId());
+    releaseGate();
+
+    await waitFor(() => sessions.spawns() === 2);
+    await waitFor(() => built.length === 2 && built[1]!.sendCalls.length === 1);
+    expect(built[1]!.sendInputs[0]!.content).toContain('@mock please ship');
+  });
+
   it('posts a restart-abandonment system row and attention event for cancelled contract runs (#1585)', async () => {
     const dir = fs.mkdtempSync(
       path.join(os.tmpdir(), 'binder-restart-abandon-')
