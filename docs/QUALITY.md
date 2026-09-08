@@ -34,6 +34,18 @@ npm run check                               # tsc (server) + tsc (frontend) + ts
 `tsc --noEmit && tsc --noEmit -p frontend/tsconfig.json && npm run typecheck:test && npm run lint`.
 A lint failure fails `check` even when types are clean.
 
+## Hub-host safety: config isolation (#1587)
+
+On a machine that is also running a deployed Relay hub, treat **every from-checkout hub invocation** as hazardous by default. A stray `node dist/server/index.js` (including `--help`) can otherwise resolve the hub’s live config dir and open `channel-chat.db`, triggering restart recovery.
+
+Rules:
+
+- **Always pass an explicit isolated config when running the hub from a checkout**: `node dist/server/index.js --config /tmp/<run>/config.json`
+- **Never rely on ambient shell env** for safety; tests and tooling must pin config isolation explicitly.
+- Prefer `npm run check` / `npx vitest run …` over ad-hoc hub starts when validating changes on a hub host.
+
+Relay enforces this defensively: the hub writes `<configDir>/hub.lock` on boot and any other process refuses to open the channel store while the owner PID is alive.
+
 ## Type Checking
 
 TypeScript strict mode covers the full codebase via `tsc`, across three projects: the server/root config, `frontend/tsconfig.json`, and `test/tsconfig.json`. Both `build` and `test` fail on type errors, and the `ci` job runs `npm run check` before `npm run build`, so no code with type errors can be merged or published.

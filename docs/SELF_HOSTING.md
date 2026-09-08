@@ -125,6 +125,20 @@ runtime DBs into a repo checkout by default** (#961):
 worktree gets its own isolated state and two same-named worktrees never collide.
 (`$XDG_CONFIG_HOME` replaces `~/.config` when set.)
 
+### Config precedence and hub ownership lock (#1587)
+
+Config location is resolved in this order:
+
+- `--config <path>`
+- `RELAY_IDE_CONFIG`
+- `$XDG_CONFIG_HOME/relay-ide/…` (absolute `XDG_CONFIG_HOME` only)
+- `~/.config/relay-ide/…`
+
+To prevent accidental cross-talk between a checkout-run instance and an already
+running deployed hub, the hub writes `<configDir>/hub.lock` at boot and removes
+it on clean shutdown. Any other process that would open the channel store
+(`channel-chat.db`) refuses while the owning PID is alive.
+
 ### Inspect
 
 ```bash
