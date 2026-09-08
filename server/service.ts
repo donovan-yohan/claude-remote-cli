@@ -19,16 +19,11 @@ const __dirname = path.dirname(__filename);
 
 const SERVICE_LABEL = 'com.relay-ide';
 const HOME = process.env.HOME || process.env.USERPROFILE || '~';
-// #1587: config-dir precedence is `--config` > RELAY_IDE_CONFIG >
-// XDG_CONFIG_HOME > ~/.config/relay-ide. Service install defaults must honor
-// XDG when it is set to an absolute path, matching `relayAppDataDir`.
-const XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME?.trim();
-const CONFIG_DIR = path.join(
-  XDG_CONFIG_HOME && path.isAbsolute(XDG_CONFIG_HOME)
-    ? XDG_CONFIG_HOME
-    : path.join(HOME, '.config'),
-  'relay-ide'
-);
+// Intentionally hardcoded: the installed service owns the stable production
+// config dir under ~/.config/relay-ide regardless of XDG overrides, so a
+// from-source or fixture run with XDG set cannot collide with it accidentally.
+// Hub/CLI entrypoints that honor XDG must treat this root as shared/off-limits.
+const CONFIG_DIR = path.join(HOME, '.config', 'relay-ide');
 const SYSTEMD_UNIT_NAME = 'relay-ide.service';
 const SERVICE_PROBE_TIMEOUT_MS = 2_000;
 
@@ -141,7 +136,7 @@ function getLaunchdServicePaths(home: string): ServicePaths {
       'LaunchAgents',
       SERVICE_LABEL + '.plist'
     ),
-    logDir: path.join(CONFIG_DIR, 'logs'),
+    logDir: path.join(home, '.config', 'relay-ide', 'logs'),
     label: SERVICE_LABEL,
   };
 }
