@@ -2041,6 +2041,65 @@ describe('channel routes — gateway capability mapping', () => {
       expect(res.body.contract).toBe(null);
     });
 
+    it('returns completed rather than timeout when delivery contract probe is slow (#1579 item 2)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const baseline = {
+        headSha: 'a'.repeat(40),
+        upstreamSha: null,
+        prNumber: null,
+        prHeadSha: null,
+        capturedAt: '2026-09-07T00:00:00.000Z',
+      };
+      const { message: trigger, run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'ship it @codex',
+        targetIds: [targetId],
+        deliveryContract: {
+          expect: ['commit'],
+          baseline,
+          contractPending: true,
+        },
+        meta: { deliveryContract: { expect: ['commit'] } },
+      });
+      const turnId = channelTurnId(trigger.id, targetId);
+      const started = h.store.beginStream({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        source: { runtimeId: 'rt', turnId, itemId: 'item-final' },
+        text: 'working…',
+        meta: { asyncRun: { runId: run.id, targetId } },
+      });
+      h.store.finalizeStream(started.id, {
+        text: 'final summary',
+        status: 'complete',
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'completed',
+      });
+
+      const res = await req<{
+        run: { id: string; state: string; contractPending?: boolean };
+        outcome: string;
+        finalText: string;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=50`,
+        headers: { Authorization: 'Bearer test' },
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.outcome).toBe('completed');
+      expect(res.body.run).toMatchObject({
+        id: run.id,
+        state: 'completed',
+        contractPending: true,
+      });
+    });
+
     it('returns cancelled-with-contract quickly (no contract grace)', async () => {
       const h = await harness({ withAuth: true });
       const targetId = builtInAgentProfileId('codex');

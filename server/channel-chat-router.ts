@@ -2195,6 +2195,8 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     let runId: ChannelAsyncRunId = initial.id;
     let hopWaitUntil: number | null = null;
     let hopWaitRunId: ChannelAsyncRunId | null = null;
+    let pendingWaitUntil: number | null = null;
+    let pendingWaitRunId: ChannelAsyncRunId | null = null;
 
     const shouldWaitForFollowupChild = (
       run: ChannelAsyncRun,
@@ -2259,12 +2261,25 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
         serverRestartCancelledAt = null;
       }
 
-      if (
-        !runTerminalState(latest.state) ||
-        latest.deliveryContract?.contractPending === true
-      ) {
+      if (!runTerminalState(latest.state)) {
         await waitForLifecycle(runId, deadline - Date.now());
         continue;
+      }
+
+      if (latest.deliveryContract?.contractPending === true) {
+        const pendingWaitMs = Math.min(2000, timeoutMs);
+        if (pendingWaitRunId !== latest.id || pendingWaitUntil === null) {
+          pendingWaitRunId = latest.id;
+          pendingWaitUntil = Date.now() + pendingWaitMs;
+        }
+        if (Date.now() < pendingWaitUntil) {
+          await waitForLifecycle(
+            runId,
+            Math.min(deadline - Date.now(), pendingWaitUntil - Date.now())
+          );
+          continue;
+        }
+        return { timedOut: false, runId, run: latest };
       }
 
       const childRunId =
