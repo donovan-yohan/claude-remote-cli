@@ -251,14 +251,27 @@ describe('env isolation — non-Relay shells are clean', () => {
   it('RELAY_* vars are absent from env of shells spawned outside Relay', async () => {
     // Spawn a plain sh process (not through Relay PTY machinery) and check env.
     // Use execFile directly — no sessions.create() — to simulate an external shell.
-    const { stdout } = await execFileAsync('/bin/sh', ['-c', 'env']);
+    // The vitest harness pins RELAY_IDE_CONFIG/XDG_CONFIG_HOME for isolation
+    // (#1587). Strip all RELAY_* vars so this test continues to assert that
+    // Relay does not globally inject them into unrelated processes.
+    const env = { ...process.env } as Record<string, string | undefined>;
+    for (const key of Object.keys(env)) {
+      if (key.startsWith('RELAY_')) delete env[key];
+    }
+    const { stdout } = await execFileAsync('/bin/sh', ['-c', 'env'], { env });
     const lines = stdout.split('\n').filter(Boolean);
     const relayLines = lines.filter((l) => l.startsWith('RELAY_'));
     expect(relayLines).toEqual([]);
   });
 
   it('relayctl per-session shim dir is not on PATH in shells spawned outside Relay', async () => {
-    const { stdout } = await execFileAsync('/bin/sh', ['-c', 'echo "$PATH"']);
+    const env = { ...process.env } as Record<string, string | undefined>;
+    for (const key of Object.keys(env)) {
+      if (key.startsWith('RELAY_')) delete env[key];
+    }
+    const { stdout } = await execFileAsync('/bin/sh', ['-c', 'echo "$PATH"'], {
+      env,
+    });
     // The per-session shim lives under {tmpdir}/relay-ide/{sessionId}/bin.
     // A non-Relay shell should not have this tmpdir-based path on its PATH.
     // We match specifically against the OS temp dir + relay-ide session bin pattern.
@@ -468,7 +481,7 @@ describe('relayctl logs tail — stub', () => {
     );
     if (!fs.existsSync(relayctlPath)) return;
 
-    const result = await execFileAsync(
+    const result = (await execFileAsync(
       process.execPath,
       [relayctlPath, 'logs', 'tail'],
       {
@@ -482,7 +495,7 @@ describe('relayctl logs tail — stub', () => {
       stdout: '',
       stderr: err.stderr ?? '',
       code: err.code ?? 1,
-    })) as { stdout: string; stderr?: string; code?: number };
+    }))) as { stdout: string; stderr?: string; code?: number };
 
     expect(result.stderr ?? '').toContain('not yet available');
     expect(result.code).toBe(1);
