@@ -20,6 +20,18 @@ export interface DeliveryContractGitProbe {
   headSha?(): Promise<DeliveryContractProbeOutcome<string | null>>;
   /** Resolved upstream/base ref name for delta evaluation (#1578). Optional. */
   upstreamRef?(): Promise<DeliveryContractProbeOutcome<string | null>>;
+  /**
+   * Resolved upstream/base ref name plus provenance for delta evaluation (#1578).
+   *
+   * `source: 'upstream'` means it came from `@{u}`; `'originHead'` means it fell
+   * back to `origin/HEAD` (explicitly unverifiable for `push`).
+   */
+  upstreamRefInfo?(): Promise<
+    DeliveryContractProbeOutcome<{
+      ref: string | null;
+      source: 'upstream' | 'originHead' | null;
+    }>
+  >;
   /** Full sha of the default upstream/base reference, or null if none. Optional. */
   upstreamSha?(): Promise<DeliveryContractProbeOutcome<string | null>>;
   /** Commit count of `base..head` (>=0). Optional for legacy probes. */

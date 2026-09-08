@@ -1,3 +1,8 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -568,5 +573,146 @@ describe('channel delivery contract evaluator (pure; injected probes)', () => {
     );
     expect(Date.now() - start).toBeLessThan(1000);
     expect(typeof result.met).toBe('boolean');
+  });
+
+  it('treats push as met when upstream moved past the post-time baseline (real git; #1578)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-push-met-'));
+    const remoteBare = path.join(root, 'remote.git');
+    const repo = path.join(root, 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+
+    execFileSync('git', ['init', '--bare', remoteBare], { cwd: root });
+    execFileSync('git', ['init'], { cwd: repo });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], {
+      cwd: repo,
+    });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo });
+    execFileSync('git', ['remote', 'add', 'origin', remoteBare], { cwd: repo });
+
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repo });
+    execFileSync('git', ['branch', '-M', 'main'], { cwd: repo });
+    execFileSync('git', ['push', '-u', 'origin', 'main'], { cwd: repo });
+
+    const baselineUpstreamRef = execFileSync(
+      'git',
+      ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+      { cwd: repo, encoding: 'utf8' }
+    ).trim();
+    const baselineUpstreamSha = execFileSync(
+      'git',
+      ['rev-parse', '--verify', baselineUpstreamRef],
+      { cwd: repo, encoding: 'utf8' }
+    ).trim();
+
+    // New commit + push advances upstream.
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'b\n');
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    execFileSync('git', ['commit', '-m', 'push-1'], { cwd: repo });
+    execFileSync('git', ['push'], { cwd: repo });
+
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: repo,
+        baseline: {
+          headSha: baselineUpstreamSha,
+          upstreamRef: baselineUpstreamRef,
+          upstreamRefSource: 'upstream',
+          upstreamSha: baselineUpstreamSha,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'main' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          upstreamRef: async () => ({ kind: 'ok', value: baselineUpstreamRef }),
+          upstreamSha: async () => ({
+            kind: 'ok',
+            value: execFileSync('git', ['rev-parse', '--verify', '@{u}'], {
+              cwd: repo,
+              encoding: 'utf8',
+            }).trim(),
+          }),
+          commitsBetween: async (base, head) => ({
+            kind: 'ok',
+            value: Number(
+              execFileSync('git', ['rev-list', '--count', `${base}..${head}`], {
+                cwd: repo,
+                encoding: 'utf8',
+              }).trim()
+            ),
+          }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+
+    expect(result).toEqual({ met: true, unmet: [], unknown: [] });
+  });
+
+  it('treats push as unknown when the baseline came from origin/HEAD fallback (real git; #1578 review)', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-push-unknown-'));
+    const repo = path.join(root, 'repo');
+    fs.mkdirSync(repo, { recursive: true });
+
+    execFileSync('git', ['init'], { cwd: repo });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], {
+      cwd: repo,
+    });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo });
+
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+    execFileSync('git', ['add', '.'], { cwd: repo });
+    execFileSync('git', ['commit', '-m', 'init'], { cwd: repo });
+
+    const result = await evaluateDeliveryContract(
+      {
+        expect: ['push'],
+        cwd: repo,
+        baseline: {
+          headSha: execFileSync('git', ['rev-parse', 'HEAD'], {
+            cwd: repo,
+            encoding: 'utf8',
+          }).trim(),
+          upstreamRef: null,
+          upstreamRefSource: 'originHead',
+          upstreamSha: null,
+          prNumber: null,
+          prHeadSha: null,
+          capturedAt: '2026-09-07T00:00:00.000Z',
+        },
+        finalAssistantText: '',
+      },
+      {
+        git: {
+          currentBranch: async () => ({ kind: 'ok', value: 'main' }),
+          aheadCount: async () => ({ kind: 'ok', value: 0 }),
+          upstreamRef: async () => ({ kind: 'ok', value: null }),
+          upstreamSha: async () => ({ kind: 'ok', value: null }),
+          commitsBetween: async () => ({ kind: 'ok', value: 0 }),
+        },
+        pr: {
+          hasOpenPrForBranch: async () => ({ kind: 'ok', value: false }),
+        },
+      }
+    );
+
+    expect(result.met).toBe(false);
+    expect(result.unmet).toEqual([]);
+    expect(result.unknown).toEqual([
+      {
+        spec: 'push',
+        reason:
+          'push delta unavailable when upstream ref came from origin/HEAD fallback',
+      },
+    ]);
   });
 });

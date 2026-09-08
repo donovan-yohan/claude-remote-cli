@@ -3429,6 +3429,13 @@ export function createChannelAgentBinder(
       ref: string | null;
       source: 'upstream' | 'originHead' | null;
     }> => {
+      if (git?.upstreamRefInfo) {
+        const outcome = await git.upstreamRefInfo();
+        if (outcome.kind !== 'ok') return { ref: null, source: null };
+        const ref = String(outcome.value?.ref ?? '').trim();
+        const source = outcome.value?.source ?? null;
+        return { ref: ref ? ref : null, source };
+      }
       if (git?.upstreamRef) {
         const outcome = await git.upstreamRef();
         if (outcome.kind !== 'ok') return { ref: null, source: null };
@@ -4859,6 +4866,12 @@ export function createChannelAgentBinder(
       aheadCount: () => Promise<DeliveryContractProbeOutcome<number>>;
       headSha: () => Promise<DeliveryContractProbeOutcome<string | null>>;
       upstreamRef: () => Promise<DeliveryContractProbeOutcome<string | null>>;
+      upstreamRefInfo: () => Promise<
+        DeliveryContractProbeOutcome<{
+          ref: string | null;
+          source: 'upstream' | 'originHead' | null;
+        }>
+      >;
       upstreamSha: () => Promise<DeliveryContractProbeOutcome<string | null>>;
       commitsBetween: (
         base: string,
@@ -4878,8 +4891,11 @@ export function createChannelAgentBinder(
     };
   } {
     const cwd = input.cwd;
-    const resolveDefaultBase = async (): Promise<
-      DeliveryContractProbeOutcome<string | null>
+    const resolveDefaultBaseInfo = async (): Promise<
+      DeliveryContractProbeOutcome<{
+        ref: string | null;
+        source: 'upstream' | 'originHead' | null;
+      }>
     > => {
       try {
         const { stdout } = await execFileAsync(
@@ -4888,7 +4904,8 @@ export function createChannelAgentBinder(
           { cwd, timeout: 5000 }
         );
         const upstream = stdout.trim();
-        if (upstream) return { kind: 'ok', value: upstream };
+        if (upstream)
+          return { kind: 'ok', value: { ref: upstream, source: 'upstream' } };
       } catch (err) {
         const reason = notGitRepoReason(err);
         if (reason) return { kind: 'unknown', reason };
@@ -4905,7 +4922,10 @@ export function createChannelAgentBinder(
         if (ref.startsWith(prefix)) {
           return {
             kind: 'ok',
-            value: `origin/${ref.slice(prefix.length)}`,
+            value: {
+              ref: `origin/${ref.slice(prefix.length)}`,
+              source: 'originHead',
+            },
           };
         }
       } catch (err) {
@@ -4913,7 +4933,7 @@ export function createChannelAgentBinder(
         if (reason) return { kind: 'unknown', reason };
         /* no origin/HEAD */
       }
-      return { kind: 'ok', value: null };
+      return { kind: 'ok', value: { ref: null, source: null } };
     };
 
     const gitProbe = {
@@ -4936,9 +4956,9 @@ export function createChannelAgentBinder(
         }
       },
       aheadCount: async (): Promise<DeliveryContractProbeOutcome<number>> => {
-        const base = await resolveDefaultBase();
+        const base = await resolveDefaultBaseInfo();
         if (base.kind === 'unknown') return base;
-        if (!base.value) {
+        if (!base.value.ref) {
           return {
             kind: 'unknown',
             reason: 'no upstream or origin/HEAD to compare against',
@@ -4947,7 +4967,7 @@ export function createChannelAgentBinder(
         try {
           const { stdout } = await execFileAsync(
             'git',
-            ['rev-list', '--count', `${base.value}..HEAD`],
+            ['rev-list', '--count', `${base.value.ref}..HEAD`],
             { cwd, timeout: 5000 }
           );
           const n = Number(stdout.trim());
@@ -4983,21 +5003,31 @@ export function createChannelAgentBinder(
           return { kind: 'unknown', reason: 'git head-sha probe failed' };
         }
       },
+      upstreamRefInfo: async (): Promise<
+        DeliveryContractProbeOutcome<{
+          ref: string | null;
+          source: 'upstream' | 'originHead' | null;
+        }>
+      > => {
+        return resolveDefaultBaseInfo();
+      },
       upstreamRef: async (): Promise<
         DeliveryContractProbeOutcome<string | null>
       > => {
-        return resolveDefaultBase();
+        const base = await resolveDefaultBaseInfo();
+        if (base.kind === 'unknown') return base;
+        return { kind: 'ok', value: base.value.ref };
       },
       upstreamSha: async (): Promise<
         DeliveryContractProbeOutcome<string | null>
       > => {
-        const base = await resolveDefaultBase();
+        const base = await resolveDefaultBaseInfo();
         if (base.kind === 'unknown') return base;
-        if (!base.value) return { kind: 'ok', value: null };
+        if (!base.value.ref) return { kind: 'ok', value: null };
         try {
           const { stdout } = await execFileAsync(
             'git',
-            ['rev-parse', '--verify', base.value],
+            ['rev-parse', '--verify', base.value.ref],
             { cwd, timeout: 5000 }
           );
           const sha = stdout.trim();
