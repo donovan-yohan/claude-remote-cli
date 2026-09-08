@@ -592,6 +592,12 @@ describe('relay-mcp', () => {
             runtimeId: PRIVATE_VALUES[0],
             providerTurnId: PRIVATE_VALUES[1],
           },
+          mentions: [
+            {
+              targetProfileId: 'target:public',
+              state: 'queued',
+            },
+          ],
         }),
     });
     const mcp = await openMcp(client);
@@ -618,6 +624,7 @@ describe('relay-mcp', () => {
             id: 'chrun:public',
             targets: [{ targetId: 'target:public' }],
           },
+          mentions: [{ targetProfileId: 'target:public', state: 'queued' }],
         },
       });
     } finally {
