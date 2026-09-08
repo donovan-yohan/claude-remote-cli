@@ -51,7 +51,6 @@ import type {
 import {
   CHANNEL_BINDING_YOLO_DEFAULT,
   ChannelAgentBusyError,
-  clearLsRemoteBaselineCacheForTesting,
   createChannelAgentBinder,
   MAX_CONSECUTIVE_AGENT_TURNS,
   type BinderRuntimes,
@@ -90,7 +89,6 @@ const CHANNEL_COMMAND_CONTRACTS: Array<[string, string]> = Object.entries(
 
 const cleanup: Array<() => void> = [];
 afterEach(() => {
-  clearLsRemoteBaselineCacheForTesting();
   while (cleanup.length > 0) cleanup.pop()?.();
 });
 
@@ -7219,12 +7217,12 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
     });
   });
 
-  it('caches ls-remote baseline queries per cwd, remote, branch (#1579 review item 7)', async () => {
+  it('probes fresh ls-remote baseline on new turns and inherits baseline in follow-up child (#1579 review 2 item 1)', async () => {
     const profiles = createAgentProfileStore(':memory:');
     cleanup.push(() => profiles.close());
     profiles.seedBuiltIns([{ id: 'mock' }]);
     const lsRemoteCalls: Array<{ remote: string; branch: string }> = [];
-    let currentTime = 1_000_000;
+    const currentTime = 1_000_000;
     const { binder, store } = makeBinder({
       build: (agentType) =>
         new ScriptedAdapter(agentType, { mode: 'reply', text: 'done' }),
@@ -7276,18 +7274,30 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
     });
     binder.handleMessagePosted(r1.message, r1.message.mentions ?? []);
 
+    // Wait for r1 to complete and trigger follow-up child
     await waitFor(() => {
       const run = store.getAsyncRun(r1.run.id);
       return (
         Boolean(run?.state.startsWith('completed')) &&
-        Boolean(run?.deliveryContract?.baseline)
+        Boolean(run?.deliveryContract?.childRunId)
       );
     });
-    const baseline1Calls = lsRemoteCalls.length;
-    expect(baseline1Calls).toBeGreaterThanOrEqual(1);
 
-    // Turn 2 within 30s: baseline capture reuses cached ls-remote result
-    currentTime += 5_000;
+    const run1 = store.getAsyncRun(r1.run.id)!;
+    expect(run1.deliveryContract?.baseline?.upstreamSha).toBe(
+      '3333333333333333333333333333333333333333'
+    );
+    const childRunId = run1.deliveryContract!.childRunId!;
+    const childRun = store.getAsyncRun(childRunId as ChannelAsyncRunId);
+    expect(childRun).toBeTruthy();
+    // Follow-up child inherits parent baseline directly without re-probing
+    expect(childRun!.deliveryContract?.baseline).toEqual(
+      run1.deliveryContract?.baseline
+    );
+
+    const callsAfterTurn1 = lsRemoteCalls.length;
+
+    // Turn 2 (independent brief in the same worktree): gets a fresh probe for baseline capture
     const r2 = store.appendCompleteWithAsyncRun({
       channelId: CH,
       sender: OPERATOR,
@@ -7306,34 +7316,13 @@ describe('channel-agent-binder — delivery-contract terminal transitions', () =
         Boolean(run?.deliveryContract?.baseline)
       );
     });
-    // Baseline capture for turn 2 did not trigger another ls-remote probe call during baseline
+
     const run2 = store.getAsyncRun(r2.run.id)!;
     expect(run2.deliveryContract?.baseline?.upstreamSha).toBe(
       '3333333333333333333333333333333333333333'
     );
-
-    // Advance past 30s TTL: should refresh
-    currentTime += 35_000;
-    const countBeforeExpiry = lsRemoteCalls.length;
-    const r3 = store.appendCompleteWithAsyncRun({
-      channelId: CH,
-      sender: OPERATOR,
-      text: '@mock please push 3',
-      mentions,
-      targetIds: [builtInAgentProfileId('mock')],
-      deliveryContract: { expect: ['push'] },
-      meta: { deliveryContract: { expect: ['push'] } },
-    });
-    binder.handleMessagePosted(r3.message, r3.message.mentions ?? []);
-
-    await waitFor(() => {
-      const run = store.getAsyncRun(r3.run.id);
-      return (
-        Boolean(run?.state.startsWith('completed')) &&
-        Boolean(run?.deliveryContract?.baseline)
-      );
-    });
-    expect(lsRemoteCalls.length).toBeGreaterThan(countBeforeExpiry);
+    // Fresh probe was executed for Turn 2's baseline capture
+    expect(lsRemoteCalls.length).toBeGreaterThan(callsAfterTurn1);
   });
 
   it('formats could not verify system rows and attention unmet payload with intent wording (#1579 review item 6)', async () => {
