@@ -398,6 +398,7 @@ When a run reaches a terminal state, the binder finalizes a delivery-contract re
 When a routed run completes and the contract is evaluable, the binder evaluates it. If any spec is unmet, the run is marked `completed_unmet`, a system row names the unmet items, an `attention` event is emitted, and Relay posts automatic follow-up triggers until the contract is met or the bounded follow-up depth is exhausted (#1585).
 
 Each follow-up is implemented as a binder-authored system row that routes a new mention to the same profile **and creates a new `ChannelAsyncRun`**. The follow-up run inherits the parent run’s `deliveryContract` and carries `deliveryContract.followupDepth` (0 for the original post) plus `deliveryContract.parentRunId` for chaining. Each run records whether it posted a follow-up via `deliveryContract.followupPostedAt`.
+Each parent run also records `deliveryContract.followupDecidedAt` once Relay has decided whether to post a follow-up (even if the brake pauses chaining and no follow-up is created).
 
 Follow-up chaining is bounded by `RELAY_IDE_CHANNEL_CONTRACT_MAX_FOLLOWUPS` (default `3`). The value must be a non-negative integer; `0` disables follow-up chaining entirely.
 
@@ -416,11 +417,10 @@ preserving an inspectable outcome. Settled run rows have bounded retention and
 are removed with their channels during orphan cleanup.
 
 If a run reaches a terminal state with `deliveryContract.contractPending: true`
-(for example, the server restarts mid-evaluation), restart recovery records an
-abandonment terminus on the run (`deliveryContract.abandonedAt` with
-`deliveryContract.result.unknown[*].reason = "server-restarted"`).
-On next binder boot, Relay posts a system row noting the restart abandonment and
-emits a `delivery-contract.abandoned` attention event for automation.
+(for example, the server restarts mid-evaluation), restart recovery clears the
+pending flag by finalizing an `unknown` contract result with
+`reason: "server-restarted"`, so consumers never spin on a pending contract
+indefinitely after a restart.
 
 ### Read state and unread
 

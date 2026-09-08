@@ -220,7 +220,8 @@ still prints the JSON envelope, but then waits for the correlated run to settle
 Delivery-contract follow-ups (#1585) produce their own runs; `run.deliveryContract`
 may additionally carry `followupDepth` (0 for the original post),
 `parentRunId` (the immediate prior run id in the chain), `childRunId` (the next
-run id when a follow-up was created), and `abandonedAt` (timestamp when Relay
+run id when a follow-up was created), `followupDecidedAt` (timestamp when Relay
+decided whether to post a follow-up), and `abandonedAt` (timestamp when Relay
 stopped chaining follow-ups).
 
 Delivery contracts also persist a best-effort `baseline` for repo-backed probes
@@ -237,13 +238,20 @@ since baseline 1a2b3c4`).
 `relay-ide v1 channels wait --run <chrun:...> | --channel-id <id> --after-seq <n>
 [--for completed|failed|any] [--timeout-ms <n>] --json` blocks until a run reaches
 a terminal state (or times out) and returns an orchestration-friendly envelope:
-`{ run: { id, state, reason }, outcome, finalText, contract }`. `finalText` is
+`{ run: { id, state, reason, contractPending? }, outcome, finalText, contract }`.
+`finalText` is
 **only** the last assistant principal text item for that run (no thoughts, tool
 cards, or interim progress).
+If the run is terminal but the last assistant row is still streaming, Relay
+waits briefly (about 2 seconds, driven by the row-completed broadcast) for the
+row to finalize; if it does not, `finalText` may be empty and consumers should
+fall back to inspecting the durable timeline.
 
 When waiting by `--run`, Relay follows a delivery-contract chain via
 `run.deliveryContract.childRunId` and returns the terminal run at the end of the
-chain.
+chain. When a parent run has a contract result but has not yet recorded
+`childRunId` or `followupDecidedAt`, `channels wait` waits briefly (about 2
+seconds) for the follow-up decision to land before returning the parent.
 
 `relay-ide v1 channels history --run <chrun:...> [--kinds text,thought,tool,system]
 --json` is the inspect lane: it returns that run’s ordered durable items (including
