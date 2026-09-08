@@ -6541,6 +6541,7 @@ describe('channel-agent-binder — lifecycle', () => {
     sessions.fireEnd(sessions.firstSessionId());
     releaseGate();
 
+    await binder.ensureBinding(CH, 'mock');
     await waitFor(() => sessions.spawns() === 2);
     await waitFor(() => built.length === 2 && built[1]!.sendCalls.length === 1);
     expect(built[1]!.sendInputs[0]!.content).toContain('@mock please ship');

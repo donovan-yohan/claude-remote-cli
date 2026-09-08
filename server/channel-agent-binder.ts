@@ -3229,36 +3229,7 @@ export function createChannelAgentBinder(
   function pump(binding: LiveBinding): void {
     if (binding.activeTurnId !== null) return;
     if (binding.sendPreflight) return;
-    if (!binding.adapter) {
-      const head = binding.queue[0];
-      if (!head?.reEnqueued) return;
-      if (closed) return;
-      const key = bindingKey(
-        binding.channelId,
-        binding.profileActorId,
-        binding.threadId
-      );
-      if (inflight.has(key)) return;
-      const profile = deps.agentProfileStore
-        ? deps.agentProfileStore.get(binding.profileActorId)
-        : defaultProfileForProvider(binding.framework);
-      if (!profile) return;
-      // One-shot best-effort rebind for a re-enqueued trigger (baseline bail).
-      void ensureProfileBinding(
-        binding.channelId,
-        profile,
-        undefined,
-        binding.threadId
-      )
-        .then((rebound) => {
-          if (closed) return;
-          pump(rebound);
-        })
-        .catch(() => {
-          /* ignore: a later post can retry binding admission */
-        });
-      return;
-    }
+    if (!binding.adapter) return;
     const head = binding.queue[0];
     if (!head) return;
     let take = 1;
