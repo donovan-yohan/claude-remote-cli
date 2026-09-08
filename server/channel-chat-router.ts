@@ -2145,35 +2145,6 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
     };
   }
 
-  async function sendTerminalWaitResponse(input: {
-    req: Request;
-    res: Response;
-    store: ChannelMessageStore;
-    hub: Pick<ChannelHub, 'onMessageCompleted'>;
-    runId: ChannelAsyncRunId;
-    run: ChannelAsyncRun;
-    deadline: number;
-    signal: AbortSignal;
-  }): Promise<void> {
-    const final = await finalAssistantTextForTerminalRun(
-      input.store,
-      input.hub,
-      input.runId,
-      input.run,
-      input.deadline,
-      input.signal
-    );
-    input.res.json(
-      operatorClientPublicValue(input.req, {
-        run: waitRunView(input.run),
-        outcome: input.run.state,
-        finalText: final.finalText ?? '',
-        finalMessageSeq: final.finalMessageSeq ?? null,
-        contract: contractSummaryForRun(input.run),
-      })
-    );
-  }
-
   async function waitForWaitableRun(input: {
     store: ChannelMessageStore;
     hub: Pick<ChannelHub, 'onRunLifecycle'>;
@@ -2344,48 +2315,72 @@ export function createChannelChatRouter(deps: ChannelChatRouterDeps): Router {
       configuredMaxFollowups >= 0
         ? configuredMaxFollowups + 1
         : 4;
-    const waited = await waitForWaitableRun({
-      store,
-      hub: deps.hub,
-      initial,
-      timeoutMs: input.timeoutMs,
-      maxFollowupRunsToVisit,
-      signal,
-    });
-    if (signal.aborted) return;
-    if (waited.run && runTerminalState(waited.run.state)) {
-      await sendTerminalWaitResponse({
-        req,
-        res,
+
+    const deadline = Date.now() + input.timeoutMs;
+    let currentInitial = initial;
+    let lastWaitedRun: ChannelAsyncRun | null = null;
+
+    while (Date.now() < deadline && !signal.aborted) {
+      const remainingMs = Math.max(0, deadline - Date.now());
+      const waited = await waitForWaitableRun({
         store,
         hub: deps.hub,
-        runId: waited.runId,
-        run: waited.run,
-        deadline: waited.timedOut ? Date.now() : Date.now() + input.timeoutMs,
+        initial: currentInitial,
+        timeoutMs: remainingMs,
+        maxFollowupRunsToVisit,
         signal,
       });
-      return;
+      if (signal.aborted) return;
+      if (waited.run) {
+        lastWaitedRun = waited.run;
+      }
+      if (waited.run && runTerminalState(waited.run.state)) {
+        const final = await finalAssistantTextForTerminalRun(
+          store,
+          deps.hub,
+          waited.runId,
+          waited.run,
+          waited.timedOut ? Date.now() : deadline,
+          signal
+        );
+        if (signal.aborted) return;
+        const refreshed = store.getAsyncRun(waited.runId);
+        if (refreshed && !runTerminalState(refreshed.state)) {
+          currentInitial = refreshed;
+          lastWaitedRun = refreshed;
+          continue;
+        }
+        const effectiveRun = refreshed ?? waited.run;
+        res.json(
+          operatorClientPublicValue(req, {
+            run: waitRunView(effectiveRun),
+            outcome: effectiveRun.state,
+            finalText: final.finalText ?? '',
+            finalMessageSeq: final.finalMessageSeq ?? null,
+            contract: contractSummaryForRun(effectiveRun),
+          })
+        );
+        return;
+      }
+      break;
     }
+
+    if (signal.aborted) return;
+    const finalRun = lastWaitedRun ?? store.getAsyncRun(input.runId) ?? initial;
     res.json(
       operatorClientPublicValue(req, {
-        run: waited.run
-          ? {
-              id: waited.run.id,
-              state: waited.run.state,
-              ...(waited.run.reason ? { reason: waited.run.reason } : {}),
-              ...(waited.run.deliveryContract?.contractPending
-                ? { contractPending: true }
-                : {}),
-            }
-          : {
-              id: initial.id,
-              state: initial.state,
-              ...(initial.reason ? { reason: initial.reason } : {}),
-            },
+        run: {
+          id: finalRun.id,
+          state: finalRun.state,
+          ...(finalRun.reason ? { reason: finalRun.reason } : {}),
+          ...(finalRun.deliveryContract?.contractPending
+            ? { contractPending: true }
+            : {}),
+        },
         outcome: 'timeout',
         finalText: '',
         finalMessageSeq: null,
-        contract: waited.run ? contractSummaryForRun(waited.run) : null,
+        contract: contractSummaryForRun(finalRun),
       })
     );
   }

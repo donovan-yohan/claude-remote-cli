@@ -5,7 +5,7 @@ import * as path from 'node:path';
 
 import express, { type RequestHandler } from 'express';
 import sharp from 'sharp';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   attachAuthenticatedCliGatewayActorCredential,
@@ -3034,6 +3034,109 @@ describe('channel routes — gateway capability mapping', () => {
         run: { id: parent.run.id, state: 'completed_unmet' },
         outcome: 'completed_unmet',
         finalText: 'PARENT',
+      });
+    });
+
+    it('falls back to outer wait loop when restart-grace revival makes a run working (#1579 item 5)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'test revival @codex',
+        targetIds: [targetId],
+      });
+
+      // Startup recovery stamps the aggregate with server-restarted, exercising
+      // the router's restart grace before a live runtime revives the target.
+      expect(h.store.recoverAsyncRuns()).toHaveLength(1);
+      expect(h.store.getAsyncRun(run.id)).toMatchObject({
+        state: 'cancelled',
+        reason: 'server-restarted',
+      });
+
+      // Start waiting for the run
+      const waitPromise = req<{
+        run: { id: string; state: string };
+        outcome: string;
+        finalText: string;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=250`,
+        headers: { Authorization: 'Bearer test' },
+      });
+
+      // During restart grace, a live runtime revives the same target. Leave it
+      // working through the deadline so the response proves the outer wait
+      // loop observed the refreshed run rather than stale cancellation.
+      setTimeout(() => {
+        const workingRun = h.store.transitionAsyncRunTarget({
+          runId: run.id,
+          targetId,
+          state: 'working',
+        });
+        if (workingRun) h.hub.broadcastRunLifecycle(workingRun);
+      }, 30);
+
+      const res = await waitPromise;
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        run: { id: run.id, state: 'working' },
+        outcome: 'timeout',
+      });
+    });
+
+    it('re-reads a watchdog-cancelled run after terminal prose lookup revives it (#1579 item 5)', async () => {
+      const h = await harness({ withAuth: true });
+      const targetId = builtInAgentProfileId('codex');
+      const { run } = h.store.appendCompleteWithAsyncRun({
+        channelId: h.channelId,
+        sender: { kind: 'human', id: 'human:operator' },
+        text: 'test terminal re-read @codex',
+        targetIds: [targetId],
+      });
+      h.store.transitionAsyncRunTarget({
+        runId: run.id,
+        targetId,
+        state: 'cancelled',
+        reason: 'watchdog',
+      });
+      h.store.appendComplete({
+        channelId: h.channelId,
+        sender: { kind: 'agent', id: targetId, providerId: 'codex' },
+        text: 'late final prose',
+        source: { runtimeId: 'rt' },
+        meta: { asyncRun: { runId: run.id, targetId } },
+      });
+
+      const original = h.store.getLastPrincipalProseForRunId.bind(h.store);
+      vi.spyOn(h.store, 'getLastPrincipalProseForRunId').mockImplementationOnce(
+        (input) => {
+          const revived = h.store.transitionAsyncRunTarget({
+            runId: run.id,
+            targetId,
+            state: 'working',
+          });
+          if (revived) h.hub.broadcastRunLifecycle(revived);
+          return original(input);
+        }
+      );
+
+      const res = await req<{
+        run: { id: string; state: string };
+        outcome: string;
+      }>({
+        port: h.port,
+        method: 'GET',
+        url: `/channels/wait?runId=${encodeURIComponent(run.id)}&for=any&timeoutMs=100`,
+        headers: { Authorization: 'Bearer test' },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        run: { id: run.id, state: 'working' },
+        outcome: 'timeout',
       });
     });
   });
